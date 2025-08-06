@@ -56,8 +56,24 @@ function broadcast(embed) {
 }
 
 function mapEmbed(embed, message) {
+  const buttons = [];
+  if (message.components?.length) {
+    for (const row of message.components) {
+      for (const comp of row.components) {
+        if (comp.type === 2) {
+          buttons.push({
+            label: comp.label,
+            url: comp.url,
+            customId: comp.customId
+          });
+        }
+      }
+    }
+  }
+
   return {
     id: message.id,
+    channelId: message.channelId,
     timestamp: embed.timestamp,
     color: embed.color ?? undefined,
     authorName: embed.author?.name,
@@ -67,6 +83,7 @@ function mapEmbed(embed, message) {
     fields: embed.fields.map(f => ({ name: f.name, value: f.value })),
     thumbnailUrl: embed.thumbnail?.url,
     imageUrl: embed.image?.url,
+    buttons: buttons.length ? buttons : undefined,
     mentions: message.mentions.users.size > 0 ? Array.from(message.mentions.users.keys()) : undefined
   };
 }
@@ -139,6 +156,25 @@ app.post('/plugin', (req, res) => {
 
 app.get('/embeds', (req, res) => {
   res.json(embedCache);
+});
+
+app.post('/interactions', async (req, res) => {
+  const { messageId, channelId, customId } = req.body;
+  try {
+    await rest.post('/interactions', {
+      body: {
+        type: 3,
+        channel_id: channelId,
+        message_id: messageId,
+        application_id: apolloBotId,
+        data: { component_type: 2, custom_id: customId }
+      }
+    });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Interaction failed', err);
+    res.status(500).json({ ok: false });
+  }
 });
 
 app.post('/validate', (req, res) => {

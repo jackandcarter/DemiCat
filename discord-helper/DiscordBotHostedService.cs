@@ -3,6 +3,7 @@ using Discord.WebSocket;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using System.Linq;
+using System.Collections.Generic;
 
 namespace DiscordHelper;
 
@@ -82,6 +83,26 @@ public class DiscordBotHostedService : IHostedService
 
     private static EmbedDto MapEmbed(IEmbed embed, IUserMessage message)
     {
+        var buttons = new List<EmbedButtonDto>();
+        foreach (var row in message.Components.Components)
+        {
+            if (row is ActionRowComponent actionRow)
+            {
+                foreach (var component in actionRow.Components)
+                {
+                    if (component is ButtonComponent button)
+                    {
+                        buttons.Add(new EmbedButtonDto
+                        {
+                            Label = button.Label ?? string.Empty,
+                            Url = button.Url,
+                            CustomId = button.CustomId
+                        });
+                    }
+                }
+            }
+        }
+
         return new EmbedDto
         {
             Id = message.Id.ToString(),
@@ -98,6 +119,8 @@ public class DiscordBotHostedService : IHostedService
             }).ToList(),
             ThumbnailUrl = embed.Thumbnail?.Url,
             ImageUrl = embed.Image?.Url,
+            Buttons = buttons.Count > 0 ? buttons : null,
+            ChannelId = message.Channel.Id,
             Mentions = message.MentionedUserIds.Count > 0 ? message.MentionedUserIds.ToList() : null
         };
     }
