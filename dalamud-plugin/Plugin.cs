@@ -19,6 +19,7 @@ public class Plugin : IDalamudPlugin
     public string Name => "SamplePlugin";
 
     private readonly UiRenderer _ui;
+    private readonly SettingsWindow _settings;
     private Config _config;
     private readonly System.Timers.Timer _timer;
     private readonly HttpClient _httpClient = new();
@@ -28,6 +29,7 @@ public class Plugin : IDalamudPlugin
         _config = LoadConfig();
 
         _ui = new UiRenderer(_config);
+        _settings = new SettingsWindow(_config) { IsOpen = true };
 
         _timer = new System.Timers.Timer(_config.PollIntervalSeconds * 1000);
         _timer.Elapsed += OnPollTimer;
@@ -39,6 +41,7 @@ public class Plugin : IDalamudPlugin
         }
 
         Service.Interface.UiBuilder.Draw += _ui.DrawWindow;
+        Service.Interface.UiBuilder.Draw += _settings.Draw;
     }
 
     private Config LoadConfig()
@@ -93,10 +96,12 @@ public class Plugin : IDalamudPlugin
     public void Dispose()
     {
         Service.Interface.UiBuilder.Draw -= _ui.DrawWindow;
+        Service.Interface.UiBuilder.Draw -= _settings.Draw;
         _timer.Stop();
         _timer.Dispose();
         _httpClient.Dispose();
         _ui.Dispose();
+        _settings.Dispose();
     }
 }
 
