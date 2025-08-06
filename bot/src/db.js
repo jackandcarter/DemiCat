@@ -1,76 +1,108 @@
-const path = require('path');
-const Database = require('better-sqlite3');
+const mysql = require('mysql2/promise');
 
-const dbPath = path.join(__dirname, '..', '..', 'database', 'demicat.db');
-const db = new Database(dbPath);
+let pool;
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    key TEXT,
-    character TEXT
-  );
-  CREATE TABLE IF NOT EXISTS servers (
-    id TEXT PRIMARY KEY
-  );
-  CREATE TABLE IF NOT EXISTS channels (
-    id TEXT PRIMARY KEY,
-    server_id TEXT,
-    type TEXT NOT NULL,
-    FOREIGN KEY(server_id) REFERENCES servers(id)
-  );
-  CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id TEXT,
-    channel_id TEXT,
-    message_id TEXT,
+async function init() {
+  pool = mysql.createPool({
+    host: process.env.DB_HOST,
+    user: process.env.DB_USER,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
+  });
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR(255) PRIMARY KEY,
+    \`key\` VARCHAR(255),
+    character VARCHAR(255)
+  )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS servers (
+    id VARCHAR(255) PRIMARY KEY
+  )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS channels (
+    id VARCHAR(255) PRIMARY KEY,
+    server_id VARCHAR(255),
+    type VARCHAR(32) NOT NULL,
+    FOREIGN KEY (server_id) REFERENCES servers(id)
+  )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(255),
+    channel_id VARCHAR(255),
+    message_id VARCHAR(255),
     title TEXT,
     description TEXT,
     time TEXT,
     metadata TEXT,
-    FOREIGN KEY(user_id) REFERENCES users(id),
-    FOREIGN KEY(channel_id) REFERENCES channels(id)
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    FOREIGN KEY (channel_id) REFERENCES channels(id)
+  )`);
+}
+
+async function setKey(userId, key) {
+  await pool.execute(
+    'INSERT INTO users (id, \`key\`) VALUES (?, ?) ON DUPLICATE KEY UPDATE \`key\` = VALUES(\`key\`)',
+    [userId, key]
   );
-`);
-
-function setKey(userId, key) {
-  db.prepare('INSERT INTO users (id, key) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET key=excluded.key').run(userId, key);
 }
 
-function setCharacter(userId, character) {
-  db.prepare('INSERT INTO users (id, character) VALUES (?, ?) ON CONFLICT(id) DO UPDATE SET character=excluded.character').run(userId, character);
+async function setCharacter(userId, character) {
+  await pool.execute(
+    'INSERT INTO users (id, character) VALUES (?, ?) ON DUPLICATE KEY UPDATE character = VALUES(character)',
+    [userId, character]
+  );
 }
 
-function getUserByKey(key) {
-  return db.prepare('SELECT id as userId, character FROM users WHERE key = ?').get(key) || null;
+async function getUserByKey(key) {
+  const [rows] = await pool.execute('SELECT id AS userId, character FROM users WHERE \`key\` = ?', [key]);
+  return rows[0] || null;
 }
 
-function getEventChannels() {
-  return db.prepare('SELECT id FROM channels WHERE type = ?').all('event').map(r => r.id);
+async function getEventChannels() {
+  const [rows] = await pool.execute('SELECT id FROM channels WHERE type = ?', ['event']);
+  return rows.map(r => r.id);
 }
 
-function addEventChannel(channelId) {
-  db.prepare('INSERT OR IGNORE INTO channels (id, type) VALUES (?, ?)').run(channelId, 'event');
+async function addEventChannel(channelId) {
+  await pool.execute('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'event']);
 }
 
-function getChatChannels() {
-  return db.prepare('SELECT id FROM channels WHERE type = ?').all('chat').map(r => r.id);
+async function getChatChannels() {
+  const [rows] = await pool.execute('SELECT id FROM channels WHERE type = ?', ['chat']);
+  return rows.map(r => r.id);
 }
 
-function addChatChannel(channelId) {
-  db.prepare('INSERT OR IGNORE INTO channels (id, type) VALUES (?, ?)').run(channelId, 'chat');
+async function addChatChannel(channelId) {
+  await pool.execute('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'chat']);
 }
 
-function saveEvent(event) {
-  db.prepare('INSERT INTO events (user_id, channel_id, message_id, title, description, time, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(event.userId, event.channelId, event.messageId, event.title, event.description, event.time, event.metadata);
+async function saveEvent(event) {
+  await pool.execute(
+    'INSERT INTO events (user_id, channel_id, message_id, title, description, time, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [
+      event.userId,
+      event.channelId,
+      event.messageId,
+      event.title,
+      event.description,
+      event.time,
+      event.metadata
+    ]
+  );
 }
 
-function getEvents(channelId) {
-  return db.prepare('SELECT * FROM events WHERE channel_id = ?').all(channelId);
+async function getEvents(channelId) {
+  const [rows] = await pool.execute('SELECT * FROM events WHERE channel_id = ?', [channelId]);
+  return rows;
 }
 
 module.exports = {
+  init,
   setKey,
   setCharacter,
   getUserByKey,

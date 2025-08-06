@@ -3,26 +3,70 @@ const express = require('express');
 const crypto = require('crypto');
 const http = require('http');
 const WebSocket = require('ws');
+const fs = require('fs');
+const path = require('path');
+const readline = require('readline/promises');
+const { stdin: input, stdout: output } = require('process');
 const db = require('./db');
-require('dotenv').config();
 
-const token = process.env.DISCORD_BOT_TOKEN;
-const clientId = process.env.DISCORD_CLIENT_ID;
+const envPath = path.join(__dirname, '..', '.env');
+require('dotenv').config({ path: envPath });
 
-if (!token || !clientId) {
-  console.error('Missing DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID');
-  process.exit(1);
+async function ensureEnv() {
+  const rl = readline.createInterface({ input, output });
+  const keys = ['DISCORD_BOT_TOKEN', 'DISCORD_CLIENT_ID', 'DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
+  const added = [];
+  for (const key of keys) {
+    if (!process.env[key]) {
+      const val = await rl.question(`${key}: `);
+      process.env[key] = val;
+      added.push(`${key}=${val}`);
+    }
+  }
+  rl.close();
+  if (added.length) {
+    const existing = fs.existsSync(envPath) ? fs.readFileSync(envPath, 'utf8') : '';
+    const newline = existing.endsWith('\n') || existing.length === 0 ? '' : '\n';
+    fs.writeFileSync(envPath, existing + newline + added.join('\n') + '\n');
+    console.log('Configuration saved to .env');
+  }
 }
+
+let eventChannels = [];
+let chatChannels = [];
+let rest;
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const apolloBotId = process.env.APOLLO_BOT_ID;
 
 const commands = [
   { name: 'link', description: 'Link your account' },
   { name: 'createevent', description: 'Create an event' },
-  { name: 'generatekey', description: 'Generate a key for DemiCat' }
+  { name: 'generatekey', description: 'Generate a key for DemiCat' },
+  {
+    name: 'setup',
+    description: 'Configure DemiCat channels',
+    options: [
+      {
+        type: 1,
+        name: 'event',
+        description: 'Add an event channel',
+        options: [
+          { type: 7, name: 'channel', description: 'Channel to use', required: true }
+        ]
+      },
+      {
+        type: 1,
+        name: 'chat',
+        description: 'Add a chat channel',
+        options: [
+          { type: 7, name: 'channel', description: 'Channel to use', required: true }
+        ]
+      }
+    ]
+  }
 ];
 
-const rest = new REST({ version: '10' }).setToken(token);
-
-async function registerCommands() {
+async function registerCommands(clientId) {
   try {
     await rest.put(Routes.applicationCommands(clientId), { body: commands });
     console.log('Successfully registered application commands.');
@@ -30,11 +74,6 @@ async function registerCommands() {
     console.error('Error registering commands:', error);
   }
 }
-
-const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
-const apolloBotId = process.env.APOLLO_BOT_ID;
-const eventChannels = db.getEventChannels();
-const chatChannels = db.getChatChannels();
 
 // Simple in-memory cache of recent embeds
 const embedCache = [];
@@ -160,7 +199,7 @@ client.on(Events.InteractionCreate, async interaction => {
     await interaction.reply({ content: 'Create event command received', ephemeral: true });
   } else if (interaction.commandName === 'generatekey') {
     const key = crypto.randomBytes(16).toString('hex');
-    db.setKey(interaction.user.id, key);
+    await db.setKey(interaction.user.id, key);
     await interaction.reply({ content: 'Sent you a DM with your key!', ephemeral: true });
     const embed = {
       title: 'DemiCat Link Key',
@@ -170,6 +209,18 @@ client.on(Events.InteractionCreate, async interaction => {
       await interaction.user.send({ embeds: [embed] });
     } catch (err) {
       console.error('Failed to DM key:', err);
+    }
+  } else if (interaction.commandName === 'setup') {
+    const sub = interaction.options.getSubcommand();
+    const channel = interaction.options.getChannel('channel');
+    if (sub === 'event') {
+      await db.addEventChannel(channel.id);
+      if (!eventChannels.includes(channel.id)) eventChannels.push(channel.id);
+      await interaction.reply({ content: `Added ${channel} as event channel`, ephemeral: true });
+    } else if (sub === 'chat') {
+      await db.addChatChannel(channel.id);
+      if (!chatChannels.includes(channel.id)) chatChannels.push(channel.id);
+      await interaction.reply({ content: `Added ${channel} as chat channel`, ephemeral: true });
     }
   }
 });
@@ -186,9 +237,6 @@ client.on(Events.MessageCreate, message => {
     addMessage(message.channelId, mapped);
   }
 });
-
-registerCommands();
-client.login(token);
 
 const app = express();
 app.use(express.json());
@@ -221,12 +269,12 @@ app.post('/interactions', async (req, res) => {
   }
 });
 
-app.post('/validate', (req, res) => {
+app.post('/validate', async (req, res) => {
   const { key, characterName } = req.body;
-  const info = db.getUserByKey(key);
+  const info = await db.getUserByKey(key);
   if (info) {
     if (characterName) {
-      db.setCharacter(info.userId, characterName);
+      await db.setCharacter(info.userId, characterName);
     }
     res.json({ valid: true, userId: info.userId });
   } else {
@@ -240,7 +288,7 @@ app.post('/events', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const key = auth.substring(7);
-  const info = db.getUserByKey(key);
+  const info = await db.getUserByKey(key);
   if (!info) {
     return res.status(401).json({ error: 'Invalid key' });
   }
@@ -262,8 +310,8 @@ app.post('/events', async (req, res) => {
     const message = await channel.send({ embeds: [embed], files });
     const mapped = mapEmbed(message.embeds[0], message);
     broadcast(mapped);
-    db.addEventChannel(channelId);
-    db.saveEvent({
+    await db.addEventChannel(channelId);
+    await db.saveEvent({
       userId: info.userId,
       channelId,
       messageId: message.id,
@@ -289,7 +337,7 @@ app.post('/messages', async (req, res) => {
     return res.status(401).json({ error: 'Unauthorized' });
   }
   const key = auth.substring(7);
-  const info = db.getUserByKey(key);
+  const info = await db.getUserByKey(key);
   if (!info) {
     return res.status(401).json({ error: 'Invalid key' });
   }
@@ -308,7 +356,7 @@ app.post('/messages', async (req, res) => {
       hook = await channel.createWebhook({ name: 'DemiCat' });
     }
     await hook.send({ content, username: displayName });
-    db.addChatChannel(channelId);
+    await db.addChatChannel(channelId);
     if (!chatChannels.includes(channelId)) {
       chatChannels.push(channelId);
     }
@@ -330,3 +378,21 @@ wss.on('connection', ws => {
 server.listen(port, () => {
   console.log(`Plugin endpoint listening on port ${port}`);
 });
+
+async function start() {
+  await ensureEnv();
+  const token = process.env.DISCORD_BOT_TOKEN;
+  const clientId = process.env.DISCORD_CLIENT_ID;
+  if (!token || !clientId) {
+    console.error('Missing DISCORD_BOT_TOKEN or DISCORD_CLIENT_ID');
+    process.exit(1);
+  }
+  await db.init();
+  eventChannels = await db.getEventChannels();
+  chatChannels = await db.getChatChannels();
+  rest = new REST({ version: '10' }).setToken(token);
+  await registerCommands(clientId);
+  await client.login(token);
+}
+
+start();
