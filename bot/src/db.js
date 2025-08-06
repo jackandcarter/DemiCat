@@ -1,29 +1,30 @@
 const fs = require('fs');
 const path = require('path');
 
-const filePath = path.join(__dirname, '..', '..', 'database', 'users.json');
+const userFile = path.join(__dirname, '..', '..', 'database', 'users.json');
+const serverFile = path.join(__dirname, '..', '..', 'database', 'servers.json');
 
-function read() {
+function read(file) {
   try {
-    const data = fs.readFileSync(filePath, 'utf8');
+    const data = fs.readFileSync(file, 'utf8');
     return JSON.parse(data || '{}');
   } catch (err) {
     return {};
   }
 }
 
-function write(data) {
-  fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+function write(file, data) {
+  fs.writeFileSync(file, JSON.stringify(data, null, 2));
 }
 
 function setKey(userId, key) {
-  const data = read();
+  const data = read(userFile);
   data[userId] = key;
-  write(data);
+  write(userFile, data);
 }
 
 function getUserIdByKey(key) {
-  const data = read();
+  const data = read(userFile);
   for (const [id, storedKey] of Object.entries(data)) {
     if (storedKey === key) {
       return id;
@@ -32,4 +33,18 @@ function getUserIdByKey(key) {
   return null;
 }
 
-module.exports = { setKey, getUserIdByKey };
+function getEventChannels() {
+  const data = read(serverFile);
+  return Array.isArray(data.eventChannels) ? data.eventChannels : [];
+}
+
+function addEventChannel(channelId) {
+  const data = read(serverFile);
+  data.eventChannels = Array.isArray(data.eventChannels) ? data.eventChannels : [];
+  if (!data.eventChannels.includes(channelId)) {
+    data.eventChannels.push(channelId);
+    write(serverFile, data);
+  }
+}
+
+module.exports = { setKey, getUserIdByKey, getEventChannels, addEventChannel };

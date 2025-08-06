@@ -1,6 +1,8 @@
 const { Client, GatewayIntentBits, Events, REST, Routes } = require('discord.js');
 const express = require('express');
 const crypto = require('crypto');
+const http = require('http');
+const WebSocket = require('ws');
 const db = require('./db');
 require('dotenv').config();
 
@@ -29,10 +31,68 @@ async function registerCommands() {
   }
 }
 
-const client = new Client({ intents: [GatewayIntentBits.Guilds] });
+const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+const apolloBotId = process.env.APOLLO_BOT_ID;
+const eventChannels = db.getEventChannels();
 
-client.once(Events.ClientReady, () => {
+// Simple in-memory cache of recent embeds
+const embedCache = [];
+function addToCache(embed) {
+  embedCache.push(embed);
+  if (embedCache.length > 50) embedCache.shift();
+}
+
+let wss; // will be initialised after server creation
+
+function broadcast(embed) {
+  addToCache(embed);
+  const data = JSON.stringify(embed);
+  if (!wss) return;
+  wss.clients.forEach(ws => {
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(data);
+    }
+  });
+}
+
+function mapEmbed(embed, message) {
+  return {
+    id: message.id,
+    timestamp: embed.timestamp,
+    color: embed.color ?? undefined,
+    authorName: embed.author?.name,
+    authorIconUrl: embed.author?.iconURL,
+    title: embed.title,
+    description: embed.description,
+    fields: embed.fields.map(f => ({ name: f.name, value: f.value })),
+    thumbnailUrl: embed.thumbnail?.url,
+    imageUrl: embed.image?.url,
+    mentions: message.mentions.users.size > 0 ? Array.from(message.mentions.users.keys()) : undefined
+  };
+}
+
+async function fetchInitialEmbeds() {
+  for (const channelId of eventChannels) {
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel?.isTextBased()) continue;
+      const messages = await channel.messages.fetch({ limit: 10 });
+      const sorted = Array.from(messages.values()).reverse();
+      for (const msg of sorted) {
+        if (apolloBotId && msg.author.id !== apolloBotId) continue;
+        if (msg.embeds.length === 0) continue;
+        const embed = mapEmbed(msg.embeds[0], msg);
+        broadcast(embed);
+      }
+    } catch (err) {
+      console.error('Failed to fetch messages for channel', channelId, err);
+    }
+  }
+}
+
+client.once(Events.ClientReady, async () => {
   console.log(`Logged in as ${client.user.tag}`);
+  await fetchInitialEmbeds();
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -58,6 +118,14 @@ client.on(Events.InteractionCreate, async interaction => {
   }
 });
 
+client.on(Events.MessageCreate, message => {
+  if (!eventChannels.includes(message.channelId)) return;
+  if (apolloBotId && message.author.id !== apolloBotId) return;
+  if (message.embeds.length === 0) return;
+  const embed = mapEmbed(message.embeds[0], message);
+  broadcast(embed);
+});
+
 registerCommands();
 client.login(token);
 
@@ -67,6 +135,10 @@ app.use(express.json());
 app.post('/plugin', (req, res) => {
   console.log('Plugin connected:', req.body);
   res.status(200).json({ status: 'ok' });
+});
+
+app.get('/embeds', (req, res) => {
+  res.json(embedCache);
 });
 
 app.post('/validate', (req, res) => {
@@ -80,6 +152,13 @@ app.post('/validate', (req, res) => {
 });
 
 const port = process.env.PLUGIN_PORT || 3000;
-app.listen(port, () => {
+const server = http.createServer(app);
+wss = new WebSocket.Server({ server });
+
+wss.on('connection', ws => {
+  embedCache.forEach(e => ws.send(JSON.stringify(e)));
+});
+
+server.listen(port, () => {
   console.log(`Plugin endpoint listening on port ${port}`);
 });
