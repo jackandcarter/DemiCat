@@ -13,6 +13,7 @@ public class EmbedDto
     public string? ThumbnailUrl { get; set; }
     public string? ImageUrl { get; set; }
     public List<EmbedButtonDto>? Buttons { get; set; }
+    public ulong? ChannelId { get; set; }
     public List<ulong>? Mentions { get; set; }
 }
 
@@ -25,5 +26,6 @@ public class EmbedFieldDto
 public class EmbedButtonDto
 {
     public string Label { get; set; } = string.Empty;
-    public string Url { get; set; } = string.Empty;
+    public string? Url { get; set; }
+    public string? CustomId { get; set; }
 }
