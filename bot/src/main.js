@@ -34,12 +34,21 @@ async function registerCommands() {
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 const apolloBotId = process.env.APOLLO_BOT_ID;
 const eventChannels = db.getEventChannels();
+const chatChannels = db.getChatChannels();
 
 // Simple in-memory cache of recent embeds
 const embedCache = [];
 function addToCache(embed) {
   embedCache.push(embed);
   if (embedCache.length > 50) embedCache.shift();
+}
+
+const messageCache = new Map();
+function addMessage(channelId, msg) {
+  const arr = messageCache.get(channelId) || [];
+  arr.push(msg);
+  if (arr.length > 50) arr.shift();
+  messageCache.set(channelId, arr);
 }
 
 let wss; // will be initialised after server creation
@@ -107,9 +116,39 @@ async function fetchInitialEmbeds() {
   }
 }
 
+function mapMessage(message) {
+  return {
+    id: message.id,
+    channelId: message.channelId,
+    authorId: message.author.id,
+    authorName: message.author.username,
+    content: message.content,
+    mentions: Array.from(message.mentions.users.values()).map(u => ({ id: u.id, name: u.username })),
+    timestamp: message.createdTimestamp
+  };
+}
+
+async function fetchInitialMessages() {
+  for (const channelId of chatChannels) {
+    try {
+      const channel = await client.channels.fetch(channelId);
+      if (!channel?.isTextBased()) continue;
+      const messages = await channel.messages.fetch({ limit: 20 });
+      const sorted = Array.from(messages.values()).reverse();
+      for (const msg of sorted) {
+        const mapped = mapMessage(msg);
+        addMessage(channelId, mapped);
+      }
+    } catch (err) {
+      console.error('Failed to fetch chat for channel', channelId, err);
+    }
+  }
+}
+
 client.once(Events.ClientReady, async () => {
   console.log(`Logged in as ${client.user.tag}`);
   await fetchInitialEmbeds();
+  await fetchInitialMessages();
 });
 
 client.on(Events.InteractionCreate, async interaction => {
@@ -136,11 +175,16 @@ client.on(Events.InteractionCreate, async interaction => {
 });
 
 client.on(Events.MessageCreate, message => {
-  if (!eventChannels.includes(message.channelId)) return;
-  if (apolloBotId && message.author.id !== apolloBotId) return;
-  if (message.embeds.length === 0) return;
-  const embed = mapEmbed(message.embeds[0], message);
-  broadcast(embed);
+  if (eventChannels.includes(message.channelId)) {
+    if (!(apolloBotId && message.author.id !== apolloBotId) && message.embeds.length > 0) {
+      const embed = mapEmbed(message.embeds[0], message);
+      broadcast(embed);
+    }
+  }
+  if (chatChannels.includes(message.channelId)) {
+    const mapped = mapMessage(message);
+    addMessage(message.channelId, mapped);
+  }
 });
 
 registerCommands();
@@ -222,6 +266,46 @@ app.post('/events', async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     console.error('Event creation failed', err);
+    res.status(500).json({ ok: false });
+  }
+});
+
+app.get('/messages/:channelId', (req, res) => {
+  res.json(messageCache.get(req.params.channelId) || []);
+});
+
+app.post('/messages', async (req, res) => {
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const key = auth.substring(7);
+  const info = db.getUserByKey(key);
+  if (!info) {
+    return res.status(401).json({ error: 'Invalid key' });
+  }
+
+  const { channelId, content, useCharacterName } = req.body;
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel || !channel.isTextBased()) {
+      return res.status(400).json({ error: 'Invalid channel' });
+    }
+    const user = await client.users.fetch(info.userId);
+    const displayName = useCharacterName && info.character ? info.character : user.username;
+    const hooks = await channel.fetchWebhooks();
+    let hook = hooks.find(w => w.name === 'DemiCat');
+    if (!hook) {
+      hook = await channel.createWebhook({ name: 'DemiCat' });
+    }
+    await hook.send({ content, username: displayName });
+    db.addChatChannel(channelId);
+    if (!chatChannels.includes(channelId)) {
+      chatChannels.push(channelId);
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Message send failed', err);
     res.status(500).json({ ok: false });
   }
 });

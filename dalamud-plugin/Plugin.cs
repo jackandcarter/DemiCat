@@ -21,6 +21,7 @@ public class Plugin : IDalamudPlugin
     private readonly UiRenderer _ui;
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _createWindow;
+    private readonly ChatWindow _chatWindow;
     private Config _config;
     private readonly System.Timers.Timer _timer;
     private readonly HttpClient _httpClient = new();
@@ -32,6 +33,7 @@ public class Plugin : IDalamudPlugin
         _ui = new UiRenderer(_config);
         _settings = new SettingsWindow(_config) { IsOpen = true };
         _createWindow = new EventCreateWindow(_config) { IsOpen = true };
+        _chatWindow = new ChatWindow(_config) { IsOpen = true };
 
         _timer = new System.Timers.Timer(_config.PollIntervalSeconds * 1000);
         _timer.Elapsed += OnPollTimer;
@@ -45,6 +47,7 @@ public class Plugin : IDalamudPlugin
         Service.Interface.UiBuilder.Draw += _ui.DrawWindow;
         Service.Interface.UiBuilder.Draw += _settings.Draw;
         Service.Interface.UiBuilder.Draw += _createWindow.Draw;
+        Service.Interface.UiBuilder.Draw += _chatWindow.Draw;
     }
 
     private Config LoadConfig()
@@ -101,12 +104,14 @@ public class Plugin : IDalamudPlugin
         Service.Interface.UiBuilder.Draw -= _ui.DrawWindow;
         Service.Interface.UiBuilder.Draw -= _settings.Draw;
         Service.Interface.UiBuilder.Draw -= _createWindow.Draw;
+        Service.Interface.UiBuilder.Draw -= _chatWindow.Draw;
         _timer.Stop();
         _timer.Dispose();
         _httpClient.Dispose();
         _ui.Dispose();
         _settings.Dispose();
         _createWindow.Dispose();
+        _chatWindow.Dispose();
     }
 }
 
