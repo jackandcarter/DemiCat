@@ -1,76 +1,59 @@
 # DemiCat Monorepo
 
-DemiCat is a monorepo containing two projects that link Final Fantasy XIV (FFXIV) with Discord.
+DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts directly into the game.
 
 ```
 DemiCat/
-├── discord-helper/   # Discord bot built with .NET 6
-└── dalamud-plugin/   # Dalamud plugin loaded in-game
+├── discord-helper/   # ASP.NET service that listens to Apollo event messages
+└── dalamud-plugin/   # Dalamud plugin that renders the embeds in FFXIV
 ```
 
 ## Prerequisites
 
-Install the following before working with the repository:
-
-- [.NET 6 SDK](https://dotnet.microsoft.com/en-us/download) – required for both projects
-- A Discord Bot token from the [Discord Developer Portal](https://discord.com/developers/applications)
+- [.NET 6 SDK](https://dotnet.microsoft.com/en-us/download)
+- A Discord bot token and Apollo-managed channels
 - FFXIV with the [Dalamud](https://github.com/goatcorp/Dalamud) plugin framework
 
-## Configuration
+## Setup
 
-### `discord-helper/appsettings.json`
-
-Create or edit `discord-helper/appsettings.json`:
-
-```json
-{
-  "Discord": {
-    "Token": "YOUR_DISCORD_BOT_TOKEN"
-  }
-}
-```
-
-### `dalamud-plugin/manifest.json`
-
-Update `dalamud-plugin/manifest.json` with details about your plugin:
+### 1. Configure the helper service
+Create `discord-helper/appsettings.json`:
 
 ```json
 {
-  "Author": "Your Name",
-  "Name": "DemiCat",
-  "Description": "FFXIV plugin that communicates with a Discord bot.",
-  "RepoUrl": "https://github.com/your/repo"
+  "BotToken": "YOUR_DISCORD_BOT_TOKEN",
+  "BotId": 111111111111111111,
+  "ChannelIds": [222222222222222222],
+  "Port": 5000
 }
 ```
+
+- **BotToken** – token for your Discord bot.
+- **BotId** – user ID of the Apollo bot.
+- **ChannelIds** – Discord channel IDs the helper watches for event embeds.
+- **Port** – HTTP port used by the helper service.
+
+### 2. Configure the Dalamud plugin
+Update `dalamud-plugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** (e.g. `http://localhost:5000`) to match the port above.
 
 ## Building and Running
 
-### Discord Helper
-
+### Helper service
 ```bash
-cd discord-helper
- dotnet build       # build the Discord bot
- dotnet run         # run the bot locally
+cd discord-helper && dotnet run
 ```
 
-### Dalamud Plugin
-
+### Dalamud plugin
 ```bash
 cd dalamud-plugin
- dotnet build       # build the plugin DLL
+ dotnet build
 ```
+Copy `bin/Debug/net6.0/dalamud-plugin.dll` into your Dalamud plugins folder and enable it.
 
-Copy the built DLL from `bin/Debug` or `bin/Release` into your Dalamud plugins directory (e.g. `%APPDATA%\\XIVLauncher\\addons\\Hooks\\DemiCat` on Windows) and enable it through Dalamud's plugin installer.
+## Usage
 
-## In-Game Usage
+With the helper running and the plugin enabled, open the in-game **Events** window to view live Apollo embeds. Players can click the RSVP buttons to respond directly from FFXIV.
 
-1. Run the Discord bot with `dotnet run` as described above.
-2. Launch FFXIV via XIVLauncher with Dalamud enabled.
-3. Install and enable the DemiCat plugin. Use `/demicat` commands in-game to send messages through the Discord bot.
+## Extensibility
 
-## Extending DemiCat
-
-- **Discord Helper** – add more bot commands or integrate other services.
-- **Dalamud Plugin** – create new slash commands, UI elements or other in-game features.
-
-Contributions that expand the interaction between the bot and plugin are welcome!
+The helper service can expose additional REST endpoints or be adapted to mirror other bots. You can also replace Apollo entirely by swapping in your own event source.
