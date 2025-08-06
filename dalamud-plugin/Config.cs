@@ -4,7 +4,7 @@ public class Config
 {
     public bool Enabled { get; set; } = true;
 
-    public string HelperBaseUrl { get; set; } = "http://localhost:5000";
+    public string HelperBaseUrl { get; set; } = "http://localhost:3000";
 
     public int PollIntervalSeconds { get; set; } = 5;
 
