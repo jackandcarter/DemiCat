@@ -28,6 +28,7 @@ builder.Services.AddSingleton(_ =>
 });
 
 // Register hosted service and controllers
+builder.Services.AddSingleton<EmbedCache>();
 builder.Services.AddHostedService<DiscordBotHostedService>();
 builder.Services.AddControllers();
 
@@ -64,30 +65,5 @@ public class BotConfig
     public ulong[] ChannelIds { get; set; } = Array.Empty<ulong>();
     public ulong BotId { get; set; }
     public int Port { get; set; } = 5000;
-}
-
-// Hosted service for the Discord bot
-public class DiscordBotHostedService : IHostedService
-{
-    private readonly DiscordSocketClient _client;
-    private readonly BotConfig _config;
-
-    public DiscordBotHostedService(DiscordSocketClient client, IOptions<BotConfig> config)
-    {
-        _client = client;
-        _config = config.Value;
-    }
-
-    public async Task StartAsync(CancellationToken cancellationToken)
-    {
-        await _client.LoginAsync(TokenType.Bot, _config.BotToken);
-        await _client.StartAsync();
-    }
-
-    public async Task StopAsync(CancellationToken cancellationToken)
-    {
-        await _client.StopAsync();
-        await _client.LogoutAsync();
-    }
 }
 
