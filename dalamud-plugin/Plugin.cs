@@ -18,7 +18,7 @@ public class Plugin : IDalamudPlugin
 {
     public string Name => "SamplePlugin";
 
-    private readonly UiRenderer _ui = new();
+    private readonly UiRenderer _ui;
     private Config _config;
     private readonly System.Timers.Timer _timer;
     private readonly HttpClient _httpClient = new();
@@ -26,6 +26,8 @@ public class Plugin : IDalamudPlugin
     public Plugin()
     {
         _config = LoadConfig();
+
+        _ui = new UiRenderer(_config);
 
         _timer = new System.Timers.Timer(_config.PollIntervalSeconds * 1000);
         _timer.Elapsed += OnPollTimer;
@@ -80,10 +82,7 @@ public class Plugin : IDalamudPlugin
 
             var stream = await response.Content.ReadAsStreamAsync();
             var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream) ?? new List<EmbedDto>();
-            foreach (var dto in embeds)
-            {
-                _ui.Draw(dto);
-            }
+            _ui.SetEmbeds(embeds);
         }
         catch
         {
