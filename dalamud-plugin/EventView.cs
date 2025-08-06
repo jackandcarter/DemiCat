@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using DiscordHelper;
+using Dalamud.Interface.Textures;
 using ImGuiNET;
 using StbImageSharp;
 
@@ -153,7 +154,7 @@ public class EventView : IDisposable
             var bytes = _httpClient.GetByteArrayAsync(url).GetAwaiter().GetResult();
             using var stream = new System.IO.MemoryStream(bytes);
             var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-            return Service.Interface.UiBuilder.LoadImageRaw(image.Data, image.Width, image.Height, 4);
+            return PluginServices.PluginInterface.UiBuilder.LoadImageRaw(image.Data, image.Width, image.Height, 4);
         }
         catch
         {

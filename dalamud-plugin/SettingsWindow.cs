@@ -1,5 +1,4 @@
 using System;
-using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -48,7 +47,7 @@ public class SettingsWindow : IDisposable
         {
             var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            var character = Service.ClientState.LocalPlayer?.Name ?? string.Empty;
+            var character = PluginServices.ClientState.LocalPlayer?.Name ?? string.Empty;
             request.Content = new StringContent(JsonSerializer.Serialize(new { key = _key, characterName = character }), Encoding.UTF8, "application/json");
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
@@ -65,15 +64,7 @@ public class SettingsWindow : IDisposable
 
     private void SaveConfig()
     {
-        try
-        {
-            var path = Path.Combine(AppContext.BaseDirectory, "config.json");
-            File.WriteAllText(path, JsonSerializer.Serialize(_config));
-        }
-        catch
-        {
-            // ignored
-        }
+        PluginServices.PluginInterface.SavePluginConfig(_config);
     }
 
     public void Dispose()

@@ -6,7 +6,6 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Numerics;
-using System.IO;
 using ImGuiNET;
 
 namespace DalamudPlugin;
@@ -143,15 +142,7 @@ public class ChatWindow : IDisposable
 
     private void SaveConfig()
     {
-        try
-        {
-            var path = Path.Combine(AppContext.BaseDirectory, "config.json");
-            File.WriteAllText(path, JsonSerializer.Serialize(_config));
-        }
-        catch
-        {
-            // ignored
-        }
+        PluginServices.PluginInterface.SavePluginConfig(_config);
     }
 
     private class ChatMessageDto
