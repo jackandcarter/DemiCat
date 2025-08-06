@@ -11,7 +11,7 @@ namespace DalamudPlugin;
 
 public class Plugin : IDalamudPlugin
 {
-    public string Name => "SamplePlugin";
+    public string Name => "DemiCat";
 
     private readonly UiRenderer _ui;
     private readonly SettingsWindow _settings;
