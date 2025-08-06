@@ -11,12 +11,14 @@ public class DiscordBotHostedService : IHostedService
     private readonly DiscordSocketClient _client;
     private readonly BotConfig _config;
     private readonly EmbedCache _cache;
+    private readonly EmbedSocketHandler _sockets;
 
-    public DiscordBotHostedService(DiscordSocketClient client, IOptions<BotConfig> config, EmbedCache cache)
+    public DiscordBotHostedService(DiscordSocketClient client, IOptions<BotConfig> config, EmbedCache cache, EmbedSocketHandler sockets)
     {
         _client = client;
         _config = config.Value;
         _cache = cache;
+        _sockets = sockets;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -39,25 +41,24 @@ public class DiscordBotHostedService : IHostedService
         await _client.LogoutAsync();
     }
 
-    private Task OnMessageReceived(SocketMessage msg)
+    private async Task OnMessageReceived(SocketMessage msg)
     {
         if (msg is not IUserMessage message)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         if (message.Author.Id != _config.BotId || message.Embeds.Count == 0)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         foreach (var embed in message.Embeds)
         {
             var dto = MapEmbed(embed, message);
             _cache.Add(dto);
+            await _sockets.BroadcastAsync(dto);
         }
-
-        return Task.CompletedTask;
     }
 
     private async Task OnReactionUpdated(Cacheable<IUserMessage, ulong> messageCache,
@@ -72,7 +73,10 @@ public class DiscordBotHostedService : IHostedService
         foreach (var embed in message.Embeds)
         {
             var dto = MapEmbed(embed, message);
-            _cache.Update(dto);
+            if (_cache.Update(dto))
+            {
+                await _sockets.BroadcastAsync(dto);
+            }
         }
     }
 

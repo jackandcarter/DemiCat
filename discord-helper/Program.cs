@@ -2,6 +2,7 @@ using Discord;
 using Discord.WebSocket;
 using DiscordHelper;
 using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
@@ -27,34 +28,32 @@ builder.Services.AddSingleton(_ =>
     return new DiscordSocketClient(socketConfig);
 });
 
-// Register hosted service and controllers
+// Register services and controllers
 builder.Services.AddSingleton<EmbedCache>();
+builder.Services.AddSingleton<EmbedSocketHandler>();
 builder.Services.AddHostedService<DiscordBotHostedService>();
 builder.Services.AddControllers();
 
 var app = builder.Build();
 
+app.UseWebSockets();
+
+app.Map("/ws/embeds", async context =>
+{
+    if (context.WebSockets.IsWebSocketRequest)
+    {
+        var handler = context.RequestServices.GetRequiredService<EmbedSocketHandler>();
+        var socket = await context.WebSockets.AcceptWebSocketAsync();
+        await handler.AddSocketAsync(socket);
+    }
+    else
+    {
+        context.Response.StatusCode = StatusCodes.Status400BadRequest;
+    }
+});
+
 // Map controller routes
 app.MapControllers();
-
-// Minimal API endpoint for posting embeds
-app.MapPost("/api/embeds", async (EmbedDto dto, DiscordSocketClient client, IOptions<BotConfig> options) =>
-{
-    var embed = new EmbedBuilder()
-        .WithTitle(dto.Title)
-        .WithDescription(dto.Description)
-        .Build();
-
-    foreach (var channelId in options.Value.ChannelIds)
-    {
-        if (client.GetChannel(channelId) is IMessageChannel channel)
-        {
-            await channel.SendMessageAsync(embed: embed);
-        }
-    }
-
-    return Results.Ok(dto);
-});
 
 await app.RunAsync();
 
@@ -66,4 +65,3 @@ public class BotConfig
     public ulong BotId { get; set; }
     public int Port { get; set; } = 5000;
 }
-
