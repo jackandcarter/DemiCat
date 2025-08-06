@@ -19,15 +19,23 @@ function write(file, data) {
 
 function setKey(userId, key) {
   const data = read(userFile);
-  data[userId] = key;
+  const existing = data[userId] || {};
+  data[userId] = { ...existing, key };
   write(userFile, data);
 }
 
-function getUserIdByKey(key) {
+function setCharacter(userId, character) {
   const data = read(userFile);
-  for (const [id, storedKey] of Object.entries(data)) {
-    if (storedKey === key) {
-      return id;
+  const existing = data[userId] || {};
+  data[userId] = { ...existing, character };
+  write(userFile, data);
+}
+
+function getUserByKey(key) {
+  const data = read(userFile);
+  for (const [id, info] of Object.entries(data)) {
+    if (info.key === key) {
+      return { userId: id, character: info.character };
     }
   }
   return null;
@@ -47,4 +55,4 @@ function addEventChannel(channelId) {
   }
 }
 
-module.exports = { setKey, getUserIdByKey, getEventChannels, addEventChannel };
+module.exports = { setKey, setCharacter, getUserByKey, getEventChannels, addEventChannel };

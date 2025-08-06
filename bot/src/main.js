@@ -178,12 +178,51 @@ app.post('/interactions', async (req, res) => {
 });
 
 app.post('/validate', (req, res) => {
-  const { key } = req.body;
-  const userId = db.getUserIdByKey(key);
-  if (userId) {
-    res.json({ valid: true, userId });
+  const { key, characterName } = req.body;
+  const info = db.getUserByKey(key);
+  if (info) {
+    if (characterName) {
+      db.setCharacter(info.userId, characterName);
+    }
+    res.json({ valid: true, userId: info.userId });
   } else {
     res.status(401).json({ valid: false });
+  }
+});
+
+app.post('/events', async (req, res) => {
+  const auth = req.headers.authorization || '';
+  if (!auth.startsWith('Bearer ')) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  const key = auth.substring(7);
+  const info = db.getUserByKey(key);
+  if (!info) {
+    return res.status(401).json({ error: 'Invalid key' });
+  }
+
+  const { channelId, title, time, description, imageBase64 } = req.body;
+  try {
+    const channel = await client.channels.fetch(channelId);
+    if (!channel || !channel.isTextBased()) {
+      return res.status(400).json({ error: 'Invalid channel' });
+    }
+    const embed = {
+      title,
+      description,
+      timestamp: time ? new Date(time) : undefined,
+      footer: info.character ? { text: info.character } : undefined,
+      image: imageBase64 ? { url: 'attachment://image.png' } : undefined
+    };
+    const files = imageBase64 ? [{ attachment: Buffer.from(imageBase64, 'base64'), name: 'image.png' }] : [];
+    const message = await channel.send({ embeds: [embed], files });
+    const mapped = mapEmbed(message.embeds[0], message);
+    broadcast(mapped);
+    db.addEventChannel(channelId);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Event creation failed', err);
+    res.status(500).json({ ok: false });
   }
 });
 
