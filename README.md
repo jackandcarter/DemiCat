@@ -26,7 +26,7 @@ npm start
 On first run you will be prompted for the Discord bot credentials and MySQL connection details. They are stored in `bot/.env`.
 
 ### 2. Configure the Dalamud plugin
-Update `dalamud-plugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** (e.g. `http://localhost:3000`).
+Update `dalamud-plugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** if needed (defaults to `http://localhost:3000`).
 
 ## Building and Running
 
