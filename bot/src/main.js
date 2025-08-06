@@ -263,6 +263,15 @@ app.post('/events', async (req, res) => {
     const mapped = mapEmbed(message.embeds[0], message);
     broadcast(mapped);
     db.addEventChannel(channelId);
+    db.saveEvent({
+      userId: info.userId,
+      channelId,
+      messageId: message.id,
+      title,
+      description,
+      time,
+      metadata: imageBase64 ? 'image' : null
+    });
     res.json({ ok: true });
   } catch (err) {
     console.error('Event creation failed', err);

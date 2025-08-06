@@ -9,4 +9,8 @@ public class Config
     public int PollIntervalSeconds { get; set; } = 5;
 
     public string? AuthToken { get; set; }
+
+    public string ChatChannelId { get; set; } = string.Empty;
+
+    public bool UseCharacterName { get; set; } = false;
 }

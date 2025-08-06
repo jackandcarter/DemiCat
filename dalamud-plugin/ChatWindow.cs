@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Numerics;
+using System.IO;
 using ImGuiNET;
 
 namespace DalamudPlugin;
@@ -15,20 +16,30 @@ public class ChatWindow : IDisposable
     private readonly Config _config;
     private readonly HttpClient _httpClient = new();
     private readonly List<ChatMessageDto> _messages = new();
-    private string _channelId = string.Empty;
+    private string _channelId;
     private string _input = string.Empty;
-    private bool _useCharacterName = false;
+    private bool _useCharacterName;
     private DateTime _lastFetch = DateTime.MinValue;
 
     public ChatWindow(Config config)
     {
         _config = config;
+        _channelId = config.ChatChannelId;
+        _useCharacterName = config.UseCharacterName;
     }
 
     public void Draw()
     {
-        ImGui.InputText("Channel Id", ref _channelId, 32);
-        ImGui.Checkbox("Use Character Name", ref _useCharacterName);
+        if (ImGui.InputText("Channel Id", ref _channelId, 32))
+        {
+            _config.ChatChannelId = _channelId;
+            SaveConfig();
+        }
+        if (ImGui.Checkbox("Use Character Name", ref _useCharacterName))
+        {
+            _config.UseCharacterName = _useCharacterName;
+            SaveConfig();
+        }
 
         if (DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
         {
@@ -128,6 +139,19 @@ public class ChatWindow : IDisposable
     public void Dispose()
     {
         _httpClient.Dispose();
+    }
+
+    private void SaveConfig()
+    {
+        try
+        {
+            var path = Path.Combine(AppContext.BaseDirectory, "config.json");
+            File.WriteAllText(path, JsonSerializer.Serialize(_config));
+        }
+        catch
+        {
+            // ignored
+        }
     }
 
     private class ChatMessageDto
