@@ -15,6 +15,9 @@ public class ChatWindow : IDisposable
     private readonly Config _config;
     private readonly HttpClient _httpClient = new();
     private readonly List<ChatMessageDto> _messages = new();
+    private readonly List<string> _channels = new();
+    private int _selectedIndex;
+    private bool _channelsLoaded;
     private string _channelId;
     private string _input = string.Empty;
     private bool _useCharacterName;
@@ -29,10 +32,24 @@ public class ChatWindow : IDisposable
 
     public void Draw()
     {
-        if (ImGui.InputText("Channel Id", ref _channelId, 32))
+        if (!_channelsLoaded)
         {
-            _config.ChatChannelId = _channelId;
-            SaveConfig();
+            FetchChannels();
+        }
+
+        if (_channels.Count > 0)
+        {
+            if (ImGui.Combo("Channel", ref _selectedIndex, _channels.ToArray(), _channels.Count))
+            {
+                _channelId = _channels[_selectedIndex];
+                _config.ChatChannelId = _channelId;
+                SaveConfig();
+                RefreshMessages();
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted("No channels available");
         }
         if (ImGui.Checkbox("Use Character Name", ref _useCharacterName))
         {
@@ -145,6 +162,36 @@ public class ChatWindow : IDisposable
         PluginServices.PluginInterface.SavePluginConfig(_config);
     }
 
+    private async void FetchChannels()
+    {
+        _channelsLoaded = true;
+        try
+        {
+            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/channels");
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            _channels.Clear();
+            _channels.AddRange(dto.Chat);
+            if (!string.IsNullOrEmpty(_channelId))
+            {
+                _selectedIndex = _channels.IndexOf(_channelId);
+                if (_selectedIndex < 0) _selectedIndex = 0;
+            }
+            if (_channels.Count > 0)
+            {
+                _channelId = _channels[_selectedIndex];
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+
     private class ChatMessageDto
     {
         public string Id { get; set; } = string.Empty;
@@ -158,5 +205,11 @@ public class ChatWindow : IDisposable
     {
         public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+    }
+
+    private class ChannelListDto
+    {
+        public List<string> Event { get; set; } = new();
+        public List<string> Chat { get; set; } = new();
     }
 }
