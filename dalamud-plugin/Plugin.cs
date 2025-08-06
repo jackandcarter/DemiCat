@@ -1,18 +1,13 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Timers;
 using DiscordHelper;
+using Dalamud.Plugin;
 
 namespace DalamudPlugin;
-
-public interface IDalamudPlugin : IDisposable
-{
-    string Name { get; }
-}
 
 public class Plugin : IDalamudPlugin
 {
@@ -27,9 +22,14 @@ public class Plugin : IDalamudPlugin
     private readonly System.Timers.Timer _timer;
     private readonly HttpClient _httpClient = new();
 
-    public Plugin()
+    private readonly DalamudPluginInterface _pluginInterface;
+
+    public Plugin(DalamudPluginInterface pluginInterface)
     {
-        _config = LoadConfig();
+        _pluginInterface = pluginInterface;
+        _pluginInterface.Create<PluginServices>();
+
+        _config = _pluginInterface.GetPluginConfig() as Config ?? new Config();
 
         _ui = new UiRenderer(_config);
         _settings = new SettingsWindow(_config);
@@ -46,32 +46,9 @@ public class Plugin : IDalamudPlugin
             _timer.Start();
         }
 
-        Service.Interface.UiBuilder.Draw += _mainWindow.Draw;
-        Service.Interface.UiBuilder.Draw += _settings.Draw;
-        Service.Interface.UiBuilder.Draw += _createWindow.Draw;
-    }
-
-    private Config LoadConfig()
-    {
-        try
-        {
-            var path = Path.Combine(AppContext.BaseDirectory, "config.json");
-            if (File.Exists(path))
-            {
-                var json = File.ReadAllText(path);
-                var cfg = JsonSerializer.Deserialize<Config>(json);
-                if (cfg != null)
-                {
-                    return cfg;
-                }
-            }
-        }
-        catch
-        {
-            // ignored
-        }
-
-        return new Config();
+        _pluginInterface.UiBuilder.Draw += _mainWindow.Draw;
+        _pluginInterface.UiBuilder.Draw += _settings.Draw;
+        _pluginInterface.UiBuilder.Draw += _createWindow.Draw;
     }
 
     private async void OnPollTimer(object? sender, ElapsedEventArgs e)
@@ -102,9 +79,9 @@ public class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        Service.Interface.UiBuilder.Draw -= _mainWindow.Draw;
-        Service.Interface.UiBuilder.Draw -= _settings.Draw;
-        Service.Interface.UiBuilder.Draw -= _createWindow.Draw;
+        _pluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
+        _pluginInterface.UiBuilder.Draw -= _settings.Draw;
+        _pluginInterface.UiBuilder.Draw -= _createWindow.Draw;
         _timer.Stop();
         _timer.Dispose();
         _httpClient.Dispose();
