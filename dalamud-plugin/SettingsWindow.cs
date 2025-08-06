@@ -48,7 +48,8 @@ public class SettingsWindow : IDisposable
         {
             var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Content = new StringContent(JsonSerializer.Serialize(new { key = _key }), Encoding.UTF8, "application/json");
+            var character = Service.ClientState.LocalPlayer?.Name ?? string.Empty;
+            request.Content = new StringContent(JsonSerializer.Serialize(new { key = _key, characterName = character }), Encoding.UTF8, "application/json");
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {

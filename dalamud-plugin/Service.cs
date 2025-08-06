@@ -12,6 +12,7 @@ public interface IDalamudTextureWrap : IDisposable
 public static class Service
 {
     public static PluginInterface Interface { get; } = new();
+    public static ClientState ClientState { get; } = new();
 
     public class PluginInterface
     {
@@ -28,6 +29,16 @@ public static class Service
         {
             return new DummyTextureWrap(width, height);
         }
+    }
+
+    public class ClientState
+    {
+        public LocalPlayer? LocalPlayer { get; } = new();
+    }
+
+    public class LocalPlayer
+    {
+        public string Name { get; } = "Test Character";
     }
 
     private class DummyTextureWrap : IDalamudTextureWrap
