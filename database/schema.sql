@@ -1,29 +1,29 @@
 CREATE TABLE IF NOT EXISTS users (
-  id TEXT PRIMARY KEY,
-  key TEXT,
-  character TEXT
+  id VARCHAR(255) PRIMARY KEY,
+  `key` VARCHAR(255),
+  character VARCHAR(255)
 );
 
 CREATE TABLE IF NOT EXISTS servers (
-  id TEXT PRIMARY KEY
+  id VARCHAR(255) PRIMARY KEY
 );
 
 CREATE TABLE IF NOT EXISTS channels (
-  id TEXT PRIMARY KEY,
-  server_id TEXT,
-  type TEXT NOT NULL,
-  FOREIGN KEY(server_id) REFERENCES servers(id)
+  id VARCHAR(255) PRIMARY KEY,
+  server_id VARCHAR(255),
+  type VARCHAR(32) NOT NULL,
+  FOREIGN KEY (server_id) REFERENCES servers(id)
 );
 
 CREATE TABLE IF NOT EXISTS events (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  user_id TEXT,
-  channel_id TEXT,
-  message_id TEXT,
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  user_id VARCHAR(255),
+  channel_id VARCHAR(255),
+  message_id VARCHAR(255),
   title TEXT,
   description TEXT,
   time TEXT,
   metadata TEXT,
-  FOREIGN KEY(user_id) REFERENCES users(id),
-  FOREIGN KEY(channel_id) REFERENCES channels(id)
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (channel_id) REFERENCES channels(id)
 );

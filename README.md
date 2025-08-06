@@ -4,56 +4,43 @@ DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts 
 
 ```
 DemiCat/
-├── discord-helper/   # ASP.NET service that listens to Apollo event messages
-└── dalamud-plugin/   # Dalamud plugin that renders the embeds in FFXIV
+├── bot/             # Node.js Discord bot and REST interface
+└── dalamud-plugin/  # Dalamud plugin that renders the embeds in FFXIV
 ```
 
 ## Prerequisites
 
-- [.NET 6 SDK](https://dotnet.microsoft.com/en-us/download)
+- [Node.js 18+](https://nodejs.org/)
+- A MySQL server
 - A Discord bot token and Apollo-managed channels
 - FFXIV with the [Dalamud](https://github.com/goatcorp/Dalamud) plugin framework
 
 ## Setup
 
-### 1. Configure the helper service
-Create `discord-helper/appsettings.json`:
-
-```json
-{
-  "BotToken": "YOUR_DISCORD_BOT_TOKEN",
-  "BotId": 111111111111111111,
-  "ChannelIds": [222222222222222222],
-  "Port": 5000
-}
+### 1. Configure the bot
 ```
-
-- **BotToken** – token for your Discord bot.
-- **BotId** – user ID of the Apollo bot.
-- **ChannelIds** – Discord channel IDs the helper watches for event embeds.
-- **Port** – HTTP port used by the helper service.
+cd bot
+npm install
+npm start
+```
+On first run you will be prompted for the Discord bot credentials and MySQL connection details. They are stored in `bot/.env`.
 
 ### 2. Configure the Dalamud plugin
-Update `dalamud-plugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** (e.g. `http://localhost:5000`) to match the port above.
+Update `dalamud-plugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** (e.g. `http://localhost:3000`).
 
 ## Building and Running
-
-### Helper service
-```bash
-cd discord-helper && dotnet run
-```
 
 ### Dalamud plugin
 ```bash
 cd dalamud-plugin
- dotnet build
+dotnet build
 ```
 Copy `bin/Debug/net6.0/dalamud-plugin.dll` into your Dalamud plugins folder and enable it.
 
 ## Usage
 
-With the helper running and the plugin enabled, open the in-game **Events** window to view live Apollo embeds. Players can click the RSVP buttons to respond directly from FFXIV.
+With the bot running and the plugin enabled, open the in-game **Events** window to view live Apollo embeds. Players can click the RSVP buttons to respond directly from FFXIV.
 
 ## Extensibility
 
-The helper service can expose additional REST endpoints or be adapted to mirror other bots. You can also replace Apollo entirely by swapping in your own event source.
+The bot exposes REST endpoints that can be expanded to mirror other bots or to provide additional game integrations.
