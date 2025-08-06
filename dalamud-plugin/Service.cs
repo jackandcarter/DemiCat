@@ -12,7 +12,7 @@ public interface IDalamudTextureWrap : IDisposable
 public static class Service
 {
     public static PluginInterface Interface { get; } = new();
-    public static ClientState ClientState { get; } = new();
+    public static ClientStateService ClientState { get; } = new();
 
     public class PluginInterface
     {
@@ -31,7 +31,7 @@ public static class Service
         }
     }
 
-    public class ClientState
+    public class ClientStateService
     {
         public LocalPlayer? LocalPlayer { get; } = new();
     }

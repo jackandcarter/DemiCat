@@ -5,7 +5,6 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Numerics;
-using System.Runtime.CompilerServices;
 using ImGuiNET;
 
 namespace DalamudPlugin;
@@ -22,7 +21,7 @@ public class EventCreateWindow : IDisposable
     private string _imagePath = string.Empty;
     private string? _lastResult;
 
-    public bool IsOpen { get; set; }
+    public bool IsOpen;
 
     public EventCreateWindow(Config config)
     {
@@ -36,7 +35,7 @@ public class EventCreateWindow : IDisposable
             return;
         }
 
-        if (!ImGui.Begin("Create Event", ref Unsafe.AsRef(ref IsOpen)))
+        if (!ImGui.Begin("Create Event", ref IsOpen))
         {
             ImGui.End();
             return;

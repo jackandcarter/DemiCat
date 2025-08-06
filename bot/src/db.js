@@ -55,4 +55,26 @@ function addEventChannel(channelId) {
   }
 }
 
-module.exports = { setKey, setCharacter, getUserByKey, getEventChannels, addEventChannel };
+function getChatChannels() {
+  const data = read(serverFile);
+  return Array.isArray(data.chatChannels) ? data.chatChannels : [];
+}
+
+function addChatChannel(channelId) {
+  const data = read(serverFile);
+  data.chatChannels = Array.isArray(data.chatChannels) ? data.chatChannels : [];
+  if (!data.chatChannels.includes(channelId)) {
+    data.chatChannels.push(channelId);
+    write(serverFile, data);
+  }
+}
+
+module.exports = {
+  setKey,
+  setCharacter,
+  getUserByKey,
+  getEventChannels,
+  addEventChannel,
+  getChatChannels,
+  addChatChannel
+};
