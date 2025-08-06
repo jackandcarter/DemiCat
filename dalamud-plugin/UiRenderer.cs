@@ -68,14 +68,8 @@ public class UiRenderer : IDisposable
         }
     }
 
-    public void DrawWindow()
+    public void Draw()
     {
-        if (!ImGui.Begin("Events"))
-        {
-            ImGui.End();
-            return;
-        }
-
         ImGui.BeginChild("##eventScroll", new Vector2(0, 0), true);
 
         foreach (var view in _embeds.Values)
@@ -84,7 +78,6 @@ public class UiRenderer : IDisposable
         }
 
         ImGui.EndChild();
-        ImGui.End();
     }
 
     public void Dispose()

@@ -20,8 +20,6 @@ public class ChatWindow : IDisposable
     private bool _useCharacterName = false;
     private DateTime _lastFetch = DateTime.MinValue;
 
-    public bool IsOpen;
-
     public ChatWindow(Config config)
     {
         _config = config;
@@ -29,17 +27,6 @@ public class ChatWindow : IDisposable
 
     public void Draw()
     {
-        if (!IsOpen)
-        {
-            return;
-        }
-
-        if (!ImGui.Begin("Chat", ref IsOpen))
-        {
-            ImGui.End();
-            return;
-        }
-
         ImGui.InputText("Channel Id", ref _channelId, 32);
         ImGui.Checkbox("Use Character Name", ref _useCharacterName);
 
@@ -62,7 +49,6 @@ public class ChatWindow : IDisposable
             SendMessage();
         }
 
-        ImGui.End();
     }
 
     private string FormatContent(ChatMessageDto msg)
