@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -17,6 +18,9 @@ public class EventCreateWindow : IDisposable
     private string _title = string.Empty;
     private string _description = string.Empty;
     private string _time = DateTime.UtcNow.ToString("o");
+    private readonly List<string> _channels = new();
+    private int _selectedIndex;
+    private bool _channelsLoaded;
     private string _channelId = string.Empty;
     private string _imagePath = string.Empty;
     private string? _lastResult;
@@ -41,8 +45,23 @@ public class EventCreateWindow : IDisposable
             return;
         }
 
+        if (!_channelsLoaded)
+        {
+            FetchChannels();
+        }
+
         ImGui.InputText("Title", ref _title, 256);
-        ImGui.InputText("Channel Id", ref _channelId, 32);
+        if (_channels.Count > 0)
+        {
+            if (ImGui.Combo("Channel", ref _selectedIndex, _channels.ToArray(), _channels.Count))
+            {
+                _channelId = _channels[_selectedIndex];
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted("No channels available");
+        }
         ImGui.InputText("Time", ref _time, 64);
         ImGui.InputTextMultiline("Description", ref _description, 4096, new Vector2(400, 100));
         ImGui.InputText("Image Path", ref _imagePath, 260);
@@ -98,5 +117,36 @@ public class EventCreateWindow : IDisposable
     public void Dispose()
     {
         _httpClient.Dispose();
+    }
+
+    private async void FetchChannels()
+    {
+        _channelsLoaded = true;
+        try
+        {
+            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/channels");
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            _channels.Clear();
+            _channels.AddRange(dto.Event);
+            if (_channels.Count > 0)
+            {
+                _channelId = _channels[_selectedIndex];
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+
+    private class ChannelListDto
+    {
+        public List<string> Event { get; set; } = new();
+        public List<string> Chat { get; set; } = new();
     }
 }

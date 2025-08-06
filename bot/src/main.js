@@ -250,6 +250,19 @@ app.get('/embeds', (req, res) => {
   res.json(embedCache);
 });
 
+app.get('/channels', async (req, res) => {
+  try {
+    const [event, chat] = await Promise.all([
+      db.getEventChannels(),
+      db.getChatChannels()
+    ]);
+    res.json({ event, chat });
+  } catch (err) {
+    console.error('Failed to fetch channels', err);
+    res.status(500).json({ error: 'Failed to fetch channels' });
+  }
+});
+
 app.post('/interactions', async (req, res) => {
   const { messageId, channelId, customId } = req.body;
   try {
