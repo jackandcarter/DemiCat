@@ -44,45 +44,72 @@ async function init(config) {
   )`);
 }
 
+async function query(sql, params) {
+  const [rows] = await pool.execute(sql, params);
+  return rows;
+}
+
+async function one(sql, params) {
+  const rows = await query(sql, params);
+  return rows[0] || null;
+}
+
+async function tx(cb) {
+  const conn = await pool.getConnection();
+  try {
+    await conn.beginTransaction();
+    const res = await cb({
+      query: (sql, params) => conn.execute(sql, params).then(([rows]) => rows),
+      one: (sql, params) => conn.execute(sql, params).then(([rows]) => rows[0] || null),
+    });
+    await conn.commit();
+    return res;
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
+  }
+}
+
 async function setKey(userId, key) {
-  await pool.execute(
+  await query(
     'INSERT INTO users (id, \`key\`) VALUES (?, ?) ON DUPLICATE KEY UPDATE \`key\` = VALUES(\`key\`)',
     [userId, key]
   );
 }
 
 async function setCharacter(userId, character) {
-  await pool.execute(
+  await query(
     'INSERT INTO users (id, character) VALUES (?, ?) ON DUPLICATE KEY UPDATE character = VALUES(character)',
     [userId, character]
   );
 }
 
 async function getUserByKey(key) {
-  const [rows] = await pool.execute('SELECT id AS userId, character FROM users WHERE \`key\` = ?', [key]);
-  return rows[0] || null;
+  return await one('SELECT id AS userId, character FROM users WHERE \`key\` = ?', [key]);
 }
 
 async function getEventChannels() {
-  const [rows] = await pool.execute('SELECT id FROM channels WHERE type = ?', ['event']);
+  const rows = await query('SELECT id FROM channels WHERE type = ?', ['event']);
   return rows.map(r => r.id);
 }
 
 async function addEventChannel(channelId) {
-  await pool.execute('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'event']);
+  await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'event']);
 }
 
 async function getChatChannels() {
-  const [rows] = await pool.execute('SELECT id FROM channels WHERE type = ?', ['chat']);
+  const rows = await query('SELECT id FROM channels WHERE type = ?', ['chat']);
   return rows.map(r => r.id);
 }
 
 async function addChatChannel(channelId) {
-  await pool.execute('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'chat']);
+  await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'chat']);
 }
 
 async function saveEvent(event) {
-  await pool.execute(
+  await query(
     'INSERT INTO events (user_id, channel_id, message_id, title, description, time, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [
       event.userId,
@@ -97,12 +124,17 @@ async function saveEvent(event) {
 }
 
 async function getEvents(channelId) {
-  const [rows] = await pool.execute('SELECT * FROM events WHERE channel_id = ?', [channelId]);
-  return rows;
+  return await query('SELECT * FROM events WHERE channel_id = ?', [channelId]);
 }
 
 module.exports = {
   init,
+  query,
+  one,
+  tx,
+  get pool() {
+    return pool;
+  },
   setKey,
   setCharacter,
   getUserByKey,
@@ -113,3 +145,4 @@ module.exports = {
   saveEvent,
   getEvents
 };
+
