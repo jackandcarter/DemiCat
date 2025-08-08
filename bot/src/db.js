@@ -116,7 +116,7 @@ async function addChatChannel(channelId) {
 }
 
 async function saveEvent(event) {
-  await query(
+  const res = await query(
     'INSERT INTO events (user_id, channel_id, message_id, title, description, time, metadata) VALUES (?, ?, ?, ?, ?, ?, ?)',
     [
       event.userId,
@@ -128,10 +128,22 @@ async function saveEvent(event) {
       event.metadata
     ]
   );
+  return res.insertId;
 }
 
 async function getEvents(channelId) {
   return await query('SELECT * FROM events WHERE channel_id = ?', [channelId]);
+}
+
+async function getEvent(id) {
+  return await one('SELECT * FROM events WHERE id = ?', [id]);
+}
+
+async function updateEvent(event) {
+  await query(
+    'UPDATE events SET title = ?, description = ?, time = ?, metadata = ? WHERE id = ?',
+    [event.title, event.description, event.time, event.metadata, event.id]
+  );
 }
 
 async function getApiKey(key) {
@@ -158,6 +170,8 @@ module.exports = {
   addChatChannel,
   saveEvent,
   getEvents,
+  getEvent,
+  updateEvent,
   getApiKey
 };
 
