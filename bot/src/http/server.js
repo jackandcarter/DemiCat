@@ -66,7 +66,7 @@ function start(config, db, discord, logger) {
   app.use('/api/messages', messages({ db, discord, logger }));
   app.use('/api/embeds', embeds({ discord }));
   app.use('/api/events', events({ db, discord, logger }));
-  app.use('/api/me', me());
+  app.use('/api/me', me({ db, discord }));
   app.use('/api/admin/setup', adminSetup({ db, discord }));
 
   const server = http.createServer(app);
