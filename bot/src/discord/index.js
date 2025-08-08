@@ -1,6 +1,7 @@
 const { Client, GatewayIntentBits, Events, REST, Routes } = require('discord.js');
 const crypto = require('crypto');
 const WebSocket = require('ws');
+const enqueue = require('../rateLimiter');
 
 let wss;
 let rest;
@@ -186,19 +187,19 @@ async function init(config, db, logger) {
     if (!interaction.isChatInputCommand()) return;
 
     if (interaction.commandName === 'link') {
-      await interaction.reply({ content: 'Link command received', ephemeral: true });
+      await enqueue(() => interaction.reply({ content: 'Link command received', ephemeral: true }));
     } else if (interaction.commandName === 'createevent') {
-      await interaction.reply({ content: 'Create event command received', ephemeral: true });
+      await enqueue(() => interaction.reply({ content: 'Create event command received', ephemeral: true }));
     } else if (interaction.commandName === 'generatekey') {
       const key = crypto.randomBytes(16).toString('hex');
       await db.setKey(interaction.user.id, key);
-      await interaction.reply({ content: 'Sent you a DM with your key!', ephemeral: true });
+      await enqueue(() => interaction.reply({ content: 'Sent you a DM with your key!', ephemeral: true }));
       const embed = {
         title: 'DemiCat Link Key',
         description: key
       };
       try {
-        await interaction.user.send({ embeds: [embed] });
+        await enqueue(() => interaction.user.send({ embeds: [embed] }));
       } catch (err) {
         logger.error('Failed to DM key:', err);
       }
@@ -208,11 +209,11 @@ async function init(config, db, logger) {
       if (sub === 'event') {
         await db.addEventChannel(channel.id);
         if (!eventChannels.includes(channel.id)) eventChannels.push(channel.id);
-        await interaction.reply({ content: `Added ${channel} as event channel`, ephemeral: true });
+        await enqueue(() => interaction.reply({ content: `Added ${channel} as event channel`, ephemeral: true }));
       } else if (sub === 'chat') {
         await db.addChatChannel(channel.id);
         if (!chatChannels.includes(channel.id)) chatChannels.push(channel.id);
-        await interaction.reply({ content: `Added ${channel} as chat channel`, ephemeral: true });
+        await enqueue(() => interaction.reply({ content: `Added ${channel} as chat channel`, ephemeral: true }));
       }
     }
   });
