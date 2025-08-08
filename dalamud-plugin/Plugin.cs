@@ -2,8 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.WebSockets;
+using System.Text;
 using System.Text.Json;
 using System.Timers;
+using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using DiscordHelper;
 using Dalamud.Plugin;
 
@@ -21,6 +26,8 @@ public class Plugin : IDalamudPlugin
     private Config _config;
     private readonly System.Timers.Timer _timer;
     private readonly HttpClient _httpClient = new();
+    private ClientWebSocket? _webSocket;
+    private readonly List<EmbedDto> _embeds = new();
 
     private readonly DalamudPluginInterface _pluginInterface;
 
@@ -43,7 +50,7 @@ public class Plugin : IDalamudPlugin
 
         if (_config.Enabled)
         {
-            _timer.Start();
+            _ = ConnectWebSocket();
         }
 
         _pluginInterface.UiBuilder.Draw += _mainWindow.Draw;
@@ -69,11 +76,102 @@ public class Plugin : IDalamudPlugin
 
             var stream = await response.Content.ReadAsStreamAsync();
             var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream) ?? new List<EmbedDto>();
-            _ui.SetEmbeds(embeds);
+            _embeds.Clear();
+            _embeds.AddRange(embeds);
+            _ui.SetEmbeds(_embeds);
         }
         catch
         {
             // ignored
+        }
+
+        if (_webSocket == null || _webSocket.State != WebSocketState.Open)
+        {
+            _ = ConnectWebSocket();
+        }
+    }
+
+    private async Task ConnectWebSocket()
+    {
+        if (_webSocket != null && _webSocket.State == WebSocketState.Open)
+        {
+            return;
+        }
+
+        try
+        {
+            _webSocket?.Dispose();
+            _webSocket = new ClientWebSocket();
+            var wsUri = new Uri(_config.HelperBaseUrl.TrimEnd('/')
+                .Replace("http://", "ws://")
+                .Replace("https://", "wss://"));
+            await _webSocket.ConnectAsync(wsUri, CancellationToken.None);
+            _timer.Stop();
+            await ReceiveLoop();
+        }
+        catch
+        {
+            if (!_timer.Enabled)
+            {
+                _timer.Start();
+            }
+        }
+    }
+
+    private async Task ReceiveLoop()
+    {
+        if (_webSocket == null)
+        {
+            return;
+        }
+
+        var buffer = new byte[8192];
+        try
+        {
+            while (_webSocket.State == WebSocketState.Open)
+            {
+                var ms = new MemoryStream();
+                WebSocketReceiveResult result;
+                do
+                {
+                    result = await _webSocket.ReceiveAsync(buffer, CancellationToken.None);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
+                        return;
+                    }
+                    ms.Write(buffer, 0, result.Count);
+                } while (!result.EndOfMessage);
+
+                var json = Encoding.UTF8.GetString(ms.ToArray());
+                var embed = JsonSerializer.Deserialize<EmbedDto>(json);
+                if (embed != null)
+                {
+                    var index = _embeds.FindIndex(e => e.Id == embed.Id);
+                    if (index >= 0)
+                    {
+                        _embeds[index] = embed;
+                    }
+                    else
+                    {
+                        _embeds.Add(embed);
+                    }
+                    _ui.SetEmbeds(_embeds);
+                }
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+        finally
+        {
+            _webSocket?.Dispose();
+            _webSocket = null;
+            if (!_timer.Enabled)
+            {
+                _timer.Start();
+            }
         }
     }
 
@@ -84,6 +182,21 @@ public class Plugin : IDalamudPlugin
         _pluginInterface.UiBuilder.Draw -= _createWindow.Draw;
         _timer.Stop();
         _timer.Dispose();
+        if (_webSocket != null)
+        {
+            try
+            {
+                if (_webSocket.State == WebSocketState.Open)
+                {
+                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+            _webSocket.Dispose();
+        }
         _httpClient.Dispose();
         _ui.Dispose();
         _settings.Dispose();
