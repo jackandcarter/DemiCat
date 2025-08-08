@@ -1,10 +1,9 @@
 const { Client, GatewayIntentBits, Events, REST, Routes } = require('discord.js');
 const crypto = require('crypto');
-const WebSocket = require('ws');
 const enqueue = require('../rateLimiter');
 const { mapEmbed } = require('./embeds');
+const ws = require('../http/ws');
 
-let wss;
 let rest;
 let apolloBotId;
 let client;
@@ -15,24 +14,14 @@ const chatChannels = [];
 const embedCache = [];
 const messageCache = new Map();
 
-function setWss(server) {
-  wss = server;
-}
-
 function addToCache(embed) {
   embedCache.push(embed);
   if (embedCache.length > 50) embedCache.shift();
 }
 
-function broadcast(embed) {
+function broadcastEmbed(embed) {
   addToCache(embed);
-  if (!wss) return;
-  const data = JSON.stringify(embed);
-  wss.clients.forEach(ws => {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(data);
-    }
-  });
+  ws.broadcastEmbed(embed);
 }
 
 function addMessage(channelId, msg) {
@@ -73,7 +62,7 @@ async function fetchInitialEmbeds(client, logger) {
         if (apolloBotId && msg.author.id !== apolloBotId) continue;
         if (msg.embeds.length === 0) continue;
         const embed = mapEmbed(msg.embeds[0], msg);
-        broadcast(embed);
+        broadcastEmbed(embed);
       }
     } catch (err) {
       logger.error('Failed to fetch messages for channel', channelId, err);
@@ -91,6 +80,7 @@ async function fetchInitialMessages(client, logger) {
       for (const msg of sorted) {
         const mapped = mapMessage(msg);
         addMessage(channelId, mapped);
+        ws.broadcastMessage(mapped);
       }
     } catch (err) {
       logger.error('Failed to fetch chat for channel', channelId, err);
@@ -194,12 +184,13 @@ async function init(config, db, logger) {
     if (eventChannels.includes(message.channelId)) {
       if (!(apolloBotId && message.author.id !== apolloBotId) && message.embeds.length > 0) {
         const embed = mapEmbed(message.embeds[0], message);
-        broadcast(embed);
+        broadcastEmbed(embed);
       }
     }
     if (chatChannels.includes(message.channelId)) {
       const mapped = mapMessage(message);
       addMessage(message.channelId, mapped);
+      ws.broadcastMessage(mapped);
     }
   });
 
@@ -209,8 +200,7 @@ async function init(config, db, logger) {
 
 module.exports = {
   init,
-  setWss,
-  broadcast,
+  broadcastEmbed,
   mapEmbed,
   addMessage,
   messageCache,

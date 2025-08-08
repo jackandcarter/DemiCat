@@ -23,7 +23,7 @@ module.exports = ({ db, discord, logger }) => {
       const files = imageBase64 ? [{ attachment: Buffer.from(imageBase64, 'base64'), name: 'image.png' }] : [];
       const message = await enqueue(() => channel.send({ embeds: [embed], files }));
       const mapped = discord.mapEmbed(message.embeds[0], message);
-      discord.broadcast(mapped);
+      discord.broadcastEmbed(mapped);
       await db.addEventChannel(channelId);
       discord.trackEventChannel(channelId);
       await db.saveEvent({

@@ -7,8 +7,7 @@ const httpServer = require('./http');
 async function start() {
   await db.init(config.db);
   await discord.init(config, db, logger);
-  const { wss } = httpServer.start(config, db, discord, logger);
-  discord.setWss(wss);
+  httpServer.start(config, db, discord, logger);
 }
 
 start().catch(err => {
