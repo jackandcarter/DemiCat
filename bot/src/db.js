@@ -49,6 +49,10 @@ async function init(config) {
     is_admin BOOLEAN DEFAULT FALSE,
     FOREIGN KEY (user_id) REFERENCES users(id)
   )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS officer_roles (
+    role_id VARCHAR(255) PRIMARY KEY
+  )`);
 }
 
 async function query(sql, params) {
@@ -153,6 +157,11 @@ async function getApiKey(key) {
   );
 }
 
+async function getOfficerRoles() {
+  const rows = await query('SELECT role_id FROM officer_roles');
+  return rows.map(r => r.role_id);
+}
+
 module.exports = {
   init,
   query,
@@ -172,6 +181,7 @@ module.exports = {
   getEvents,
   getEvent,
   updateEvent,
-  getApiKey
+  getApiKey,
+  getOfficerRoles
 };
 
