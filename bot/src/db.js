@@ -42,6 +42,13 @@ async function init(config) {
     FOREIGN KEY (user_id) REFERENCES users(id),
     FOREIGN KEY (channel_id) REFERENCES channels(id)
   )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS api_keys (
+    api_key VARCHAR(255) PRIMARY KEY,
+    user_id VARCHAR(255),
+    is_admin BOOLEAN DEFAULT FALSE,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+  )`);
 }
 
 async function query(sql, params) {
@@ -127,6 +134,13 @@ async function getEvents(channelId) {
   return await query('SELECT * FROM events WHERE channel_id = ?', [channelId]);
 }
 
+async function getApiKey(key) {
+  return await one(
+    'SELECT ak.user_id AS userId, ak.is_admin AS isAdmin, u.character FROM api_keys ak LEFT JOIN users u ON ak.user_id = u.id WHERE ak.api_key = ?',
+    [key]
+  );
+}
+
 module.exports = {
   init,
   query,
@@ -143,6 +157,7 @@ module.exports = {
   getChatChannels,
   addChatChannel,
   saveEvent,
-  getEvents
+  getEvents,
+  getApiKey
 };
 
