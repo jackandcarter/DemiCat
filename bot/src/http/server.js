@@ -1,6 +1,5 @@
 const express = require('express');
 const http = require('http');
-const WebSocket = require('ws');
 
 function start(config, db, discord, logger) {
   const app = express();
@@ -71,17 +70,15 @@ function start(config, db, discord, logger) {
   app.use('/api/admin/setup', adminSetup({ db, discord }));
 
   const server = http.createServer(app);
-  const wss = new WebSocket.Server({ server });
 
-  wss.on('connection', ws => {
-    discord.embedCache.forEach(e => ws.send(JSON.stringify(e)));
-  });
+  const ws = require('./ws');
+  ws.start(server, discord, logger);
 
   server.listen(config.port, () => {
     logger.info(`Plugin endpoint listening on port ${config.port}`);
   });
 
-  return { app, server, wss };
+  return { app, server };
 }
 
 module.exports = { start };
