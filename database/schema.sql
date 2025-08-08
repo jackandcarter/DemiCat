@@ -27,3 +27,10 @@ CREATE TABLE IF NOT EXISTS events (
   FOREIGN KEY (user_id) REFERENCES users(id),
   FOREIGN KEY (channel_id) REFERENCES channels(id)
 );
+
+CREATE TABLE IF NOT EXISTS api_keys (
+  api_key VARCHAR(255) PRIMARY KEY,
+  user_id VARCHAR(255),
+  is_admin BOOLEAN DEFAULT FALSE,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
