@@ -2,6 +2,7 @@ const { Client, GatewayIntentBits, Events, REST, Routes } = require('discord.js'
 const crypto = require('crypto');
 const WebSocket = require('ws');
 const enqueue = require('../rateLimiter');
+const { mapEmbed } = require('./embeds');
 
 let wss;
 let rest;
@@ -47,35 +48,6 @@ function trackEventChannel(id) {
 
 function trackChatChannel(id) {
   if (!chatChannels.includes(id)) chatChannels.push(id);
-}
-
-function mapEmbed(embed, message) {
-  const buttons = [];
-  if (message.components?.length) {
-    for (const row of message.components) {
-      for (const comp of row.components) {
-        if (comp.type === 2) {
-          buttons.push({
-            label: comp.label,
-            url: comp.url,
-            customId: comp.customId
-          });
-        }
-      }
-    }
-  }
-
-  return {
-    id: message.id,
-    channelId: message.channelId,
-    title: embed.title,
-    description: embed.description,
-    fields: embed.fields.map(f => ({ name: f.name, value: f.value })),
-    thumbnailUrl: embed.thumbnail?.url,
-    imageUrl: embed.image?.url,
-    buttons: buttons.length ? buttons : undefined,
-    mentions: message.mentions.users.size > 0 ? Array.from(message.mentions.users.keys()) : undefined
-  };
 }
 
 function mapMessage(message) {
