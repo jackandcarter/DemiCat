@@ -1,6 +1,7 @@
 const express = require('express');
 const http = require('http');
 const WebSocket = require('ws');
+const enqueue = require('../rateLimiter');
 
 function start(config, db, discord, logger) {
   const client = discord.getClient();
@@ -34,7 +35,7 @@ function start(config, db, discord, logger) {
   app.post('/interactions', async (req, res) => {
     const { messageId, channelId, customId } = req.body;
     try {
-      await rest.post('/interactions', {
+      await enqueue(() => rest.post('/interactions', {
         body: {
           type: 3,
           channel_id: channelId,
@@ -42,7 +43,7 @@ function start(config, db, discord, logger) {
           application_id: config.discord.apolloBotId,
           data: { component_type: 2, custom_id: customId }
         }
-      });
+      }));
       res.json({ ok: true });
     } catch (err) {
       logger.error('Interaction failed', err);
@@ -88,7 +89,7 @@ function start(config, db, discord, logger) {
         image: imageBase64 ? { url: 'attachment://image.png' } : undefined
       };
       const files = imageBase64 ? [{ attachment: Buffer.from(imageBase64, 'base64'), name: 'image.png' }] : [];
-      const message = await channel.send({ embeds: [embed], files });
+      const message = await enqueue(() => channel.send({ embeds: [embed], files }));
       const mapped = discord.mapEmbed(message.embeds[0], message);
       discord.broadcast(mapped);
       await db.addEventChannel(channelId);
@@ -137,7 +138,7 @@ function start(config, db, discord, logger) {
       if (!hook) {
         hook = await channel.createWebhook({ name: 'DemiCat' });
       }
-      await hook.send({ content, username: displayName });
+      await enqueue(() => hook.send({ content, username: displayName }));
       await db.addChatChannel(channelId);
       discord.trackChatChannel(channelId);
       res.json({ ok: true });
