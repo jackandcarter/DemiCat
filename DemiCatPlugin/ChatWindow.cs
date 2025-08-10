@@ -12,16 +12,16 @@ namespace DemiCatPlugin;
 
 public class ChatWindow : IDisposable
 {
-    private readonly Config _config;
-    private readonly HttpClient _httpClient = new();
-    private readonly List<ChatMessageDto> _messages = new();
-    private readonly List<string> _channels = new();
-    private int _selectedIndex;
-    private bool _channelsLoaded;
-    private string _channelId;
-    private string _input = string.Empty;
-    private bool _useCharacterName;
-    private DateTime _lastFetch = DateTime.MinValue;
+    protected readonly Config _config;
+    protected readonly HttpClient _httpClient = new();
+    protected readonly List<ChatMessageDto> _messages = new();
+    protected readonly List<string> _channels = new();
+    protected int _selectedIndex;
+    protected bool _channelsLoaded;
+    protected string _channelId;
+    protected string _input = string.Empty;
+    protected bool _useCharacterName;
+    protected DateTime _lastFetch = DateTime.MinValue;
 
     public ChatWindow(Config config)
     {
@@ -30,7 +30,7 @@ public class ChatWindow : IDisposable
         _useCharacterName = config.UseCharacterName;
     }
 
-    public void Draw()
+    public virtual void Draw()
     {
         if (!_channelsLoaded)
         {
@@ -78,7 +78,7 @@ public class ChatWindow : IDisposable
 
     }
 
-    private string FormatContent(ChatMessageDto msg)
+    protected string FormatContent(ChatMessageDto msg)
     {
         var text = msg.Content;
         if (msg.Mentions != null)
@@ -92,7 +92,7 @@ public class ChatWindow : IDisposable
         return text;
     }
 
-    private async void SendMessage()
+    protected virtual async void SendMessage()
     {
         if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
@@ -192,7 +192,7 @@ public class ChatWindow : IDisposable
         }
     }
 
-    private class ChatMessageDto
+    protected class ChatMessageDto
     {
         public string Id { get; set; } = string.Empty;
         public string ChannelId { get; set; } = string.Empty;
@@ -201,13 +201,13 @@ public class ChatWindow : IDisposable
         public List<MentionDto>? Mentions { get; set; }
     }
 
-    private class MentionDto
+    protected class MentionDto
     {
         public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
     }
 
-    private class ChannelListDto
+    protected class ChannelListDto
     {
         public List<string> Event { get; set; } = new();
         public List<string> Chat { get; set; } = new();

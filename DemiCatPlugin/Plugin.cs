@@ -21,7 +21,7 @@ public class Plugin : IDalamudPlugin
 
     private readonly UiRenderer _ui;
     private readonly SettingsWindow _settings;
-    private readonly ChatWindow _chatWindow;
+    private readonly ChatWindow? _chatWindow;
     private readonly MainWindow _mainWindow;
     private Config _config;
     private readonly System.Timers.Timer _timer;
@@ -40,7 +40,7 @@ public class Plugin : IDalamudPlugin
 
         _ui = new UiRenderer(_config);
         _settings = new SettingsWindow(_config);
-        _chatWindow = new ChatWindow(_config);
+        _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config) : null;
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _settings);
 
         _timer = new System.Timers.Timer(_config.PollIntervalSeconds * 1000);
@@ -197,6 +197,7 @@ public class Plugin : IDalamudPlugin
             _webSocket.Dispose();
         }
         _httpClient.Dispose();
+        _chatWindow?.Dispose();
         _ui.Dispose();
         _settings.Dispose();
         _chatWindow.Dispose();

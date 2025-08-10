@@ -14,5 +14,11 @@ public class Config
 
     public string EventChannelId { get; set; } = string.Empty;
 
+    public string FcChannelId { get; set; } = string.Empty;
+
+    public string FcChannelName { get; set; } = string.Empty;
+
+    public bool EnableFcChat { get; set; } = false;
+
     public bool UseCharacterName { get; set; } = false;
 }

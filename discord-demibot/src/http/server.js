@@ -61,13 +61,15 @@ function start(config, db, discord, logger) {
   const events = require('./routes/events');
   const me = require('./routes/me');
   const adminSetup = require('./routes/admin/setup');
+  const users = require('./routes/users');
 
-  app.use('/api/channels', channels({ db, logger }));
+  app.use('/api/channels', channels({ db, discord, logger }));
   app.use('/api/messages', messages({ db, discord, logger }));
   app.use('/api/embeds', embeds({ discord }));
   app.use('/api/events', events({ db, discord, logger }));
   app.use('/api/me', me({ db, discord }));
   app.use('/api/admin/setup', adminSetup({ db, discord }));
+  app.use('/api/users', users({ discord }));
 
   const server = http.createServer(app);
 

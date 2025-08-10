@@ -39,6 +39,13 @@ public class SettingsWindow : IDisposable
             ValidateKey();
         }
 
+        var fc = _config.EnableFcChat;
+        if (ImGui.Checkbox("Enable FC Chat", ref fc))
+        {
+            _config.EnableFcChat = fc;
+            SaveConfig();
+        }
+
         ImGui.End();
     }
 

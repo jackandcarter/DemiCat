@@ -10,7 +10,7 @@ public class MainWindow
 {
     private readonly Config _config;
     private readonly UiRenderer _ui;
-    private readonly ChatWindow _chat;
+    private readonly ChatWindow? _chat;
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _create;
     private readonly HttpClient _httpClient = new();
@@ -21,7 +21,7 @@ public class MainWindow
 
     public bool IsOpen;
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow chat, SettingsWindow settings)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, SettingsWindow settings)
     {
         _config = config;
         _ui = ui;
@@ -99,7 +99,7 @@ public class MainWindow
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Chat"))
+            if (_chat != null && ImGui.BeginTabItem("Chat"))
             {
                 _chat.Draw();
                 ImGui.EndTabItem();
