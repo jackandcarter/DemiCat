@@ -7,7 +7,7 @@ using System.Text;
 using System.Text.Json;
 using DiscordHelper;
 using Dalamud.Interface.Textures;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using StbImageSharp;
 
 namespace DalamudPlugin;
