@@ -7,8 +7,8 @@ namespace DalamudPlugin;
 internal static class PluginServices
 {
     [PluginService]
-    internal static DalamudPluginInterface PluginInterface { get; private set; } = null!;
+    internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     [PluginService]
-    internal static ClientState ClientState { get; private set; } = null!;
+    internal static IClientState ClientState { get; private set; } = null!;
 }
