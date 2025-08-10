@@ -78,7 +78,7 @@ public class SettingsWindow : IDisposable
 
             if (response.IsSuccessStatusCode)
             {
-                PluginServices.Framework.RunOnTick(() =>
+                _ = PluginServices.Framework.RunOnTick(() =>
                 {
                     _config.AuthToken = _key;
                     _config.SyncKey = _syncKey;
@@ -126,7 +126,7 @@ public class SettingsWindow : IDisposable
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ValidateResponse>(stream) ?? new ValidateResponse();
 
-            PluginServices.Framework.RunOnTick(() =>
+            _ = PluginServices.Framework.RunOnTick(() =>
             {
                 _key = dto.UserKey;
                 _config.AuthToken = dto.UserKey;
