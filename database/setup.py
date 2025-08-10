@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-import argparse
 from getpass import getpass
 from pathlib import Path
+import argparse
 
 try:
     import mysql.connector as mysql
@@ -25,6 +25,14 @@ def execute_schema(cursor, schema_path: Path):
     statements = [s.strip() for s in sql.split(';') if s.strip()]
     for stmt in statements:
         cursor.execute(stmt)
+
+
+def apply_migrations(cursor):
+    cursor.execute("SHOW COLUMNS FROM users LIKE 'server_id'")
+    if not cursor.fetchone():
+        cursor.execute('ALTER TABLE users ADD COLUMN server_id VARCHAR(255)')
+        cursor.execute('ALTER TABLE users ADD INDEX (server_id)')
+        cursor.execute('ALTER TABLE users ADD CONSTRAINT fk_users_server FOREIGN KEY (server_id) REFERENCES servers(id)')
 
 
 def main():
@@ -62,6 +70,9 @@ def main():
     conn.commit()
 
     execute_schema(cursor, Path(args.schema))
+    conn.commit()
+
+    apply_migrations(cursor)
     conn.commit()
 
     cursor.close()

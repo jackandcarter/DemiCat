@@ -1,11 +1,14 @@
+CREATE TABLE IF NOT EXISTS servers (
+  id VARCHAR(255) PRIMARY KEY
+);
+
 CREATE TABLE IF NOT EXISTS users (
   id VARCHAR(255) PRIMARY KEY,
   `key` VARCHAR(255),
-  character VARCHAR(255)
-);
-
-CREATE TABLE IF NOT EXISTS servers (
-  id VARCHAR(255) PRIMARY KEY
+  character VARCHAR(255),
+  server_id VARCHAR(255),
+  FOREIGN KEY (server_id) REFERENCES servers(id),
+  INDEX (server_id)
 );
 
 CREATE TABLE IF NOT EXISTS channels (
@@ -33,4 +36,32 @@ CREATE TABLE IF NOT EXISTS api_keys (
   user_id VARCHAR(255),
   is_admin BOOLEAN DEFAULT FALSE,
   FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS officer_roles (
+  server_id VARCHAR(255),
+  role_id VARCHAR(255),
+  PRIMARY KEY (server_id, role_id),
+  FOREIGN KEY (server_id) REFERENCES servers(id),
+  INDEX (server_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_roles (
+  server_id VARCHAR(255),
+  user_id VARCHAR(255),
+  role_id VARCHAR(255),
+  PRIMARY KEY (server_id, user_id, role_id),
+  FOREIGN KEY (server_id) REFERENCES servers(id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  INDEX (server_id),
+  INDEX (user_id)
+);
+
+CREATE TABLE IF NOT EXISTS server_settings (
+  server_id VARCHAR(255),
+  setting_key VARCHAR(255),
+  setting_value TEXT,
+  PRIMARY KEY (server_id, setting_key),
+  FOREIGN KEY (server_id) REFERENCES servers(id),
+  INDEX (server_id)
 );
