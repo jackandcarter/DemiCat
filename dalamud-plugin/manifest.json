@@ -2,7 +2,8 @@
   "Author": "DemiCat",
   "Name": "DemiCat",
   "InternalName": "DemiCat",
-  "AssemblyVersion": "1.0.0.0",
+  "AssemblyVersion": "1.1.0.0",
   "Description": "DemiCat Dalamud plugin.",
-  "ApplicableVersion": "any"
+  "ApplicableVersion": "any",
+  "DalamudApiLevel": 13
 }
