@@ -19,9 +19,9 @@ public class EventView : IDisposable
     private readonly Action _refresh;
 
     private EmbedDto _dto;
-    private IDalamudTextureWrap? _authorIcon;
-    private IDalamudTextureWrap? _thumbnail;
-    private IDalamudTextureWrap? _image;
+    private ISharedImmediateTexture? _authorIcon;
+    private ISharedImmediateTexture? _thumbnail;
+    private ISharedImmediateTexture? _image;
     private string? _lastResult;
 
     public EventView(EmbedDto dto, Config config, HttpClient httpClient, Action refresh)
@@ -39,17 +39,14 @@ public class EventView : IDisposable
     {
         if (_dto.AuthorIconUrl != dto.AuthorIconUrl)
         {
-            _authorIcon?.Dispose();
             _authorIcon = LoadTexture(dto.AuthorIconUrl);
         }
         if (_dto.ThumbnailUrl != dto.ThumbnailUrl)
         {
-            _thumbnail?.Dispose();
             _thumbnail = LoadTexture(dto.ThumbnailUrl);
         }
         if (_dto.ImageUrl != dto.ImageUrl)
         {
-            _image?.Dispose();
             _image = LoadTexture(dto.ImageUrl);
         }
         _dto = dto;
@@ -72,7 +69,8 @@ public class EventView : IDisposable
 
         if (_authorIcon != null)
         {
-            ImGui.Image(_authorIcon.ImGuiHandle, new Vector2(32, 32));
+            var wrap = _authorIcon.GetWrapOrEmpty();
+            ImGui.Image(wrap.Handle, new Vector2(32, 32));
             ImGui.SameLine();
         }
 
@@ -106,13 +104,15 @@ public class EventView : IDisposable
 
         if (_image != null)
         {
-            var size = new Vector2(_image.Width, _image.Height);
-            ImGui.Image(_image.ImGuiHandle, size);
+            var wrap = _image.GetWrapOrEmpty();
+            var size = new Vector2(wrap.Width, wrap.Height);
+            ImGui.Image(wrap.Handle, size);
         }
 
         if (_thumbnail != null)
         {
-            ImGui.Image(_thumbnail.ImGuiHandle, new Vector2(_thumbnail.Width, _thumbnail.Height));
+            var wrap = _thumbnail.GetWrapOrEmpty();
+            ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
         }
 
         if (dto.Mentions != null && dto.Mentions.Count > 0)
@@ -142,7 +142,7 @@ public class EventView : IDisposable
         ImGui.Separator();
     }
 
-    private IDalamudTextureWrap? LoadTexture(string? url)
+    private ISharedImmediateTexture? LoadTexture(string? url)
     {
         if (string.IsNullOrEmpty(url))
         {
@@ -154,7 +154,10 @@ public class EventView : IDisposable
             var bytes = _httpClient.GetByteArrayAsync(url).GetAwaiter().GetResult();
             using var stream = new System.IO.MemoryStream(bytes);
             var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-            return PluginServices.PluginInterface.UiBuilder.LoadImageRaw(image.Data, image.Width, image.Height, 4);
+            var wrap = PluginServices.TextureProvider.CreateFromRaw(
+                RawImageSpecification.Rgba32(image.Width, image.Height),
+                image.Data);
+            return new ForwardingSharedImmediateTexture(wrap);
         }
         catch
         {
@@ -188,8 +191,8 @@ public class EventView : IDisposable
 
     public void Dispose()
     {
-        _authorIcon?.Dispose();
-        _thumbnail?.Dispose();
-        _image?.Dispose();
+        _authorIcon = null;
+        _thumbnail = null;
+        _image = null;
     }
 }
