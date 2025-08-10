@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Net.Http;
+using System.Text.Json;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
@@ -9,6 +12,11 @@ public class MainWindow
     private readonly UiRenderer _ui;
     private readonly ChatWindow _chat;
     private readonly SettingsWindow _settings;
+    private readonly HttpClient _httpClient = new();
+    private readonly List<string> _channels = new();
+    private bool _channelsLoaded;
+    private int _selectedIndex;
+    private string _channelId;
 
     public bool IsOpen;
 
@@ -18,7 +26,9 @@ public class MainWindow
         _ui = ui;
         _chat = chat;
         _settings = settings;
+        _channelId = config.EventChannelId;
         IsOpen = true;
+        _ui.ChannelId = _channelId;
     }
 
     public void Draw()
@@ -53,7 +63,26 @@ public class MainWindow
         ImGui.SetCursorPos(cursor);
 
         ImGui.BeginChild("ChannelList", new Vector2(150, 0), true);
-        ImGui.TextUnformatted("Channels");
+        if (!_channelsLoaded)
+        {
+            FetchChannels();
+        }
+        if (_channels.Count > 0)
+        {
+            ImGui.SetNextItemWidth(-1);
+            if (ImGui.Combo("Event", ref _selectedIndex, _channels.ToArray(), _channels.Count))
+            {
+                _channelId = _channels[_selectedIndex];
+                _config.EventChannelId = _channelId;
+                SaveConfig();
+                _ui.ChannelId = _channelId;
+                _ui.RefreshEmbeds();
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted("No channels available");
+        }
         ImGui.EndChild();
 
         ImGui.SameLine();
@@ -79,5 +108,47 @@ public class MainWindow
 
         ImGui.End();
         ImGui.PopStyleColor(5);
+    }
+
+    private void SaveConfig()
+    {
+        PluginServices.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private async void FetchChannels()
+    {
+        _channelsLoaded = true;
+        try
+        {
+            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/channels");
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            _channels.Clear();
+            _channels.AddRange(dto.Event);
+            if (!string.IsNullOrEmpty(_channelId))
+            {
+                _selectedIndex = _channels.IndexOf(_channelId);
+                if (_selectedIndex < 0) _selectedIndex = 0;
+            }
+            if (_channels.Count > 0)
+            {
+                _channelId = _channels[_selectedIndex];
+                _ui.ChannelId = _channelId;
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+
+    private class ChannelListDto
+    {
+        public List<string> Event { get; set; } = new();
+        public List<string> Chat { get; set; } = new();
     }
 }

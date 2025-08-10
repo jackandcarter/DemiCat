@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using DiscordHelper;
 using Dalamud.Interface.Textures;
 using Dalamud.Bindings.ImGui;
@@ -51,6 +52,10 @@ public class EventView : IDisposable
         }
         _dto = dto;
     }
+
+    public string ChannelId => _dto.ChannelId?.ToString() ?? string.Empty;
+
+    public IReadOnlyList<EmbedButtonDto>? Buttons => _dto.Buttons;
 
     public void Draw()
     {
@@ -120,26 +125,27 @@ public class EventView : IDisposable
             ImGui.Text($"Mentions: {string.Join(", ", dto.Mentions)}");
         }
 
-        if (dto.Buttons != null)
+        ImGui.Separator();
+    }
+
+    public void DrawButtons()
+    {
+        if (Buttons != null)
         {
-            foreach (var button in dto.Buttons)
+            foreach (var button in Buttons)
             {
                 var id = button.CustomId ?? button.Label;
-                if (ImGui.Button($"{button.Label}##{id}{dto.Id}"))
+                if (ImGui.Button($"{button.Label}##{id}{_dto.Id}", new Vector2(-1, 0)))
                 {
                     _ = SendInteraction(id);
                 }
-                ImGui.SameLine();
             }
-            ImGui.NewLine();
         }
 
         if (!string.IsNullOrEmpty(_lastResult))
         {
             ImGui.TextUnformatted(_lastResult);
         }
-
-        ImGui.Separator();
     }
 
     private ISharedImmediateTexture? LoadTexture(string? url)
@@ -165,7 +171,7 @@ public class EventView : IDisposable
         }
     }
 
-    private async System.Threading.Tasks.Task SendInteraction(string customId)
+    public async Task SendInteraction(string customId)
     {
         try
         {

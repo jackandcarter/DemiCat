@@ -12,5 +12,7 @@ public class Config
 
     public string ChatChannelId { get; set; } = string.Empty;
 
+    public string EventChannelId { get; set; } = string.Empty;
+
     public bool UseCharacterName { get; set; } = false;
 }
