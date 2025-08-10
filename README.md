@@ -67,6 +67,17 @@ dotnet build
 ```
 Copy `bin/Debug/net9.0/DemiCatPlugin.dll` into your Dalamud plugins folder and enable it.
 
+Alternatively, add this repository to Dalamud so it can install and update the plugin automatically:
+
+1. In-game, open **Dalamud Settings → Experimental → Custom Repositories**.
+2. Add `https://raw.githubusercontent.com/your-user/DemiCat/main/repo.json`.
+3. Enable the **DemiCat** plugin from the available plugin list.
+
+The plugin icon is hosted at `https://cdn.discordapp.com/attachments/1337791050294755380/1337854067560550422/Demi_Bot_Logo.png`.
+Update `IconUrl` in `DemiCatPlugin/manifest.json` and the matching entry in `repo.json` if this image changes.
+When releasing, bump `AssemblyVersion` and `FileVersion` in `DemiCatPlugin/DemiCatPlugin.csproj`,
+and keep `DemiCatPlugin/manifest.json` and `repo.json` in sync with the new version number.
+
 ## Usage
 
 With the bot running and the plugin enabled, open the in-game **Events** window to view live Apollo embeds. Players can click the RSVP buttons to respond directly from FFXIV.
