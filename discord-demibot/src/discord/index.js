@@ -56,6 +56,19 @@ function mapMessage(message) {
   };
 }
 
+function listOnlineUsers() {
+  if (!client) return [];
+  const users = [];
+  client.guilds.cache.forEach(guild => {
+    guild.members.cache.forEach(member => {
+      if (member.presence?.status === 'online') {
+        users.push({ id: member.user.id, name: member.user.username });
+      }
+    });
+  });
+  return users;
+}
+
 async function fetchInitialEmbeds(client, logger) {
   for (const channelId of eventChannels) {
     try {
@@ -146,7 +159,7 @@ async function registerCommands(clientId, logger) {
 
 async function init(config, db, logger) {
   apolloBotId = config.discord.apolloBotId;
-  client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
+  client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers, GatewayIntentBits.GuildPresences] });
   const token = config.discord.token;
   const clientId = config.discord.clientId;
   if (!token || !clientId) {
@@ -262,6 +275,7 @@ module.exports = {
   getClient: () => client,
   trackEventChannel,
   trackFcChannel,
-  trackOfficerChannel
+  trackOfficerChannel,
+  listOnlineUsers
 };
 
