@@ -190,11 +190,15 @@ async function init(config, db, logger) {
         await enqueue(() => interaction.reply({ content: 'Create event command received', ephemeral: true }));
       } else if (interaction.commandName === 'generatekey') {
         const key = crypto.randomBytes(16).toString('hex');
-        await db.setKey(interaction.user.id, key);
+        const guildId = interaction.guildId;
+        await db.setKey(interaction.user.id, key, guildId);
         await enqueue(() => interaction.reply({ content: 'Sent you a DM with your key!', ephemeral: true }));
         const embed = {
           title: 'DemiCat Link Key',
-          description: key
+          fields: [
+            { name: 'Key', value: key },
+            { name: 'Sync Key', value: guildId }
+          ]
         };
         try {
           await enqueue(() => interaction.user.send({ embeds: [embed] }));
