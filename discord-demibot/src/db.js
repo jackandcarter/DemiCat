@@ -26,7 +26,7 @@ async function init(config) {
   await pool.query(`CREATE TABLE IF NOT EXISTS channels (
     id VARCHAR(255) PRIMARY KEY,
     server_id VARCHAR(255),
-    type VARCHAR(32) NOT NULL,
+    type ENUM('event','fc_chat','officer_chat') NOT NULL,
     FOREIGN KEY (server_id) REFERENCES servers(id)
   )`);
 
@@ -110,13 +110,22 @@ async function addEventChannel(channelId) {
   await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'event']);
 }
 
-async function getChatChannels() {
-  const rows = await query('SELECT id FROM channels WHERE type = ?', ['chat']);
+async function getFcChannels() {
+  const rows = await query('SELECT id FROM channels WHERE type = ?', ['fc_chat']);
   return rows.map(r => r.id);
 }
 
-async function addChatChannel(channelId) {
-  await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'chat']);
+async function addFcChannel(channelId) {
+  await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'fc_chat']);
+}
+
+async function getOfficerChannels() {
+  const rows = await query('SELECT id FROM channels WHERE type = ?', ['officer_chat']);
+  return rows.map(r => r.id);
+}
+
+async function addOfficerChannel(channelId) {
+  await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'officer_chat']);
 }
 
 async function saveEvent(event) {
@@ -175,8 +184,10 @@ module.exports = {
   getUserByKey,
   getEventChannels,
   addEventChannel,
-  getChatChannels,
-  addChatChannel,
+  getFcChannels,
+  addFcChannel,
+  getOfficerChannels,
+  addOfficerChannel,
   saveEvent,
   getEvents,
   getEvent,

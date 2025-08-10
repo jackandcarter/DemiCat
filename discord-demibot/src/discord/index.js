@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Events, REST, Routes } = require('discord.js');
+const { Client, GatewayIntentBits, Events, REST, Routes, ActionRowBuilder, StringSelectMenuBuilder, ChannelType } = require('discord.js');
 const crypto = require('crypto');
 const enqueue = require('../rateLimiter');
 const { mapEmbed } = require('./embeds');
@@ -9,7 +9,8 @@ let apolloBotId;
 let client;
 
 const eventChannels = [];
-const chatChannels = [];
+const fcChatChannels = [];
+const officerChatChannels = [];
 
 const embedCache = [];
 const messageCache = new Map();
@@ -35,8 +36,12 @@ function trackEventChannel(id) {
   if (!eventChannels.includes(id)) eventChannels.push(id);
 }
 
-function trackChatChannel(id) {
-  if (!chatChannels.includes(id)) chatChannels.push(id);
+function trackFcChannel(id) {
+  if (!fcChatChannels.includes(id)) fcChatChannels.push(id);
+}
+
+function trackOfficerChannel(id) {
+  if (!officerChatChannels.includes(id)) officerChatChannels.push(id);
 }
 
 function mapMessage(message) {
@@ -71,7 +76,7 @@ async function fetchInitialEmbeds(client, logger) {
 }
 
 async function fetchInitialMessages(client, logger) {
-  for (const channelId of chatChannels) {
+  for (const channelId of [...fcChatChannels, ...officerChatChannels]) {
     try {
       const channel = await client.channels.fetch(channelId);
       if (!channel?.isTextBased()) continue;
@@ -88,32 +93,46 @@ async function fetchInitialMessages(client, logger) {
   }
 }
 
+function getChannelOptions(guild) {
+  return guild.channels.cache
+    .filter(ch => ch.type === ChannelType.GuildText)
+    .map(ch => ({ label: `#${ch.name}`, value: ch.id }))
+    .slice(0, 25);
+}
+
+async function startSetupInteraction(interaction) {
+  const options = getChannelOptions(interaction.guild);
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('setup_event')
+      .setPlaceholder('Select event channel(s)')
+      .setMinValues(1)
+      .setMaxValues(Math.min(options.length, 5))
+      .addOptions(options)
+  );
+  await interaction.reply({ content: 'Select event channel(s)', components: [row], ephemeral: true });
+}
+
+async function startSetupGuild(guild) {
+  const target = guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText);
+  if (!target) return;
+  const options = getChannelOptions(guild);
+  const row = new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder()
+      .setCustomId('setup_event')
+      .setPlaceholder('Select event channel(s)')
+      .setMinValues(1)
+      .setMaxValues(Math.min(options.length, 5))
+      .addOptions(options)
+  );
+  await target.send({ content: 'Select event channel(s) for DemiCat setup', components: [row] });
+}
+
 const commands = [
   { name: 'link', description: 'Link your account' },
   { name: 'createevent', description: 'Create an event' },
   { name: 'generatekey', description: 'Generate a key for DemiCat' },
-  {
-    name: 'setup',
-    description: 'Configure DemiCat channels',
-    options: [
-      {
-        type: 1,
-        name: 'event',
-        description: 'Add an event channel',
-        options: [
-          { type: 7, name: 'channel', description: 'Channel to use', required: true }
-        ]
-      },
-      {
-        type: 1,
-        name: 'chat',
-        description: 'Add a chat channel',
-        options: [
-          { type: 7, name: 'channel', description: 'Channel to use', required: true }
-        ]
-      }
-    ]
-  }
+  { name: 'setup', description: 'Configure DemiCat channels' }
 ];
 
 async function registerCommands(clientId, logger) {
@@ -135,7 +154,8 @@ async function init(config, db, logger) {
   }
 
   eventChannels.push(...await db.getEventChannels());
-  chatChannels.push(...await db.getChatChannels());
+  fcChatChannels.push(...await db.getFcChannels());
+  officerChatChannels.push(...await db.getOfficerChannels());
 
   rest = new REST({ version: '10' }).setToken(token);
 
@@ -145,37 +165,70 @@ async function init(config, db, logger) {
     await fetchInitialMessages(client, logger);
   });
 
-  client.on(Events.InteractionCreate, async interaction => {
-    if (!interaction.isChatInputCommand()) return;
+  client.on(Events.GuildCreate, guild => {
+    startSetupGuild(guild);
+  });
 
-    if (interaction.commandName === 'link') {
-      await enqueue(() => interaction.reply({ content: 'Link command received', ephemeral: true }));
-    } else if (interaction.commandName === 'createevent') {
-      await enqueue(() => interaction.reply({ content: 'Create event command received', ephemeral: true }));
-    } else if (interaction.commandName === 'generatekey') {
-      const key = crypto.randomBytes(16).toString('hex');
-      await db.setKey(interaction.user.id, key);
-      await enqueue(() => interaction.reply({ content: 'Sent you a DM with your key!', ephemeral: true }));
-      const embed = {
-        title: 'DemiCat Link Key',
-        description: key
-      };
-      try {
-        await enqueue(() => interaction.user.send({ embeds: [embed] }));
-      } catch (err) {
-        logger.error('Failed to DM key:', err);
+  client.on(Events.InteractionCreate, async interaction => {
+    if (interaction.isChatInputCommand()) {
+      if (interaction.commandName === 'link') {
+        await enqueue(() => interaction.reply({ content: 'Link command received', ephemeral: true }));
+      } else if (interaction.commandName === 'createevent') {
+        await enqueue(() => interaction.reply({ content: 'Create event command received', ephemeral: true }));
+      } else if (interaction.commandName === 'generatekey') {
+        const key = crypto.randomBytes(16).toString('hex');
+        await db.setKey(interaction.user.id, key);
+        await enqueue(() => interaction.reply({ content: 'Sent you a DM with your key!', ephemeral: true }));
+        const embed = {
+          title: 'DemiCat Link Key',
+          description: key
+        };
+        try {
+          await enqueue(() => interaction.user.send({ embeds: [embed] }));
+        } catch (err) {
+          logger.error('Failed to DM key:', err);
+        }
+      } else if (interaction.commandName === 'setup') {
+        await startSetupInteraction(interaction);
       }
-    } else if (interaction.commandName === 'setup') {
-      const sub = interaction.options.getSubcommand();
-      const channel = interaction.options.getChannel('channel');
-      if (sub === 'event') {
-        await db.addEventChannel(channel.id);
-        if (!eventChannels.includes(channel.id)) eventChannels.push(channel.id);
-        await enqueue(() => interaction.reply({ content: `Added ${channel} as event channel`, ephemeral: true }));
-      } else if (sub === 'chat') {
-        await db.addChatChannel(channel.id);
-        if (!chatChannels.includes(channel.id)) chatChannels.push(channel.id);
-        await enqueue(() => interaction.reply({ content: `Added ${channel} as chat channel`, ephemeral: true }));
+    } else if (interaction.isStringSelectMenu()) {
+      if (interaction.customId === 'setup_event') {
+        for (const id of interaction.values) {
+          await db.addEventChannel(id);
+          trackEventChannel(id);
+        }
+        const options = getChannelOptions(interaction.guild);
+        const row = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId('setup_fc')
+            .setPlaceholder('Select Free Company chat channel')
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(options)
+        );
+        await interaction.update({ content: 'Select Free Company chat channel', components: [row] });
+        await interaction.followUp({ content: 'Saved event channel(s)', ephemeral: true });
+      } else if (interaction.customId === 'setup_fc') {
+        const channelId = interaction.values[0];
+        await db.addFcChannel(channelId);
+        trackFcChannel(channelId);
+        const options = getChannelOptions(interaction.guild);
+        const row = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId('setup_officer')
+            .setPlaceholder('Select officer chat channel')
+            .setMinValues(1)
+            .setMaxValues(1)
+            .addOptions(options)
+        );
+        await interaction.update({ content: 'Select officer chat channel', components: [row] });
+        await interaction.followUp({ content: 'Saved Free Company chat channel', ephemeral: true });
+      } else if (interaction.customId === 'setup_officer') {
+        const channelId = interaction.values[0];
+        await db.addOfficerChannel(channelId);
+        trackOfficerChannel(channelId);
+        await interaction.update({ content: 'Setup complete!', components: [] });
+        await interaction.followUp({ content: 'Saved officer chat channel', ephemeral: true });
       }
     }
   });
@@ -187,7 +240,7 @@ async function init(config, db, logger) {
         broadcastEmbed(embed);
       }
     }
-    if (chatChannels.includes(message.channelId)) {
+    if (fcChatChannels.includes(message.channelId) || officerChatChannels.includes(message.channelId)) {
       const mapped = mapMessage(message);
       addMessage(message.channelId, mapped);
       ws.broadcastMessage(mapped);
@@ -208,6 +261,7 @@ module.exports = {
   getRest: () => rest,
   getClient: () => client,
   trackEventChannel,
-  trackChatChannel
+  trackFcChannel,
+  trackOfficerChannel
 };
 

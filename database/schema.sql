@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS servers (
 CREATE TABLE IF NOT EXISTS channels (
   id VARCHAR(255) PRIMARY KEY,
   server_id VARCHAR(255),
-  type VARCHAR(32) NOT NULL,
+  type ENUM('event','fc_chat','officer_chat') NOT NULL,
   FOREIGN KEY (server_id) REFERENCES servers(id)
 );
 
