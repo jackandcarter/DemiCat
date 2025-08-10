@@ -118,6 +118,11 @@ async function setKey(userId, key, serverId) {
   );
 }
 
+async function getKey(userId) {
+  const row = await one('SELECT `key` FROM users WHERE id = ?', [userId]);
+  return row ? row.key : null;
+}
+
 async function setCharacter(userId, character) {
   await query(
     'INSERT INTO users (id, character) VALUES (?, ?) ON DUPLICATE KEY UPDATE character = VALUES(character)',
@@ -278,6 +283,7 @@ module.exports = {
     return pool;
   },
   setKey,
+  getKey,
   setCharacter,
   getUserByKey,
   getEventChannels,

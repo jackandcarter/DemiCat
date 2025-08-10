@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Events, REST, Routes, ActionRowBuilder, StringSelectMenuBuilder, ChannelType, PermissionsBitField } = require('discord.js');
+const { Client, GatewayIntentBits, Events, REST, Routes, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, ChannelType, PermissionsBitField } = require('discord.js');
 const crypto = require('crypto');
 const enqueue = require('../rateLimiter');
 const { mapEmbed } = require('./embeds');
@@ -257,6 +257,17 @@ async function init(config, db, logger) {
           ? `Updated ${updated.length} user(s): ${updated.join(', ')}`
           : 'No users updated';
         await enqueue(() => interaction.reply({ content: summary, ephemeral: true }));
+      } else if (interaction.commandName === 'demibot_embed') {
+        const existing = await db.getKey(interaction.user.id);
+        const label = existing ? 'Show Key' : 'Generate Key';
+        const embed = {
+          title: 'DemiBot Key',
+          description: 'Use the button below to generate or view your key.'
+        };
+        const row = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('demibot_key').setLabel(label).setStyle(ButtonStyle.Primary)
+        );
+        await enqueue(() => interaction.reply({ embeds: [embed], components: [row], ephemeral: true }));
       } else if (interaction.commandName === 'demibot_setup') {
         await startDemibotSetupInteraction(interaction);
       }
@@ -314,6 +325,15 @@ async function init(config, db, logger) {
         await db.setOfficerRoles(interaction.guildId, interaction.values);
         await interaction.update({ content: 'Setup complete!', components: [] });
         await interaction.followUp({ content: 'Saved officer role(s)', ephemeral: true });
+      }
+    } else if (interaction.isButton()) {
+      if (interaction.customId === 'demibot_key') {
+        let key = await db.getKey(interaction.user.id);
+        if (!key) {
+          key = crypto.randomBytes(16).toString('hex');
+        }
+        await db.setKey(interaction.user.id, key, interaction.guildId);
+        await enqueue(() => interaction.reply({ content: `Key: ${key}\nSync Key: ${interaction.guildId}`, ephemeral: true }));
       }
     }
   });
