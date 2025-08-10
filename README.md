@@ -26,7 +26,13 @@ Copy `discord-demibot/.env.example` to `discord-demibot/.env` and fill in the re
 
 ## Setup
 
-### 1. Configure the bot
+### 1. Initialize the database
+```bash
+python database/setup.py
+```
+The script prompts for MySQL host, port, user, and password. It will create a `DemiBot` database and apply `database/schema.sql`. Use `--local` to quickly target a local MySQL server.
+
+### 2. Configure the bot
 ```bash
 cd discord-demibot
 cp .env.example .env
@@ -34,10 +40,10 @@ npm i
 node src/index.js
 ```
 
-### 2. Configure the Dalamud plugin
+### 3. Configure the Dalamud plugin
 Update `DemiCatPlugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** if needed (defaults to `http://localhost:3000`).
 
-### 3. Insert API keys
+### 4. Insert API keys
 Insert API keys into the `api_keys` table to authorize HTTP requests:
 
 ```sql
