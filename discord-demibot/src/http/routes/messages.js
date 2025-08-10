@@ -6,15 +6,24 @@ module.exports = ({ db, discord, logger }) => {
   const router = express.Router();
   const client = discord.getClient();
 
-  router.get('/:channelId', (req, res) => {
-    const arr = discord.messageCache.get(req.params.channelId) || [];
-    const json = JSON.stringify(arr);
-    const etag = 'W/"' + crypto.createHash('sha1').update(json).digest('hex') + '"';
-    if (req.headers['if-none-match'] === etag) {
-      return res.status(304).end();
+  router.get('/:channelId', async (req, res) => {
+    const info = req.apiKey;
+    try {
+      const channel = await client.channels.fetch(req.params.channelId);
+      if (!channel || channel.guildId !== info.serverId) {
+        return res.status(403).json({ error: 'Forbidden' });
+      }
+      const arr = discord.messageCache.get(req.params.channelId) || [];
+      const json = JSON.stringify(arr);
+      const etag = 'W/"' + crypto.createHash('sha1').update(json).digest('hex') + '"';
+      if (req.headers['if-none-match'] === etag) {
+        return res.status(304).end();
+      }
+      res.set('ETag', etag);
+      res.type('application/json').send(json);
+    } catch (err) {
+      res.status(500).json({ error: 'Forbidden' });
     }
-    res.set('ETag', etag);
-    res.type('application/json').send(json);
   });
 
   router.post('/', async (req, res) => {
@@ -22,7 +31,7 @@ module.exports = ({ db, discord, logger }) => {
     const info = req.apiKey;
     try {
       const channel = await client.channels.fetch(channelId);
-      if (!channel || !channel.isTextBased()) {
+      if (!channel || !channel.isTextBased() || channel.guildId !== info.serverId) {
         return res.status(400).json({ error: 'Invalid channel' });
       }
       const user = await client.users.fetch(info.userId);

@@ -10,6 +10,8 @@ public class Config
 
     public string? AuthToken { get; set; }
 
+    public string SyncKey { get; set; } = string.Empty;
+
     public string ChatChannelId { get; set; } = string.Empty;
 
     public string EventChannelId { get; set; } = string.Empty;

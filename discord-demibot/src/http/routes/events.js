@@ -34,6 +34,10 @@ module.exports = ({ db, discord, logger }) => {
     const info = req.apiKey;
     const { channelId, title, time, description, imageBase64, color, url, fields, thumbnailUrl, authorName, authorIconUrl } = req.body;
     try {
+      const channel = await discord.getClient().channels.fetch(channelId);
+      if (!channel || channel.guildId !== info.serverId) {
+        return res.status(403).json({ ok: false });
+      }
       const embed = buildEmbed({ title, description, time, color, url, fields, thumbnailUrl, authorName, authorIconUrl }, info, { image: !!imageBase64 });
       const files = imageBase64 ? [{ attachment: Buffer.from(imageBase64, 'base64'), name: 'image.png' }] : [];
       const message = await send.send(channelId, embed, files);
@@ -61,6 +65,8 @@ module.exports = ({ db, discord, logger }) => {
     try {
       const existing = await db.getEvent(id);
       if (!existing) return res.status(404).json({ error: 'Not found' });
+      const channel = await discord.getClient().channels.fetch(existing.channel_id);
+      if (!channel || channel.guildId !== info.serverId) return res.status(403).json({ error: 'Forbidden' });
       if (existing.user_id !== info.userId && !info.isAdmin) return res.status(403).json({ error: 'Forbidden' });
       const title = req.body.title ?? existing.title;
       const description = req.body.description ?? existing.description;
@@ -89,6 +95,8 @@ module.exports = ({ db, discord, logger }) => {
     try {
       const existing = await db.getEvent(id);
       if (!existing) return res.status(404).json({ error: 'Not found' });
+      const channel = await discord.getClient().channels.fetch(existing.channel_id);
+      if (!channel || channel.guildId !== info.serverId) return res.status(403).json({ error: 'Forbidden' });
       if (existing.user_id !== info.userId && !info.isAdmin) return res.status(403).json({ error: 'Forbidden' });
       const title = existing.title.endsWith(' (Canceled)') ? existing.title : `${existing.title} (Canceled)`;
       const embed = buildEmbed({ title, description: existing.description, time: existing.time, color: 0x808080 }, info);
