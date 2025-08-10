@@ -15,10 +15,19 @@ public class UiRenderer : IDisposable
     private readonly HttpClient _httpClient = new();
     private readonly Config _config;
     private readonly Dictionary<string, EventView> _embeds = new();
+    private string _channelId;
+    private EventView? _current;
 
     public UiRenderer(Config config)
     {
         _config = config;
+        _channelId = config.EventChannelId;
+    }
+
+    public string ChannelId
+    {
+        get => _channelId;
+        set => _channelId = value;
     }
 
     public void SetEmbeds(IEnumerable<EmbedDto> embeds)
@@ -70,11 +79,26 @@ public class UiRenderer : IDisposable
 
     public void Draw()
     {
+        ImGui.BeginChild("##eventButtons", new Vector2(120, 0), true);
+        _current?.DrawButtons();
+        ImGui.EndChild();
+
+        ImGui.SameLine();
+
         ImGui.BeginChild("##eventScroll", new Vector2(0, 0), true);
 
-        foreach (var view in _embeds.Values)
+        var scrollY = ImGui.GetScrollY();
+        _current = null;
+
+        foreach (var view in _embeds.Values.Where(v => string.IsNullOrEmpty(_channelId) || v.ChannelId == _channelId))
         {
+            var start = ImGui.GetCursorPosY();
             view.Draw();
+            var end = ImGui.GetCursorPosY();
+            if (_current == null && scrollY >= start && scrollY < end)
+            {
+                _current = view;
+            }
         }
 
         ImGui.EndChild();
