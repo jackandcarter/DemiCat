@@ -12,6 +12,10 @@ public class Config
 
     public string SyncKey { get; set; } = string.Empty;
 
+    public string GuildId { get; set; } = string.Empty;
+
+    public string GuildName { get; set; } = string.Empty;
+
     public string ChatChannelId { get; set; } = string.Empty;
 
     public string EventChannelId { get; set; } = string.Empty;
