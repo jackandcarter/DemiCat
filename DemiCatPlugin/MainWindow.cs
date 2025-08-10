@@ -11,6 +11,7 @@ public class MainWindow
     private readonly Config _config;
     private readonly UiRenderer _ui;
     private readonly ChatWindow? _chat;
+    private readonly OfficerChatWindow _officer;
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _create;
     private readonly HttpClient _httpClient = new();
@@ -20,12 +21,14 @@ public class MainWindow
     private string _channelId;
 
     public bool IsOpen;
+    public bool HasOfficerRole { get; set; }
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, SettingsWindow settings)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings)
     {
         _config = config;
         _ui = ui;
         _chat = chat;
+        _officer = officer;
         _settings = settings;
         _create = new EventCreateWindow(config);
         _channelId = config.EventChannelId;
@@ -102,6 +105,12 @@ public class MainWindow
             if (_chat != null && ImGui.BeginTabItem("Chat"))
             {
                 _chat.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (HasOfficerRole && ImGui.BeginTabItem("Officer"))
+            {
+                _officer.Draw();
                 ImGui.EndTabItem();
             }
 
