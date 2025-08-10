@@ -297,6 +297,15 @@ async function init(config, db, logger) {
         clearGuildCache(interaction.guild);
         await startDemibotSetupInteraction(interaction);
         await interaction.followUp({ content: 'DemiBot data reset.', ephemeral: true });
+      } else if (interaction.commandName === 'demibot_clear') {
+        const isOwner = interaction.guild.ownerId === interaction.user.id;
+        if (!isOwner) {
+          await enqueue(() => interaction.reply({ content: 'This command is restricted to the server owner', ephemeral: true }));
+          return;
+        }
+        await db.clearServer(interaction.guildId);
+        clearGuildCache(interaction.guild);
+        await enqueue(() => interaction.reply({ content: 'All guild data has been purged.', ephemeral: true }));
       }
     } else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'setup_event') {
