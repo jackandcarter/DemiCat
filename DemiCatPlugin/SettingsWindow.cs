@@ -14,10 +14,10 @@ public class SettingsWindow : IDisposable
     private readonly HttpClient _httpClient = new();
     private string _key = string.Empty;
     private string _syncKey = string.Empty;
-    private readonly Action _refreshRoles;
+    private readonly Func<Task> _refreshRoles;
     public bool IsOpen;
 
-    public SettingsWindow(Config config, Action refreshRoles)
+    public SettingsWindow(Config config, Func<Task> refreshRoles)
     {
         _config = config;
         _refreshRoles = refreshRoles;
@@ -42,12 +42,12 @@ public class SettingsWindow : IDisposable
         ImGui.InputText("Sync Key", ref _syncKey, 64);
         if (ImGui.Button("Connect/Sync"))
         {
-            ConnectSync();
+            _ = ConnectSync();
         }
         ImGui.SameLine();
         if (ImGui.Button("Validate"))
         {
-            ValidateKey();
+            _ = ValidateKey();
         }
 
         var fc = _config.EnableFcChat;
@@ -60,7 +60,7 @@ public class SettingsWindow : IDisposable
         ImGui.End();
     }
 
-    private async void ValidateKey()
+    private async Task ValidateKey()
     {
         try
         {
@@ -83,7 +83,7 @@ public class SettingsWindow : IDisposable
                     _config.AuthToken = _key;
                     _config.SyncKey = _syncKey;
                     SaveConfig();
-                    _refreshRoles();
+                    _ = _refreshRoles();
                 });
             }
         }
@@ -103,7 +103,7 @@ public class SettingsWindow : IDisposable
         _httpClient.Dispose();
     }
 
-    private async void ConnectSync()
+    private async Task ConnectSync()
     {
         try
         {
@@ -134,7 +134,7 @@ public class SettingsWindow : IDisposable
                 _config.GuildId = dto.Guild?.Id ?? string.Empty;
                 _config.GuildName = dto.Guild?.Name ?? string.Empty;
                 SaveConfig();
-                _refreshRoles();
+                _ = _refreshRoles();
             });
         }
         catch

@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -31,12 +32,12 @@ public class FcChatWindow : ChatWindow
 
         if (DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
         {
-            RefreshMessages();
+            _ = RefreshMessages();
         }
 
         if (DateTime.UtcNow - _lastUserFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
         {
-            RefreshUsers();
+            _ = RefreshUsers();
         }
 
         ImGui.TextUnformatted($"Channel: #{_channelName}");
@@ -64,11 +65,11 @@ public class FcChatWindow : ChatWindow
         ImGui.SameLine();
         if (ImGui.Button("Send") || send)
         {
-            SendMessage();
+            _ = SendMessage();
         }
     }
 
-    protected override async void SendMessage()
+    protected override async Task SendMessage()
     {
         if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
@@ -94,7 +95,7 @@ public class FcChatWindow : ChatWindow
             if (response.IsSuccessStatusCode)
             {
                 _input = string.Empty;
-                RefreshMessages();
+                await RefreshMessages();
             }
         }
         catch
@@ -103,7 +104,7 @@ public class FcChatWindow : ChatWindow
         }
     }
 
-    private async void RefreshUsers()
+    private async Task RefreshUsers()
     {
         try
         {

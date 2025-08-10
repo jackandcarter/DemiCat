@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -34,7 +35,7 @@ public class EventCreateWindow : IDisposable
         ImGui.InputText("Image URL", ref _imageUrl, 260);
         if (ImGui.Button("Create"))
         {
-            CreateEvent();
+            _ = CreateEvent();
         }
 
         if (!string.IsNullOrEmpty(_lastResult))
@@ -43,7 +44,7 @@ public class EventCreateWindow : IDisposable
         }
     }
 
-    private async void CreateEvent()
+    private async Task CreateEvent()
     {
         try
         {

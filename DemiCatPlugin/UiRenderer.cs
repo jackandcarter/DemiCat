@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Numerics;
+using System.Threading.Tasks;
 using DiscordHelper;
 using Dalamud.Bindings.ImGui;
 
@@ -53,7 +54,7 @@ public class UiRenderer : IDisposable
         }
     }
 
-    public async void RefreshEmbeds()
+    public async Task RefreshEmbeds()
     {
         try
         {

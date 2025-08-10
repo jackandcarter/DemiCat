@@ -52,7 +52,7 @@ public class Plugin : IDalamudPlugin
         if (_config.Enabled)
         {
             _ = ConnectWebSocket();
-            CheckOfficerRole();
+            _ = CheckOfficerRole();
         }
 
         _uiBuilder.Draw += _mainWindow.Draw;
@@ -206,7 +206,7 @@ public class Plugin : IDalamudPlugin
         _settings.Dispose();
     }
 
-    private async void CheckOfficerRole()
+    private async Task CheckOfficerRole()
     {
         if (string.IsNullOrEmpty(_config.AuthToken))
         {

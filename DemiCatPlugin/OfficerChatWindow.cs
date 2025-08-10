@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -32,7 +33,7 @@ public class OfficerChatWindow : ChatWindow
 
         if (DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
         {
-            RefreshMessages();
+            _ = RefreshMessages();
         }
 
         ImGui.BeginChild("##chatScroll", new Vector2(0, -30), true);
@@ -46,11 +47,11 @@ public class OfficerChatWindow : ChatWindow
         ImGui.SameLine();
         if (ImGui.Button("Send") || send)
         {
-            SendMessage();
+            _ = SendMessage();
         }
     }
 
-    protected override async void SendMessage()
+    protected override async Task SendMessage()
     {
         if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
@@ -70,7 +71,7 @@ public class OfficerChatWindow : ChatWindow
             if (response.IsSuccessStatusCode)
             {
                 _input = string.Empty;
-                RefreshMessages();
+                await RefreshMessages();
             }
         }
         catch
@@ -79,7 +80,7 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
-    public new async void RefreshMessages()
+    public new async Task RefreshMessages()
     {
         if (string.IsNullOrEmpty(_channelId))
         {

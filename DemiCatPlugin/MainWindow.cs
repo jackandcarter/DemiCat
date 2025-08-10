@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -71,7 +72,7 @@ public class MainWindow
         ImGui.BeginChild("ChannelList", new Vector2(150, 0), true);
         if (!_channelsLoaded)
         {
-            FetchChannels();
+            _ = FetchChannels();
         }
         if (_channels.Count > 0)
         {
@@ -82,7 +83,7 @@ public class MainWindow
                 _config.EventChannelId = _channelId;
                 SaveConfig();
                 _ui.ChannelId = _channelId;
-                _ui.RefreshEmbeds();
+                _ = _ui.RefreshEmbeds();
                 _create.ChannelId = _channelId;
             }
         }
@@ -135,7 +136,7 @@ public class MainWindow
         PluginServices.PluginInterface.SavePluginConfig(_config);
     }
 
-    private async void FetchChannels()
+    private async Task FetchChannels()
     {
         _channelsLoaded = true;
         try
