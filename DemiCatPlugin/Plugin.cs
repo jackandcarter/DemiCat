@@ -204,7 +204,6 @@ public class Plugin : IDalamudPlugin
         _officerChatWindow.Dispose();
         _ui.Dispose();
         _settings.Dispose();
-        _chatWindow.Dispose();
     }
 
     private async void CheckOfficerRole()
