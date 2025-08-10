@@ -113,7 +113,7 @@ function getChannelOptions(guild) {
     .slice(0, 25);
 }
 
-async function startSetupInteraction(interaction) {
+async function startDemibotSetupInteraction(interaction) {
   const options = getChannelOptions(interaction.guild);
   const row = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
@@ -126,7 +126,7 @@ async function startSetupInteraction(interaction) {
   await interaction.reply({ content: 'Select event channel(s)', components: [row], ephemeral: true });
 }
 
-async function startSetupGuild(guild) {
+async function startDemibotSetupGuild(guild) {
   const target = guild.systemChannel || guild.channels.cache.find(c => c.type === ChannelType.GuildText);
   if (!target) return;
   const options = getChannelOptions(guild);
@@ -145,7 +145,6 @@ const commands = [
   { name: 'link', description: 'Link your account' },
   { name: 'createevent', description: 'Create an event' },
   { name: 'generatekey', description: 'Generate a key for DemiCat' },
-  { name: 'setup', description: 'Configure DemiCat channels' },
   { name: 'demibot_setup', description: 'Set up DemiBot in this server' },
   { name: 'demibot_resync', description: 'Resync DemiBot data' },
   { name: 'demibot_embed', description: 'Create a DemiBot embed' },
@@ -185,7 +184,7 @@ async function init(config, db, logger) {
   });
 
   client.on(Events.GuildCreate, guild => {
-    startSetupGuild(guild);
+    startDemibotSetupGuild(guild);
   });
 
   client.on(Events.InteractionCreate, async interaction => {
@@ -211,13 +210,13 @@ async function init(config, db, logger) {
         } catch (err) {
           logger.error('Failed to DM key:', err);
         }
-      } else if (interaction.commandName === 'setup') {
-        await startSetupInteraction(interaction);
+      } else if (interaction.commandName === 'demibot_setup') {
+        await startDemibotSetupInteraction(interaction);
       }
     } else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'setup_event') {
+        await db.setServerSettings(interaction.guildId, { eventChannels: interaction.values });
         for (const id of interaction.values) {
-          await db.addEventChannel(id);
           trackEventChannel(id);
         }
         const options = getChannelOptions(interaction.guild);
@@ -233,7 +232,7 @@ async function init(config, db, logger) {
         await interaction.followUp({ content: 'Saved event channel(s)', ephemeral: true });
       } else if (interaction.customId === 'setup_fc') {
         const channelId = interaction.values[0];
-        await db.addFcChannel(channelId);
+        await db.setServerSettings(interaction.guildId, { fcChatChannel: channelId });
         trackFcChannel(channelId);
         const options = getChannelOptions(interaction.guild);
         const row = new ActionRowBuilder().addComponents(
@@ -248,10 +247,26 @@ async function init(config, db, logger) {
         await interaction.followUp({ content: 'Saved Free Company chat channel', ephemeral: true });
       } else if (interaction.customId === 'setup_officer') {
         const channelId = interaction.values[0];
-        await db.addOfficerChannel(channelId);
+        await db.setServerSettings(interaction.guildId, { officerChatChannel: channelId });
         trackOfficerChannel(channelId);
-        await interaction.update({ content: 'Setup complete!', components: [] });
+        const options = interaction.guild.roles.cache
+          .filter(r => r.name !== '@everyone')
+          .map(r => ({ label: r.name, value: r.id }))
+          .slice(0, 25);
+        const row = new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder()
+            .setCustomId('setup_officer_roles')
+            .setPlaceholder('Select officer role(s)')
+            .setMinValues(1)
+            .setMaxValues(Math.min(options.length, 25))
+            .addOptions(options)
+        );
+        await interaction.update({ content: 'Select officer role(s)', components: [row] });
         await interaction.followUp({ content: 'Saved officer chat channel', ephemeral: true });
+      } else if (interaction.customId === 'setup_officer_roles') {
+        await db.setOfficerRoles(interaction.guildId, interaction.values);
+        await interaction.update({ content: 'Setup complete!', components: [] });
+        await interaction.followUp({ content: 'Saved officer role(s)', ephemeral: true });
       }
     }
   });

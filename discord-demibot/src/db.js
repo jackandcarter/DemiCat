@@ -130,30 +130,56 @@ async function getUserByKey(key) {
 }
 
 async function getEventChannels() {
-  const rows = await query('SELECT id FROM channels WHERE type = ?', ['event']);
-  return rows.map(r => r.id);
-}
-
-async function addEventChannel(channelId) {
-  await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'event']);
+  const rows = await query(
+    "SELECT setting_value FROM server_settings WHERE setting_key = 'eventChannels'",
+    []
+  );
+  const channels = [];
+  for (const row of rows) {
+    try {
+      const arr = JSON.parse(row.setting_value);
+      if (Array.isArray(arr)) channels.push(...arr);
+    } catch {}
+  }
+  return channels;
 }
 
 async function getFcChannels() {
-  const rows = await query('SELECT id FROM channels WHERE type = ?', ['fc_chat']);
-  return rows.map(r => r.id);
-}
-
-async function addFcChannel(channelId) {
-  await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'fc_chat']);
+  const rows = await query(
+    "SELECT setting_value FROM server_settings WHERE setting_key = 'fcChatChannel'",
+    []
+  );
+  return rows.map(r => {
+    try {
+      return JSON.parse(r.setting_value);
+    } catch {
+      return r.setting_value;
+    }
+  });
 }
 
 async function getOfficerChannels() {
-  const rows = await query('SELECT id FROM channels WHERE type = ?', ['officer_chat']);
-  return rows.map(r => r.id);
+  const rows = await query(
+    "SELECT setting_value FROM server_settings WHERE setting_key = 'officerChatChannel'",
+    []
+  );
+  return rows.map(r => {
+    try {
+      return JSON.parse(r.setting_value);
+    } catch {
+      return r.setting_value;
+    }
+  });
 }
 
-async function addOfficerChannel(channelId) {
-  await query('INSERT IGNORE INTO channels (id, type) VALUES (?, ?)', [channelId, 'officer_chat']);
+async function setOfficerRoles(serverId, roles) {
+  await tx(async ({ query }) => {
+    await query('INSERT IGNORE INTO servers (id) VALUES (?)', [serverId]);
+    await query('DELETE FROM officer_roles WHERE server_id = ?', [serverId]);
+    for (const roleId of roles) {
+      await query('INSERT INTO officer_roles (server_id, role_id) VALUES (?, ?)', [serverId, roleId]);
+    }
+  });
 }
 
 async function saveEvent(event) {
@@ -255,17 +281,15 @@ module.exports = {
   setCharacter,
   getUserByKey,
   getEventChannels,
-  addEventChannel,
   getFcChannels,
-  addFcChannel,
   getOfficerChannels,
-  addOfficerChannel,
   saveEvent,
   getEvents,
   getEvent,
   updateEvent,
   getApiKey,
   getOfficerRoles,
+  setOfficerRoles,
   setServerSettings,
   getServerSettings,
   setUserRoles,

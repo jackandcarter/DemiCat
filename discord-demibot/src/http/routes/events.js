@@ -41,7 +41,10 @@ module.exports = ({ db, discord, logger }) => {
       const embed = buildEmbed({ title, description, time, color, url, fields, thumbnailUrl, authorName, authorIconUrl }, info, { image: !!imageBase64 });
       const files = imageBase64 ? [{ attachment: Buffer.from(imageBase64, 'base64'), name: 'image.png' }] : [];
       const message = await send.send(channelId, embed, files);
-      await db.addEventChannel(channelId);
+      const settings = await db.getServerSettings(info.serverId);
+      const events = new Set(settings.eventChannels || []);
+      events.add(channelId);
+      await db.setServerSettings(info.serverId, { eventChannels: Array.from(events) });
       discord.trackEventChannel(channelId);
       const id = await db.saveEvent({
         userId: info.userId,

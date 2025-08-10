@@ -14,14 +14,18 @@ module.exports = ({ db, discord }) => {
       if (!channel || !channel.isTextBased()) {
         return res.status(400).json({ error: 'Invalid channel' });
       }
+      const guildId = req.apiKey.serverId;
       if (type === 'event') {
-        await db.addEventChannel(channelId);
+        const settings = await db.getServerSettings(guildId);
+        const events = new Set(settings.eventChannels || []);
+        events.add(channelId);
+        await db.setServerSettings(guildId, { eventChannels: Array.from(events) });
         discord.trackEventChannel(channelId);
       } else if (type === 'fc_chat') {
-        await db.addFcChannel(channelId);
+        await db.setServerSettings(guildId, { fcChatChannel: channelId });
         discord.trackFcChannel(channelId);
       } else if (type === 'officer_chat') {
-        await db.addOfficerChannel(channelId);
+        await db.setServerSettings(guildId, { officerChatChannel: channelId });
         discord.trackOfficerChannel(channelId);
       } else {
         return res.status(400).json({ error: 'Invalid type' });
