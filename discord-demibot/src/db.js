@@ -274,6 +274,28 @@ async function getUserRoles(serverId, userId) {
   return rows.map(r => r.role_id);
 }
 
+// Remove all data associated with a server/guild
+async function clearServer(serverId) {
+  await tx(async ({ query }) => {
+    // remove events linked via channels first
+    await query(
+      'DELETE e FROM events e JOIN channels c ON e.channel_id = c.id WHERE c.server_id = ?',
+      [serverId]
+    );
+    // remove API keys for users in this server
+    await query(
+      'DELETE ak FROM api_keys ak JOIN users u ON ak.user_id = u.id WHERE u.server_id = ?',
+      [serverId]
+    );
+    await query('DELETE FROM server_settings WHERE server_id = ?', [serverId]);
+    await query('DELETE FROM officer_roles WHERE server_id = ?', [serverId]);
+    await query('DELETE FROM user_roles WHERE server_id = ?', [serverId]);
+    await query('DELETE FROM channels WHERE server_id = ?', [serverId]);
+    await query('DELETE FROM users WHERE server_id = ?', [serverId]);
+    await query('DELETE FROM servers WHERE id = ?', [serverId]);
+  });
+}
+
 module.exports = {
   init,
   query,
@@ -299,6 +321,7 @@ module.exports = {
   setServerSettings,
   getServerSettings,
   setUserRoles,
-  getUserRoles
+  getUserRoles,
+  clearServer
 };
 
