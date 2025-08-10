@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Events, REST, Routes, ActionRowBuilder, StringSelectMenuBuilder, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, Events, REST, Routes, ActionRowBuilder, StringSelectMenuBuilder, ChannelType, PermissionsBitField } = require('discord.js');
 const crypto = require('crypto');
 const enqueue = require('../rateLimiter');
 const { mapEmbed } = require('./embeds');
@@ -146,7 +146,18 @@ const commands = [
   { name: 'createevent', description: 'Create an event' },
   { name: 'generatekey', description: 'Generate a key for DemiCat' },
   { name: 'demibot_setup', description: 'Set up DemiBot in this server' },
-  { name: 'demibot_resync', description: 'Resync DemiBot data' },
+  {
+    name: 'demibot_resync',
+    description: 'Resync DemiBot data',
+    options: [
+      {
+        name: 'users',
+        description: 'Space-separated user mentions or IDs to resync',
+        type: 3,
+        required: false
+      }
+    ]
+  },
   { name: 'demibot_embed', description: 'Create a DemiBot embed' },
   { name: 'demibot_reset', description: 'Reset DemiBot data' },
   { name: 'demibot_settings', description: 'View or change DemiBot settings' },
@@ -210,6 +221,42 @@ async function init(config, db, logger) {
         } catch (err) {
           logger.error('Failed to DM key:', err);
         }
+      } else if (interaction.commandName === 'demibot_resync') {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+          await enqueue(() => interaction.reply({ content: 'This command is restricted to administrators', ephemeral: true }));
+          return;
+        }
+        const userStr = interaction.options.getString('users');
+        let members = [];
+        if (userStr) {
+          const ids = userStr
+            .split(/\s+/)
+            .map(id => id.replace(/<@!?(\d+)>/, '$1'))
+            .filter(Boolean);
+          for (const id of ids) {
+            try {
+              const member = await interaction.guild.members.fetch(id);
+              members.push(member);
+            } catch {
+              // ignore missing members
+            }
+          }
+        } else {
+          const collection = await interaction.guild.members.fetch();
+          members = [...collection.values()];
+        }
+        const updated = [];
+        for (const member of members) {
+          const roles = member.roles.cache
+            .filter(r => r.id !== interaction.guild.roles.everyone.id)
+            .map(r => r.id);
+          await db.setUserRoles(interaction.guildId, member.id, roles);
+          updated.push(member.user.username);
+        }
+        const summary = updated.length
+          ? `Updated ${updated.length} user(s): ${updated.join(', ')}`
+          : 'No users updated';
+        await enqueue(() => interaction.reply({ content: summary, ephemeral: true }));
       } else if (interaction.commandName === 'demibot_setup') {
         await startDemibotSetupInteraction(interaction);
       }
