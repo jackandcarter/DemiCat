@@ -42,7 +42,7 @@ module.exports = ({ db, discord, logger }) => {
         hook = await channel.createWebhook({ name: 'DemiCat' });
       }
       await enqueue(() => hook.send({ content, username: displayName }));
-      await db.addOfficerChannel(channelId);
+      await db.setServerSettings(info.serverId, { officerChatChannel: channelId });
       discord.trackOfficerChannel(channelId);
       res.json({ ok: true });
     } catch (err) {

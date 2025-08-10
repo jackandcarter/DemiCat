@@ -22,7 +22,7 @@ module.exports = ({ db, discord }) => {
       }
       const member = await guild.members.fetch(userId);
       const roles = Array.from(member.roles.cache.keys());
-      const officerRoles = await db.getOfficerRoles();
+      const officerRoles = await db.getOfficerRoles(info.serverId);
       const hasOfficerRole = roles.some(r => officerRoles.includes(r));
       res.json({ hasOfficerRole });
     } catch (err) {
