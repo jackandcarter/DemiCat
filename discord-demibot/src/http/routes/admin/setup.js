@@ -17,9 +17,12 @@ module.exports = ({ db, discord }) => {
       if (type === 'event') {
         await db.addEventChannel(channelId);
         discord.trackEventChannel(channelId);
-      } else if (type === 'chat') {
-        await db.addChatChannel(channelId);
-        discord.trackChatChannel(channelId);
+      } else if (type === 'fc_chat') {
+        await db.addFcChannel(channelId);
+        discord.trackFcChannel(channelId);
+      } else if (type === 'officer_chat') {
+        await db.addOfficerChannel(channelId);
+        discord.trackOfficerChannel(channelId);
       } else {
         return res.status(400).json({ error: 'Invalid type' });
       }

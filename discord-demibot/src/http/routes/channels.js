@@ -5,11 +5,12 @@ module.exports = ({ db, logger }) => {
 
   router.get('/', async (req, res) => {
     try {
-      const [event, chat] = await Promise.all([
+      const [event, fc_chat, officer_chat] = await Promise.all([
         db.getEventChannels(),
-        db.getChatChannels()
+        db.getFcChannels(),
+        db.getOfficerChannels()
       ]);
-      res.json({ event, chat });
+      res.json({ event, fc_chat, officer_chat });
     } catch (err) {
       if (logger) logger.error('Failed to fetch channels', err);
       res.status(500).json({ error: 'Failed to fetch channels' });
