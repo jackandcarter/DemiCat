@@ -30,7 +30,9 @@ Copy `discord-demibot/.env.example` to `discord-demibot/.env` and fill in the re
 ```bash
 python database/setup.py
 ```
-The script prompts for MySQL host, port, user, and password. It will create a `DemiBot` database and apply `database/schema.sql`. Use `--local` to quickly target a local MySQL server.
+The script prompts for MySQL host, port, user, and password. It will create a `DemiBot` database, apply `database/schema.sql`,
+and run any pending migrations. Re-run the script after pulling updates to ensure the schema (e.g. the `server_id` column on
+`users`) stays current. Use `--local` to quickly target a local MySQL server.
 
 ### 2. Configure the bot
 ```bash
@@ -41,7 +43,12 @@ node src/index.js
 ```
 
 ### 3. Configure the Dalamud plugin
-Update `DemiCatPlugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** if needed (defaults to `http://localhost:3000`).
+Update `DemiCatPlugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the
+**Helper Base URL** if needed (defaults to `http://localhost:3000`).
+
+Run `/demibot_embed` in your Discord server and use the button to generate or view your **Key** and **Sync Key** (guild ID).
+Enter both values in the plugin settings and press **Connect/Sync** (or **Validate** if you already have a key) to link the
+plugin with the bot.
 
 ### 4. Insert API keys
 Insert API keys into the `api_keys` table to authorize HTTP requests:
@@ -63,6 +70,21 @@ Copy `bin/Debug/net9.0/DemiCatPlugin.dll` into your Dalamud plugins folder and e
 ## Usage
 
 With the bot running and the plugin enabled, open the in-game **Events** window to view live Apollo embeds. Players can click the RSVP buttons to respond directly from FFXIV.
+
+## Discord Commands
+
+The bot registers several slash commands for server administrators and users. Run `/demibot_setup` during initial installation;
+use `/demibot_settings` to adjust configuration later. `/demibot_reset` restarts the setup wizard, while `/demibot_clear` removes
+all data for the guild.
+
+- `/demibot_setup` – start the interactive wizard to select event, Free Company, and officer channels and choose officer roles.
+- `/demibot_settings` – reopen the setup wizard with current settings for further adjustments (administrator only).
+- `/demibot_resync [users]` – resync stored role data. Supply space-separated user mentions or IDs to resync specific members or
+  omit to resync everyone (administrator only).
+- `/demibot_embed` – send yourself an embed with a button to generate or reveal your **Key** and **Sync Key** for plugin
+  authentication.
+- `/demibot_reset` – clear stored guild data and immediately rerun the setup wizard (server owner or administrator).
+- `/demibot_clear` – purge all guild configuration and data (server owner only).
 
 ## Admin Setup Endpoints
 
