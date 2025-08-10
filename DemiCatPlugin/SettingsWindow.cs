@@ -74,7 +74,7 @@ public class SettingsWindow : IDisposable
                     "application/json")
             };
 
-            var response = await Task.Run(() => _httpClient.SendAsync(request));
+            var response = await _httpClient.SendAsync(request);
 
             if (response.IsSuccessStatusCode)
             {
@@ -117,7 +117,7 @@ public class SettingsWindow : IDisposable
                     "application/json")
             };
 
-            var response = await Task.Run(() => _httpClient.SendAsync(request));
+            var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
                 return;
