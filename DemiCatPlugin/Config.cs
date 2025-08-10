@@ -20,6 +20,8 @@ public class Config
 
     public string FcChannelName { get; set; } = string.Empty;
 
+    public string OfficerChannelId { get; set; } = string.Empty;
+
     public bool EnableFcChat { get; set; } = false;
 
     public bool UseCharacterName { get; set; } = false;

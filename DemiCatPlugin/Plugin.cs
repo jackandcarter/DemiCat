@@ -22,6 +22,7 @@ public class Plugin : IDalamudPlugin
     private readonly UiRenderer _ui;
     private readonly SettingsWindow _settings;
     private readonly ChatWindow? _chatWindow;
+    private readonly OfficerChatWindow _officerChatWindow;
     private readonly MainWindow _mainWindow;
     private Config _config;
     private readonly System.Timers.Timer _timer;
@@ -39,9 +40,10 @@ public class Plugin : IDalamudPlugin
         _config = _pluginInterface.GetPluginConfig() as Config ?? new Config();
 
         _ui = new UiRenderer(_config);
-        _settings = new SettingsWindow(_config);
+        _settings = new SettingsWindow(_config, CheckOfficerRole);
         _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config) : null;
-        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _settings);
+        _officerChatWindow = new OfficerChatWindow(_config);
+        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings);
 
         _timer = new System.Timers.Timer(_config.PollIntervalSeconds * 1000);
         _timer.Elapsed += OnPollTimer;
@@ -50,6 +52,7 @@ public class Plugin : IDalamudPlugin
         if (_config.Enabled)
         {
             _ = ConnectWebSocket();
+            CheckOfficerRole();
         }
 
         _uiBuilder.Draw += _mainWindow.Draw;
@@ -198,9 +201,64 @@ public class Plugin : IDalamudPlugin
         }
         _httpClient.Dispose();
         _chatWindow?.Dispose();
+        _officerChatWindow.Dispose();
         _ui.Dispose();
         _settings.Dispose();
         _chatWindow.Dispose();
+    }
+
+    private async void CheckOfficerRole()
+    {
+        if (string.IsNullOrEmpty(_config.AuthToken))
+        {
+            return;
+        }
+
+        try
+        {
+            var meRequest = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/me");
+            meRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+            var meResponse = await _httpClient.SendAsync(meRequest);
+            if (!meResponse.IsSuccessStatusCode)
+            {
+                return;
+            }
+            var meStream = await meResponse.Content.ReadAsStreamAsync();
+            var me = await JsonSerializer.DeserializeAsync<MeDto>(meStream);
+            var userId = me?.UserId;
+            if (string.IsNullOrEmpty(userId))
+            {
+                return;
+            }
+
+            var rolesRequest = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/me/roles?userId={userId}");
+            rolesRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+            var rolesResponse = await _httpClient.SendAsync(rolesRequest);
+            if (!rolesResponse.IsSuccessStatusCode)
+            {
+                return;
+            }
+            var rolesStream = await rolesResponse.Content.ReadAsStreamAsync();
+            var roles = await JsonSerializer.DeserializeAsync<RolesDto>(rolesStream) ?? new RolesDto();
+            PluginServices.Framework.RunOnTick(() =>
+            {
+                _mainWindow.HasOfficerRole = roles.HasOfficerRole;
+            });
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+
+    private class MeDto
+    {
+        public string? UserId { get; set; }
+    }
+
+    private class RolesDto
+    {
+        public bool HasOfficerRole { get; set; }
     }
 }
 

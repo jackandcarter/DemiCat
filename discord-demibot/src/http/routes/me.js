@@ -10,17 +10,17 @@ module.exports = ({ db, discord }) => {
   });
 
   router.get('/roles', async (req, res) => {
-    const { syncKey } = req.query;
+    const { userId } = req.query;
     const info = req.apiKey;
-    if (!syncKey || syncKey !== info.serverId) {
+    if (!userId || userId !== info.userId) {
       return res.status(403).json({ hasOfficerRole: false });
     }
     try {
-      const guild = client.guilds.cache.get(syncKey);
+      const guild = client.guilds.cache.get(info.serverId);
       if (!guild) {
         return res.status(500).json({ hasOfficerRole: false });
       }
-      const member = await guild.members.fetch(info.userId);
+      const member = await guild.members.fetch(userId);
       const roles = Array.from(member.roles.cache.keys());
       const officerRoles = await db.getOfficerRoles();
       const hasOfficerRole = roles.some(r => officerRoles.includes(r));

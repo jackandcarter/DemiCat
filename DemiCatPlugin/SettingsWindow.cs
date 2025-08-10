@@ -14,11 +14,13 @@ public class SettingsWindow : IDisposable
     private readonly HttpClient _httpClient = new();
     private string _key = string.Empty;
     private string _syncKey = string.Empty;
+    private readonly Action _refreshRoles;
     public bool IsOpen;
 
-    public SettingsWindow(Config config)
+    public SettingsWindow(Config config, Action refreshRoles)
     {
         _config = config;
+        _refreshRoles = refreshRoles;
         _key = config.AuthToken ?? string.Empty;
         _syncKey = config.SyncKey;
     }
@@ -76,27 +78,9 @@ public class SettingsWindow : IDisposable
                     _config.AuthToken = _key;
                     _config.SyncKey = _syncKey;
                     SaveConfig();
-                    CheckRoles();
+                    _refreshRoles();
                 });
             }
-        }
-        catch
-        {
-            // ignored
-        }
-    }
-
-    private async void CheckRoles()
-    {
-        try
-        {
-            var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/api/me/roles?syncKey={_syncKey}";
-            var request = new HttpRequestMessage(HttpMethod.Get, url);
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _config.AuthToken);
-            }
-            await Task.Run(() => _httpClient.SendAsync(request));
         }
         catch
         {

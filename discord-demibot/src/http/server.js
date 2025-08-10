@@ -57,6 +57,7 @@ function start(config, db, discord, logger) {
   // Routes
   const channels = require('./routes/channels');
   const messages = require('./routes/messages');
+  const officerMessages = require('./routes/officerMessages');
   const embeds = require('./routes/embeds');
   const events = require('./routes/events');
   const me = require('./routes/me');
@@ -65,6 +66,7 @@ function start(config, db, discord, logger) {
 
   app.use('/api/channels', channels({ db, discord, logger }));
   app.use('/api/messages', messages({ db, discord, logger }));
+  app.use('/api/officer-messages', officerMessages({ db, discord, logger }));
   app.use('/api/embeds', embeds({ discord }));
   app.use('/api/events', events({ db, discord, logger }));
   app.use('/api/me', me({ db, discord }));
