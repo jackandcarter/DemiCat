@@ -15,4 +15,7 @@ internal static class PluginServices
 
     [PluginService]
     internal static ITextureProvider TextureProvider { get; private set; } = null!;
+
+    [PluginService]
+    internal static IFramework Framework { get; private set; } = null!;
 }
