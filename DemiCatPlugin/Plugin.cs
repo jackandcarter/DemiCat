@@ -239,7 +239,7 @@ public class Plugin : IDalamudPlugin
             }
             var rolesStream = await rolesResponse.Content.ReadAsStreamAsync();
             var roles = await JsonSerializer.DeserializeAsync<RolesDto>(rolesStream) ?? new RolesDto();
-            PluginServices.Framework.RunOnTick(() =>
+            _ = PluginServices.Framework.RunOnTick(() =>
             {
                 _mainWindow.HasOfficerRole = roles.HasOfficerRole;
                 _mainWindow.HasChatRole = roles.HasChatRole;
