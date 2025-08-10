@@ -10,6 +10,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordHelper;
+using Dalamud.Interface;
 using Dalamud.Plugin;
 
 namespace DalamudPlugin;
@@ -29,12 +30,12 @@ public class Plugin : IDalamudPlugin
     private ClientWebSocket? _webSocket;
     private readonly List<EmbedDto> _embeds = new();
 
-    private readonly DalamudPluginInterface _pluginInterface;
-
-    public Plugin(DalamudPluginInterface pluginInterface)
+    private readonly IDalamudPluginInterface _pluginInterface;
+    private readonly IUiBuilder _uiBuilder;
+    public Plugin(IDalamudPluginInterface pluginInterface, IUiBuilder uiBuilder)
     {
         _pluginInterface = pluginInterface;
-        _pluginInterface.Create<PluginServices>();
+        _uiBuilder = uiBuilder;
 
         _config = _pluginInterface.GetPluginConfig() as Config ?? new Config();
 
@@ -53,9 +54,9 @@ public class Plugin : IDalamudPlugin
             _ = ConnectWebSocket();
         }
 
-        _pluginInterface.UiBuilder.Draw += _mainWindow.Draw;
-        _pluginInterface.UiBuilder.Draw += _settings.Draw;
-        _pluginInterface.UiBuilder.Draw += _createWindow.Draw;
+        _uiBuilder.Draw += _mainWindow.Draw;
+        _uiBuilder.Draw += _settings.Draw;
+        _uiBuilder.Draw += _createWindow.Draw;
     }
 
     private async void OnPollTimer(object? sender, ElapsedEventArgs e)
@@ -177,9 +178,9 @@ public class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        _pluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
-        _pluginInterface.UiBuilder.Draw -= _settings.Draw;
-        _pluginInterface.UiBuilder.Draw -= _createWindow.Draw;
+        _uiBuilder.Draw -= _mainWindow.Draw;
+        _uiBuilder.Draw -= _settings.Draw;
+        _uiBuilder.Draw -= _createWindow.Draw;
         _timer.Stop();
         _timer.Dispose();
         if (_webSocket != null)
