@@ -1,0 +1,20 @@
+diff --git a//dev/null b/repo.json
+index 0000000000000000000000000000000000000000..a6bc383053e39d62e89992ceb90f17f12edd22f6 100644
+--- a//dev/null
++++ b/repo.json
+@@ -0,0 +1,15 @@
++[
++  {
++    "Author": "DemiCat",
++    "Name": "DemiCat",
++    "Punchline": "DemiCat Dalamud plugin.",
++    "Description": "DemiCat Dalamud plugin.",
++    "InternalName": "DemiCatPlugin",
++    "AssemblyVersion": "1.1.0.0",
++    "DalamudApiLevel": 13,
++    "RepoUrl": "https://github.com/unknown/DemiCat",
++    "DownloadLinkInstall": "https://github.com/unknown/DemiCat/raw/main/DemiCatPlugin.zip",
++    "DownloadLinkTesting": "https://github.com/unknown/DemiCat/raw/testing/DemiCatPlugin.zip",
++    "IconUrl": "https://cdn.discordapp.com/attachments/1337791050294755380/1337854067560550422/Demi_Bot_Logo.png?ex=689a37b1&is=6898e631&hm=1b96e426ca9dcd7f80395ecc7ca274e7ee71cee19c6bae73d20954fc13f6ce95&"
++  }
++]
