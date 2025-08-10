@@ -145,7 +145,13 @@ const commands = [
   { name: 'link', description: 'Link your account' },
   { name: 'createevent', description: 'Create an event' },
   { name: 'generatekey', description: 'Generate a key for DemiCat' },
-  { name: 'setup', description: 'Configure DemiCat channels' }
+  { name: 'setup', description: 'Configure DemiCat channels' },
+  { name: 'demibot_setup', description: 'Set up DemiBot in this server' },
+  { name: 'demibot_resync', description: 'Resync DemiBot data' },
+  { name: 'demibot_embed', description: 'Create a DemiBot embed' },
+  { name: 'demibot_reset', description: 'Reset DemiBot data' },
+  { name: 'demibot_settings', description: 'View or change DemiBot settings' },
+  { name: 'demibot_clear', description: 'Clear DemiBot configuration' }
 ];
 
 async function registerCommands(clientId, logger) {
