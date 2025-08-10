@@ -64,12 +64,12 @@ public class SettingsWindow : IDisposable
     {
         try
         {
-            var character = PluginServices.ClientState.LocalPlayer?.Name ?? string.Empty;
+            var characterName = PluginServices.ClientState.LocalPlayer?.Name ?? string.Empty;
             var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(
-                    JsonSerializer.Serialize(new { key = _key, characterName = character }),
+                    JsonSerializer.Serialize(new { key = _key, characterName = characterName }),
                     Encoding.UTF8,
                     "application/json")
             };
@@ -107,12 +107,12 @@ public class SettingsWindow : IDisposable
     {
         try
         {
-            var character = PluginServices.ClientState.LocalPlayer?.Name ?? string.Empty;
+            var characterName = PluginServices.ClientState.LocalPlayer?.Name ?? string.Empty;
             var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(
-                    JsonSerializer.Serialize(new { syncKey = _syncKey, characterName = character }),
+                    JsonSerializer.Serialize(new { syncKey = _syncKey, characterName = characterName }),
                     Encoding.UTF8,
                     "application/json")
             };

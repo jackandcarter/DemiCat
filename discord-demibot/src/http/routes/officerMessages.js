@@ -35,7 +35,7 @@ module.exports = ({ db, discord, logger }) => {
         return res.status(400).json({ error: 'Invalid channel' });
       }
       const user = await client.users.fetch(info.userId);
-      const displayName = useCharacterName && info.character ? info.character : user.username;
+      const displayName = useCharacterName && info.characterName ? info.characterName : user.username;
       const hooks = await channel.fetchWebhooks();
       let hook = hooks.find(w => w.name === 'DemiCat');
       if (!hook) {

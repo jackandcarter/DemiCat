@@ -22,7 +22,7 @@ module.exports = ({ db, discord, logger }) => {
       url,
       timestamp: time ? new Date(time) : undefined,
       color,
-      footer: info.character ? { text: info.character } : undefined,
+      footer: info.characterName ? { text: info.characterName } : undefined,
       fields,
       thumbnail: thumbnailUrl ? { url: thumbnailUrl } : undefined,
       author: authorName ? { name: authorName, icon_url: authorIconUrl } : undefined,

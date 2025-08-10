@@ -20,7 +20,7 @@ async function init(config) {
   await pool.query(`CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(255) PRIMARY KEY,
     \`key\` VARCHAR(255),
-    character VARCHAR(255),
+    character_name VARCHAR(255),
     server_id VARCHAR(255),
     FOREIGN KEY (server_id) REFERENCES servers(id),
     INDEX (server_id)
@@ -123,15 +123,15 @@ async function getKey(userId) {
   return row ? row.key : null;
 }
 
-async function setCharacter(userId, character) {
+async function setCharacter(userId, characterName) {
   await query(
-    'INSERT INTO users (id, character) VALUES (?, ?) ON DUPLICATE KEY UPDATE character = VALUES(character)',
-    [userId, character]
+    'INSERT INTO users (id, character_name) VALUES (?, ?) ON DUPLICATE KEY UPDATE character_name = VALUES(character_name)',
+    [userId, characterName]
   );
 }
 
 async function getUserByKey(key) {
-  return await one('SELECT id AS userId, character, server_id AS serverId FROM users WHERE \`key\` = ?', [key]);
+  return await one('SELECT id AS userId, character_name AS characterName, server_id AS serverId FROM users WHERE \`key\` = ?', [key]);
 }
 
 async function getEventChannels() {
@@ -220,7 +220,7 @@ async function updateEvent(event) {
 
 async function getApiKey(key) {
   return await one(
-    'SELECT ak.user_id AS userId, ak.is_admin AS isAdmin, u.character, u.server_id AS serverId FROM api_keys ak LEFT JOIN users u ON ak.user_id = u.id WHERE ak.api_key = ?',
+    'SELECT ak.user_id AS userId, ak.is_admin AS isAdmin, u.character_name AS characterName, u.server_id AS serverId FROM api_keys ak LEFT JOIN users u ON ak.user_id = u.id WHERE ak.api_key = ?',
     [key]
   );
 }

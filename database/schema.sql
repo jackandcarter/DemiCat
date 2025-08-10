@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS servers (
 CREATE TABLE IF NOT EXISTS users (
   id VARCHAR(255) PRIMARY KEY,
   `key` VARCHAR(255),
-  character VARCHAR(255),
+  character_name VARCHAR(255),
   server_id VARCHAR(255),
   FOREIGN KEY (server_id) REFERENCES servers(id),
   INDEX (server_id)
