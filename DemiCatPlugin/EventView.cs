@@ -17,7 +17,7 @@ public class EventView : IDisposable
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
-    private readonly Action _refresh;
+    private readonly Func<Task> _refresh;
 
     private EmbedDto _dto;
     private ISharedImmediateTexture? _authorIcon;
@@ -25,7 +25,7 @@ public class EventView : IDisposable
     private ISharedImmediateTexture? _image;
     private string? _lastResult;
 
-    public EventView(EmbedDto dto, Config config, HttpClient httpClient, Action refresh)
+    public EventView(EmbedDto dto, Config config, HttpClient httpClient, Func<Task> refresh)
     {
         _config = config;
         _httpClient = httpClient;
@@ -186,7 +186,7 @@ public class EventView : IDisposable
             _lastResult = response.IsSuccessStatusCode ? "Signup updated" : "Signup failed";
             if (response.IsSuccessStatusCode)
             {
-                _refresh();
+                await _refresh();
             }
         }
         catch

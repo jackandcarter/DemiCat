@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -34,7 +35,7 @@ public class ChatWindow : IDisposable
     {
         if (!_channelsLoaded)
         {
-            FetchChannels();
+            _ = FetchChannels();
         }
 
         if (_channels.Count > 0)
@@ -44,7 +45,7 @@ public class ChatWindow : IDisposable
                 _channelId = _channels[_selectedIndex];
                 _config.ChatChannelId = _channelId;
                 SaveConfig();
-                RefreshMessages();
+                _ = RefreshMessages();
             }
         }
         else
@@ -59,7 +60,7 @@ public class ChatWindow : IDisposable
 
         if (DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
         {
-            RefreshMessages();
+            _ = RefreshMessages();
         }
 
         ImGui.BeginChild("##chatScroll", new Vector2(0, -30), true);
@@ -73,7 +74,7 @@ public class ChatWindow : IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Send") || send)
         {
-            SendMessage();
+            _ = SendMessage();
         }
 
     }
@@ -92,7 +93,7 @@ public class ChatWindow : IDisposable
         return text;
     }
 
-    protected virtual async void SendMessage()
+    protected virtual async Task SendMessage()
     {
         if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
@@ -112,7 +113,7 @@ public class ChatWindow : IDisposable
             if (response.IsSuccessStatusCode)
             {
                 _input = string.Empty;
-                RefreshMessages();
+                await RefreshMessages();
             }
         }
         catch
@@ -121,7 +122,7 @@ public class ChatWindow : IDisposable
         }
     }
 
-    public async void RefreshMessages()
+    public async Task RefreshMessages()
     {
         if (string.IsNullOrEmpty(_channelId))
         {
@@ -162,7 +163,7 @@ public class ChatWindow : IDisposable
         PluginServices.PluginInterface.SavePluginConfig(_config);
     }
 
-    private async void FetchChannels()
+    private async Task FetchChannels()
     {
         _channelsLoaded = true;
         try
