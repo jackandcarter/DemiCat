@@ -69,6 +69,22 @@ function listOnlineUsers() {
   return users;
 }
 
+function clearGuildCache(guild) {
+  const channelIds = guild.channels.cache.map(ch => ch.id);
+  for (const id of channelIds) {
+    let idx = eventChannels.indexOf(id);
+    if (idx !== -1) eventChannels.splice(idx, 1);
+    idx = fcChatChannels.indexOf(id);
+    if (idx !== -1) fcChatChannels.splice(idx, 1);
+    idx = officerChatChannels.indexOf(id);
+    if (idx !== -1) officerChatChannels.splice(idx, 1);
+    messageCache.delete(id);
+    for (let i = embedCache.length - 1; i >= 0; i--) {
+      if (embedCache[i].channelId === id) embedCache.splice(i, 1);
+    }
+  }
+}
+
 async function fetchInitialEmbeds(client, logger) {
   for (const channelId of eventChannels) {
     try {
@@ -270,6 +286,17 @@ async function init(config, db, logger) {
         await enqueue(() => interaction.reply({ embeds: [embed], components: [row], ephemeral: true }));
       } else if (interaction.commandName === 'demibot_setup') {
         await startDemibotSetupInteraction(interaction);
+      } else if (interaction.commandName === 'demibot_reset') {
+        const isOwner = interaction.guild.ownerId === interaction.user.id;
+        const isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
+        if (!isOwner && !isAdmin) {
+          await enqueue(() => interaction.reply({ content: 'This command is restricted to administrators', ephemeral: true }));
+          return;
+        }
+        await db.clearServer(interaction.guildId);
+        clearGuildCache(interaction.guild);
+        await startDemibotSetupInteraction(interaction);
+        await interaction.followUp({ content: 'DemiBot data reset.', ephemeral: true });
       }
     } else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'setup_event') {
