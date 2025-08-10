@@ -2,6 +2,7 @@ using System;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
 namespace DalamudPlugin;
@@ -45,15 +46,25 @@ public class SettingsWindow : IDisposable
     {
         try
         {
-            var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/validate";
-            var request = new HttpRequestMessage(HttpMethod.Post, url);
             var character = PluginServices.ClientState.LocalPlayer?.Name ?? string.Empty;
-            request.Content = new StringContent(JsonSerializer.Serialize(new { key = _key, characterName = character }), Encoding.UTF8, "application/json");
-            var response = await _httpClient.SendAsync(request);
+            var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/validate";
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(
+                    JsonSerializer.Serialize(new { key = _key, characterName = character }),
+                    Encoding.UTF8,
+                    "application/json")
+            };
+
+            var response = await Task.Run(() => _httpClient.SendAsync(request));
+
             if (response.IsSuccessStatusCode)
             {
-                _config.AuthToken = _key;
-                SaveConfig();
+                PluginServices.Framework.RunOnTick(() =>
+                {
+                    _config.AuthToken = _key;
+                    SaveConfig();
+                });
             }
         }
         catch
