@@ -13,7 +13,7 @@ using DiscordHelper;
 using Dalamud.Interface;
 using Dalamud.Plugin;
 
-namespace DalamudPlugin;
+namespace DemiCatPlugin;
 
 public class Plugin : IDalamudPlugin
 {

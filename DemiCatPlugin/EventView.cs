@@ -10,7 +10,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Bindings.ImGui;
 using StbImageSharp;
 
-namespace DalamudPlugin;
+namespace DemiCatPlugin;
 
 public class EventView : IDisposable
 {

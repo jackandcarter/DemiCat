@@ -8,7 +8,7 @@ using System.Numerics;
 using DiscordHelper;
 using Dalamud.Bindings.ImGui;
 
-namespace DalamudPlugin;
+namespace DemiCatPlugin;
 
 public class UiRenderer : IDisposable
 {

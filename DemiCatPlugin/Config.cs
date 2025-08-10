@@ -1,4 +1,4 @@
-namespace DalamudPlugin;
+namespace DemiCatPlugin;
 
 public class Config
 {
