@@ -36,12 +36,27 @@ function trackEventChannel(id) {
   if (!eventChannels.includes(id)) eventChannels.push(id);
 }
 
+function untrackEventChannel(id) {
+  const idx = eventChannels.indexOf(id);
+  if (idx !== -1) eventChannels.splice(idx, 1);
+}
+
 function trackFcChannel(id) {
   if (!fcChatChannels.includes(id)) fcChatChannels.push(id);
 }
 
+function untrackFcChannel(id) {
+  const idx = fcChatChannels.indexOf(id);
+  if (idx !== -1) fcChatChannels.splice(idx, 1);
+}
+
 function trackOfficerChannel(id) {
   if (!officerChatChannels.includes(id)) officerChatChannels.push(id);
+}
+
+function untrackOfficerChannel(id) {
+  const idx = officerChatChannels.indexOf(id);
+  if (idx !== -1) officerChatChannels.splice(idx, 1);
 }
 
 function mapMessage(message) {
@@ -129,8 +144,11 @@ function getChannelOptions(guild) {
     .slice(0, 25);
 }
 
-async function startDemibotSetupInteraction(interaction) {
-  const options = getChannelOptions(interaction.guild);
+async function startDemibotSetupInteraction(interaction, settings = {}) {
+  const options = getChannelOptions(interaction.guild).map(opt => ({
+    ...opt,
+    default: Array.isArray(settings.eventChannels) && settings.eventChannels.includes(opt.value)
+  }));
   const row = new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId('setup_event')
@@ -286,6 +304,13 @@ async function init(config, db, logger) {
         await enqueue(() => interaction.reply({ embeds: [embed], components: [row], ephemeral: true }));
       } else if (interaction.commandName === 'demibot_setup') {
         await startDemibotSetupInteraction(interaction);
+      } else if (interaction.commandName === 'demibot_settings') {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+          await enqueue(() => interaction.reply({ content: 'This command is restricted to administrators', ephemeral: true }));
+          return;
+        }
+        const settings = await db.getServerSettings(interaction.guildId);
+        await startDemibotSetupInteraction(interaction, settings);
       } else if (interaction.commandName === 'demibot_reset') {
         const isOwner = interaction.guild.ownerId === interaction.user.id;
         const isAdmin = interaction.member.permissions.has(PermissionsBitField.Flags.Administrator);
@@ -300,11 +325,19 @@ async function init(config, db, logger) {
       }
     } else if (interaction.isStringSelectMenu()) {
       if (interaction.customId === 'setup_event') {
+        const oldSettings = await db.getServerSettings(interaction.guildId);
         await db.setServerSettings(interaction.guildId, { eventChannels: interaction.values });
+        for (const id of oldSettings.eventChannels || []) {
+          if (!interaction.values.includes(id)) untrackEventChannel(id);
+        }
         for (const id of interaction.values) {
           trackEventChannel(id);
         }
-        const options = getChannelOptions(interaction.guild);
+        const fcDefault = oldSettings.fcChatChannel;
+        const options = getChannelOptions(interaction.guild).map(opt => ({
+          ...opt,
+          default: fcDefault === opt.value
+        }));
         const row = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId('setup_fc')
@@ -317,9 +350,17 @@ async function init(config, db, logger) {
         await interaction.followUp({ content: 'Saved event channel(s)', ephemeral: true });
       } else if (interaction.customId === 'setup_fc') {
         const channelId = interaction.values[0];
+        const oldSettings = await db.getServerSettings(interaction.guildId);
         await db.setServerSettings(interaction.guildId, { fcChatChannel: channelId });
+        if (oldSettings.fcChatChannel && oldSettings.fcChatChannel !== channelId) {
+          untrackFcChannel(oldSettings.fcChatChannel);
+        }
         trackFcChannel(channelId);
-        const options = getChannelOptions(interaction.guild);
+        const officerDefault = oldSettings.officerChatChannel;
+        const options = getChannelOptions(interaction.guild).map(opt => ({
+          ...opt,
+          default: officerDefault === opt.value
+        }));
         const row = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
             .setCustomId('setup_officer')
@@ -332,11 +373,16 @@ async function init(config, db, logger) {
         await interaction.followUp({ content: 'Saved Free Company chat channel', ephemeral: true });
       } else if (interaction.customId === 'setup_officer') {
         const channelId = interaction.values[0];
+        const oldSettings = await db.getServerSettings(interaction.guildId);
         await db.setServerSettings(interaction.guildId, { officerChatChannel: channelId });
+        if (oldSettings.officerChatChannel && oldSettings.officerChatChannel !== channelId) {
+          untrackOfficerChannel(oldSettings.officerChatChannel);
+        }
         trackOfficerChannel(channelId);
+        const existingRoles = await db.getOfficerRoles(interaction.guildId);
         const options = interaction.guild.roles.cache
           .filter(r => r.name !== '@everyone')
-          .map(r => ({ label: r.name, value: r.id }))
+          .map(r => ({ label: r.name, value: r.id, default: existingRoles.includes(r.id) }))
           .slice(0, 25);
         const row = new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder()
