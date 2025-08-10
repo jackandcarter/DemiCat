@@ -292,6 +292,9 @@ async function init(config, db, logger) {
           : 'No users updated';
         await enqueue(() => interaction.reply({ content: summary, ephemeral: true }));
       } else if (interaction.commandName === 'demibot_embed') {
+        if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+          return interaction.reply({ content: 'This command is restricted to administrators', ephemeral: true });
+        }
         const existing = await db.getKey(interaction.user.id);
         const label = existing ? 'Show Key' : 'Generate Key';
         const embed = {
@@ -301,7 +304,8 @@ async function init(config, db, logger) {
         const row = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId('demibot_key').setLabel(label).setStyle(ButtonStyle.Primary)
         );
-        await enqueue(() => interaction.reply({ embeds: [embed], components: [row], ephemeral: true }));
+        await interaction.channel.send({ embeds: [embed], components: [row] });
+        await interaction.reply({ content: 'DemiBot key embed created', ephemeral: true });
       } else if (interaction.commandName === 'demibot_setup') {
         await startDemibotSetupInteraction(interaction);
       } else if (interaction.commandName === 'demibot_settings') {
