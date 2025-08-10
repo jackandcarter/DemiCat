@@ -1,10 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <RootNamespace>DalamudPlugin</RootNamespace>
+    <RootNamespace>DemiCatPlugin</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <AssemblyName>DemiCat</AssemblyName>
+    <AssemblyName>DemiCatPlugin</AssemblyName>
     <AssemblyVersion>1.1.0.0</AssemblyVersion>
     <FileVersion>1.1.0.0</FileVersion>
     <Description>DemiCat Dalamud plugin.</Description>

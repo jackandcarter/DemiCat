@@ -1,7 +1,7 @@
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
-namespace DalamudPlugin;
+namespace DemiCatPlugin;
 
 public class MainWindow
 {

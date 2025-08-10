@@ -5,7 +5,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
-namespace DalamudPlugin;
+namespace DemiCatPlugin;
 
 public class SettingsWindow : IDisposable
 {

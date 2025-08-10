@@ -3,7 +3,7 @@ using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
-namespace DalamudPlugin;
+namespace DemiCatPlugin;
 
 internal static class PluginServices
 {

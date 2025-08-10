@@ -4,8 +4,8 @@ DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts 
 
 ```
 DemiCat/
-├── bot/             # Node.js Discord bot and REST interface
-└── dalamud-plugin/  # Dalamud plugin that renders the embeds in FFXIV
+├── discord-demibot/  # Node.js Discord bot and REST interface
+└── DemiCatPlugin/    # Dalamud plugin that renders the embeds in FFXIV
 ```
 
 ## Prerequisites
@@ -17,7 +17,7 @@ DemiCat/
 
 ## Environment Variables
 
-Copy `bot/.env.example` to `bot/.env` and fill in the required values.
+Copy `discord-demibot/.env.example` to `discord-demibot/.env` and fill in the required values.
 
 - `DISCORD_TOKEN` – Discord bot token
 - `DISCORD_APOLLO_BOT_ID` – Apollo bot ID used for event embeds
@@ -28,14 +28,14 @@ Copy `bot/.env.example` to `bot/.env` and fill in the required values.
 
 ### 1. Configure the bot
 ```bash
-cd bot
+cd discord-demibot
 cp .env.example .env
 npm i
 node src/index.js
 ```
 
 ### 2. Configure the Dalamud plugin
-Update `dalamud-plugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** if needed (defaults to `http://localhost:3000`).
+Update `DemiCatPlugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the **Helper Base URL** if needed (defaults to `http://localhost:3000`).
 
 ### 3. Insert API keys
 Insert API keys into the `api_keys` table to authorize HTTP requests:
@@ -49,10 +49,10 @@ Use the value from `api_key` as the `X-Api-Key` header when calling the REST API
 
 ### Dalamud plugin
 ```bash
-cd dalamud-plugin
+cd DemiCatPlugin
 dotnet build
 ```
-Copy `bin/Debug/net6.0/dalamud-plugin.dll` into your Dalamud plugins folder and enable it.
+Copy `bin/Debug/net9.0/DemiCatPlugin.dll` into your Dalamud plugins folder and enable it.
 
 ## Usage
 

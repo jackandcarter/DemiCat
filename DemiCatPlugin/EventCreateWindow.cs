@@ -8,7 +8,7 @@ using System.Text.Json;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
-namespace DalamudPlugin;
+namespace DemiCatPlugin;
 
 public class EventCreateWindow : IDisposable
 {
