@@ -1,6 +1,7 @@
 using Dalamud.Game.ClientState;
 using Dalamud.IoC;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
 
 namespace DalamudPlugin;
 
@@ -11,4 +12,7 @@ internal static class PluginServices
 
     [PluginService]
     internal static IClientState ClientState { get; private set; } = null!;
+
+    [PluginService]
+    internal static ITextureProvider TextureProvider { get; private set; } = null!;
 }
