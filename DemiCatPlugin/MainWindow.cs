@@ -12,6 +12,7 @@ public class MainWindow
     private readonly UiRenderer _ui;
     private readonly ChatWindow _chat;
     private readonly SettingsWindow _settings;
+    private readonly EventCreateWindow _create;
     private readonly HttpClient _httpClient = new();
     private readonly List<string> _channels = new();
     private bool _channelsLoaded;
@@ -26,9 +27,10 @@ public class MainWindow
         _ui = ui;
         _chat = chat;
         _settings = settings;
+        _create = new EventCreateWindow(config);
         _channelId = config.EventChannelId;
-        IsOpen = true;
         _ui.ChannelId = _channelId;
+        _create.ChannelId = _channelId;
     }
 
     public void Draw()
@@ -77,6 +79,7 @@ public class MainWindow
                 SaveConfig();
                 _ui.ChannelId = _channelId;
                 _ui.RefreshEmbeds();
+                _create.ChannelId = _channelId;
             }
         }
         else
@@ -99,6 +102,13 @@ public class MainWindow
             if (ImGui.BeginTabItem("Chat"))
             {
                 _chat.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Create"))
+            {
+                _create.ChannelId = _channelId;
+                _create.Draw();
                 ImGui.EndTabItem();
             }
 
@@ -138,6 +148,7 @@ public class MainWindow
             {
                 _channelId = _channels[_selectedIndex];
                 _ui.ChannelId = _channelId;
+                _create.ChannelId = _channelId;
             }
         }
         catch
