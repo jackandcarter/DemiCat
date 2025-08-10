@@ -13,16 +13,17 @@ async function init(config) {
     queueLimit: 0
   });
 
+  await pool.query(`CREATE TABLE IF NOT EXISTS servers (
+    id VARCHAR(255) PRIMARY KEY
+  )`);
+
   await pool.query(`CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(255) PRIMARY KEY,
     \`key\` VARCHAR(255),
     character VARCHAR(255),
     server_id VARCHAR(255),
-    FOREIGN KEY (server_id) REFERENCES servers(id)
-  )`);
-
-  await pool.query(`CREATE TABLE IF NOT EXISTS servers (
-    id VARCHAR(255) PRIMARY KEY
+    FOREIGN KEY (server_id) REFERENCES servers(id),
+    INDEX (server_id)
   )`);
 
   await pool.query(`CREATE TABLE IF NOT EXISTS channels (
@@ -53,7 +54,31 @@ async function init(config) {
   )`);
 
   await pool.query(`CREATE TABLE IF NOT EXISTS officer_roles (
-    role_id VARCHAR(255) PRIMARY KEY
+    server_id VARCHAR(255),
+    role_id VARCHAR(255),
+    PRIMARY KEY (server_id, role_id),
+    FOREIGN KEY (server_id) REFERENCES servers(id),
+    INDEX (server_id)
+  )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS user_roles (
+    server_id VARCHAR(255),
+    user_id VARCHAR(255),
+    role_id VARCHAR(255),
+    PRIMARY KEY (server_id, user_id, role_id),
+    FOREIGN KEY (server_id) REFERENCES servers(id),
+    FOREIGN KEY (user_id) REFERENCES users(id),
+    INDEX (server_id),
+    INDEX (user_id)
+  )`);
+
+  await pool.query(`CREATE TABLE IF NOT EXISTS server_settings (
+    server_id VARCHAR(255),
+    setting_key VARCHAR(255),
+    setting_value TEXT,
+    PRIMARY KEY (server_id, setting_key),
+    FOREIGN KEY (server_id) REFERENCES servers(id),
+    INDEX (server_id)
   )`);
 }
 
@@ -169,8 +194,52 @@ async function getApiKey(key) {
   );
 }
 
-async function getOfficerRoles() {
-  const rows = await query('SELECT role_id FROM officer_roles');
+async function getOfficerRoles(serverId) {
+  const rows = await query('SELECT role_id FROM officer_roles WHERE server_id = ?', [serverId]);
+  return rows.map(r => r.role_id);
+}
+
+async function setServerSettings(serverId, settings) {
+  await tx(async ({ query }) => {
+    await query('INSERT IGNORE INTO servers (id) VALUES (?)', [serverId]);
+    for (const [key, value] of Object.entries(settings)) {
+      await query(
+        'REPLACE INTO server_settings (server_id, setting_key, setting_value) VALUES (?, ?, ?)',
+        [serverId, key, JSON.stringify(value)]
+      );
+    }
+  });
+}
+
+async function getServerSettings(serverId) {
+  const rows = await query('SELECT setting_key, setting_value FROM server_settings WHERE server_id = ?', [serverId]);
+  const settings = {};
+  for (const row of rows) {
+    try {
+      settings[row.setting_key] = JSON.parse(row.setting_value);
+    } catch {
+      settings[row.setting_key] = row.setting_value;
+    }
+  }
+  return settings;
+}
+
+async function setUserRoles(serverId, userId, roles) {
+  await tx(async ({ query }) => {
+    await query('INSERT IGNORE INTO servers (id) VALUES (?)', [serverId]);
+    await query(
+      'INSERT INTO users (id, server_id) VALUES (?, ?) ON DUPLICATE KEY UPDATE server_id = VALUES(server_id)',
+      [userId, serverId]
+    );
+    await query('DELETE FROM user_roles WHERE server_id = ? AND user_id = ?', [serverId, userId]);
+    for (const roleId of roles) {
+      await query('INSERT INTO user_roles (server_id, user_id, role_id) VALUES (?, ?, ?)', [serverId, userId, roleId]);
+    }
+  });
+}
+
+async function getUserRoles(serverId, userId) {
+  const rows = await query('SELECT role_id FROM user_roles WHERE server_id = ? AND user_id = ?', [serverId, userId]);
   return rows.map(r => r.role_id);
 }
 
@@ -196,6 +265,10 @@ module.exports = {
   getEvent,
   updateEvent,
   getApiKey,
-  getOfficerRoles
+  getOfficerRoles,
+  setServerSettings,
+  getServerSettings,
+  setUserRoles,
+  getUserRoles
 };
 
