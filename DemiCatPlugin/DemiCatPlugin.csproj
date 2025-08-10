@@ -1,21 +1,21 @@
-<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Dalamud.NET.Sdk/13.0.0">
   <PropertyGroup>
     <TargetFramework>net9.0</TargetFramework>
-    <RootNamespace>DemiCatPlugin</RootNamespace>
-    <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>preview</LangVersion>
+
+    <!-- Match manifest.json -->
+    <DalamudApiLevel>13</DalamudApiLevel>
     <AssemblyName>DemiCatPlugin</AssemblyName>
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
-    <Description>DemiCat Dalamud plugin.</Description>
-    <Authors>DemiCat</Authors>
+    <RootNamespace>DemiCatPlugin</RootNamespace>
+
+    <!-- Stop CA1416 spam on macOS -->
+    <NoWarn>CA1416</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Dalamud" Version="13.0.0" />
-    <PackageReference Include="Dalamud.Plugin" Version="13.0.0" />
-    <PackageReference Include="Dalamud.Bindings.ImGui" Version="13.0.0" />
-    <PackageReference Include="Dalamud.Bindings.Texture" Version="13.0.0" />
+    <!-- Keep non-Dalamud dependencies -->
     <PackageReference Include="StbImageSharp" Version="2.30.15" />
   </ItemGroup>
 </Project>
