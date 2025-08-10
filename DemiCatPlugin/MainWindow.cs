@@ -22,6 +22,7 @@ public class MainWindow
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
+    public bool HasChatRole { get; set; }
 
     public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings)
     {
@@ -102,7 +103,7 @@ public class MainWindow
                 ImGui.EndTabItem();
             }
 
-            if (_chat != null && ImGui.BeginTabItem("Chat"))
+            if (HasChatRole && _chat != null && ImGui.BeginTabItem("Chat"))
             {
                 _chat.Draw();
                 ImGui.EndTabItem();
@@ -114,7 +115,7 @@ public class MainWindow
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Create"))
+            if (HasOfficerRole && ImGui.BeginTabItem("Create"))
             {
                 _create.ChannelId = _channelId;
                 _create.Draw();

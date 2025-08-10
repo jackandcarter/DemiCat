@@ -243,6 +243,7 @@ public class Plugin : IDalamudPlugin
             PluginServices.Framework.RunOnTick(() =>
             {
                 _mainWindow.HasOfficerRole = roles.HasOfficerRole;
+                _mainWindow.HasChatRole = roles.HasChatRole;
             });
         }
         catch
@@ -259,6 +260,7 @@ public class Plugin : IDalamudPlugin
     private class RolesDto
     {
         public bool HasOfficerRole { get; set; }
+        public bool HasChatRole { get; set; }
     }
 }
 
