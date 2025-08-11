@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
+using System.IO;
 using DiscordHelper;
 using Dalamud.Interface.Textures;
 using Dalamud.Bindings.ImGui;
@@ -31,24 +32,24 @@ public class EventView : IDisposable
         _httpClient = httpClient;
         _refresh = refresh;
         _dto = dto;
-        _authorIcon = LoadTexture(dto.AuthorIconUrl);
-        _thumbnail = LoadTexture(dto.ThumbnailUrl);
-        _image = LoadTexture(dto.ImageUrl);
+        LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t);
+        LoadTexture(dto.ThumbnailUrl, t => _thumbnail = t);
+        LoadTexture(dto.ImageUrl, t => _image = t);
     }
 
     public void Update(EmbedDto dto)
     {
         if (_dto.AuthorIconUrl != dto.AuthorIconUrl)
         {
-            _authorIcon = LoadTexture(dto.AuthorIconUrl);
+            LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t);
         }
         if (_dto.ThumbnailUrl != dto.ThumbnailUrl)
         {
-            _thumbnail = LoadTexture(dto.ThumbnailUrl);
+            LoadTexture(dto.ThumbnailUrl, t => _thumbnail = t);
         }
         if (_dto.ImageUrl != dto.ImageUrl)
         {
-            _image = LoadTexture(dto.ImageUrl);
+            LoadTexture(dto.ImageUrl, t => _image = t);
         }
         _dto = dto;
     }
@@ -148,27 +149,32 @@ public class EventView : IDisposable
         }
     }
 
-    private ISharedImmediateTexture? LoadTexture(string? url)
+    private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)
     {
         if (string.IsNullOrEmpty(url))
         {
-            return null;
+            set(null);
+            return;
         }
 
-        try
+        _ = Task.Run(async () =>
         {
-            var bytes = _httpClient.GetByteArrayAsync(url).GetAwaiter().GetResult();
-            using var stream = new System.IO.MemoryStream(bytes);
-            var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-            var wrap = PluginServices.TextureProvider.CreateFromRaw(
-                RawImageSpecification.Rgba32(image.Width, image.Height),
-                image.Data);
-            return new ForwardingSharedImmediateTexture(wrap);
-        }
-        catch
-        {
-            return null;
-        }
+            try
+            {
+                var bytes = await _httpClient.GetByteArrayAsync(url).ConfigureAwait(false);
+                using var stream = new MemoryStream(bytes);
+                var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+                var wrap = PluginServices.TextureProvider.CreateFromRaw(
+                    RawImageSpecification.Rgba32(image.Width, image.Height),
+                    image.Data);
+                var texture = new ForwardingSharedImmediateTexture(wrap);
+                _ = PluginServices.Framework.RunOnTick(() => set(texture));
+            }
+            catch
+            {
+                _ = PluginServices.Framework.RunOnTick(() => set(null));
+            }
+        });
     }
 
     public async Task SendInteraction(string customId)
