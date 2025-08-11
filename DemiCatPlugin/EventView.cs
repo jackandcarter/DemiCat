@@ -197,8 +197,11 @@ public class EventView : IDisposable
 
     public void Dispose()
     {
+        _authorIcon?.Dispose();
         _authorIcon = null;
+        _thumbnail?.Dispose();
         _thumbnail = null;
+        _image?.Dispose();
         _image = null;
     }
 }
