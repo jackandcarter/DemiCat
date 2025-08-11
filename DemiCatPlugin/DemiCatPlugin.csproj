@@ -3,7 +3,7 @@
     <TargetFramework>net9.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>preview</LangVersion>
+    <LangVersion>latest</LangVersion>
 
     <DalamudApiLevel>13</DalamudApiLevel>
     <AssemblyName>DemiCatPlugin</AssemblyName>
