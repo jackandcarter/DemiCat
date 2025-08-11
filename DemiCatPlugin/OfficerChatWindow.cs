@@ -111,7 +111,7 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
-    private new void SaveConfig()
+    private void SaveConfig()
     {
         PluginServices.PluginInterface.SavePluginConfig(_config);
     }
