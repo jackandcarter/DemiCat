@@ -101,9 +101,12 @@ public class OfficerChatWindow : ChatWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var msgs = await JsonSerializer.DeserializeAsync<List<ChatMessageDto>>(stream) ?? new List<ChatMessageDto>();
-            _messages.Clear();
-            _messages.AddRange(msgs);
-            _lastFetch = DateTime.UtcNow;
+            _ = PluginServices.Framework.RunOnTick(() =>
+            {
+                _messages.Clear();
+                _messages.AddRange(msgs);
+                _lastFetch = DateTime.UtcNow;
+            });
         }
         catch
         {
