@@ -35,13 +35,15 @@ The script prompts for MySQL host, port, user, and password. It will create a `D
 and run any pending migrations. Re-run the script after pulling updates to ensure the schema (e.g. the `server_id` column on
 `users`) stays current. Use `--local` to quickly target a local MySQL server.
 
-### 2. Configure the bot
+### 2. Configure and start the bot
 ```bash
 cd discord-demibot
 cp .env.example .env
-npm i
-node src/index.js
+# Populate .env with the required environment variables
+npm install
+npm start
 ```
+Ensure `.env` is populated with all required values before running `npm start`.
 
 ### 3. Configure the Dalamud plugin
 Update `DemiCatPlugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the
