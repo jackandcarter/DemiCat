@@ -32,6 +32,8 @@ public class Plugin : IDalamudPlugin
     private readonly HttpClient _httpClient = new();
     private ClientWebSocket? _webSocket;
     private readonly List<EmbedDto> _embeds = new();
+    private readonly Action _openMainUi;
+    private readonly Action _openConfigUi;
 
     public Plugin()
     {
@@ -51,8 +53,10 @@ public class Plugin : IDalamudPlugin
 
         PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         PluginInterface.UiBuilder.Draw += _settings.Draw;
-        PluginInterface.UiBuilder.OpenMainUi += () => _mainWindow.IsOpen = true;
-        PluginInterface.UiBuilder.OpenConfigUi += () => _settings.IsOpen = true;
+        _openMainUi = () => _mainWindow.IsOpen = true;
+        PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
+        _openConfigUi = () => _settings.IsOpen = true;
+        PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
         Log.Info("DemiCat loaded.");
     }
@@ -195,44 +199,64 @@ public class Plugin : IDalamudPlugin
                 }
             }
         }
+ catch
+{
+    // ignored
+}
+finally
+{
+    _webSocket?.Dispose();
+    _webSocket = null;
+    StartPolling();
+}
+
+public void Dispose()
+{
+    // Unsubscribe UI draw handlers
+    PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
+    PluginInterface.UiBuilder.Draw -= _settings.Draw;
+
+    // Unsubscribe UI open handlers (from codex/add-fields-for-ui-delegate-subscriptions)
+    PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
+    PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
+
+    // Stop background work (from main)
+    StopPolling();
+
+    // Stop and dispose timer (from codex/add-fields-for-ui-delegate-subscriptions)
+    _timer?.Stop();
+    _timer?.Dispose();
+
+    // Close and dispose websocket safely
+    if (_webSocket != null)
+    {
+        try
+        {
+            if (_webSocket.State == WebSocketState.Open)
+            {
+                _webSocket.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    string.Empty,
+                    CancellationToken.None
+                ).Wait();
+            }
+        }
         catch
         {
             // ignored
         }
-        finally
-        {
-            _webSocket?.Dispose();
-            _webSocket = null;
-            StartPolling();
-        }
+        _webSocket.Dispose();
+        _webSocket = null;
     }
 
-    public void Dispose()
-    {
-        PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
-        PluginInterface.UiBuilder.Draw -= _settings.Draw;
-        StopPolling();
-        if (_webSocket != null)
-        {
-            try
-            {
-                if (_webSocket.State == WebSocketState.Open)
-                {
-                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
-                }
-            }
-            catch
-            {
-                // ignored
-            }
-            _webSocket.Dispose();
-        }
-        _httpClient.Dispose();
-        _chatWindow?.Dispose();
-        _officerChatWindow.Dispose();
-        _ui.Dispose();
-        _settings.Dispose();
-    }
+    // Dispose remaining resources
+    _httpClient.Dispose();
+    _chatWindow?.Dispose();
+    _officerChatWindow.Dispose();
+    _ui.Dispose();
+    _settings.Dispose();
+}
+
 
     private async Task CheckOfficerRole()
     {
