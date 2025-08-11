@@ -5,7 +5,6 @@ using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
-using System.Timers;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,7 +28,7 @@ public class Plugin : IDalamudPlugin
     private readonly OfficerChatWindow _officerChatWindow;
     private readonly MainWindow _mainWindow;
     private Config _config;
-    private readonly System.Timers.Timer _timer;
+    private CancellationTokenSource? _pollCts;
     private readonly HttpClient _httpClient = new();
     private ClientWebSocket? _webSocket;
     private readonly List<EmbedDto> _embeds = new();
@@ -45,10 +44,6 @@ public class Plugin : IDalamudPlugin
         _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config) : null;
         _officerChatWindow = new OfficerChatWindow(_config);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings);
-
-        _timer = new System.Timers.Timer(_config.PollIntervalSeconds * 1000);
-        _timer.Elapsed += OnPollTimer;
-        _timer.AutoReset = true;
 
         if (_config.Enabled)
         {
@@ -66,7 +61,45 @@ public class Plugin : IDalamudPlugin
         Log.Info("DemiCat loaded.");
     }
 
-    private async void OnPollTimer(object? sender, ElapsedEventArgs e)
+    private void StartPolling()
+    {
+        if (_pollCts != null)
+        {
+            return;
+        }
+
+        _pollCts = new CancellationTokenSource();
+        _ = PollLoop(_pollCts.Token);
+    }
+
+    private void StopPolling()
+    {
+        _pollCts?.Cancel();
+        _pollCts = null;
+    }
+
+    private async Task PollLoop(CancellationToken token)
+    {
+        var interval = TimeSpan.FromSeconds(_config.PollIntervalSeconds);
+        using var timer = new PeriodicTimer(interval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                await PollEmbeds();
+                if (_webSocket == null || _webSocket.State != WebSocketState.Open)
+                {
+                    _ = ConnectWebSocket();
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // ignored
+        }
+    }
+
+    private async Task PollEmbeds()
     {
         try
         {
@@ -84,18 +117,16 @@ public class Plugin : IDalamudPlugin
 
             var stream = await response.Content.ReadAsStreamAsync();
             var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream) ?? new List<EmbedDto>();
-            _embeds.Clear();
-            _embeds.AddRange(embeds);
-            _ui.SetEmbeds(_embeds);
+            _ = PluginServices.Framework.RunOnTick(() =>
+            {
+                _embeds.Clear();
+                _embeds.AddRange(embeds);
+                _ui.SetEmbeds(_embeds);
+            });
         }
         catch
         {
             // ignored
-        }
-
-        if (_webSocket == null || _webSocket.State != WebSocketState.Open)
-        {
-            _ = ConnectWebSocket();
         }
     }
 
@@ -114,15 +145,12 @@ public class Plugin : IDalamudPlugin
                 .Replace("http://", "ws://")
                 .Replace("https://", "wss://"));
             await _webSocket.ConnectAsync(wsUri, CancellationToken.None);
-            _timer.Stop();
+            StopPolling();
             await ReceiveLoop();
         }
         catch
         {
-            if (!_timer.Enabled)
-            {
-                _timer.Start();
-            }
+            StartPolling();
         }
     }
 
@@ -155,63 +183,80 @@ public class Plugin : IDalamudPlugin
                 var embed = JsonSerializer.Deserialize<EmbedDto>(json);
                 if (embed != null)
                 {
-                    var index = _embeds.FindIndex(e => e.Id == embed.Id);
-                    if (index >= 0)
+                    _ = PluginServices.Framework.RunOnTick(() =>
                     {
-                        _embeds[index] = embed;
-                    }
-                    else
-                    {
-                        _embeds.Add(embed);
-                    }
-                    _ui.SetEmbeds(_embeds);
+                        var index = _embeds.FindIndex(e => e.Id == embed.Id);
+                        if (index >= 0)
+                        {
+                            _embeds[index] = embed;
+                        }
+                        else
+                        {
+                            _embeds.Add(embed);
+                        }
+                        _ui.SetEmbeds(_embeds);
+                    });
                 }
+            }
+        }
+ catch
+{
+    // ignored
+}
+finally
+{
+    _webSocket?.Dispose();
+    _webSocket = null;
+    StartPolling();
+}
+
+public void Dispose()
+{
+    // Unsubscribe UI draw handlers
+    PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
+    PluginInterface.UiBuilder.Draw -= _settings.Draw;
+
+    // Unsubscribe UI open handlers (from codex/add-fields-for-ui-delegate-subscriptions)
+    PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
+    PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
+
+    // Stop background work (from main)
+    StopPolling();
+
+    // Stop and dispose timer (from codex/add-fields-for-ui-delegate-subscriptions)
+    _timer?.Stop();
+    _timer?.Dispose();
+
+    // Close and dispose websocket safely
+    if (_webSocket != null)
+    {
+        try
+        {
+            if (_webSocket.State == WebSocketState.Open)
+            {
+                _webSocket.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    string.Empty,
+                    CancellationToken.None
+                ).Wait();
             }
         }
         catch
         {
             // ignored
         }
-        finally
-        {
-            _webSocket?.Dispose();
-            _webSocket = null;
-            if (!_timer.Enabled)
-            {
-                _timer.Start();
-            }
-        }
+        _webSocket.Dispose();
+        _webSocket = null;
     }
 
-    public void Dispose()
-    {
-        PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
-        PluginInterface.UiBuilder.Draw -= _settings.Draw;
-        PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
-        PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
-        _timer.Stop();
-        _timer.Dispose();
-        if (_webSocket != null)
-        {
-            try
-            {
-                if (_webSocket.State == WebSocketState.Open)
-                {
-                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
-                }
-            }
-            catch
-            {
-                // ignored
-            }
-            _webSocket.Dispose();
-        }
-        _httpClient.Dispose();
-        _chatWindow?.Dispose();
-        _officerChatWindow.Dispose();
-        _ui.Dispose();
-        _settings.Dispose();
-    }
+    // Dispose remaining resources
+    _httpClient.Dispose();
+    _chatWindow?.Dispose();
+    _officerChatWindow.Dispose();
+    _ui.Dispose();
+    _settings.Dispose();
+}
+
 
     private async Task CheckOfficerRole()
     {
