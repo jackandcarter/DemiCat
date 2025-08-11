@@ -1,4 +1,4 @@
-const APOLLO_BOT_ID = process.env.DISCORD_APOLLO_BOT_ID;
+const APOLLO_BOT_ID = process.env.APOLLO_BOT_ID;
 
 // Emojis commonly used by Apollo for RSVP
 const RSVP_EMOJIS = ['✅', '❌', '❓', '❔', '🤷'];
