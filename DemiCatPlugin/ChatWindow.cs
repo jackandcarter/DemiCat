@@ -112,7 +112,7 @@ public class ChatWindow : IDisposable
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                _input = string.Empty;
+                _ = PluginServices.Framework.RunOnTick(() => _input = string.Empty);
                 await RefreshMessages();
             }
         }
@@ -143,9 +143,12 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var msgs = await JsonSerializer.DeserializeAsync<List<ChatMessageDto>>(stream) ?? new List<ChatMessageDto>();
-            _messages.Clear();
-            _messages.AddRange(msgs);
-            _lastFetch = DateTime.UtcNow;
+            _ = PluginServices.Framework.RunOnTick(() =>
+            {
+                _messages.Clear();
+                _messages.AddRange(msgs);
+                _lastFetch = DateTime.UtcNow;
+            });
         }
         catch
         {
@@ -175,17 +178,20 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            _channels.Clear();
-            _channels.AddRange(dto.Chat);
-            if (!string.IsNullOrEmpty(_channelId))
+            _ = PluginServices.Framework.RunOnTick(() =>
             {
-                _selectedIndex = _channels.IndexOf(_channelId);
-                if (_selectedIndex < 0) _selectedIndex = 0;
-            }
-            if (_channels.Count > 0)
-            {
-                _channelId = _channels[_selectedIndex];
-            }
+                _channels.Clear();
+                _channels.AddRange(dto.Chat);
+                if (!string.IsNullOrEmpty(_channelId))
+                {
+                    _selectedIndex = _channels.IndexOf(_channelId);
+                    if (_selectedIndex < 0) _selectedIndex = 0;
+                }
+                if (_channels.Count > 0)
+                {
+                    _channelId = _channels[_selectedIndex];
+                }
+            });
         }
         catch
         {
