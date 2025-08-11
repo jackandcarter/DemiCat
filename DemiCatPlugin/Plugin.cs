@@ -10,14 +10,18 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordHelper;
-using Dalamud.Interface;
 using Dalamud.Plugin;
+using Dalamud.IoC;
+using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
 public class Plugin : IDalamudPlugin
 {
     public string Name => "DemiCat";
+
+    [PluginService] internal DalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] internal IPluginLog Log { get; private set; } = null!;
 
     private readonly UiRenderer _ui;
     private readonly SettingsWindow _settings;
@@ -30,14 +34,9 @@ public class Plugin : IDalamudPlugin
     private ClientWebSocket? _webSocket;
     private readonly List<EmbedDto> _embeds = new();
 
-    private readonly IDalamudPluginInterface _pluginInterface;
-    private readonly IUiBuilder _uiBuilder;
-    public Plugin(IDalamudPluginInterface pluginInterface, IUiBuilder uiBuilder)
+    public Plugin()
     {
-        _pluginInterface = pluginInterface;
-        _uiBuilder = uiBuilder;
-
-        _config = _pluginInterface.GetPluginConfig() as Config ?? new Config();
+        _config = PluginInterface.LoadPluginConfig() as Config ?? new Config();
 
         _ui = new UiRenderer(_config);
         _settings = new SettingsWindow(_config, CheckOfficerRole);
@@ -55,10 +54,12 @@ public class Plugin : IDalamudPlugin
             _ = CheckOfficerRole();
         }
 
-        _uiBuilder.Draw += _mainWindow.Draw;
-        _uiBuilder.Draw += _settings.Draw;
-        _uiBuilder.OpenMainUi += () => _mainWindow.IsOpen = true;
-        _uiBuilder.OpenConfigUi += () => _settings.IsOpen = true;
+        PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
+        PluginInterface.UiBuilder.Draw += _settings.Draw;
+        PluginInterface.UiBuilder.OpenMainUi += () => _mainWindow.IsOpen = true;
+        PluginInterface.UiBuilder.OpenConfigUi += () => _settings.IsOpen = true;
+
+        Log.Info("DemiCat loaded.");
     }
 
     private async void OnPollTimer(object? sender, ElapsedEventArgs e)
@@ -180,8 +181,8 @@ public class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        _uiBuilder.Draw -= _mainWindow.Draw;
-        _uiBuilder.Draw -= _settings.Draw;
+        PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
+        PluginInterface.UiBuilder.Draw -= _settings.Draw;
         _timer.Stop();
         _timer.Dispose();
         if (_webSocket != null)

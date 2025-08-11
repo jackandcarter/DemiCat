@@ -2,11 +2,16 @@
   "Author": "DemiCat",
   "Name": "DemiCat",
   "InternalName": "DemiCatPlugin",
-  "Punchline": "Discord-linked FC tools and chat.",
+  "AssemblyVersion": "1.1.1.0",
   "Description": "DemiCat Dalamud plugin.",
   "ApplicableVersion": "any",
-  "DalamudApiLevel": 13,
-  "AssemblyVersion": "1.1.0.0",
   "RepoUrl": "https://github.com/jackandcarter/DemiCat",
-  "IconUrl": "https://raw.githubusercontent.com/jackandcarter/DemiCat/main/Demi_Bot_Logo.png"
+  "DalamudApiLevel": 13,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "IconUrl": "https://raw.githubusercontent.com/jackandcarter/DemiCat/main/Demi_Bot_Logo.png",
+  "Punchline": "Discord-linked FC tools and chat.",
+  "AcceptsFeedback": true
 }

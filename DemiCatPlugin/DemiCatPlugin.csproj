@@ -1,22 +1,25 @@
 <Project Sdk="Dalamud.NET.Sdk/13.0.0">
   <PropertyGroup>
-    <TargetFrameworks>net9.0;net9.0-windows</TargetFrameworks>
+    <TargetFramework>net9.0-windows</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>preview</LangVersion>
 
-    <!-- Match manifest.json -->
     <DalamudApiLevel>13</DalamudApiLevel>
     <AssemblyName>DemiCatPlugin</AssemblyName>
     <RootNamespace>DemiCatPlugin</RootNamespace>
 
-    <AssemblyVersion>1.1.0.0</AssemblyVersion>
-    <FileVersion>1.1.0.0</FileVersion>
+    <!-- Keep these in sync with manifest -->
+    <Version>1.1.1</Version>
+    <AssemblyVersion>1.1.1.0</AssemblyVersion>
+    <FileVersion>1.1.1.0</FileVersion>
 
+    <NoWarn>CA1416</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- Keep non-Dalamud dependencies -->
     <PackageReference Include="StbImageSharp" Version="2.30.15" />
   </ItemGroup>
+
+  <!-- DO NOT import a custom DalamudPackager.targets for v13 -->
 </Project>
