@@ -1,6 +1,6 @@
 const client = require('./client');
 
-const DISCORD_APOLLO_BOT_ID = process.env.DISCORD_APOLLO_BOT_ID;
+const APOLLO_BOT_ID = process.env.APOLLO_BOT_ID;
 const RING_BUFFER_SIZE = 10;
 
 // Map of channelId -> array of latest embeds
@@ -16,8 +16,8 @@ function getBuffer(channelId) {
 }
 
 function isApollo(message) {
-  if (!DISCORD_APOLLO_BOT_ID) return true;
-  return message.author && message.author.id === DISCORD_APOLLO_BOT_ID;
+  if (!APOLLO_BOT_ID) return true;
+  return message.author && message.author.id === APOLLO_BOT_ID;
 }
 
 function mapEmbed(message) {

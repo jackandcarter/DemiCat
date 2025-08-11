@@ -17,11 +17,12 @@ DemiCat/
 
 ## Environment Variables
 
-Copy `discord-demibot/.env.example` to `discord-demibot/.env` and fill in the required values.
+Copy `discord-demibot/.env.example` to `discord-demibot/.env` and fill in each value.
 
-- `DISCORD_TOKEN` – Discord bot token
-- `DISCORD_APOLLO_BOT_ID` – Apollo bot ID used for event embeds
-- `PORT` – HTTP server port (defaults to 3000)
+- `DISCORD_BOT_TOKEN` – Discord bot token
+- `DISCORD_CLIENT_ID` – Application client ID
+- `APOLLO_BOT_ID` – Apollo bot ID used for event embeds
+- `PLUGIN_PORT` – HTTP server port (defaults to 3000)
 - `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` – MySQL connection settings
 
 ## Setup
