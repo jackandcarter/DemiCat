@@ -7,21 +7,20 @@ dotenv.config({ path: envPath });
 
 function requireEnv(key, prompt) {
   let value = process.env[key];
-  if (value && value !== '') {
-    return value;
-  }
 
-  fs.writeSync(process.stdout.fd, `${prompt}: `);
-  const buf = Buffer.alloc(1);
-  let input = '';
-  while (true) {
-    const bytes = fs.readSync(process.stdin.fd, buf, 0, 1);
-    if (!bytes) break;
-    const ch = buf.toString();
-    if (ch === '\n') break;
-    input += ch;
+  while (!value || value.trim() === '') {
+    fs.writeSync(process.stdout.fd, `${prompt}: `);
+    const buf = Buffer.alloc(1);
+    let input = '';
+    while (true) {
+      const bytes = fs.readSync(process.stdin.fd, buf, 0, 1);
+      if (!bytes) return '';
+      const ch = buf.toString();
+      if (ch === '\n') break;
+      input += ch;
+    }
+    value = input.trim();
   }
-  value = input.trim();
 
   process.env[key] = value;
   fs.appendFileSync(envPath, `${key}=${value}\n`);
