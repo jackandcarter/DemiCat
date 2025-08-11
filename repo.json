@@ -11,11 +11,10 @@
     "RepoUrl": "https://github.com/jackandcarter/DemiCat",
     "IconUrl": "https://raw.githubusercontent.com/jackandcarter/DemiCat/main/Demi_Bot_Logo.png",
 
-    // use the non-redirecting asset URL (or keep your raw URL if you prefer)
+
     "DownloadLinkInstall": "https://github.com/jackandcarter/DemiCat/releases/download/Release/latest.zip",
     "DownloadLinkUpdate":  "https://github.com/jackandcarter/DemiCat/releases/download/Release/latest.zip"
 
-    // Optional but nice to have:
-    // "LastUpdate": "1754884200"
+  
   }
 ]
