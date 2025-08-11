@@ -20,7 +20,7 @@ public class Plugin : IDalamudPlugin
 {
     public string Name => "DemiCat";
 
-    [PluginService] internal DalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal IPluginLog Log { get; private set; } = null!;
 
     private readonly UiRenderer _ui;
