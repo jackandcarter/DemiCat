@@ -1,15 +1,17 @@
-[
-  {
-    "Author": "DemiCat",
-    "Name": "DemiCat",
-    "Punchline": "DemiCat Dalamud plugin.",
-    "Description": "DemiCat Dalamud plugin.",
-    "InternalName": "DemiCatPlugin",
-    "AssemblyVersion": "1.1.0.0",
-    "DalamudApiLevel": 13,
-    "RepoUrl": "https://github.com/unknown/DemiCat",
-    "DownloadLinkInstall": "https://github.com/unknown/DemiCat/raw/main/DemiCatPlugin.zip",
-    "DownloadLinkTesting": "https://github.com/unknown/DemiCat/raw/testing/DemiCatPlugin.zip",
-    "IconUrl": "https://cdn.discordapp.com/attachments/1337791050294755380/1337854067560550422/Demi_Bot_Logo.png?ex=689a37b1&is=6898e631&hm=1b96e426ca9dcd7f80395ecc7ca274e7ee71cee19c6bae73d20954fc13f6ce95&"
-  }
-]
+{
+  "Plugins": [
+    {
+      "Author": "DemiCat",
+      "Name": "DemiCat",
+      "Punchline": "Discord-linked FC tools and chat.",
+      "Description": "DemiCat Dalamud plugin.",
+      "InternalName": "DemiCatPlugin",
+      "AssemblyVersion": "1.1.0.0",
+      "ApplicableVersion": "any",
+      "DalamudApiLevel": 13,
+      "DownloadLinkInstall": "https://github.com/jackandcarter/DemiCat/raw/main/latest.zip",
+      "DownloadLinkUpdate": "https://github.com/jackandcarter/DemiCat/raw/main/latest.zip",
+      "IconUrl": "https://github.com/jackandcarter/DemiCat/raw/main/icon.png"
+    }
+  ]
+}
