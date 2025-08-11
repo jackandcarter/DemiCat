@@ -70,7 +70,7 @@ Copy `bin/Debug/net9.0/DemiCatPlugin.dll` into your Dalamud plugins folder and e
 Alternatively, add this repository to Dalamud so it can install and update the plugin automatically:
 
 1. In-game, open **Dalamud Settings → Experimental → Custom Repositories**.
-2. Add `https://raw.githubusercontent.com/your-user/DemiCat/main/repo.json`.
+2. Add `(https://raw.githubusercontent.com/jackandcarter/DemiCat/main/repo.json)`.
 3. Enable the **DemiCat** plugin from the available plugin list.
 
 The plugin icon is hosted at `https://cdn.discordapp.com/attachments/1337791050294755380/1337854067560550422/Demi_Bot_Logo.png`.
