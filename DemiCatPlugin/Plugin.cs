@@ -33,6 +33,8 @@ public class Plugin : IDalamudPlugin
     private readonly HttpClient _httpClient = new();
     private ClientWebSocket? _webSocket;
     private readonly List<EmbedDto> _embeds = new();
+    private readonly Action _openMainUi;
+    private readonly Action _openConfigUi;
 
     public Plugin()
     {
@@ -56,8 +58,10 @@ public class Plugin : IDalamudPlugin
 
         PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         PluginInterface.UiBuilder.Draw += _settings.Draw;
-        PluginInterface.UiBuilder.OpenMainUi += () => _mainWindow.IsOpen = true;
-        PluginInterface.UiBuilder.OpenConfigUi += () => _settings.IsOpen = true;
+        _openMainUi = () => _mainWindow.IsOpen = true;
+        PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
+        _openConfigUi = () => _settings.IsOpen = true;
+        PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
         Log.Info("DemiCat loaded.");
     }
@@ -183,6 +187,8 @@ public class Plugin : IDalamudPlugin
     {
         PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
         PluginInterface.UiBuilder.Draw -= _settings.Draw;
+        PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
+        PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
         _timer.Stop();
         _timer.Dispose();
         if (_webSocket != null)
