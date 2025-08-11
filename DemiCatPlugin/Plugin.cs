@@ -20,7 +20,7 @@ public class Plugin : IDalamudPlugin
 {
     public string Name => "DemiCat";
 
-    [PluginService] internal DalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal IPluginLog Log { get; private set; } = null!;
 
     private readonly UiRenderer _ui;
@@ -36,7 +36,7 @@ public class Plugin : IDalamudPlugin
 
     public Plugin()
     {
-        _config = PluginInterface.LoadPluginConfig() as Config ?? new Config();
+        _config = PluginInterface.GetPluginConfig() as Config ?? new Config();
 
         _ui = new UiRenderer(_config);
         _settings = new SettingsWindow(_config, CheckOfficerRole);
