@@ -36,7 +36,7 @@ public class Plugin : IDalamudPlugin
 
     public Plugin()
     {
-        _config = PluginInterface.LoadPluginConfig() as Config ?? new Config();
+        _config = PluginInterface.GetPluginConfig() as Config ?? new Config();
 
         _ui = new UiRenderer(_config);
         _settings = new SettingsWindow(_config, CheckOfficerRole);
