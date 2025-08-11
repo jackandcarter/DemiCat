@@ -9,8 +9,9 @@
       "AssemblyVersion": "1.1.0.0",
       "ApplicableVersion": "any",
       "DalamudApiLevel": 13,
-      "DownloadLinkInstall": "https://raw.githubusercontent.com/jackandcarter/DemiCat/main/latest.zip",
-      "DownloadLinkUpdate":  "https://raw.githubusercontent.com/jackandcarter/DemiCat/main/latest.zip",
+      "DownloadLinkInstall": "https://github.com/jackandcarter/DemiCat/releases/latest/download/latest.zip",
+      "DownloadLinkUpdate":  "https://github.com/jackandcarter/DemiCat/releases/latest/download/latest.zip",
+
       "IconUrl": "https://raw.githubusercontent.com/jackandcarter/DemiCat/main/Demi_Bot_Logo.png"
     }
   ]
