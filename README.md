@@ -46,7 +46,7 @@ npm start
 Ensure `.env` is populated with all required values before running `npm start`.
 
 ### 3. Configure the Dalamud plugin
-Update `DemiCatPlugin/manifest.json` with the usual plugin metadata. In-game, open the plugin configuration and set the
+Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-game, open the plugin configuration and set the
 **Helper Base URL** if needed (defaults to `http://localhost:3000`).
 
 Run `/demibot_embed` in your Discord server and use the button to generate or view your **Key** and **Sync Key** (guild ID).
@@ -77,9 +77,9 @@ Alternatively, add this repository to Dalamud so it can install and update the p
 3. Enable the **DemiCat** plugin from the available plugin list.
 
 The plugin icon is hosted at `https://cdn.discordapp.com/attachments/1337791050294755380/1337854067560550422/Demi_Bot_Logo.png`.
-Update `IconUrl` in `DemiCatPlugin/manifest.json` and the matching entry in `repo.json` if this image changes.
+Update `IconUrl` in `DemiCatPlugin/DemiCatPlugin.json` and the matching entry in `repo.json` if this image changes.
 When releasing, bump `AssemblyVersion` and `FileVersion` in `DemiCatPlugin/DemiCatPlugin.csproj`,
-and keep `DemiCatPlugin/manifest.json` and `repo.json` in sync with the new version number.
+and keep `DemiCatPlugin/DemiCatPlugin.json` and `repo.json` in sync with the new version number.
 
 ## Usage
 
