@@ -68,7 +68,7 @@ Use the value from `api_key` as the `X-Api-Key` header when calling the REST API
 cd DemiCatPlugin
 dotnet build
 ```
-Copy `bin/Debug/net9.0/DemiCatPlugin.dll` into your Dalamud plugins folder and enable it.
+The build output `DemiCatPlugin.dll` can be found under `bin/Debug/net9.0/`. Copy it into your Dalamud plugins folder and enable it.
 
 Alternatively, add this repository to Dalamud so it can install and update the plugin automatically:
 
