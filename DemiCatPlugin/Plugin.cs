@@ -199,60 +199,60 @@ public class Plugin : IDalamudPlugin
                 }
             }
         }
- catch
-{
-    // ignored
-}
-finally
-{
-    _webSocket?.Dispose();
-    _webSocket = null;
-    StartPolling();
-}
-
-public void Dispose()
-{
-    // Unsubscribe UI draw handlers
-    PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
-    PluginInterface.UiBuilder.Draw -= _settings.Draw;
-
-    // Unsubscribe UI open handlers (from codex/add-fields-for-ui-delegate-subscriptions)
-    PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
-    PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
-
-    // Stop background work (from main)
-    StopPolling();
-
-    // Close and dispose websocket safely
-    if (_webSocket != null)
-    {
-        try
-        {
-            if (_webSocket.State == WebSocketState.Open)
-            {
-                _webSocket.CloseAsync(
-                    WebSocketCloseStatus.NormalClosure,
-                    string.Empty,
-                    CancellationToken.None
-                ).Wait();
-            }
-        }
         catch
         {
             // ignored
         }
-        _webSocket.Dispose();
-        _webSocket = null;
+        finally
+        {
+            _webSocket?.Dispose();
+            _webSocket = null;
+            StartPolling();
+        }
+    } // ✅ properly closes ReceiveLoop
+
+    public void Dispose()
+    {
+        // Unsubscribe UI draw handlers
+        PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
+        PluginInterface.UiBuilder.Draw -= _settings.Draw;
+
+        // Unsubscribe UI open handlers
+        PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
+        PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
+
+        // Stop background work
+        StopPolling();
+
+        // Close and dispose websocket safely
+        if (_webSocket != null)
+        {
+            try
+            {
+                if (_webSocket.State == WebSocketState.Open)
+                {
+                    _webSocket.CloseAsync(
+                        WebSocketCloseStatus.NormalClosure,
+                        string.Empty,
+                        CancellationToken.None
+                    ).Wait();
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+            _webSocket.Dispose();
+            _webSocket = null;
+        }
+
+        // Dispose remaining resources
+        _httpClient.Dispose();
+        _chatWindow?.Dispose();
+        _officerChatWindow.Dispose();
+        _ui.Dispose();
+        _settings.Dispose();
     }
-
-    // Dispose remaining resources
-    _httpClient.Dispose();
-    _chatWindow?.Dispose();
-    _officerChatWindow.Dispose();
-    _ui.Dispose();
-    _settings.Dispose();
-}
-
 
     private async Task CheckOfficerRole()
     {
@@ -310,4 +310,3 @@ public void Dispose()
         public bool HasChatRole { get; set; }
     }
 }
-

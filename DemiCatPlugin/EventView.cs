@@ -203,11 +203,14 @@ public class EventView : IDisposable
 
     public void Dispose()
     {
-        _authorIcon?.Dispose();
+        // Dispose if the concrete type supports it; the interface doesn’t expose Dispose().
+        (_authorIcon as IDisposable)?.Dispose();
         _authorIcon = null;
-        _thumbnail?.Dispose();
+
+        (_thumbnail as IDisposable)?.Dispose();
         _thumbnail = null;
-        _image?.Dispose();
+
+        (_image as IDisposable)?.Dispose();
         _image = null;
     }
 }
