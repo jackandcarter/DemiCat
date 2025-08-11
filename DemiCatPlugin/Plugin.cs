@@ -223,10 +223,6 @@ public void Dispose()
     // Stop background work (from main)
     StopPolling();
 
-    // Stop and dispose timer (from codex/add-fields-for-ui-delegate-subscriptions)
-    _timer?.Stop();
-    _timer?.Dispose();
-
     // Close and dispose websocket safely
     if (_webSocket != null)
     {
