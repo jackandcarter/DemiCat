@@ -5,6 +5,7 @@
       ProjectDir="$(ProjectDir)"
       OutputPath="$(OutputPath)"
       AssemblyName="$(AssemblyName)"
+      ManifestFile="manifest.json"
       ManifestType="json"
       MakeZip="true" />
   </Target>
