@@ -10,6 +10,9 @@
     <AssemblyName>DemiCatPlugin</AssemblyName>
     <RootNamespace>DemiCatPlugin</RootNamespace>
 
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+
     <!-- Stop CA1416 spam on macOS -->
     <NoWarn>CA1416</NoWarn>
   </PropertyGroup>

@@ -6,7 +6,7 @@
       "InternalName": "DemiCatPlugin",
       "Punchline": "Discord-linked FC tools and chat.",
       "Description": "DemiCat Dalamud plugin.",
-      "AssemblyVersion": "1.0.0.0",
+      "AssemblyVersion": "1.1.0.0",
       "ApplicableVersion": "any",
       "DalamudApiLevel": 13,
       "DownloadLinkInstall": "https://raw.githubusercontent.com/jackandcarter/DemiCat/main/latest.zip",
