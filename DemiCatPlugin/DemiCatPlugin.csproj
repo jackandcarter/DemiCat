@@ -16,8 +16,10 @@
 
     <NoWarn>CA1416</NoWarn>
   </PropertyGroup>
-
   <ItemGroup>
+    <None Include="icon.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <PackageReference Include="StbImageSharp" Version="2.30.15" />
   </ItemGroup>
 
