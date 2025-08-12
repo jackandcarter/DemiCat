@@ -72,10 +72,10 @@ async def validate(req: ValidateRequest):
 
 @app.post("/roles")
 async def roles(req: RolesRequest):
-    roles = await db.get_user_roles(req.key)
-    if roles is None:
+    role_tags = await db.get_user_roles(req.key)
+    if role_tags is None:
         raise HTTPException(status_code=401, detail="invalid key")
-    return {"roles": roles}
+    return {"roles": role_tags}
 
 
 class SetupRequest(BaseModel):
