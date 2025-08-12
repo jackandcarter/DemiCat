@@ -21,4 +21,5 @@ public class Config : IPluginConfiguration
     public bool EnableFcChat { get; set; } = false;
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
+    public List<Template> Templates { get; set; } = new();
 }

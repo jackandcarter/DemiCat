@@ -15,6 +15,7 @@ public class MainWindow
     private readonly OfficerChatWindow _officer;
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _create;
+    private readonly TemplatesWindow _templates;
     private readonly HttpClient _httpClient = new();
     private readonly List<string> _channels = new();
     private bool _channelsLoaded;
@@ -33,9 +34,11 @@ public class MainWindow
         _officer = officer;
         _settings = settings;
         _create = new EventCreateWindow(config);
+        _templates = new TemplatesWindow(config);
         _channelId = config.EventChannelId;
         _ui.ChannelId = _channelId;
         _create.ChannelId = _channelId;
+        _templates.ChannelId = _channelId;
     }
 
     public void Draw()
@@ -85,6 +88,7 @@ public class MainWindow
                 _ui.ChannelId = _channelId;
                 _ = _ui.RefreshEmbeds();
                 _create.ChannelId = _channelId;
+                _templates.ChannelId = _channelId;
             }
         }
         else
@@ -113,6 +117,13 @@ public class MainWindow
             if (HasOfficerRole && ImGui.BeginTabItem("Officer"))
             {
                 _officer.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (HasOfficerRole && ImGui.BeginTabItem("Templates"))
+            {
+                _templates.ChannelId = _channelId;
+                _templates.Draw();
                 ImGui.EndTabItem();
             }
 
@@ -160,6 +171,7 @@ public class MainWindow
                 _channelId = _channels[_selectedIndex];
                 _ui.ChannelId = _channelId;
                 _create.ChannelId = _channelId;
+                _templates.ChannelId = _channelId;
             }
         }
         catch
