@@ -15,7 +15,7 @@ public class SettingsWindow : IDisposable
     private readonly Func<Task> _refreshRoles;
     private readonly DeveloperWindow _devWindow;
 
-    private string _key = string.Empty;
+    private string _apiKey = string.Empty;
     private bool _invalidKey;
 
     public bool IsOpen;
@@ -24,7 +24,7 @@ public class SettingsWindow : IDisposable
     {
         _config = config;
         _refreshRoles = refreshRoles;
-        _key = config.AuthToken ?? string.Empty;
+        _apiKey = config.AuthToken ?? string.Empty;
         _devWindow = new DeveloperWindow(config);
     }
 
@@ -34,7 +34,7 @@ public class SettingsWindow : IDisposable
         {
             if (ImGui.Begin("DemiCat Settings", ref IsOpen))
             {
-                ImGui.InputText("Key", ref _key, 64);
+                ImGui.InputText("API Key", ref _apiKey, 64);
                 ImGui.SameLine();
                 ImGui.TextDisabled("\u03C0");
                 var io = ImGui.GetIO();
@@ -50,7 +50,7 @@ public class SettingsWindow : IDisposable
 
                 if (_invalidKey)
                 {
-                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "Invalid key");
+                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "Invalid API key");
                 }
                 ImGui.End();
             }
@@ -67,17 +67,21 @@ public class SettingsWindow : IDisposable
     {
         try
         {
-            var url = $"{_config.ServerAddress.TrimEnd('/')}/validate";
+            var url = $"{_config.ServerAddress.TrimEnd('/')}/api/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
-                Content = new StringContent(JsonSerializer.Serialize(new { key = _key }), Encoding.UTF8, "application/json")
+                Content = new StringContent(JsonSerializer.Serialize(new { key = _apiKey }), Encoding.UTF8, "application/json")
             };
+            if (!string.IsNullOrEmpty(_apiKey))
+            {
+                request.Headers.Add("X-Api-Key", _apiKey);
+            }
 
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
                 _invalidKey = false;
-                _config.AuthToken = _key;
+                _config.AuthToken = _apiKey;
                 SaveConfig();
                 _ = _refreshRoles();
             }

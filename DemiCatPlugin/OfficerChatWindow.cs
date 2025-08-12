@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Numerics;
@@ -61,11 +60,11 @@ public class OfficerChatWindow : ChatWindow
         try
         {
             var body = new { channelId = _channelId, content = _input, useCharacterName = _useCharacterName };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/officer-messages");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/officer-messages");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
@@ -89,10 +88,10 @@ public class OfficerChatWindow : ChatWindow
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/officer-messages/{_channelId}");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/officer-messages/{_channelId}");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
