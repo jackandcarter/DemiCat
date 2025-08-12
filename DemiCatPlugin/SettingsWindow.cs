@@ -2,7 +2,7 @@ using System;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
@@ -12,9 +12,12 @@ public class SettingsWindow : IDisposable
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient = new();
-    private string _key = string.Empty;
-    private string _syncKey = string.Empty;
     private readonly Func<Task> _refreshRoles;
+    private readonly DeveloperWindow _devWindow;
+
+    private string _key = string.Empty;
+    private bool _invalidKey;
+
     public bool IsOpen;
 
     public SettingsWindow(Config config, Func<Task> refreshRoles)
@@ -22,74 +25,70 @@ public class SettingsWindow : IDisposable
         _config = config;
         _refreshRoles = refreshRoles;
         _key = config.AuthToken ?? string.Empty;
-        _syncKey = config.SyncKey;
+        _devWindow = new DeveloperWindow(config);
     }
 
     public void Draw()
     {
-        if (!IsOpen)
+        if (IsOpen)
         {
-            return;
+            if (ImGui.Begin("DemiCat Settings", ref IsOpen))
+            {
+                ImGui.InputText("Key", ref _key, 64);
+                ImGui.SameLine();
+                ImGui.TextDisabled("\u03C0");
+                var io = ImGui.GetIO();
+                if (ImGui.IsItemClicked() && io.KeyCtrl && io.KeyShift)
+                {
+                    _devWindow.IsOpen = true;
+                }
+
+                if (ImGui.Button("Sync"))
+                {
+                    _ = Sync();
+                }
+
+                if (_invalidKey)
+                {
+                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "Invalid key");
+                }
+                ImGui.End();
+            }
+            else
+            {
+                ImGui.End();
+            }
         }
 
-        if (!ImGui.Begin("DemiCat Settings", ref IsOpen))
-        {
-            ImGui.End();
-            return;
-        }
-
-        ImGui.InputText("Key", ref _key, 64);
-        ImGui.InputText("Sync Key", ref _syncKey, 64);
-        if (ImGui.Button("Connect/Sync"))
-        {
-            _ = ConnectSync();
-        }
-        ImGui.SameLine();
-        if (ImGui.Button("Validate"))
-        {
-            _ = ValidateKey();
-        }
-
-        var fc = _config.EnableFcChat;
-        if (ImGui.Checkbox("Enable FC Chat", ref fc))
-        {
-            _config.EnableFcChat = fc;
-            SaveConfig();
-        }
-
-        ImGui.End();
+        _devWindow.Draw();
     }
 
-    private async Task ValidateKey()
+    private async Task Sync()
     {
         try
         {
-            var characterName = PluginServices.ClientState.LocalPlayer?.Name ?? string.Empty;
-            var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/validate";
+            var url = $"{_config.ServerAddress.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
-                Content = new StringContent(
-                    JsonSerializer.Serialize(new { key = _key, characterName = characterName }),
-                    Encoding.UTF8,
-                    "application/json")
+                Content = new StringContent(JsonSerializer.Serialize(new { key = _key }), Encoding.UTF8, "application/json")
             };
 
             var response = await _httpClient.SendAsync(request);
-
             if (response.IsSuccessStatusCode)
             {
-                _ = PluginServices.Framework.RunOnTick(() =>
-                {
-                    _config.AuthToken = _key;
-                    _config.SyncKey = _syncKey;
-                    SaveConfig();
-                    _ = _refreshRoles();
-                });
+                _invalidKey = false;
+                _config.AuthToken = _key;
+                SaveConfig();
+                _ = _refreshRoles();
+            }
+            else
+            {
+                _invalidKey = true;
             }
         }
         catch
         {
-            // ignored
+            _invalidKey = true;
         }
     }
 
@@ -102,57 +101,4 @@ public class SettingsWindow : IDisposable
     {
         _httpClient.Dispose();
     }
-
-    private async Task ConnectSync()
-    {
-        try
-        {
-            var characterName = PluginServices.ClientState.LocalPlayer?.Name ?? string.Empty;
-            var url = $"{_config.HelperBaseUrl.TrimEnd('/')}/validate";
-            var request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new StringContent(
-                    JsonSerializer.Serialize(new { syncKey = _syncKey, characterName = characterName }),
-                    Encoding.UTF8,
-                    "application/json")
-            };
-
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                return;
-            }
-
-            var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<ValidateResponse>(stream) ?? new ValidateResponse();
-
-            _ = PluginServices.Framework.RunOnTick(() =>
-            {
-                _key = dto.UserKey;
-                _config.AuthToken = dto.UserKey;
-                _config.SyncKey = _syncKey;
-                _config.GuildId = dto.Guild?.Id ?? string.Empty;
-                _config.GuildName = dto.Guild?.Name ?? string.Empty;
-                SaveConfig();
-                _ = _refreshRoles();
-            });
-        }
-        catch
-        {
-            // ignored
-        }
-    }
-
-    private class ValidateResponse
-    {
-        [JsonPropertyName("userKey")] public string UserKey { get; set; } = string.Empty;
-        [JsonPropertyName("guild")] public GuildInfo? Guild { get; set; }
-    }
-
-    private class GuildInfo
-    {
-        [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
-    }
 }
-
