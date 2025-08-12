@@ -18,6 +18,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from . import ws
+from .rate_limiter import enqueue
 
 
 class DemiBot(commands.Bot):
@@ -159,11 +160,11 @@ class DemiBot(commands.Bot):
 
     @app_commands.command(name="link", description="Link your account")
     async def link(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message("Link command received", ephemeral=True)
+        await enqueue(lambda: interaction.response.send_message("Link command received", ephemeral=True))
 
     @app_commands.command(name="createevent", description="Create an event")
     async def createevent(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message("Create event command received", ephemeral=True)
+        await enqueue(lambda: interaction.response.send_message("Create event command received", ephemeral=True))
 
     @app_commands.command(name="generatekey", description="Generate a key for DemiCat")
     async def generatekey(self, interaction: discord.Interaction) -> None:
@@ -180,23 +181,24 @@ class DemiBot(commands.Bot):
         embed.add_field(name="Sync Key", value=str(guild_id))
 
         try:
-            await interaction.user.send(embed=embed)
+            await enqueue(lambda: interaction.user.send(embed=embed))
         except Exception:
             # Ignored: DM may fail if the user has DMs disabled
             pass
-
-        await interaction.response.send_message("Sent you a DM with your key!", ephemeral=True)
+        await enqueue(lambda: interaction.response.send_message("Sent you a DM with your key!", ephemeral=True))
 
     @app_commands.command(name="demibot_setup", description="Set up DemiBot in this server")
     async def demibot_setup(self, interaction: discord.Interaction) -> None:
-        await interaction.response.send_message("DemiBot setup started", ephemeral=True)
+        await enqueue(lambda: interaction.response.send_message("DemiBot setup started", ephemeral=True))
 
     @app_commands.command(name="demibot_resync", description="Resync DemiBot data")
     @app_commands.describe(users="Space-separated user mentions or IDs to resync")
     async def demibot_resync(self, interaction: discord.Interaction, users: str | None = None) -> None:
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "This command is restricted to administrators", ephemeral=True
+            await enqueue(
+                lambda: interaction.response.send_message(
+                    "This command is restricted to administrators", ephemeral=True
+                )
             )
             return
 
@@ -222,13 +224,15 @@ class DemiBot(commands.Bot):
         summary = (
             f"Updated {len(updated)} user(s): {', '.join(updated)}" if updated else "No users updated"
         )
-        await interaction.response.send_message(summary, ephemeral=True)
+        await enqueue(lambda: interaction.response.send_message(summary, ephemeral=True))
 
     @app_commands.command(name="demibot_embed", description="Create a DemiBot embed")
     async def demibot_embed(self, interaction: discord.Interaction) -> None:
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "This command is restricted to administrators", ephemeral=True
+            await enqueue(
+                lambda: interaction.response.send_message(
+                    "This command is restricted to administrators", ephemeral=True
+                )
             )
             return
 
@@ -243,45 +247,51 @@ class DemiBot(commands.Bot):
         view.add_item(
             discord.ui.Button(custom_id="demibot_key", label=label, style=discord.ButtonStyle.primary)
         )
-        await interaction.channel.send(embed=embed, view=view)
-        await interaction.response.send_message("DemiBot key embed created", ephemeral=True)
+        await enqueue(lambda: interaction.channel.send(embed=embed, view=view))
+        await enqueue(lambda: interaction.response.send_message("DemiBot key embed created", ephemeral=True))
 
     @app_commands.command(name="demibot_reset", description="Reset DemiBot data")
     async def demibot_reset(self, interaction: discord.Interaction) -> None:
         is_owner = interaction.guild.owner_id == interaction.user.id
         is_admin = interaction.user.guild_permissions.administrator
         if not (is_owner or is_admin):
-            await interaction.response.send_message(
-                "This command is restricted to administrators", ephemeral=True
+            await enqueue(
+                lambda: interaction.response.send_message(
+                    "This command is restricted to administrators", ephemeral=True
+                )
             )
             return
 
         if hasattr(self.db, "clear_server"):
             await self.db.clear_server(interaction.guild_id)
-        await interaction.response.send_message("DemiBot data reset.", ephemeral=True)
+        await enqueue(lambda: interaction.response.send_message("DemiBot data reset.", ephemeral=True))
 
     @app_commands.command(name="demibot_settings", description="View or change DemiBot settings")
     async def demibot_settings(self, interaction: discord.Interaction) -> None:
         if not interaction.user.guild_permissions.administrator:
-            await interaction.response.send_message(
-                "This command is restricted to administrators", ephemeral=True
+            await enqueue(
+                lambda: interaction.response.send_message(
+                    "This command is restricted to administrators", ephemeral=True
+                )
             )
             return
 
         settings = {}
         if hasattr(self.db, "get_server_settings"):
             settings = await self.db.get_server_settings(interaction.guild_id)
-        await interaction.response.send_message(f"Settings: {settings}", ephemeral=True)
+        await enqueue(lambda: interaction.response.send_message(f"Settings: {settings}", ephemeral=True))
 
     @app_commands.command(name="demibot_clear", description="Clear DemiBot configuration")
     async def demibot_clear(self, interaction: discord.Interaction) -> None:
         if interaction.guild.owner_id != interaction.user.id:
-            await interaction.response.send_message(
-                "This command is restricted to the server owner", ephemeral=True
+            await enqueue(
+                lambda: interaction.response.send_message(
+                    "This command is restricted to the server owner", ephemeral=True
+                )
             )
             return
 
         if hasattr(self.db, "clear_server"):
             await self.db.clear_server(interaction.guild_id)
-        await interaction.response.send_message("All guild data has been purged.", ephemeral=True)
+        await enqueue(lambda: interaction.response.send_message("All guild data has been purged.", ephemeral=True))
 
