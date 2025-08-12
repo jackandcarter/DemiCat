@@ -39,6 +39,8 @@ class DemiBot(commands.Bot):
         # Cached payloads for WebSocket consumers
         self.message_cache: Dict[str, List[Dict[str, Any]]] = {}
         self.embed_cache: List[Dict[str, Any]] = []
+        # Optional per-guild caches for quick lookup
+        self.embed_cache_by_guild: Dict[str, List[Dict[str, Any]]] = {}
 
         # Register slash commands.  They are declared as methods below and added
         # to the command tree here so ``self`` is available inside callbacks.
@@ -117,6 +119,7 @@ class DemiBot(commands.Bot):
         return {
             "id": str(message.id),
             "channelId": str(message.channel.id),
+            "serverId": str(message.guild.id),
             "timestamp": embed.timestamp.isoformat() if embed.timestamp else None,
             "authorName": embed.author.name if embed.author else None,
             "authorIconUrl": embed.author.icon_url if embed.author else None,
@@ -147,6 +150,11 @@ class DemiBot(commands.Bot):
         self.embed_cache.append(embed)
         if len(self.embed_cache) > 50:
             self.embed_cache.pop(0)
+
+        guild_cache = self.embed_cache_by_guild.setdefault(embed["serverId"], [])
+        guild_cache.append(embed)
+        if len(guild_cache) > 50:
+            guild_cache.pop(0)
 
     # ------------------------------------------------------------------
     # Discord event listeners
