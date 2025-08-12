@@ -67,7 +67,7 @@ public class SettingsWindow : IDisposable
     {
         try
         {
-            var url = $"{_config.ServerAddress.TrimEnd('/')}/api/validate";
+            var url = $"{_config.ServerAddress.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(JsonSerializer.Serialize(new { key = _apiKey }), Encoding.UTF8, "application/json")
