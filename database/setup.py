@@ -34,6 +34,20 @@ def apply_migrations(cursor):
         cursor.execute('ALTER TABLE users ADD INDEX (server_id)')
         cursor.execute('ALTER TABLE users ADD CONSTRAINT fk_users_server FOREIGN KEY (server_id) REFERENCES servers(id)')
 
+    cursor.execute("SHOW TABLES LIKE 'server_settings'")
+    if cursor.fetchone():
+        cursor.execute("SHOW COLUMNS FROM server_settings LIKE 'setting_key'")
+        if cursor.fetchone():
+            cursor.execute('DROP TABLE server_settings')
+            cursor.execute(
+                """
+                CREATE TABLE server_settings (
+                    guild_id VARCHAR(255) PRIMARY KEY,
+                    settings TEXT
+                )
+                """
+            )
+
 
 def main():
     parser = argparse.ArgumentParser(description='Initialize the DemiBot database')
