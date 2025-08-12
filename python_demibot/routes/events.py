@@ -35,7 +35,9 @@ def build_embed(data: Dict[str, Any], info: Dict[str, Any], include_image: bool 
         embed.set_thumbnail(url=data["thumbnailUrl"])
     if data.get("authorName"):
         embed.set_author(name=data.get("authorName"), icon_url=data.get("authorIconUrl"))
-    if include_image:
+    if data.get("imageUrl"):
+        embed.set_image(url=data["imageUrl"])
+    elif include_image:
         embed.set_image(url="attachment://image.png")
     return embed
 
@@ -95,6 +97,7 @@ async def update_event(event_id: int, payload: Dict[str, Any], info: Dict[str, A
             "thumbnailUrl": payload.get("thumbnailUrl"),
             "authorName": payload.get("authorName"),
             "authorIconUrl": payload.get("authorIconUrl"),
+            "imageUrl": payload.get("imageUrl"),
         }
         image_base64 = payload.get("imageBase64")
         embed = build_embed(data, info, include_image=bool(image_base64))

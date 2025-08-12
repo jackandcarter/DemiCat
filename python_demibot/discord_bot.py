@@ -119,8 +119,18 @@ class DemiBot(commands.Bot):
             "channelId": str(message.channel.id),
             "timestamp": embed.timestamp.isoformat() if embed.timestamp else None,
             "authorName": embed.author.name if embed.author else None,
+            "authorIconUrl": embed.author.icon_url if embed.author else None,
             "title": embed.title,
+            "url": embed.url,
             "description": embed.description,
+            "color": embed.color.value if embed.color else None,
+            "fields": [
+                {"name": f.name, "value": f.value, "inline": f.inline} for f in embed.fields
+            ]
+            if embed.fields
+            else None,
+            "thumbnailUrl": embed.thumbnail.url if embed.thumbnail else None,
+            "imageUrl": embed.image.url if embed.image else None,
         }
 
     # ------------------------------------------------------------------
