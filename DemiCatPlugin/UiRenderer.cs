@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -58,10 +57,10 @@ public class UiRenderer : IDisposable
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/embeds");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/embeds");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)

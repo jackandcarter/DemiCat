@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -109,10 +108,10 @@ public class Plugin : IDalamudPlugin
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/embeds");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/embeds");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
 
             var response = await _httpClient.SendAsync(request);
@@ -269,10 +268,14 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ServerAddress.TrimEnd('/')}/roles")
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ServerAddress.TrimEnd('/')}/api/roles")
             {
                 Content = new StringContent(JsonSerializer.Serialize(new { key = _config.AuthToken }), Encoding.UTF8, "application/json")
             };
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {

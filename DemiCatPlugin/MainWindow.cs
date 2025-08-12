@@ -141,7 +141,7 @@ public class MainWindow
         _channelsLoaded = true;
         try
         {
-            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/channels");
+            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/api/channels");
             if (!response.IsSuccessStatusCode)
             {
                 return;

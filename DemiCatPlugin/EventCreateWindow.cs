@@ -1,6 +1,5 @@
 using System;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Numerics;
@@ -57,11 +56,11 @@ public class EventCreateWindow : IDisposable
                 imageUrl = string.IsNullOrWhiteSpace(_imageUrl) ? null : _imageUrl
             };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/events");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/events");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
 
             var response = await _httpClient.SendAsync(request);

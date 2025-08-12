@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
@@ -181,12 +180,12 @@ public class EventView : IDisposable
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/interactions");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/interactions");
             var body = new { MessageId = _dto.Id, ChannelId = _dto.ChannelId, CustomId = customId };
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
             var response = await _httpClient.SendAsync(request);
             _lastResult = response.IsSuccessStatusCode ? "Signup updated" : "Signup failed";
