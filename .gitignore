@@ -4,3 +4,4 @@ obj/
 node_modules/
 .env
 database/*.db
+__pycache__/
