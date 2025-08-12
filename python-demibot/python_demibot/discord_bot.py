@@ -83,11 +83,14 @@ class DemiBot(commands.Bot):
         return self
 
     def list_online_users(self) -> List[Dict[str, str]]:
-        """Return a list of online users across all guilds."""
+        """Return a list of users that are currently online in any guild.
+
+        Members with any status other than ``offline`` are considered online.
+        """
         users: List[Dict[str, str]] = []
         for guild in self.guilds:
             for member in guild.members:
-                if str(member.status) == "online":
+                if member.status != discord.Status.offline:
                     users.append({"id": str(member.id), "name": member.display_name})
         return users
 
