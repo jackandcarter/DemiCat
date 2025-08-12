@@ -72,6 +72,18 @@ class Database:
                 )
                 await cur.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS event_attendance (
+                        event_id INT,
+                        user_id VARCHAR(255),
+                        status ENUM('yes','maybe','no') NOT NULL,
+                        PRIMARY KEY (event_id, user_id),
+                        FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+                        FOREIGN KEY (user_id) REFERENCES users(id)
+                    )
+                    """
+                )
+                await cur.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS api_keys (
                         api_key VARCHAR(255) PRIMARY KEY,
                         user_id VARCHAR(255),
@@ -485,6 +497,18 @@ class Database:
                 )
                 return await cur.fetchone()
 
+    async def get_event_by_message_id(self, message_id: str) -> dict | None:
+        """Return event information by message ID."""
+        if not self.pool:
+            return None
+        async with self.pool.acquire() as conn:
+            async with conn.cursor(aiomysql.DictCursor) as cur:
+                await cur.execute(
+                    "SELECT * FROM events WHERE message_id=%s",
+                    (message_id,),
+                )
+                return await cur.fetchone()
+
     async def update_event(self, event: dict) -> None:
         """Update an existing event."""
         if not self.pool:
@@ -503,6 +527,20 @@ class Database:
                         event.get("metadata"),
                         event["id"],
                     ),
+                )
+
+    async def set_event_attendance(self, event_id: int, user_id: str, status: str) -> None:
+        if not self.pool:
+            return
+        async with self.pool.acquire() as conn:
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    INSERT INTO event_attendance (event_id, user_id, status)
+                    VALUES (%s, %s, %s)
+                    ON DUPLICATE KEY UPDATE status=VALUES(status)
+                    """,
+                    (event_id, user_id, status),
                 )
 
     async def clear_server(self, server_id: str) -> None:

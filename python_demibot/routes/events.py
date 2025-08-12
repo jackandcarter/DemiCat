@@ -12,6 +12,33 @@ from ..rate_limiter import enqueue
 router = APIRouter(prefix="/api/events")
 
 
+class AttendanceButton(discord.ui.Button):
+    """Button used for tracking event attendance."""
+
+    def __init__(self, status: str):
+        label = status.title()
+        styles = {
+            "yes": discord.ButtonStyle.success,
+            "maybe": discord.ButtonStyle.secondary,
+            "no": discord.ButtonStyle.danger,
+        }
+        super().__init__(label=label, style=styles[status], custom_id=f"attendance:{status}")
+        self.status = status
+
+    async def callback(self, interaction: discord.Interaction):  # pragma: no cover - depends on Discord
+        event = await db.get_event_by_message_id(interaction.message.id)
+        if event:
+            await db.set_event_attendance(event["id"], str(interaction.user.id), self.status)
+        await interaction.response.defer()
+
+
+class AttendanceView(discord.ui.View):
+    def __init__(self, buttons: list[str]):
+        super().__init__(timeout=None)
+        for status in buttons:
+            self.add_item(AttendanceButton(status))
+
+
 def build_embed(data: Dict[str, Any], info: Dict[str, Any], include_image: bool = False) -> discord.Embed:
     embed = discord.Embed(
         title=data.get("title"),
@@ -54,7 +81,9 @@ async def create_event(payload: Dict[str, Any], info: Dict[str, Any] = Depends(g
         if payload.get("imageBase64"):
             data = base64.b64decode(payload["imageBase64"])
             files = [discord.File(io.BytesIO(data), filename="image.png")]
-        message = await enqueue(lambda: channel.send(embed=embed, files=files))
+        buttons = payload.get("attendance") or ["yes", "maybe", "no"]
+        view = AttendanceView(buttons)
+        message = await enqueue(lambda: channel.send(embed=embed, files=files, view=view))
         settings = await db.get_server_settings(info["serverId"])
         events = set(settings.get("eventChannels", []))
         events.add(channel_id)

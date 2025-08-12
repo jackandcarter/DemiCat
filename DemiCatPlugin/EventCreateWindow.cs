@@ -24,6 +24,9 @@ public class EventCreateWindow : IDisposable
     private int _color;
     private readonly List<Field> _fields = new();
     private string? _lastResult;
+    private bool _includeYes = true;
+    private bool _includeMaybe = true;
+    private bool _includeNo = true;
 
     public string ChannelId { private get; set; } = string.Empty;
 
@@ -41,6 +44,9 @@ public class EventCreateWindow : IDisposable
         ImGui.InputText("Image URL", ref _imageUrl, 260);
         ImGui.InputText("Thumbnail URL", ref _thumbnailUrl, 260);
         ImGui.InputInt("Color", ref _color);
+        ImGui.Checkbox("Yes Button", ref _includeYes);
+        ImGui.Checkbox("Maybe Button", ref _includeMaybe);
+        ImGui.Checkbox("No Button", ref _includeNo);
 
         if (ImGui.TreeNode("Fields"))
         {
@@ -78,6 +84,12 @@ public class EventCreateWindow : IDisposable
     {
         try
         {
+            var attendance = new List<string>();
+            if (_includeYes) attendance.Add("yes");
+            if (_includeMaybe) attendance.Add("maybe");
+            if (_includeNo) attendance.Add("no");
+            if (attendance.Count == 0) attendance.AddRange(new[] { "yes", "maybe", "no" });
+
             var body = new
             {
                 channelId = ChannelId,
@@ -93,7 +105,8 @@ public class EventCreateWindow : IDisposable
                         .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
                         .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
                         .ToList()
-                    : null
+                    : null,
+                attendance
             };
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/events");

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 
-from ..api import get_api_key_info, bot
+from ..api import get_api_key_info, bot, db
 
 router = APIRouter(prefix="/api/interactions")
 
@@ -40,6 +40,11 @@ async def post_interaction(payload: dict, info: dict = Depends(get_api_key_info)
         user = await bot.get_client().fetch_user(int(info["userId"]))
         interaction = DummyInteraction(message, user)
         view_store.dispatch_view(2, custom_id, interaction)
+        if custom_id.startswith("attendance:"):
+            status = custom_id.split(":", 1)[1]
+            event = await db.get_event_by_message_id(message_id)
+            if event:
+                await db.set_event_attendance(event["id"], info["userId"], status)
         return {"ok": True}
     except HTTPException:
         raise
