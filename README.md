@@ -4,26 +4,28 @@ DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts 
 
 ```
 DemiCat/
-├── discord-demibot/  # Node.js Discord bot and REST interface
+├── python-demibot/   # Python Discord bot and REST interface
 └── DemiCatPlugin/    # Dalamud plugin that renders the embeds in FFXIV
 ```
 
 ## Prerequisites
 
-- [Node.js 18+](https://nodejs.org/)
+- [Python 3.10+](https://www.python.org/)
 - A MySQL server
 - A Discord bot token and Apollo-managed channels
 - FFXIV with the [Dalamud](https://github.com/goatcorp/Dalamud) plugin framework
 
 ## Environment Variables
 
-Copy `discord-demibot/.env.example` to `discord-demibot/.env` and fill in each value.
+Copy `python-demibot/python_demibot/config.example.json` to
+`python-demibot/python_demibot/config.json` and fill in each value.
 
-- `DISCORD_BOT_TOKEN` – Discord bot token
-- `DISCORD_CLIENT_ID` – Application client ID
-- `APOLLO_BOT_ID` – Apollo bot ID used for event embeds
-- `PLUGIN_PORT` – HTTP server port (defaults to 3000)
-- `DB_HOST`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` – MySQL connection settings
+- `mysql_host`, `mysql_user`, `mysql_password`, `mysql_db` – MySQL connection settings
+- `discord_token` – Discord bot token
+- `discord_client_id` – Application client ID
+- `apollo_bot_id` – Apollo bot ID used for event embeds
+- `api_port` – HTTP server port (defaults to 8000)
+- `user_key`, `sync_key` – Keys used by the plugin for authentication (generated on first run)
 
 ## Setup
 
@@ -37,20 +39,26 @@ and run any pending migrations. Re-run the script after pulling updates to ensur
 
 ### 2. Configure and start the bot
 ```bash
-cd discord-demibot
-cp .env.example .env
-# Populate .env with the required environment variables
-npm install
-npm start
+cd python-demibot
+python -m venv .venv
+source .venv/bin/activate
+pip install fastapi uvicorn aiomysql discord.py
+cp python_demibot/config.example.json python_demibot/config.json
+python -m python_demibot
 ```
-Ensure `.env` is populated with all required values before running `npm start`.
+The first run will launch a CLI wizard if `config.json` is missing and will start the
+Discord bot and HTTP API using the saved configuration.
+
+With the bot online, run `/demibot_embed` in your Discord server to receive a DM with
+your **Key** and **Sync Key**. Each user should generate their own keys with this
+command for plugin authentication.
 
 ### 3. Configure the Dalamud plugin
 Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-game, open the plugin configuration and set the
-**Helper Base URL** if needed (defaults to `http://localhost:3000`).
+**Helper Base URL** if needed (defaults to `http://localhost:8000`).
 
-Run `/demibot_embed` in your Discord server and use the button to generate or view your **Key** and **Sync Key** (guild ID).
-Enter both values in the plugin settings and press **Connect/Sync** (or **Validate** if you already have a key) to link the
+Use the **Key** and **Sync Key** obtained from `/demibot_embed` and enter both values in the
+plugin settings. Press **Connect/Sync** (or **Validate** if you already have a key) to link the
 plugin with the bot.
 
 ### 4. Insert API keys
