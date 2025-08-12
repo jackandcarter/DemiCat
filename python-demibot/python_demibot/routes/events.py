@@ -7,6 +7,7 @@ import discord
 from fastapi import APIRouter, Depends, HTTPException
 
 from ..api import get_api_key_info, db, bot
+from ..rate_limiter import enqueue
 
 router = APIRouter(prefix="/api/events")
 
@@ -51,7 +52,7 @@ async def create_event(payload: Dict[str, Any], info: Dict[str, Any] = Depends(g
         if payload.get("imageBase64"):
             data = base64.b64decode(payload["imageBase64"])
             files = [discord.File(io.BytesIO(data), filename="image.png")]
-        message = await channel.send(embed=embed, files=files)
+        message = await enqueue(lambda: channel.send(embed=embed, files=files))
         settings = await db.get_server_settings(info["serverId"])
         events = set(settings.get("eventChannels", []))
         events.add(channel_id)
@@ -102,7 +103,7 @@ async def update_event(event_id: int, payload: Dict[str, Any], info: Dict[str, A
             file_bytes = base64.b64decode(image_base64)
             files = [discord.File(io.BytesIO(file_bytes), filename="image.png")]
         message = await channel.fetch_message(existing["message_id"])
-        await message.edit(embed=embed, attachments=files)
+        await enqueue(lambda: message.edit(embed=embed, attachments=files))
         await db.update_event({
             "id": event_id,
             "title": data["title"],
@@ -138,7 +139,7 @@ async def delete_event(event_id: int, info: Dict[str, Any] = Depends(get_api_key
             "color": 0x808080,
         }, info)
         message = await channel.fetch_message(existing["message_id"])
-        await message.edit(embed=embed, attachments=[])
+        await enqueue(lambda: message.edit(embed=embed, attachments=[]))
         await db.update_event({
             "id": event_id,
             "title": title,

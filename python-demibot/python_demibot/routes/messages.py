@@ -3,6 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ..api import get_api_key_info, db, bot
+from ..rate_limiter import enqueue
 
 router = APIRouter(prefix="/api/messages")
 
@@ -40,7 +41,7 @@ async def post_message(payload: dict, info: dict = Depends(get_api_key_info)):
         hook = next((h for h in hooks if h.name == "DemiCat"), None)
         if not hook:
             hook = await channel.create_webhook(name="DemiCat")
-        await hook.send(content, username=display_name)
+        await enqueue(lambda: hook.send(content, username=display_name))
         await db.set_server_settings(info["serverId"], {"fcChatChannel": channel_id})
         bot.track_fc_channel(channel_id)
         return {"ok": True}
