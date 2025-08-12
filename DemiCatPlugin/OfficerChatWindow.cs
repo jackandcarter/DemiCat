@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -18,10 +19,24 @@ public class OfficerChatWindow : ChatWindow
 
     public override void Draw()
     {
-        if (string.IsNullOrEmpty(_channelId))
+        if (!_channelsLoaded)
         {
-            ImGui.TextUnformatted("No officer channel configured");
-            return;
+            _ = FetchChannels();
+        }
+
+        if (_channels.Count > 0)
+        {
+            if (ImGui.Combo("Channel", ref _selectedIndex, _channels.ToArray(), _channels.Count))
+            {
+                _channelId = _channels[_selectedIndex];
+                _config.OfficerChannelId = _channelId;
+                SaveConfig();
+                _ = RefreshMessages();
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted("No officer channels available");
         }
 
         if (ImGui.Checkbox("Use Character Name", ref _useCharacterName))
@@ -30,7 +45,7 @@ public class OfficerChatWindow : ChatWindow
             SaveConfig();
         }
 
-        if (DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
+        if (!string.IsNullOrEmpty(_channelId) && DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
         {
             _ = RefreshMessages();
         }
@@ -116,5 +131,44 @@ public class OfficerChatWindow : ChatWindow
     private void SaveConfig()
     {
         PluginServices.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private async Task FetchChannels()
+    {
+        _channelsLoaded = true;
+        try
+        {
+            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/api/channels");
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            _ = PluginServices.Framework.RunOnTick(() =>
+            {
+                _channels.Clear();
+                _channels.AddRange(dto.Officer);
+                if (!string.IsNullOrEmpty(_channelId))
+                {
+                    _selectedIndex = _channels.IndexOf(_channelId);
+                    if (_selectedIndex < 0) _selectedIndex = 0;
+                }
+                if (_channels.Count > 0)
+                {
+                    _channelId = _channels[_selectedIndex];
+                }
+            });
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+
+    private class ChannelListDto
+    {
+        [JsonPropertyName("officer_visible")]
+        public List<string> Officer { get; set; } = new();
     }
 }
