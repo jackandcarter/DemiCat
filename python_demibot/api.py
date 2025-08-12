@@ -65,6 +65,10 @@ async def shutdown() -> None:
 @app.post("/validate")
 async def validate(req: ValidateRequest):
     if (req.key and req.key == config["user_key"]) or (req.syncKey and req.syncKey == config["sync_key"]):
+        if req.characterName and req.key:
+            user = await db.get_user_by_key(req.key)
+            if user:
+                await db.set_character(user["userId"], req.characterName)
         guild = {"id": config.get("guild_id", ""), "name": config.get("guild_name", "")}
         return {"userKey": config["user_key"], "guild": guild}
     raise HTTPException(status_code=401, detail="invalid key")
