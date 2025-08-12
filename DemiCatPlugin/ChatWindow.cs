@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -76,6 +77,22 @@ public class ChatWindow : IDisposable
             _ = SendMessage();
         }
 
+    }
+
+    public void SetChannels(List<string> channels)
+    {
+        _channelsLoaded = true;
+        _channels.Clear();
+        _channels.AddRange(channels);
+        if (!string.IsNullOrEmpty(_channelId))
+        {
+            _selectedIndex = _channels.IndexOf(_channelId);
+            if (_selectedIndex < 0) _selectedIndex = 0;
+        }
+        if (_channels.Count > 0)
+        {
+            _channelId = _channels[_selectedIndex];
+        }
     }
 
     protected string FormatContent(ChatMessageDto msg)
@@ -179,17 +196,7 @@ public class ChatWindow : IDisposable
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
             _ = PluginServices.Framework.RunOnTick(() =>
             {
-                _channels.Clear();
-                _channels.AddRange(dto.Chat);
-                if (!string.IsNullOrEmpty(_channelId))
-                {
-                    _selectedIndex = _channels.IndexOf(_channelId);
-                    if (_selectedIndex < 0) _selectedIndex = 0;
-                }
-                if (_channels.Count > 0)
-                {
-                    _channelId = _channels[_selectedIndex];
-                }
+                SetChannels(dto.Chat);
             });
         }
         catch
@@ -215,7 +222,6 @@ public class ChatWindow : IDisposable
 
     protected class ChannelListDto
     {
-        public List<string> Event { get; set; } = new();
-        public List<string> Chat { get; set; } = new();
+        [JsonPropertyName("fc_chat")] public List<string> Chat { get; set; } = new();
     }
 }
