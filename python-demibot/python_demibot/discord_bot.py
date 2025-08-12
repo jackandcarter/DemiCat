@@ -77,6 +77,19 @@ class DemiBot(commands.Bot):
         if channel_id not in self.officer_chat_channels:
             self.officer_chat_channels.append(channel_id)
 
+    def get_client(self):
+        """Return the underlying discord.py client."""
+        return self
+
+    def list_online_users(self) -> List[Dict[str, str]]:
+        """Return a list of online users across all guilds."""
+        users: List[Dict[str, str]] = []
+        for guild in self.guilds:
+            for member in guild.members:
+                if str(member.status) == "online":
+                    users.append({"id": str(member.id), "name": member.display_name})
+        return users
+
     # ------------------------------------------------------------------
     # Message and embed mapping
     # ------------------------------------------------------------------
