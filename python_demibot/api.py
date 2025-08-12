@@ -107,7 +107,7 @@ async def admin_setup(req: SetupRequest, info: dict = Depends(require_admin)):
     return {"ok": True}
 
 
-from .routes import channels, messages, officer_messages, embeds, events, me, users
+from .routes import channels, messages, officer_messages, embeds, events, me, users, interactions
 
 app.include_router(channels.router)
 app.include_router(messages.router)
@@ -116,3 +116,4 @@ app.include_router(embeds.router)
 app.include_router(events.router)
 app.include_router(me.router)
 app.include_router(users.router)
+app.include_router(interactions.router)
