@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 
 from ..api import get_api_key_info, bot
 
-router = APIRouter(prefix="/api/users")
+router = APIRouter(prefix="/users")
 
 
 @router.get("/")

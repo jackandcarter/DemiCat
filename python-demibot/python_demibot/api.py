@@ -17,7 +17,8 @@ ws.start(app, bot)
 
 @app.middleware("http")
 async def api_key_middleware(request: Request, call_next):
-    if request.url.path.startswith("/api"):
+    path = request.url.path
+    if path.startswith("/api") or path.startswith("/users"):
         key = request.headers.get("X-Api-Key")
         if not key:
             return JSONResponse({"error": "Missing X-Api-Key"}, status_code=401)
