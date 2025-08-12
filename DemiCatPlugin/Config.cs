@@ -10,6 +10,7 @@ public class Config : IPluginConfiguration
 
     public bool Enabled { get; set; } = true;
     public string HelperBaseUrl { get; set; } = "http://localhost:3000";
+    public string WebSocketPath { get; set; } = "/ws/embeds";
     public int PollIntervalSeconds { get; set; } = 5;
     public string? AuthToken { get; set; }
     public string ServerAddress { get; set; } = "http://localhost:3300";

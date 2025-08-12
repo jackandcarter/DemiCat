@@ -146,7 +146,9 @@ public class Plugin : IDalamudPlugin
         {
             _webSocket?.Dispose();
             _webSocket = new ClientWebSocket();
-            var wsUri = new Uri(_config.HelperBaseUrl.TrimEnd('/')
+            var baseUrl = _config.HelperBaseUrl.TrimEnd('/');
+            var fullUrl = $"{baseUrl}{_config.WebSocketPath}";
+            var wsUri = new Uri(fullUrl
                 .Replace("http://", "ws://")
                 .Replace("https://", "wss://"));
             await _webSocket.ConnectAsync(wsUri, CancellationToken.None);
