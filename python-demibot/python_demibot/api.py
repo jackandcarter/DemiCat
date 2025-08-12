@@ -4,12 +4,14 @@ from pydantic import BaseModel
 from .config import load_config
 from .database import Database
 from .discord_bot import DemiBot
+from . import ws
 
 config = load_config()
 db = Database(config)
 bot = DemiBot(config["discord_token"], db)
 
 app = FastAPI()
+ws.start(app, bot)
 
 
 class ValidateRequest(BaseModel):
@@ -63,9 +65,12 @@ async def admin_setup(req: SetupRequest):
         events = set(settings.get("eventChannels", []))
         events.add(req.channelId)
         settings["eventChannels"] = list(events)
+        bot.track_event_channel(req.channelId)
     elif req.type == "fc_chat":
         settings["fcChatChannel"] = req.channelId
+        bot.track_fc_channel(req.channelId)
     elif req.type == "officer_chat":
         settings["officerChatChannel"] = req.channelId
+        bot.track_officer_channel(req.channelId)
     await db.set_server_settings(config["guild_id"], settings)
     return {"ok": True}

@@ -11,10 +11,13 @@ basic permission checks where appropriate.
 from __future__ import annotations
 
 import secrets
+from typing import Any, Dict, List
 
 import discord
 from discord import app_commands
 from discord.ext import commands
+
+from . import ws
 
 
 class DemiBot(commands.Bot):
@@ -26,6 +29,15 @@ class DemiBot(commands.Bot):
         super().__init__(command_prefix="!", intents=intents)
         self.token = token
         self.db = db
+
+        # Tracked channel IDs
+        self.event_channels: List[str] = []
+        self.fc_chat_channels: List[str] = []
+        self.officer_chat_channels: List[str] = []
+
+        # Cached payloads for WebSocket consumers
+        self.message_cache: Dict[str, List[Dict[str, Any]]] = {}
+        self.embed_cache: List[Dict[str, Any]] = []
 
         # Register slash commands.  They are declared as methods below and added
         # to the command tree here so ``self`` is available inside callbacks.
@@ -48,6 +60,85 @@ class DemiBot(commands.Bot):
     async def setup_hook(self) -> None:  # pragma: no cover - discord.py hook
         """Sync application commands on start."""
         await self.tree.sync()
+
+    # ------------------------------------------------------------------
+    # Channel tracking helpers
+    # ------------------------------------------------------------------
+
+    def track_event_channel(self, channel_id: str) -> None:
+        if channel_id not in self.event_channels:
+            self.event_channels.append(channel_id)
+
+    def track_fc_channel(self, channel_id: str) -> None:
+        if channel_id not in self.fc_chat_channels:
+            self.fc_chat_channels.append(channel_id)
+
+    def track_officer_channel(self, channel_id: str) -> None:
+        if channel_id not in self.officer_chat_channels:
+            self.officer_chat_channels.append(channel_id)
+
+    # ------------------------------------------------------------------
+    # Message and embed mapping
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def map_message(message: discord.Message) -> Dict[str, Any]:
+        return {
+            "id": str(message.id),
+            "channelId": str(message.channel.id),
+            "authorId": str(message.author.id),
+            "authorName": message.author.display_name,
+            "content": message.content,
+            "mentions": [
+                {"id": str(u.id), "name": u.display_name} for u in message.mentions
+            ],
+            "timestamp": message.created_at.isoformat(),
+        }
+
+    @staticmethod
+    def map_embed(embed: discord.Embed, message: discord.Message) -> Dict[str, Any]:
+        return {
+            "id": str(message.id),
+            "channelId": str(message.channel.id),
+            "timestamp": embed.timestamp.isoformat() if embed.timestamp else None,
+            "authorName": embed.author.name if embed.author else None,
+            "title": embed.title,
+            "description": embed.description,
+        }
+
+    # ------------------------------------------------------------------
+    # Cache helpers
+    # ------------------------------------------------------------------
+
+    def _add_message(self, channel_id: str, msg: Dict[str, Any]) -> None:
+        arr = self.message_cache.setdefault(channel_id, [])
+        arr.append(msg)
+        if len(arr) > 50:
+            arr.pop(0)
+
+    def _add_embed(self, embed: Dict[str, Any]) -> None:
+        self.embed_cache.append(embed)
+        if len(self.embed_cache) > 50:
+            self.embed_cache.pop(0)
+
+    # ------------------------------------------------------------------
+    # Discord event listeners
+    # ------------------------------------------------------------------
+
+    async def on_message(self, message: discord.Message) -> None:  # pragma: no cover - network
+        await self.process_commands(message)
+
+        channel_id = str(message.channel.id)
+
+        if channel_id in self.event_channels and message.embeds:
+            mapped = self.map_embed(message.embeds[0], message)
+            self._add_embed(mapped)
+            await ws.broadcast_embed(mapped)
+
+        if channel_id in self.fc_chat_channels or channel_id in self.officer_chat_channels:
+            mapped = self.map_message(message)
+            self._add_message(channel_id, mapped)
+            await ws.broadcast_message(mapped)
 
     # ------------------------------------------------------------------
     # Slash command implementations
