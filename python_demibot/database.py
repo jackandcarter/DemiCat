@@ -224,7 +224,7 @@ class Database:
                 }
 
     async def set_user_roles(self, server_id: str, user_id: str, roles: list[str]) -> None:
-        """Persist the list of ``roles`` for ``user_id`` on ``server_id``."""
+        """Persist the list of role tags for ``user_id`` on ``server_id``."""
         if not self.pool:
             return
         async with self.pool.acquire() as conn:
@@ -251,8 +251,35 @@ class Database:
                         (server_id, user_id, role_id),
                     )
 
+    async def map_role_ids_to_tags(self, server_id: str, roles: list[str]) -> list[str]:
+        """Map Discord role IDs in ``roles`` to logical role tags.
+
+        The current implementation recognises two tags:
+
+        ``officer``
+            Assigned when any of the provided IDs match those recorded via
+            :meth:`set_officer_roles` for ``server_id``.
+
+        ``chat``
+            Assigned when the user has *any* role in ``roles``.  This mirrors
+            the behaviour of the original DemiCat implementation where access
+            to Free Company chat is granted to all members with at least one
+            role.
+        """
+
+        tags: list[str] = []
+
+        officer_roles = set(await self.get_officer_roles(server_id))
+        if any(r in officer_roles for r in roles):
+            tags.append("officer")
+
+        if roles:
+            tags.append("chat")
+
+        return tags
+
     async def get_user_roles_for_user(self, server_id: str, user_id: str) -> list[str]:
-        """Return role IDs for ``user_id`` on ``server_id``."""
+        """Return role tags for ``user_id`` on ``server_id``."""
         if not self.pool:
             return []
         async with self.pool.acquire() as conn:
@@ -326,7 +353,7 @@ class Database:
                 return channels
 
     async def get_user_roles(self, key: str) -> list[str] | None:
-        """Return a list of role IDs for the user associated with ``key``.
+        """Return a list of role tags for the user associated with ``key``.
 
         The key uniquely identifies a user in the ``users`` table. If the key
         is invalid or no connection pool is available, ``None`` is returned so

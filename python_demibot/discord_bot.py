@@ -219,9 +219,10 @@ class DemiBot(commands.Bot):
 
         updated = []
         for member in members:
-            roles = [r.id for r in member.roles if r != interaction.guild.default_role]
-            if hasattr(self.db, "set_user_roles"):
-                await self.db.set_user_roles(interaction.guild_id, member.id, roles)
+            role_ids = [str(r.id) for r in member.roles if r != interaction.guild.default_role]
+            if hasattr(self.db, "map_role_ids_to_tags") and hasattr(self.db, "set_user_roles"):
+                tags = await self.db.map_role_ids_to_tags(interaction.guild_id, role_ids)
+                await self.db.set_user_roles(interaction.guild_id, member.id, tags)
             updated.append(member.display_name)
 
         summary = (
