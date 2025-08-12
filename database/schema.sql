@@ -31,6 +31,15 @@ CREATE TABLE IF NOT EXISTS events (
   FOREIGN KEY (channel_id) REFERENCES channels(id)
 );
 
+CREATE TABLE IF NOT EXISTS event_attendance (
+  event_id INT,
+  user_id VARCHAR(255),
+  status ENUM('yes','maybe','no') NOT NULL,
+  PRIMARY KEY (event_id, user_id),
+  FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
 CREATE TABLE IF NOT EXISTS api_keys (
   api_key VARCHAR(255) PRIMARY KEY,
   user_id VARCHAR(255),
@@ -58,10 +67,7 @@ CREATE TABLE IF NOT EXISTS user_roles (
 );
 
 CREATE TABLE IF NOT EXISTS server_settings (
-  server_id VARCHAR(255),
-  setting_key VARCHAR(255),
-  setting_value TEXT,
-  PRIMARY KEY (server_id, setting_key),
-  FOREIGN KEY (server_id) REFERENCES servers(id),
-  INDEX (server_id)
+  guild_id VARCHAR(255) PRIMARY KEY,
+  settings TEXT
 );
+
