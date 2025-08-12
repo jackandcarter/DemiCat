@@ -116,6 +116,18 @@ class DemiBot(commands.Bot):
 
     @staticmethod
     def map_embed(embed: discord.Embed, message: discord.Message) -> Dict[str, Any]:
+        buttons = []
+        for row in getattr(message, "components", []):
+            for component in getattr(row, "children", []):
+                if getattr(component, "type", None) == discord.ComponentType.button:
+                    buttons.append(
+                        {
+                            "label": getattr(component, "label", None),
+                            "customId": getattr(component, "custom_id", None),
+                            "url": getattr(component, "url", None),
+                        }
+                    )
+
         return {
             "id": str(message.id),
             "channelId": str(message.channel.id),
@@ -134,6 +146,7 @@ class DemiBot(commands.Bot):
             else None,
             "thumbnailUrl": embed.thumbnail.url if embed.thumbnail else None,
             "imageUrl": embed.image.url if embed.image else None,
+            "buttons": buttons if buttons else None,
         }
 
     # ------------------------------------------------------------------
