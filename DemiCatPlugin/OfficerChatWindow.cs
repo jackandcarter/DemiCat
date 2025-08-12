@@ -147,17 +147,7 @@ public class OfficerChatWindow : ChatWindow
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
             _ = PluginServices.Framework.RunOnTick(() =>
             {
-                _channels.Clear();
-                _channels.AddRange(dto.Officer);
-                if (!string.IsNullOrEmpty(_channelId))
-                {
-                    _selectedIndex = _channels.IndexOf(_channelId);
-                    if (_selectedIndex < 0) _selectedIndex = 0;
-                }
-                if (_channels.Count > 0)
-                {
-                    _channelId = _channels[_selectedIndex];
-                }
+                SetChannels(dto.Officer);
             });
         }
         catch
@@ -168,7 +158,7 @@ public class OfficerChatWindow : ChatWindow
 
     private class ChannelListDto
     {
-        [JsonPropertyName("officer_visible")]
+        [JsonPropertyName("officer_chat")]
         public List<string> Officer { get; set; } = new();
     }
 }

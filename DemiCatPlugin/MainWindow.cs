@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -18,6 +19,8 @@ public class MainWindow
     private readonly TemplatesWindow _templates;
     private readonly HttpClient _httpClient = new();
     private readonly List<string> _channels = new();
+    private readonly List<string> _fcChatChannels = new();
+    private readonly List<string> _officerChatChannels = new();
     private bool _channelsLoaded;
     private int _selectedIndex;
     private string _channelId;
@@ -161,6 +164,12 @@ public class MainWindow
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
             _channels.Clear();
             _channels.AddRange(dto.Event);
+            _fcChatChannels.Clear();
+            _fcChatChannels.AddRange(dto.FcChat);
+            _officerChatChannels.Clear();
+            _officerChatChannels.AddRange(dto.OfficerChat);
+            _chat?.SetChannels(_fcChatChannels);
+            _officer.SetChannels(_officerChatChannels);
             if (!string.IsNullOrEmpty(_channelId))
             {
                 _selectedIndex = _channels.IndexOf(_channelId);
@@ -182,7 +191,9 @@ public class MainWindow
 
     private class ChannelListDto
     {
-        public List<string> Event { get; set; } = new();
-        public List<string> Chat { get; set; } = new();
+        [JsonPropertyName("event")] public List<string> Event { get; set; } = new();
+        [JsonPropertyName("fc_chat")] public List<string> FcChat { get; set; } = new();
+        [JsonPropertyName("officer_chat")] public List<string> OfficerChat { get; set; } = new();
+        [JsonPropertyName("officer_visible")] public List<string> OfficerVisible { get; set; } = new();
     }
 }
