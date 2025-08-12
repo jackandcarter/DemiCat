@@ -18,6 +18,10 @@ class ValidateRequest(BaseModel):
     characterName: str | None = None
 
 
+class RolesRequest(BaseModel):
+    key: str
+
+
 @app.on_event("startup")
 async def startup() -> None:
     await db.connect()
@@ -34,6 +38,14 @@ async def validate(req: ValidateRequest):
         guild = {"id": config.get("guild_id", ""), "name": config.get("guild_name", "")}
         return {"userKey": config["user_key"], "guild": guild}
     raise HTTPException(status_code=401, detail="invalid key")
+
+
+@app.post("/roles")
+async def roles(req: RolesRequest):
+    roles = await db.get_user_roles(req.key)
+    if roles is None:
+        raise HTTPException(status_code=401, detail="invalid key")
+    return {"roles": roles}
 
 
 class SetupRequest(BaseModel):

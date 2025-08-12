@@ -40,15 +40,21 @@ public class Plugin : IDalamudPlugin
         _config = PluginInterface.GetPluginConfig() as Config ?? new Config();
 
         _ui = new UiRenderer(_config);
-        _settings = new SettingsWindow(_config, CheckOfficerRole);
+        _settings = new SettingsWindow(_config, RefreshRoles);
         _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config) : null;
         _officerChatWindow = new OfficerChatWindow(_config);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings);
 
+        _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+        _mainWindow.HasChatRole = _config.Roles.Contains("chat");
+
         if (_config.Enabled)
         {
             _ = ConnectWebSocket();
-            _ = CheckOfficerRole();
+            if (_config.Roles.Count == 0)
+            {
+                _ = RefreshRoles();
+            }
         }
 
         PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
@@ -254,7 +260,7 @@ public class Plugin : IDalamudPlugin
         _settings.Dispose();
     }
 
-    private async Task CheckOfficerRole()
+    private async Task RefreshRoles()
     {
         if (string.IsNullOrEmpty(_config.AuthToken))
         {
@@ -263,34 +269,23 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            var meRequest = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/me");
-            meRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
-            var meResponse = await _httpClient.SendAsync(meRequest);
-            if (!meResponse.IsSuccessStatusCode)
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ServerAddress.TrimEnd('/')}/roles")
+            {
+                Content = new StringContent(JsonSerializer.Serialize(new { key = _config.AuthToken }), Encoding.UTF8, "application/json")
+            };
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
             {
                 return;
             }
-            var meStream = await meResponse.Content.ReadAsStreamAsync();
-            var me = await JsonSerializer.DeserializeAsync<MeDto>(meStream);
-            var userId = me?.UserId;
-            if (string.IsNullOrEmpty(userId))
-            {
-                return;
-            }
-
-            var rolesRequest = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/me/roles?userId={userId}");
-            rolesRequest.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
-            var rolesResponse = await _httpClient.SendAsync(rolesRequest);
-            if (!rolesResponse.IsSuccessStatusCode)
-            {
-                return;
-            }
-            var rolesStream = await rolesResponse.Content.ReadAsStreamAsync();
-            var roles = await JsonSerializer.DeserializeAsync<RolesDto>(rolesStream) ?? new RolesDto();
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
             _ = PluginServices.Framework.RunOnTick(() =>
             {
-                _mainWindow.HasOfficerRole = roles.HasOfficerRole;
-                _mainWindow.HasChatRole = roles.HasChatRole;
+                _config.Roles = dto.Roles;
+                _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+                _mainWindow.HasChatRole = _config.Roles.Contains("chat");
+                PluginServices.PluginInterface.SavePluginConfig(_config);
             });
         }
         catch
@@ -299,14 +294,8 @@ public class Plugin : IDalamudPlugin
         }
     }
 
-    private class MeDto
-    {
-        public string? UserId { get; set; }
-    }
-
     private class RolesDto
     {
-        public bool HasOfficerRole { get; set; }
-        public bool HasChatRole { get; set; }
+        public List<string> Roles { get; set; } = new();
     }
 }
