@@ -1,9 +1,10 @@
 using Dalamud.Configuration;
+using System.Collections.Generic;
 
 namespace DemiCatPlugin;
 
 public class Config : IPluginConfiguration
-{
+{ 
     // Required by Dalamud
     public int Version { get; set; } = 1;
 
@@ -19,4 +20,5 @@ public class Config : IPluginConfiguration
     public string OfficerChannelId { get; set; } = string.Empty;
     public bool EnableFcChat { get; set; } = false;
     public bool UseCharacterName { get; set; } = false;
+    public List<string> Roles { get; set; } = new();
 }
