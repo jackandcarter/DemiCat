@@ -202,7 +202,15 @@ class DemiBot(commands.Bot):
 
     @app_commands.command(name="demibot_setup", description="Set up DemiBot in this server")
     async def demibot_setup(self, interaction: discord.Interaction) -> None:
-        await enqueue(lambda: interaction.response.send_message("DemiBot setup started", ephemeral=True))
+        if not interaction.user.guild_permissions.administrator:
+            await enqueue(
+                lambda: interaction.response.send_message(
+                    "This command is restricted to administrators", ephemeral=True
+                )
+            )
+            return
+
+        await self._run_setup_wizard(interaction)
 
     @app_commands.command(name="demibot_resync", description="Resync DemiBot data")
     @app_commands.describe(users="Space-separated user mentions or IDs to resync")
@@ -264,6 +272,152 @@ class DemiBot(commands.Bot):
         await enqueue(lambda: interaction.channel.send(embed=embed, view=view))
         await enqueue(lambda: interaction.response.send_message("DemiBot key embed created", ephemeral=True))
 
+    async def _run_setup_wizard(self, interaction: discord.Interaction) -> None:
+        """Interactive configuration wizard for channel and role setup."""
+
+        async def ask_event_channels() -> list[str]:
+            embed = discord.Embed(
+                title="DemiBot Setup",
+                description="Select event channel(s) and press **Next**",
+            )
+
+            class EventView(discord.ui.View):
+                def __init__(self):
+                    super().__init__(timeout=300)
+                    self.channels: list[str] = []
+                    self.add_item(self._select())
+                    self.next_btn = discord.ui.Button(
+                        label="Next", style=discord.ButtonStyle.primary, disabled=True
+                    )
+                    self.next_btn.callback = self._next
+                    self.add_item(self.next_btn)
+
+                def _select(self) -> discord.ui.ChannelSelect:
+                    select = discord.ui.ChannelSelect(
+                        channel_types=[discord.ChannelType.text], min_values=1, max_values=25
+                    )
+
+                    async def _callback(inter: discord.Interaction) -> None:
+                        self.channels = [str(c.id) for c in select.values]
+                        self.next_btn.disabled = False
+                        await enqueue(lambda: inter.response.edit_message(view=self))
+
+                    select.callback = _callback
+                    return select
+
+                async def _next(self, inter: discord.Interaction) -> None:
+                    await enqueue(lambda: inter.response.defer())
+                    self.stop()
+
+            view = EventView()
+            await enqueue(
+                lambda: interaction.response.send_message(
+                    embed=embed, view=view, ephemeral=True
+                )
+            )
+            await view.wait()
+            return view.channels
+
+        async def ask_single_channel(message: str) -> str:
+            embed = discord.Embed(title="DemiBot Setup", description=message)
+
+            class ChannelView(discord.ui.View):
+                def __init__(self):
+                    super().__init__(timeout=300)
+                    self.channel: str | None = None
+                    self.add_item(self._select())
+                    self.next_btn = discord.ui.Button(
+                        label="Next", style=discord.ButtonStyle.primary, disabled=True
+                    )
+                    self.next_btn.callback = self._next
+                    self.add_item(self.next_btn)
+
+                def _select(self) -> discord.ui.ChannelSelect:
+                    select = discord.ui.ChannelSelect(
+                        channel_types=[discord.ChannelType.text], min_values=1, max_values=1
+                    )
+
+                    async def _callback(inter: discord.Interaction) -> None:
+                        self.channel = str(select.values[0].id)
+                        self.next_btn.disabled = False
+                        await enqueue(lambda: inter.response.edit_message(view=self))
+
+                    select.callback = _callback
+                    return select
+
+                async def _next(self, inter: discord.Interaction) -> None:
+                    await enqueue(lambda: inter.response.defer())
+                    self.stop()
+
+            view = ChannelView()
+            await enqueue(lambda: interaction.edit_original_response(embed=embed, view=view))
+            await view.wait()
+            return view.channel or ""
+
+        async def ask_roles() -> list[str]:
+            embed = discord.Embed(
+                title="DemiBot Setup",
+                description="Select officer role(s) and press **Save**",
+            )
+
+            class RoleView(discord.ui.View):
+                def __init__(self):
+                    super().__init__(timeout=300)
+                    self.roles: list[str] = []
+                    self.add_item(self._select())
+                    self.save_btn = discord.ui.Button(
+                        label="Save", style=discord.ButtonStyle.primary, disabled=True
+                    )
+                    self.save_btn.callback = self._save
+                    self.add_item(self.save_btn)
+
+                def _select(self) -> discord.ui.RoleSelect:
+                    select = discord.ui.RoleSelect(min_values=1, max_values=25)
+
+                    async def _callback(inter: discord.Interaction) -> None:
+                        self.roles = [str(r.id) for r in select.values]
+                        self.save_btn.disabled = False
+                        await enqueue(lambda: inter.response.edit_message(view=self))
+
+                    select.callback = _callback
+                    return select
+
+                async def _save(self, inter: discord.Interaction) -> None:
+                    await enqueue(lambda: inter.response.defer())
+                    self.stop()
+
+            view = RoleView()
+            await enqueue(lambda: interaction.edit_original_response(embed=embed, view=view))
+            await view.wait()
+            return view.roles
+
+        event_channels = await ask_event_channels()
+        fc_channel = await ask_single_channel("Select the FC chat channel and press **Next**")
+        officer_channel = await ask_single_channel(
+            "Select the officer chat channel and press **Next**"
+        )
+        officer_roles = await ask_roles()
+
+        settings = {
+            "eventChannels": event_channels,
+            "fcChatChannel": fc_channel,
+            "officerChatChannel": officer_channel,
+        }
+        if hasattr(self.db, "set_server_settings"):
+            await self.db.set_server_settings(interaction.guild_id, settings)
+        if hasattr(self.db, "set_officer_roles"):
+            await self.db.set_officer_roles(interaction.guild_id, officer_roles)
+
+        for ch in event_channels:
+            self.track_event_channel(ch)
+        if fc_channel:
+            self.track_fc_channel(fc_channel)
+        if officer_channel:
+            self.track_officer_channel(officer_channel)
+
+        summary = discord.Embed(title="DemiBot Setup", description="Configuration saved")
+        await enqueue(lambda: interaction.edit_original_response(embed=summary, view=None))
+
     @app_commands.command(name="demibot_reset", description="Reset DemiBot data")
     async def demibot_reset(self, interaction: discord.Interaction) -> None:
         is_owner = interaction.guild.owner_id == interaction.user.id
@@ -290,10 +444,7 @@ class DemiBot(commands.Bot):
             )
             return
 
-        settings = {}
-        if hasattr(self.db, "get_server_settings"):
-            settings = await self.db.get_server_settings(interaction.guild_id)
-        await enqueue(lambda: interaction.response.send_message(f"Settings: {settings}", ephemeral=True))
+        await self._run_setup_wizard(interaction)
 
     @app_commands.command(name="demibot_clear", description="Clear DemiBot configuration")
     async def demibot_clear(self, interaction: discord.Interaction) -> None:
