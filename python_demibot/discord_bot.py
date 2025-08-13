@@ -66,8 +66,21 @@ class DemiBot(commands.Bot):
         await self.start(self.token)
 
     async def setup_hook(self) -> None:  # pragma: no cover - discord.py hook
-        """Sync application commands on start."""
+        """Sync application commands on start and warm tracked channels."""
         await self.tree.sync()
+
+        # Pre-populate tracked channel caches from the database so the bot
+        # immediately begins forwarding messages for previously configured
+        # channels.
+        if self.db:
+            for channel_id in await self.db.get_event_channels():
+                self.track_event_channel(channel_id)
+
+            for channel_id in await self.db.get_fc_channels():
+                self.track_fc_channel(channel_id)
+
+            for channel_id in await self.db.get_officer_channels():
+                self.track_officer_channel(channel_id)
 
     # ------------------------------------------------------------------
     # Channel tracking helpers
