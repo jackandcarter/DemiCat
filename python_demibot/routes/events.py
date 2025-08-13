@@ -84,6 +84,7 @@ async def create_event(payload: Dict[str, Any], info: Dict[str, Any] = Depends(g
         buttons = payload.get("attendance") or ["yes", "maybe", "no"]
         view = AttendanceView(buttons)
         message = await enqueue(lambda: channel.send(embed=embed, files=files, view=view))
+        bot.register_view(message.id, view)
         settings = await db.get_server_settings(info["serverId"])
         events = set(settings.get("eventChannels", []))
         events.add(channel_id)

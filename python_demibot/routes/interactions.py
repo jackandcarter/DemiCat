@@ -16,7 +16,6 @@ async def post_interaction(payload: dict, info: dict = Depends(get_api_key_info)
             raise HTTPException(status_code=400, detail="Invalid channel")
         message = await channel.fetch_message(message_id)
 
-        view_store = bot._connection._view_store  # type: ignore[attr-defined]
         class DummyResponse:
             async def send_message(self, *args, **kwargs):
                 pass
@@ -39,8 +38,17 @@ async def post_interaction(payload: dict, info: dict = Depends(get_api_key_info)
 
         user = await bot.get_client().fetch_user(int(info["userId"]))
         interaction = DummyInteraction(message, user)
-        view_store.dispatch_view(2, custom_id, interaction)
-        if custom_id.startswith("attendance:"):
+
+        dispatched = False
+        view = bot.get_view(int(message_id))
+        if view:
+            for item in view.children:
+                if getattr(item, "custom_id", None) == custom_id:
+                    await item.callback(interaction)
+                    dispatched = True
+                    break
+
+        if not dispatched and custom_id.startswith("attendance:"):
             status = custom_id.split(":", 1)[1]
             event = await db.get_event_by_message_id(message_id)
             if event:
