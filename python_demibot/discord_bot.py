@@ -30,6 +30,8 @@ class DemiBot(commands.Bot):
     def __init__(self, token: str, db):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True
+        intents.presences = True
         super().__init__(command_prefix="!", intents=intents)
         self.token = token
         self.db = db
