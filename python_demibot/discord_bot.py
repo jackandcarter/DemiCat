@@ -46,6 +46,8 @@ class DemiBot(commands.Bot):
         self.embed_cache: List[Dict[str, Any]] = []
         # Optional per-guild caches for quick lookup
         self.embed_cache_by_guild: Dict[str, List[Dict[str, Any]]] = {}
+        # Active UI views keyed by message ID
+        self.views: Dict[int, discord.ui.View] = {}
 
         # Register slash commands.  They are declared as methods below and added
         # to the command tree here so ``self`` is available inside callbacks.
@@ -101,6 +103,18 @@ class DemiBot(commands.Bot):
     def get_client(self):
         """Return the underlying discord.py client."""
         return self
+
+    # ------------------------------------------------------------------
+    # View registry helpers
+    # ------------------------------------------------------------------
+
+    def register_view(self, message_id: int, view: discord.ui.View) -> None:
+        """Register a view for later interaction dispatching."""
+        self.views[message_id] = view
+
+    def get_view(self, message_id: int) -> discord.ui.View | None:
+        """Retrieve a previously registered view."""
+        return self.views.get(message_id)
 
     def list_online_users(self) -> List[Dict[str, str]]:
         """Return a list of users that are currently online in any guild.
