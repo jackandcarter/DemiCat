@@ -159,6 +159,12 @@ class Database:
                     (guild_id, data),
                 )
 
+    async def update_server_settings(self, guild_id: str, updates: dict) -> None:
+        """Fetch, merge, and persist server settings for ``guild_id``."""
+        settings = await self.get_server_settings(guild_id)
+        settings.update(updates)
+        await self.set_server_settings(guild_id, settings)
+
     # ------------------------------------------------------------------
     # User and key management
     # ------------------------------------------------------------------
