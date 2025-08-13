@@ -2,6 +2,11 @@
 from getpass import getpass
 from pathlib import Path
 import argparse
+import logging
+
+from python_demibot.logging import setup_logging
+
+logger = logging.getLogger(__name__)
 
 try:
     import mysql.connector as mysql
@@ -57,7 +62,10 @@ def main():
     parser.add_argument('--user', help='MySQL user')
     parser.add_argument('--password', help='MySQL password')
     parser.add_argument('--schema', default=str(Path(__file__).with_name('schema.sql')), help='Path to schema.sql')
+    parser.add_argument('--debug', action='store_true', help='Enable debug logging')
     args = parser.parse_args()
+
+    setup_logging(debug=args.debug)
 
     host = 'localhost' if args.local else args.host
     if not host:
@@ -91,7 +99,7 @@ def main():
 
     cursor.close()
     conn.close()
-    print('Database DemiBot initialized.')
+    logger.info('Database DemiBot initialized.')
 
 
 if __name__ == '__main__':
