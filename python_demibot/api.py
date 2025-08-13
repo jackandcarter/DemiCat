@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from .config import load_config
 from .database import Database
 from .discord_bot import DemiBot
-from . import ws
+from python_demibot import ws
 
 config = load_config()
 db = Database(config)

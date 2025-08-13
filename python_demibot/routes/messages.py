@@ -3,7 +3,7 @@ import json
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from ..api import get_api_key_info, db, bot
-from ..rate_limiter import enqueue
+from python_demibot.rate_limiter import enqueue
 
 router = APIRouter(prefix="/api/messages")
 
