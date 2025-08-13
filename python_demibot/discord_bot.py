@@ -22,6 +22,11 @@ from python_demibot import ws
 from python_demibot.config import load_config
 from python_demibot.database import Database
 from python_demibot.rate_limiter import enqueue
+from python_demibot.logging import setup_logging
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class DemiBot(commands.Bot):
@@ -62,7 +67,7 @@ class DemiBot(commands.Bot):
         self.tree.add_command(self.demibot_clear)
 
     async def on_ready(self):
-        print(f"Logged in as {self.user} (ID: {self.user.id})")
+        logger.info("Logged in as %s (ID: %s)", self.user, self.user.id)
 
     async def start_bot(self) -> None:
         await self.start(self.token)
@@ -515,6 +520,7 @@ class DemiBot(commands.Bot):
 
 
 def main() -> None:
+    setup_logging()
     config = load_config()
     db = Database(config)
     bot = DemiBot(config["discord_token"], db)

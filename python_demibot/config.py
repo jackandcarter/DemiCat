@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 from uuid import uuid4
+import logging
+
+logger = logging.getLogger(__name__)
 
 CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
 
@@ -29,7 +32,7 @@ def load_config() -> dict:
 def run_setup_wizard() -> dict:
     """Interactively prompt the user for configuration values."""
     cfg = DEFAULT_CONFIG.copy()
-    print("DemiBot initial setup - values will be saved to", CONFIG_PATH)
+    logger.info("DemiBot initial setup - values will be saved to %s", CONFIG_PATH)
     cfg["mysql_host"] = input("MySQL host [localhost]: ") or "localhost"
     cfg["mysql_user"] = input("MySQL user: ")
     cfg["mysql_password"] = input("MySQL password: ")
@@ -44,5 +47,5 @@ def run_setup_wizard() -> dict:
 
     with open(CONFIG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
-    print("Configuration saved.")
+    logger.info("Configuration saved.")
     return cfg

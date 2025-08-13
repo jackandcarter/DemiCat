@@ -1,10 +1,17 @@
 import argparse
 import asyncio
 import json
+import logging
+
+from .logging import setup_logging
+
+
+logger = logging.getLogger(__name__)
 
 
 def main():
     parser = argparse.ArgumentParser(description="DemiBot command line interface")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     subparsers.add_parser("run", help="Run the Discord bot and API server")
@@ -12,6 +19,8 @@ def main():
     subparsers.add_parser("check-config", help="Validate configuration file")
 
     args = parser.parse_args()
+
+    setup_logging(debug=args.debug)
 
     if args.command == "run":
         asyncio.run(_run())
@@ -26,13 +35,13 @@ async def _run() -> None:
     from .api import app, bot, config, db
     import uvicorn
 
-    print("Connecting to DB…")
+    logger.info("Connecting to DB…")
     await db.connect()
 
-    print("Loading Discord bot…")
+    logger.info("Loading Discord bot…")
     bot_task = asyncio.create_task(bot.start_bot())
 
-    print("Starting API server…")
+    logger.info("Starting API server…")
     host = config.get("api_host", "0.0.0.0")
     port = int(config.get("api_port", 8000))
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="info"))
@@ -46,18 +55,18 @@ async def _setup_db() -> None:
     from .config import CONFIG_PATH
     from .database import Database
 
-    print("Loading configuration…")
+    logger.info("Loading configuration…")
     if not CONFIG_PATH.exists():
-        print(f"Configuration file not found at {CONFIG_PATH}")
+        logger.error("Configuration file not found at %s", CONFIG_PATH)
         return
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         cfg = json.load(f)
 
     db = Database(cfg)
 
-    print("Connecting to DB…")
+    logger.info("Connecting to DB…")
     await db.connect()
-    print("Database setup complete.")
+    logger.info("Database setup complete.")
     await db.close()
 
 
@@ -65,9 +74,9 @@ def _check_config() -> None:
     """Validate configuration file exists and contains required keys."""
     from .config import CONFIG_PATH, DEFAULT_CONFIG
 
-    print("Checking configuration…")
+    logger.info("Checking configuration…")
     if not CONFIG_PATH.exists():
-        print(f"Configuration file not found at {CONFIG_PATH}")
+        logger.error("Configuration file not found at %s", CONFIG_PATH)
         return
 
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
@@ -75,9 +84,9 @@ def _check_config() -> None:
 
     missing = [k for k in DEFAULT_CONFIG if not cfg.get(k)]
     if missing:
-        print("Missing config values: " + ", ".join(missing))
+        logger.warning("Missing config values: %s", ", ".join(missing))
     else:
-        print("Configuration looks good.")
+        logger.info("Configuration looks good.")
 
 
 if __name__ == "__main__":  # pragma: no cover
