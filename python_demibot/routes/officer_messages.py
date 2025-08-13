@@ -42,7 +42,7 @@ async def post_message(payload: dict, info: dict = Depends(get_api_key_info)):
         if not hook:
             hook = await channel.create_webhook(name="DemiCat")
         await enqueue(lambda: hook.send(content, username=display_name))
-        await db.set_server_settings(info["serverId"], {"officerChatChannel": channel_id})
+        await db.update_server_settings(info["serverId"], {"officerChatChannel": channel_id})
         bot.track_officer_channel(channel_id)
         return {"ok": True}
     except HTTPException:

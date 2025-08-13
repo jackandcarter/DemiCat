@@ -87,7 +87,7 @@ async def create_event(payload: Dict[str, Any], info: Dict[str, Any] = Depends(g
         settings = await db.get_server_settings(info["serverId"])
         events = set(settings.get("eventChannels", []))
         events.add(channel_id)
-        await db.set_server_settings(info["serverId"], {"eventChannels": list(events)})
+        await db.update_server_settings(info["serverId"], {"eventChannels": list(events)})
         bot.track_event_channel(channel_id)
         event_id = await db.save_event({
             "userId": info["userId"],
