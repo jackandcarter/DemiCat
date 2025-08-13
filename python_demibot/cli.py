@@ -3,7 +3,7 @@ import asyncio
 import json
 import logging
 
-from .logging import setup_logging
+from .logging_config import setup_logging
 
 
 logger = logging.getLogger(__name__)
