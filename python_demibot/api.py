@@ -54,7 +54,8 @@ class RolesRequest(BaseModel):
 
 @app.on_event("startup")
 async def startup() -> None:
-    await db.connect()
+    if not db.pool:
+        await db.connect()
 
 
 @app.on_event("shutdown")
