@@ -10,6 +10,7 @@ basic permission checks where appropriate.
 
 from __future__ import annotations
 
+import asyncio
 import secrets
 from typing import Any, Dict, List
 
@@ -17,8 +18,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from . import ws
-from .rate_limiter import enqueue
+from python_demibot import ws
+from python_demibot.config import load_config
+from python_demibot.database import Database
+from python_demibot.rate_limiter import enqueue
 
 
 class DemiBot(commands.Bot):
@@ -480,4 +483,15 @@ class DemiBot(commands.Bot):
         if hasattr(self.db, "clear_server"):
             await self.db.clear_server(interaction.guild_id)
         await enqueue(lambda: interaction.response.send_message("All guild data has been purged.", ephemeral=True))
+
+
+def main() -> None:
+    config = load_config()
+    db = Database(config)
+    bot = DemiBot(config["discord_token"], db)
+    asyncio.run(bot.start_bot())
+
+
+if __name__ == "__main__":
+    main()
 
