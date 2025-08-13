@@ -4,7 +4,7 @@ from pathlib import Path
 import argparse
 import logging
 
-from python_demibot.logging import setup_logging
+from python_demibot.logging_config import setup_logging
 
 logger = logging.getLogger(__name__)
 

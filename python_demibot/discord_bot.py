@@ -22,7 +22,7 @@ from python_demibot import ws
 from python_demibot.config import load_config
 from python_demibot.database import Database
 from python_demibot.rate_limiter import enqueue
-from python_demibot.logging import setup_logging
+from python_demibot.logging_config import setup_logging
 import logging
 
 
