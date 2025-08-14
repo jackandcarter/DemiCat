@@ -1,34 +1,21 @@
+
 from __future__ import annotations
 
-from datetime import datetime
 from typing import List, Optional
-
 from pydantic import BaseModel
+from datetime import datetime
 
+# ---- Embeds ----
 
-class Mention(BaseModel):
-    id: str
+class EmbedFieldDto(BaseModel):
     name: str
-
-
-class ChatMessage(BaseModel):
-    id: str
-    channelId: str
-    authorName: str
-    content: str
-    mentions: List[Mention] | None = None
-
+    value: str
+    inline: bool | None = None
 
 class EmbedButtonDto(BaseModel):
     label: str
     url: Optional[str] = None
     customId: Optional[str] = None
-
-
-class EmbedFieldDto(BaseModel):
-    name: str
-    value: str
-
 
 class EmbedDto(BaseModel):
     id: str
@@ -44,3 +31,16 @@ class EmbedDto(BaseModel):
     buttons: List[EmbedButtonDto] | None = None
     channelId: Optional[int] = None
     mentions: List[int] | None = None
+
+# ---- Chat ----
+
+class Mention(BaseModel):
+    id: str
+    name: str
+
+class ChatMessage(BaseModel):
+    id: str
+    channelId: str
+    authorName: str
+    content: str
+    mentions: List[Mention] | None = None

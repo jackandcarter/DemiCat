@@ -1,35 +1,29 @@
+
 from __future__ import annotations
-
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from ..deps import api_key_auth, get_db, RequestContext
-from ...db.models import UserKey
+from ...config import AppConfig
 
 router = APIRouter()
 
+cfg = AppConfig()
 
-class ValidateRequest(BaseModel):
+class KeyBody(BaseModel):
     key: str
-
-
-@router.post("/validate")
-async def validate(body: ValidateRequest, db: AsyncSession = Depends(get_db)) -> None:
-    stmt = select(UserKey).where(UserKey.token == body.key, UserKey.enabled)
-    result = await db.execute(stmt)
-    key = result.scalar_one_or_none()
-    if not key:
-        raise HTTPException(status_code=401)
-    return
-
 
 class RolesResponse(BaseModel):
     roles: list[str] = []
 
+@router.post("/validate")
+async def validate(body: KeyBody, x_api_key: str | None = Header(default=None)):
+    key = body.key or (x_api_key or "")
+    if key != cfg.security.api_key:
+        raise HTTPException(status_code=401, detail="Invalid key")
+    return {"ok": True}
 
 @router.post("/roles", response_model=RolesResponse)
-async def roles(ctx: RequestContext = Depends(api_key_auth)) -> RolesResponse:
-    # For now, roles are not computed; placeholder empty list
-    return RolesResponse(roles=[])
+async def roles(x_api_key: str | None = Header(default=None)) -> RolesResponse:
+    if (x_api_key or "") != cfg.security.api_key:
+        raise HTTPException(status_code=401)
+    # For now, grant both roles when a valid key is used; customize as needed.
+    return RolesResponse(roles=["officer", "chat"])

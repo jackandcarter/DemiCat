@@ -1,50 +1,20 @@
+
 from __future__ import annotations
 
-import tomllib
+import os
 from dataclasses import dataclass
-from pathlib import Path
-from typing import Optional
 
-from pydantic import BaseModel
+@dataclass
+class ServerConfig:
+    host: str = os.environ.get("DEMIBOT_HOST", "0.0.0.0")
+    port: int = int(os.environ.get("DEMIBOT_PORT", "8000"))
+    websocket_path: str = os.environ.get("DEMIBOT_WS_PATH", "/ws")
 
-CONFIG_PATH = Path.home() / ".demibot" / "config.toml"
+@dataclass
+class SecurityConfig:
+    api_key: str = os.environ.get("DEMIBOT_API_KEY", "demo")  # set this and the plugin's key the same
 
-
-class DiscordConfig(BaseModel):
-    token: str
-
-
-class ServerConfig(BaseModel):
-    host: str = "127.0.0.1"
-    port: int = 8123
-    websocket_path: str = "/ws"
-
-
-class DatabaseConfig(BaseModel):
-    url: str
-
-
-class SecurityConfig(BaseModel):
-    require_api_key: bool = True
-
-
-class AppConfig(BaseModel):
-    discord: DiscordConfig
-    server: ServerConfig
-    database: DatabaseConfig
+@dataclass
+class AppConfig:
+    server: ServerConfig = ServerConfig()
     security: SecurityConfig = SecurityConfig()
-
-
-def load_config(path: Path = CONFIG_PATH) -> AppConfig:
-    with path.open("rb") as f:
-        data = tomllib.load(f)
-    return AppConfig.model_validate(data)
-
-
-def ensure_config(path: Path = CONFIG_PATH) -> AppConfig:
-    """Load config or raise if missing. CLI wizard should create it."""
-    if not path.exists():
-        raise FileNotFoundError(
-            f"Config not found at {path}. Run scripts/first_run_wizard.py"
-        )
-    return load_config(path)

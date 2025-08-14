@@ -1,69 +1,49 @@
+
 from __future__ import annotations
-
 from datetime import datetime
-from typing import List
-
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from pydantic import BaseModel
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from ..deps import RequestContext, api_key_auth, get_db
+from ._stores import USERS, MESSAGES
 from ..schemas import ChatMessage, Mention
-from ...db.models import Message
 
 router = APIRouter(prefix="/api")
 
-
-@router.get("/messages/{channel_id}", response_model=List[ChatMessage])
-async def get_messages(
-    channel_id: int,
-    ctx: RequestContext = Depends(api_key_auth),
-    db: AsyncSession = Depends(get_db),
-) -> List[ChatMessage]:
-    stmt = (
-        select(Message)
-        .where(Message.channel_id == channel_id)
-        .order_by(Message.created_at.asc())
-        .limit(50)
-    )
-    result = await db.execute(stmt)
-    messages = result.scalars().all()
-    return [
-        ChatMessage(
-            id=str(m.discord_message_id),
-            channelId=str(m.channel_id),
-            authorName=m.author_name,
-            content=m.content_display,
-            mentions=None,
-        )
-        for m in messages
-    ]
-
-
-class PostMessage(BaseModel):
+class PostBody(BaseModel):
     channelId: str
     content: str
-    useCharacterName: bool = False
+    useCharacterName: bool | None = False
 
+@router.get("/messages/{channel_id}")
+async def get_messages(channel_id: str):
+    out: list[ChatMessage] = []
+    for m in MESSAGES.get(channel_id, []):
+        out.append(ChatMessage(
+            id=m.id,
+            channelId=m.channel_id,
+            authorName=m.author_name,
+            content=m.content,
+            mentions=[Mention(id=u.id, name=u.name) for u in (m.mentions or [])] or None
+        ))
+    return [o.model_dump() for o in out]
 
 @router.post("/messages")
-async def post_message(
-    body: PostMessage,
-    ctx: RequestContext = Depends(api_key_auth),
-    db: AsyncSession = Depends(get_db),
-) -> None:
-    msg = Message(
-        discord_message_id=int(datetime.utcnow().timestamp() * 1000),
-        channel_id=int(body.channelId),
-        guild_id=ctx.guild.id,
-        author_id=ctx.user.id,
-        author_name=ctx.user.global_name or "Unknown",
-        content_raw=body.content,
-        content_display=body.content,
-        mentions_json=None,
-        is_officer=False,
-    )
-    db.add(msg)
-    await db.commit()
-    return
+async def post_message(body: PostBody):
+    # naive mention parsing: convert @Name to <@id> for storage and provide mentions list
+    mentions = []
+    text = body.content
+    for u in USERS:
+        tag = f"@{u.name}"
+        if tag in text:
+            mentions.append(u)
+            text = text.replace(tag, f"<@{u.id}>")
+
+    msg = {
+        "id": str(int(datetime.utcnow().timestamp()*1000)),
+        "channel_id": body.channelId,
+        "author_name": "Player",
+        "content": text,
+        "mentions": mentions,
+        "is_officer": False,
+    }
+    MESSAGES[body.channelId].append(type("Obj", (), msg))
+    return {"ok": True}
