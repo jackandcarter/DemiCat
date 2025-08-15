@@ -4,28 +4,25 @@ DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts 
 
 ```
 DemiCat/
-├── python-demibot/   # Python Discord bot and REST interface
-└── DemiCatPlugin/    # Dalamud plugin that renders the embeds in FFXIV
+├── demibot/         # Python Discord bot and REST interface
+└── DemiCatPlugin/   # Dalamud plugin that renders the embeds in FFXIV
 ```
 
 ## Prerequisites
 
 - [Python 3.10+](https://www.python.org/)
-- A MySQL server
+- A database (SQLite by default, MySQL optional)
 - A Discord bot token and Apollo-managed channels
 - FFXIV with the [Dalamud](https://github.com/goatcorp/Dalamud) plugin framework
 
 ## Environment Variables
 
-Copy `python-demibot/python_demibot/config.example.json` to
-`python-demibot/python_demibot/config.json` and fill in each value.
+Copy `demibot/.env.example` to `demibot/.env` and adjust values as needed.
+Key environment variables include:
 
-- `mysql_host`, `mysql_user`, `mysql_password`, `mysql_db` – MySQL connection settings
-- `discord_token` – Discord bot token
-- `discord_client_id` – Application client ID
-- `apollo_bot_id` – Apollo bot ID used for event embeds
-- `api_port` – HTTP server port (defaults to 8000)
-- `user_key`, `sync_key` – Keys used by the plugin for authentication (generated on first run)
+- `DEMIBOT_DB_URL` – Database connection URL
+- `DEMIBOT_WS_PATH` – WebSocket path (default `/ws/embeds`)
+- `DISCORD_TOKEN` – Discord bot token
 
 ## Setup
 
@@ -39,15 +36,14 @@ and run any pending migrations. Re-run the script after pulling updates to ensur
 
 ### 2. Configure and start the bot
 ```bash
-cd python-demibot
+cd demibot
 python -m venv .venv
 source .venv/bin/activate
-pip install fastapi uvicorn aiomysql discord.py
-cp python_demibot/config.example.json python_demibot/config.json
-python -m python_demibot
+pip install -e .
+cp .env.example .env
+python -m demibot.main
 ```
-The first run will launch a CLI wizard if `config.json` is missing and will start the
-Discord bot and HTTP API using the saved configuration.
+The first run will start the Discord bot and HTTP API using the values in `.env`.
 
 With the bot online, run `/demibot_embed` in your Discord server to receive a DM with
 your **Key** and **Sync Key**. Each user should generate their own keys with this
