@@ -26,20 +26,18 @@ Key environment variables include:
 
 ## Setup
 
-### 1. Initialize the database
-```bash
-python database/setup.py
-```
-The script prompts for MySQL host, port, user, and password. It will create a `DemiBot` database, apply `database/schema.sql`,
-and run any pending migrations. Re-run the script after pulling updates to ensure the schema (e.g. the `server_id` column on
-`users`) stays current. Use `--local` to quickly target a local MySQL server.
-
-### 2. Configure and start the bot
+### 1. Install dependencies and initialize the database
 ```bash
 cd demibot
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
+alembic -c demibot/db/migrations/env.py upgrade head
+```
+Re-run the migration command after pulling updates to apply any schema changes.
+
+### 2. Configure and start the bot
+```bash
 cp .env.example .env
 python -m demibot.main
 ```
