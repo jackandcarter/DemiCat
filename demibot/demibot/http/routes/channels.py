@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ...db.models import GuildConfig
+from ...db.models import GuildChannel
 
 router = APIRouter(prefix="/api")
 
@@ -16,14 +16,16 @@ async def get_channels(
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(
-        select(GuildConfig).where(GuildConfig.guild_id == ctx.guild.id)
+        select(GuildChannel.kind, GuildChannel.channel_id).where(
+            GuildChannel.guild_id == ctx.guild.id
+        )
     )
-    cfg = result.scalar_one_or_none()
-    return {
-        "event": [str(cfg.event_channel_id)] if cfg and cfg.event_channel_id else [],
-        "fc_chat": [str(cfg.fc_chat_channel_id)] if cfg and cfg.fc_chat_channel_id else [],
-        "officer_chat": [str(cfg.officer_chat_channel_id)] if cfg and cfg.officer_chat_channel_id else [],
-        "officer_visible": [
-            str(cfg.officer_visible_channel_id)
-        ] if cfg and cfg.officer_visible_channel_id else [],
+    by_kind: dict[str, list[str]] = {
+        "event": [],
+        "fc_chat": [],
+        "officer_chat": [],
+        "officer_visible": [],
     }
+    for kind, channel_id in result.all():
+        by_kind.setdefault(kind, []).append(str(channel_id))
+    return by_kind
