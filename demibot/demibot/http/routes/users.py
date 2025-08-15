@@ -5,17 +5,22 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ...db.models import User
+from ...db.models import User, Membership
 
 router = APIRouter(prefix="/api")
 
 
 @router.get("/users")
 async def get_users(
-    _: RequestContext = Depends(api_key_auth),
+    ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(User))
+    stmt = (
+        select(User)
+        .join(Membership, Membership.user_id == User.id)
+        .where(Membership.guild_id == ctx.guild.id)
+    )
+    result = await db.execute(stmt)
     return [
         {
             "id": str(u.discord_user_id),

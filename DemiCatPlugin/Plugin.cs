@@ -147,7 +147,10 @@ public class Plugin : IDalamudPlugin
             _webSocket?.Dispose();
             _webSocket = new ClientWebSocket();
             var baseUrl = _config.HelperBaseUrl.TrimEnd('/');
-            var fullUrl = $"{baseUrl}{_config.WebSocketPath}";
+            var tokenPart = string.IsNullOrEmpty(_config.AuthToken)
+                ? string.Empty
+                : $"?token={Uri.EscapeDataString(_config.AuthToken)}";
+            var fullUrl = $"{baseUrl}{_config.WebSocketPath}{tokenPart}";
             var wsUri = new Uri(fullUrl
                 .Replace("http://", "ws://")
                 .Replace("https://", "wss://"));
