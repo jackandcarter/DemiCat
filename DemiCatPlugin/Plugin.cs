@@ -273,10 +273,7 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ServerAddress.TrimEnd('/')}/roles")
-            {
-                Content = new StringContent(JsonSerializer.Serialize(new { key = _config.AuthToken }), Encoding.UTF8, "application/json")
-            };
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ServerAddress.TrimEnd('/')}/roles");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);
