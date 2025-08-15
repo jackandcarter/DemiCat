@@ -1,0 +1,15 @@
+
+[project]
+name = "demibot-fixed"
+version = "0.1.0"
+description = "Working in-memory backend for the DemiCat plugin"
+requires-python = ">=3.11"
+
+[project.dependencies]
+fastapi = "^0.110.0"
+uvicorn = {version = "^0.27.0", extras=["standard"]}
+pydantic = "^2.5.0"
+
+[build-system]
+requires = ["setuptools>=67", "wheel"]
+build-backend = "setuptools.build_meta"
