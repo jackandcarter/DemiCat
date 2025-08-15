@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -13,8 +14,37 @@ class Events(commands.Cog):
 
 
 @demi.command(name="event", description="Create a simple event")
-async def create_event(interaction: discord.Interaction) -> None:
-    await interaction.response.send_message("Event created (placeholder)", ephemeral=True)
+@app_commands.describe(
+    title="Title of the event",
+    time="Event time in ISO 8601 format (UTC)",
+    description="Event description",
+)
+async def create_event(
+    interaction: discord.Interaction, title: str, time: str, description: str
+) -> None:
+    host = interaction.client.cfg.server.host
+    if host == "0.0.0.0":
+        host = "localhost"
+    base_url = f"http://{host}:{interaction.client.cfg.server.port}"
+    body = {
+        "channelId": str(interaction.channel_id or interaction.channel.id),
+        "title": title,
+        "time": time,
+        "description": description,
+    }
+    headers = {"X-Api-Key": interaction.client.cfg.security.api_key}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(
+            f"{base_url}/api/events", json=body, headers=headers
+        ) as resp:
+            if resp.status != 200:
+                text = await resp.text()
+                await interaction.response.send_message(
+                    f"Failed to create event: {resp.status} {text}", ephemeral=True
+                )
+                return
+
+    await interaction.response.send_message("Event created", ephemeral=True)
 
 
 async def setup(bot: commands.Bot) -> None:
