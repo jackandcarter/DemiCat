@@ -4,7 +4,16 @@ import enum
 from datetime import datetime
 from typing import List, Optional
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    Index,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
@@ -39,6 +48,14 @@ class GuildConfig(Base):
     guild: Mapped[Guild] = relationship(back_populates="config")
 
 
+class GuildChannel(Base):
+    __tablename__ = "guild_channels"
+
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    kind: Mapped[str] = mapped_column(String(24), primary_key=True)
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -68,18 +85,46 @@ class UserKey(Base):
     last_used_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
 
-class Message(Base):
-    __tablename__ = "messages"
+class Membership(Base):
+    __tablename__ = "memberships"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    discord_message_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
+    name: Mapped[str] = mapped_column(String(255))
+    is_officer: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_chat: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class MembershipRole(Base):
+    __tablename__ = "membership_roles"
+
+    membership_id: Mapped[int] = mapped_column(
+        ForeignKey("memberships.id"), primary_key=True
+    )
+    role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"), primary_key=True)
+
+
+class Message(Base):
+    __tablename__ = "messages"
+    __table_args__ = (
+        Index("ix_messages_channel_id_created_at", "channel_id", "created_at"),
+    )
+
+    discord_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     author_name: Mapped[str] = mapped_column(String(255))
     content_raw: Mapped[str] = mapped_column(Text)
     content_display: Mapped[str] = mapped_column(Text)
-    mentions_json: Mapped[Optional[str]] = mapped_column(Text)
     is_officer: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -87,12 +132,17 @@ class Message(Base):
 class Embed(Base):
     __tablename__ = "embeds"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    discord_message_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    discord_message_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, index=True
+    )
     channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     payload_json: Mapped[str] = mapped_column(Text)
-    last_broadcast_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    source: Mapped[str] = mapped_column(String(16))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
 
 class RSVP(enum.Enum):
@@ -104,8 +154,8 @@ class RSVP(enum.Enum):
 class Attendance(Base):
     __tablename__ = "attendance"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    discord_message_id: Mapped[int] = mapped_column(BigInteger, index=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    discord_message_id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
     choice: Mapped[RSVP] = mapped_column(String(10))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
