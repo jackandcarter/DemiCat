@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..ws import manager
-from ...db.models import Attendance, Embed, RSVP, User
+from ...db.models import Attendance, Embed, GuildChannel, RSVP, User
 
 router = APIRouter(prefix="/api")
 
@@ -60,14 +60,20 @@ async def post_interaction(
 
     # recompute attendance summary
     stmt = (
-        select(Attendance.choice, User.global_name)
+        select(
+            Attendance.choice,
+            User.global_name,
+            User.discriminator,
+            User.discord_user_id,
+        )
         .join(User, Attendance.user_id == User.id)
         .where(Attendance.discord_message_id == message_id)
     )
     rows = await db.execute(stmt)
     summary: Dict[str, List[str]] = {"yes": [], "maybe": [], "no": []}
-    for choice, name in rows.all():
-        summary[choice.value].append(name or str(ctx.user.discord_user_id))
+    for choice, name, discrim, uid in rows.all():
+        display = name or discrim or str(uid)
+        summary[choice.value].append(display)
 
     embed = (
         await db.execute(select(Embed).where(Embed.discord_message_id == message_id))
@@ -77,6 +83,16 @@ async def post_interaction(
         payload["fields"] = summarize(summary)
         embed.payload_json = json.dumps(payload)
         await db.commit()
-        await manager.broadcast_text(json.dumps(payload))
+        kind = (
+            await db.execute(
+                select(GuildChannel.kind).where(
+                    GuildChannel.guild_id == embed.guild_id,
+                    GuildChannel.channel_id == embed.channel_id,
+                )
+            )
+        ).scalar_one_or_none()
+        await manager.broadcast_text(
+            json.dumps(payload), embed.guild_id, kind == "officer_chat"
+        )
 
     return {"ok": True}

@@ -18,9 +18,4 @@ async def validate(_: RequestContext = Depends(api_key_auth)):
 
 @router.post("/roles", response_model=RolesResponse)
 async def roles(ctx: RequestContext = Depends(api_key_auth)) -> RolesResponse:
-    roles = [
-        r.strip()
-        for r in (ctx.key.roles_cached or "officer,chat").split(",")
-        if r.strip()
-    ]
-    return RolesResponse(roles=roles)
+    return RolesResponse(roles=ctx.roles)

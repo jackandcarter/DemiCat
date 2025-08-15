@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,8 @@ async def get_officer_messages(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    if "officer" not in ctx.roles:
+        raise HTTPException(status_code=403)
     stmt = (
         select(Message)
         .where(
@@ -54,6 +56,8 @@ async def post_officer_message(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    if "officer" not in ctx.roles:
+        raise HTTPException(status_code=403)
     msg = Message(
         discord_message_id=int(datetime.utcnow().timestamp() * 1000),
         channel_id=int(body.channelId),
