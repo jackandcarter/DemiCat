@@ -22,7 +22,7 @@ Environment variables:
 | Variable | Description |
 | --- | --- |
 | `DEMIBOT_DB_URL` | Database connection URL |
-| `DEMIBOT_WS_PATH` | WebSocket path (default `/ws`) |
+| `DEMIBOT_WS_PATH` | WebSocket path (default `/ws/embeds`) |
 | `DISCORD_TOKEN` | Discord bot token |
 
 Run database migrations:
