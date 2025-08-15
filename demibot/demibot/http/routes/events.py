@@ -1,20 +1,26 @@
-
 from __future__ import annotations
+
+import json
 from datetime import datetime
-from typing import Optional, List
-from fastapi import APIRouter
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from ._stores import EMBEDS, Embed
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto
 from ..ws import manager
-import json, uuid
+from ...db.models import Embed
 
 router = APIRouter(prefix="/api")
+
 
 class FieldBody(BaseModel):
     name: str
     value: str
     inline: bool | None = None
+
 
 class CreateEventBody(BaseModel):
     channelId: str
@@ -28,27 +34,45 @@ class CreateEventBody(BaseModel):
     fields: List[FieldBody] | None = None
     attendance: List[str] | None = None
 
+
 @router.post("/events")
-async def create_event(body: CreateEventBody):
-    eid = str(uuid.uuid4())
+async def create_event(
+    body: CreateEventBody,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    eid = str(int(datetime.utcnow().timestamp() * 1000))
     buttons = []
-    for tag in (body.attendance or ["yes","maybe","no"]):
+    for tag in (body.attendance or ["yes", "maybe", "no"]):
         buttons.append(EmbedButtonDto(label=tag.capitalize(), customId=f"rsvp:{tag}"))
     dto = EmbedDto(
         id=eid,
-        timestamp=datetime.fromisoformat(body.time.replace("Z","+00:00")) if body.time else datetime.utcnow(),
+        timestamp=datetime.fromisoformat(body.time.replace("Z", "+00:00"))
+        if body.time
+        else datetime.utcnow(),
         color=body.color,
         authorName=None,
         authorIconUrl=None,
         title=body.title,
         description=body.description,
-        fields=[EmbedFieldDto(name=f.name, value=f.value, inline=f.inline or False) for f in (body.fields or [])],
+        fields=[
+            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline or False)
+            for f in (body.fields or [])
+        ],
         thumbnailUrl=body.thumbnailUrl,
         imageUrl=body.imageUrl,
         buttons=buttons,
         channelId=int(body.channelId) if body.channelId.isdigit() else None,
         mentions=None,
     )
-    EMBEDS[eid] = Embed(id=eid, payload=dto.model_dump())
+    db.add(
+        Embed(
+            discord_message_id=int(eid),
+            channel_id=int(body.channelId),
+            guild_id=ctx.guild.id,
+            payload_json=json.dumps(dto.model_dump()),
+        )
+    )
+    await db.commit()
     await manager.broadcast_text(json.dumps(dto.model_dump()))
     return {"ok": True, "id": eid}
