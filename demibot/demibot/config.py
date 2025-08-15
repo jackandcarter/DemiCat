@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class ServerConfig:
     host: str = os.environ.get("DEMIBOT_HOST", "0.0.0.0")
     port: int = int(os.environ.get("DEMIBOT_PORT", "8000"))
-    websocket_path: str = os.environ.get("DEMIBOT_WS_PATH", "/ws")
+    websocket_path: str = os.environ.get("DEMIBOT_WS_PATH", "/ws/embeds")
 
 @dataclass
 class SecurityConfig:

@@ -13,7 +13,7 @@ Environment variables (optional):
 
 - DEMIBOT_HOST (default: 0.0.0.0)
 - DEMIBOT_PORT (default: 8000)
-- DEMIBOT_WS_PATH (default: /ws)
+ - DEMIBOT_WS_PATH (default: /ws/embeds)
 - DEMIBOT_API_KEY (default: demo)  # Use this same key in the plugin Settings → Sync
 ```
 
@@ -27,4 +27,4 @@ Endpoints implemented:
 - GET /api/embeds
 - POST /api/events
 - POST /api/interactions
-- WebSocket at /ws
+- WebSocket at /ws/embeds
