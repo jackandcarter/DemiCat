@@ -15,7 +15,7 @@ public class FcChatWindow : ChatWindow
     private DateTime _lastUserFetch = DateTime.MinValue;
     private readonly string _channelName;
 
-    public FcChatWindow(Config config) : base(config)
+    public FcChatWindow(Config config, HttpClient httpClient) : base(config, httpClient)
     {
         _channelId = config.FcChannelId;
         _channelName = string.IsNullOrEmpty(config.FcChannelName) ? config.FcChannelId : config.FcChannelName;

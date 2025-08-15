@@ -10,10 +10,10 @@ using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
 
-public class EventCreateWindow : IDisposable
+public class EventCreateWindow
 {
     private readonly Config _config;
-    private readonly HttpClient _httpClient = new();
+    private readonly HttpClient _httpClient;
 
     private string _title = string.Empty;
     private string _description = string.Empty;
@@ -30,9 +30,10 @@ public class EventCreateWindow : IDisposable
 
     public string ChannelId { private get; set; } = string.Empty;
 
-    public EventCreateWindow(Config config)
+    public EventCreateWindow(Config config, HttpClient httpClient)
     {
         _config = config;
+        _httpClient = httpClient;
     }
 
     public void Draw()
@@ -125,10 +126,6 @@ public class EventCreateWindow : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        _httpClient.Dispose();
-    }
 
     private class Field
     {

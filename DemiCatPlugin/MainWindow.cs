@@ -17,7 +17,7 @@ public class MainWindow
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
-    private readonly HttpClient _httpClient = new();
+    private readonly HttpClient _httpClient;
     private readonly List<string> _channels = new();
     private readonly List<string> _fcChatChannels = new();
     private readonly List<string> _officerChatChannels = new();
@@ -29,15 +29,16 @@ public class MainWindow
     public bool HasOfficerRole { get; set; }
     public bool HasChatRole { get; set; }
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient)
     {
         _config = config;
         _ui = ui;
         _chat = chat;
         _officer = officer;
         _settings = settings;
-        _create = new EventCreateWindow(config);
-        _templates = new TemplatesWindow(config);
+        _httpClient = httpClient;
+        _create = new EventCreateWindow(config, httpClient);
+        _templates = new TemplatesWindow(config, httpClient);
         _channelId = config.EventChannelId;
         _ui.ChannelId = _channelId;
         _create.ChannelId = _channelId;

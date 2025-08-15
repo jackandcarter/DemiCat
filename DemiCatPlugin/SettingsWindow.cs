@@ -11,7 +11,7 @@ namespace DemiCatPlugin;
 public class SettingsWindow : IDisposable
 {
     private readonly Config _config;
-    private readonly HttpClient _httpClient = new();
+    private readonly HttpClient _httpClient;
     private readonly Func<Task> _refreshRoles;
     private readonly DeveloperWindow _devWindow;
 
@@ -20,9 +20,10 @@ public class SettingsWindow : IDisposable
 
     public bool IsOpen;
 
-    public SettingsWindow(Config config, Func<Task> refreshRoles)
+    public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles)
     {
         _config = config;
+        _httpClient = httpClient;
         _refreshRoles = refreshRoles;
         _apiKey = config.AuthToken ?? string.Empty;
         _devWindow = new DeveloperWindow(config);
@@ -103,6 +104,5 @@ public class SettingsWindow : IDisposable
 
     public void Dispose()
     {
-        _httpClient.Dispose();
     }
 }
