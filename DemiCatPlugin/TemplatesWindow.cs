@@ -8,19 +8,20 @@ using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
 
-public class TemplatesWindow : IDisposable
+public class TemplatesWindow
 {
     private readonly Config _config;
-    private readonly HttpClient _httpClient = new();
+    private readonly HttpClient _httpClient;
     private int _selectedIndex = -1;
     private bool _showPreview;
     private string _previewContent = string.Empty;
 
     public string ChannelId { get; set; } = string.Empty;
 
-    public TemplatesWindow(Config config)
+    public TemplatesWindow(Config config, HttpClient httpClient)
     {
         _config = config;
+        _httpClient = httpClient;
     }
 
     public void Draw()
@@ -93,9 +94,5 @@ public class TemplatesWindow : IDisposable
         }
     }
 
-    public void Dispose()
-    {
-        _httpClient.Dispose();
-    }
 }
 

@@ -12,15 +12,16 @@ namespace DemiCatPlugin;
 
 public class UiRenderer : IDisposable
 {
-    private readonly HttpClient _httpClient = new();
+    private readonly HttpClient _httpClient;
     private readonly Config _config;
     private readonly Dictionary<string, EventView> _embeds = new();
     private string _channelId;
     private EventView? _current;
 
-    public UiRenderer(Config config)
+    public UiRenderer(Config config, HttpClient httpClient)
     {
         _config = config;
+        _httpClient = httpClient;
         _channelId = config.EventChannelId;
     }
 
@@ -111,7 +112,6 @@ public class UiRenderer : IDisposable
             view.Dispose();
         }
         _embeds.Clear();
-        _httpClient.Dispose();
     }
 }
 

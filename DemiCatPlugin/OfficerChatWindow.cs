@@ -12,7 +12,7 @@ namespace DemiCatPlugin;
 
 public class OfficerChatWindow : ChatWindow
 {
-    public OfficerChatWindow(Config config) : base(config)
+    public OfficerChatWindow(Config config, HttpClient httpClient) : base(config, httpClient)
     {
         _channelId = config.OfficerChannelId;
     }

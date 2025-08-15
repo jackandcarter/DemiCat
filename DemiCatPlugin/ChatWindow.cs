@@ -14,7 +14,7 @@ namespace DemiCatPlugin;
 public class ChatWindow : IDisposable
 {
     protected readonly Config _config;
-    protected readonly HttpClient _httpClient = new();
+    protected readonly HttpClient _httpClient;
     protected readonly List<ChatMessageDto> _messages = new();
     protected readonly List<string> _channels = new();
     protected int _selectedIndex;
@@ -24,9 +24,10 @@ public class ChatWindow : IDisposable
     protected bool _useCharacterName;
     protected DateTime _lastFetch = DateTime.MinValue;
 
-    public ChatWindow(Config config)
+    public ChatWindow(Config config, HttpClient httpClient)
     {
         _config = config;
+        _httpClient = httpClient;
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
     }
@@ -174,7 +175,6 @@ public class ChatWindow : IDisposable
 
     public void Dispose()
     {
-        _httpClient.Dispose();
     }
 
     private void SaveConfig()
