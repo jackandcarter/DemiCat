@@ -5,13 +5,14 @@ from datetime import datetime
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto
 from ..ws import manager
-from ...db.models import Embed
+from ...db.models import Embed, GuildChannel
 
 router = APIRouter(prefix="/api")
 
@@ -65,14 +66,25 @@ async def create_event(
         channelId=int(body.channelId) if body.channelId.isdigit() else None,
         mentions=None,
     )
+    channel_id = int(body.channelId)
     db.add(
         Embed(
             discord_message_id=int(eid),
-            channel_id=int(body.channelId),
+            channel_id=channel_id,
             guild_id=ctx.guild.id,
             payload_json=json.dumps(dto.model_dump()),
         )
     )
     await db.commit()
-    await manager.broadcast_text(json.dumps(dto.model_dump()))
+    kind = (
+        await db.execute(
+            select(GuildChannel.kind).where(
+                GuildChannel.guild_id == ctx.guild.id,
+                GuildChannel.channel_id == channel_id,
+            )
+        )
+    ).scalar_one_or_none()
+    await manager.broadcast_text(
+        json.dumps(dto.model_dump()), ctx.guild.id, kind == "officer_chat"
+    )
     return {"ok": True, "id": eid}
