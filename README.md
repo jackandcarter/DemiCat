@@ -49,7 +49,7 @@ command for plugin authentication.
 
 ### 3. Configure the Dalamud plugin
 Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-game, open the plugin configuration and set the
-**Helper Base URL** if needed (defaults to `http://localhost:8000`).
+**Helper Base URL** and **Server Address** if needed (both default to `http://localhost:8000`).
 
 Use the **Key** and **Sync Key** obtained from `/demibot_embed` and enter both values in the
 plugin settings. Press **Connect/Sync** (or **Validate** if you already have a key) to link the
