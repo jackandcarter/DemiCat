@@ -1,6 +1,5 @@
 
 from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 
@@ -12,7 +11,7 @@ class ServerConfig:
 
 @dataclass
 class SecurityConfig:
-    api_key: str = os.environ.get("DEMIBOT_API_KEY", "demo")  # set this and the plugin's key the same
+    api_key: str = os.environ.get("DEMIBOT_API_KEY", "demo")
 
 @dataclass
 class AppConfig:
