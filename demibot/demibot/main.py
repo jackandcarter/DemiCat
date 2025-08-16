@@ -1,15 +1,41 @@
-
 from __future__ import annotations
-import uvicorn
-from .config import AppConfig
-from .http.api import create_app
-from .db.session import create_engine
 
-def main():
-    cfg = AppConfig()
-    create_engine(cfg.database.url)
+"""Entry point for starting the DemiBot service."""
+
+import asyncio
+from threading import Thread
+
+import logging
+
+from .config import ensure_config
+from .db.session import init_db
+from .discordbot.bot import create_bot
+from .http.api import create_app
+
+
+def _run_flask(app, host: str, port: int) -> None:
+    app.run(host=host, port=port)
+
+
+def main() -> None:
+    logging.basicConfig(level=logging.INFO)
+    cfg = ensure_config()
+
+    logging.info("Initialising database")
+    asyncio.run(init_db(cfg.database.url))
+
+    logging.info("Starting Flask server on %s:%s", cfg.server.host, cfg.server.port)
     app = create_app(cfg)
-    uvicorn.run(app, host=cfg.server.host, port=cfg.server.port)
+    flask_thread = Thread(
+        target=_run_flask, args=(app, cfg.server.host, cfg.server.port), daemon=True
+    )
+    flask_thread.start()
+
+    logging.info("Starting Discord bot")
+    bot = create_bot(cfg)
+    asyncio.run(bot.start(cfg.discord_token))
+
 
 if __name__ == "__main__":
     main()
+

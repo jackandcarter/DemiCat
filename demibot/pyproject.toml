@@ -8,8 +8,7 @@ readme = "README.md"
 license = {text = "MIT"}
 
 [project.dependencies]
-fastapi = "^0.110.0"
-uvicorn = {version = "^0.27.0", extras=["standard"]}
+flask = "^3.0.0"
 discord.py = "^2.3.2"
 sqlalchemy = {version = "^2.0.25", extras=["asyncio"]}
 aiomysql = "^0.2.0"

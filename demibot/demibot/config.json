@@ -1,0 +1,16 @@
+{
+  "server": {
+    "host": "0.0.0.0",
+    "port": 5000
+  },
+  "database": {
+    "use_remote": false,
+    "host": "localhost",
+    "port": 3306,
+    "database": "demibot",
+    "user": "root",
+    "password": ""
+  },
+  "discord_token": ""
+}
+
