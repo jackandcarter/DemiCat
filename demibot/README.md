@@ -5,25 +5,30 @@ API used by the plugin.
 
 ## Quickstart
 
-Install dependencies and create the database:
+Install dependencies:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -e .
-alembic -c demibot/db/migrations/env.py upgrade head
 ```
 
-Copy `.env.example` to `.env` and adjust values as needed. The default configuration
-uses a local SQLite database and a demo API key.
+Create the initial `config.json` by running the service with the
+`--reconfigure` flag:
 
-Environment variables:
+```bash
+python -m demibot.main --reconfigure
+```
 
-| Variable | Description |
-| --- | --- |
-| `DEMIBOT_DB_URL` | Database connection URL |
-| `DEMIBOT_WS_PATH` | WebSocket path (default `/ws/embeds`) |
-| `DISCORD_TOKEN` | Discord bot token |
+You will be prompted for required settings:
+
+* `Use remote MySQL server? (y/N)`
+* `Remote host`, `Remote port` and `Database name` (if remote is selected)
+* `Enter Discord bot token`
+
+The answers are written to `demibot/demibot/config.json`. Edit this file to
+adjust `server`, `database` or `discord_token` values, or rerun the command
+with `--reconfigure` to update it.
 
 Run database migrations:
 
