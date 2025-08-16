@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Entry point for starting the DemiBot service."""
 
+import argparse
 import asyncio
 from threading import Thread
 
@@ -18,8 +19,16 @@ def _run_flask(app, host: str, port: int) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Start the DemiBot service")
+    parser.add_argument(
+        "--reconfigure",
+        action="store_true",
+        help="Force interactive configuration prompts",
+    )
+    args = parser.parse_args()
+
     logging.basicConfig(level=logging.INFO)
-    cfg = ensure_config()
+    cfg = ensure_config(force_reconfigure=args.reconfigure)
 
     logging.info("Initialising database")
     asyncio.run(init_db(cfg.database.url))
