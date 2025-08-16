@@ -12,6 +12,7 @@ startup and the resulting configuration will be written back to disk.
 from dataclasses import asdict, dataclass
 from pathlib import Path
 import json
+import logging
 
 CFG_PATH = Path(__file__).with_name("config.json")
 
@@ -50,7 +51,11 @@ class AppConfig:
 
 def load_config() -> AppConfig:
     if CFG_PATH.exists():
-        data = json.loads(CFG_PATH.read_text())
+        try:
+            data = json.loads(CFG_PATH.read_text())
+        except json.JSONDecodeError:
+            logging.warning("Invalid JSON in %s, using defaults", CFG_PATH)
+            return AppConfig()
         return AppConfig(
             server=ServerConfig(**data.get("server", {})),
             database=DatabaseConfig(**data.get("database", {})),
@@ -103,4 +108,3 @@ def ensure_config() -> AppConfig:
     if changed:
         save_config(cfg)
     return cfg
-
