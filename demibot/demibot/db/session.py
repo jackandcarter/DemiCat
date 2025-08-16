@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import AsyncGenerator
 
+import logging
 from sqlalchemy import inspect, text
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -25,9 +26,15 @@ async def init_db(url: str) -> AsyncEngine:
 
     async with _engine.begin() as conn:
         def _init(sync_conn):
+            inspector = inspect(sync_conn)
+            existing_tables = set(inspector.get_table_names())
+
             Base.metadata.create_all(sync_conn)
             inspector = inspect(sync_conn)
+
             for table in Base.metadata.sorted_tables:
+                if table.name not in existing_tables:
+                    logging.info("Created table %s", table.name)
                 existing = {c["name"] for c in inspector.get_columns(table.name)}
                 for column in table.columns:
                     if column.name not in existing:
@@ -36,6 +43,9 @@ async def init_db(url: str) -> AsyncEngine:
                             f"{column.compile(dialect=sync_conn.dialect)}"
                         )
                         sync_conn.execute(ddl)
+                        logging.info(
+                            "Added column %s to table %s", column.name, table.name
+                        )
 
         await conn.run_sync(_init)
 
