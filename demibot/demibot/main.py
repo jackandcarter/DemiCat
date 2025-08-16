@@ -9,6 +9,8 @@ from threading import Thread
 import logging
 import sys
 
+from demibot import log_config
+
 from .config import ensure_config
 from .db.session import init_db
 from .discordbot.bot import create_bot
@@ -32,7 +34,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    logging.basicConfig(level=logging.INFO)
+    log_config.setup_logging()
     cfg = ensure_config(force_reconfigure=args.reconfigure)
 
     logging.info("Initialising database")
@@ -43,12 +45,16 @@ def main() -> None:
         sys.exit(1)
 
     logging.info(
-        "Starting Flask server on %s:%s", cfg.server.host, cfg.server.port
+        "Starting Flask server on %s:%s",
+        cfg.server.host,
+        cfg.server.port,
     )
     try:
         app = create_app(cfg)
         flask_thread = Thread(
-            target=_run_flask, args=(app, cfg.server.host, cfg.server.port), daemon=True
+            target=_run_flask,
+            args=(app, cfg.server.host, cfg.server.port),
+            daemon=True,
         )
         flask_thread.start()
     except Exception:
@@ -66,4 +72,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
