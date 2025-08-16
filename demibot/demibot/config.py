@@ -11,7 +11,11 @@ startup and the resulting configuration will be written back to disk.
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
+import asyncio
 import json
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
 
 CFG_PATH = Path(__file__).with_name("config.json")
 
@@ -68,20 +72,20 @@ def save_config(cfg: AppConfig) -> None:
     CFG_PATH.write_text(json.dumps(data, indent=2))
 
 
-def ensure_config() -> AppConfig:
-    """Load configuration, prompting the user for any missing values."""
+def ensure_config(force_reconfigure: bool = False) -> AppConfig:
+    """Load configuration, prompting the user for any missing values.
 
-    cfg = load_config()
+    Parameters
+    ----------
+    force_reconfigure:
+        If ``True`` all configuration values will be prompted for even if a
+        ``config.json`` file already exists.
+    """
+
+    cfg = load_config() if CFG_PATH.exists() else AppConfig()
     changed = False
 
-    # Determine database location
-    if CFG_PATH.exists():
-        mode = "remote" if cfg.database.use_remote else "local"
-        print(
-            f"Using {mode} MySQL database at "
-            f"{cfg.database.host}:{cfg.database.port}/{cfg.database.database}"
-        )
-    else:
+    def _prompt_database() -> None:
         resp = input("Use remote MySQL server? (y/N): ").strip().lower()
         cfg.database.use_remote = resp.startswith("y")
         if cfg.database.use_remote:
@@ -94,11 +98,53 @@ def ensure_config() -> AppConfig:
                 input(f"Database name [{cfg.database.database}]: ")
                 or cfg.database.database
             )
-        changed = True
 
-    if not cfg.discord_token:
-        cfg.discord_token = input("Enter Discord bot token: ").strip()
+    def _check_database() -> bool:
+        try:
+            async def _test() -> None:
+                engine = create_async_engine(cfg.database.url, echo=False, future=True)
+                async with engine.connect() as conn:
+                    await conn.execute(text("SELECT 1"))
+                await engine.dispose()
+
+            asyncio.run(_test())
+            return True
+        except Exception as exc:  # pragma: no cover - interactive prompt
+            print(f"Database connection failed: {exc}")
+            return False
+
+    needs_prompt = force_reconfigure or not CFG_PATH.exists()
+
+    if needs_prompt:
+        while True:
+            _prompt_database()
+            if _check_database():
+                break
+        cfg.discord_token = (
+            input(f"Enter Discord bot token [{cfg.discord_token}]: ").strip()
+            or cfg.discord_token
+        )
         changed = True
+    else:
+        mode = "remote" if cfg.database.use_remote else "local"
+        print(
+            f"Using {mode} MySQL database at "
+            f"{cfg.database.host}:{cfg.database.port}/{cfg.database.database}"
+        )
+        if not _check_database():
+            print("Unable to connect. Reconfiguring...")
+            while True:
+                _prompt_database()
+                if _check_database():
+                    break
+            cfg.discord_token = (
+                input(f"Enter Discord bot token [{cfg.discord_token}]: ").strip()
+                or cfg.discord_token
+            )
+            changed = True
+        elif not cfg.discord_token:
+            cfg.discord_token = input("Enter Discord bot token: ").strip()
+            changed = True
 
     if changed:
         save_config(cfg)
