@@ -3,10 +3,11 @@ from __future__ import annotations
 """Configuration handling for DemiBot.
 
 This module replaces the previous environment variable based configuration with a
-JSON file that is automatically created on first run.  The configuration file
+JSON file that is automatically created on first run. The configuration file
 stores database connection information, server options and the Discord bot
-token.  If any required value is missing the user will be prompted for it on
-startup and the resulting configuration will be written back to disk.
+token. If any required value is missing the user will be prompted for it on
+startup and the resulting configuration will be written back to disk with
+permissions ``0o600`` to restrict access.
 """
 
 from dataclasses import asdict, dataclass
@@ -75,6 +76,10 @@ def save_config(cfg: AppConfig) -> None:
         "discord_token": cfg.discord_token,
     }
     CFG_PATH.write_text(json.dumps(data, indent=2))
+    try:
+        CFG_PATH.chmod(0o600)
+    except OSError as exc:  # pragma: no cover - platform dependent
+        logging.warning("Unable to set permissions on %s: %s", CFG_PATH, exc)
 
 
 def ensure_config(force_reconfigure: bool = False) -> AppConfig:
