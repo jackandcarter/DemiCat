@@ -7,6 +7,7 @@ import asyncio
 from threading import Thread
 
 import logging
+import sys
 
 from .config import ensure_config
 from .db.session import init_db
@@ -15,7 +16,11 @@ from .http.api import create_app
 
 
 def _run_flask(app, host: str, port: int) -> None:
-    app.run(host=host, port=port)
+    try:
+        app.run(host=host, port=port)
+    except Exception:
+        logging.exception("Flask server failed")
+        sys.exit(1)
 
 
 def main() -> None:
@@ -31,18 +36,32 @@ def main() -> None:
     cfg = ensure_config(force_reconfigure=args.reconfigure)
 
     logging.info("Initialising database")
-    asyncio.run(init_db(cfg.database.url))
+    try:
+        asyncio.run(init_db(cfg.database.url))
+    except Exception:
+        logging.exception("Database initialization failed")
+        sys.exit(1)
 
-    logging.info("Starting Flask server on %s:%s", cfg.server.host, cfg.server.port)
-    app = create_app(cfg)
-    flask_thread = Thread(
-        target=_run_flask, args=(app, cfg.server.host, cfg.server.port), daemon=True
+    logging.info(
+        "Starting Flask server on %s:%s", cfg.server.host, cfg.server.port
     )
-    flask_thread.start()
+    try:
+        app = create_app(cfg)
+        flask_thread = Thread(
+            target=_run_flask, args=(app, cfg.server.host, cfg.server.port), daemon=True
+        )
+        flask_thread.start()
+    except Exception:
+        logging.exception("Failed to start Flask server")
+        sys.exit(1)
 
     logging.info("Starting Discord bot")
-    bot = create_bot(cfg)
-    asyncio.run(bot.start(cfg.discord_token))
+    try:
+        bot = create_bot(cfg)
+        asyncio.run(bot.start(cfg.discord_token))
+    except Exception:
+        logging.exception("Failed to start Discord bot")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
