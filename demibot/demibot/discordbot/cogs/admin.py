@@ -255,9 +255,12 @@ async def resync_members(interaction: discord.Interaction) -> None:
             )
             return
         stored_role_res = await db.execute(
-            select(Role.id).where(Role.guild_id == guild.id)
+            select(Role.id, Role.discord_role_id).where(Role.guild_id == guild.id)
         )
-        stored_role_ids = {row[0] for row in stored_role_res}
+        role_map = {
+            discord_role_id: role_id
+            for role_id, discord_role_id in stored_role_res.all()
+        }
         result = await db.execute(
             select(UserKey, User)
             .join(User, User.id == UserKey.user_id)
@@ -284,9 +287,23 @@ async def resync_members(interaction: discord.Interaction) -> None:
                         MembershipRole.membership_id == membership.id
                     )
                 )
-                for role_id in member_role_ids & stored_role_ids:
-                    db.add(MembershipRole(membership_id=membership.id, role_id=role_id))
-                key.roles_cached = ",".join(str(r.id) for r in member_roles)
+                for role in member_roles:
+                    if role.id not in role_map:
+                        db_role = Role(
+                            guild_id=guild.id,
+                            discord_role_id=role.id,
+                            name=role.name,
+                        )
+                        db.add(db_role)
+                        await db.flush()
+                        role_map[role.id] = db_role.id
+                for role_id in member_role_ids:
+                    db.add(
+                        MembershipRole(
+                            membership_id=membership.id, role_id=role_map[role_id]
+                        )
+                    )
+                key.roles_cached = ",".join(str(rid) for rid in member_role_ids)
                 count += 1
         await db.commit()
     await interaction.response.send_message(f"Resynced {count} members", ephemeral=True)
