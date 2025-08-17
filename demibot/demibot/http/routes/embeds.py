@@ -24,4 +24,11 @@ async def get_embeds(
         ).where(GuildChannel.kind != "officer_chat")
     stmt = stmt.order_by(Embed.updated_at.desc())
     result = await db.execute(stmt)
-    return [json.loads(e.payload_json) for e in result.scalars().all()]
+    embeds = []
+    for e in result.scalars().all():
+        payload = json.loads(e.payload_json)
+        if not payload.get("channelId"):
+            payload["channelId"] = e.channel_id
+        payload["guildId"] = e.guild_id
+        embeds.append(payload)
+    return embeds
