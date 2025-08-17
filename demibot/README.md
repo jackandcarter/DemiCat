@@ -22,13 +22,14 @@ python -m demibot.main --reconfigure
 
 You will be prompted for required settings:
 
+* `Server port` (default 5050)
 * `Use remote MySQL server? (y/N)`
 * `Remote host`, `Remote port` and `Database name` (if remote is selected)
 * `Enter Discord bot token`
 
 The answers are written to `demibot/demibot/config.json`. Edit this file to
-adjust `server`, `database` or `discord_token` values, or rerun the command
-with `--reconfigure` to update it.
+adjust `server`, `database` or `discord_token` values (for example, change
+`server.port`), or rerun the command with `--reconfigure` to update it.
 
 Run database migrations:
 

@@ -27,7 +27,7 @@ CFG_PATH = Path(__file__).with_name("config.json")
 @dataclass
 class ServerConfig:
     host: str = "0.0.0.0"
-    port: int = 5000
+    port: int = 5050
 
 
 @dataclass
@@ -97,6 +97,11 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
     cfg = load_config() if CFG_PATH.exists() else AppConfig()
     changed = False
 
+    def _prompt_server() -> None:
+        port = input(f"Server port [{cfg.server.port}]: ").strip()
+        if port:
+            cfg.server.port = int(port)
+
     def _prompt_database() -> None:
         resp = input("Use remote MySQL server? (y/N): ").strip().lower()
         cfg.database.use_remote = resp.startswith("y")
@@ -134,6 +139,7 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
     needs_prompt = force_reconfigure or not CFG_PATH.exists()
 
     if needs_prompt:
+        _prompt_server()
         while True:
             _prompt_database()
             if _check_database():

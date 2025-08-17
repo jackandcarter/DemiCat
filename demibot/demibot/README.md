@@ -12,8 +12,8 @@ python -m demibot.main
 Environment variables (optional):
 
 - DEMIBOT_HOST (default: 0.0.0.0)
-- DEMIBOT_PORT (default: 8000)
- - DEMIBOT_WS_PATH (default: /ws/embeds)
+- DEMIBOT_PORT (default: 5050)
+- DEMIBOT_WS_PATH (default: /ws/embeds)
 - DEMIBOT_API_KEY (default: demo)  # Use this same key in the plugin Settings → Sync
 ```
 
