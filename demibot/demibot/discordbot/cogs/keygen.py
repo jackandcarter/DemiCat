@@ -8,7 +8,7 @@ from discord.ext import commands
 from sqlalchemy import select
 
 from ...db.models import Guild, User, UserKey
-from ...db.session import create_engine, get_session
+from ...db.session import get_session
 from .setup_wizard import demi
 
 
@@ -20,7 +20,6 @@ class KeyGen(commands.Cog):
 @demi.command(name="key", description="Generate an API key")
 async def key_command(interaction: discord.Interaction) -> None:
     token = secrets.token_hex(16)
-    create_engine(interaction.client.cfg.database.url)
     try:
         async for db in get_session():
             guild_res = await db.execute(
