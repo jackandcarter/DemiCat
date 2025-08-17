@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
@@ -23,6 +25,10 @@ public class ChatWindow : IDisposable
     protected string _input = string.Empty;
     protected bool _useCharacterName;
     protected DateTime _lastFetch = DateTime.MinValue;
+    private ClientWebSocket? _ws;
+    private Task? _wsTask;
+    private CancellationTokenSource? _wsCts;
+    private bool _wsConnected;
 
     public ChatWindow(Config config, HttpClient httpClient)
     {
@@ -34,6 +40,12 @@ public class ChatWindow : IDisposable
 
     public virtual void Draw()
     {
+        if (_wsTask == null)
+        {
+            _wsCts = new CancellationTokenSource();
+            _wsTask = RunWebSocket(_wsCts.Token);
+        }
+
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
@@ -59,7 +71,7 @@ public class ChatWindow : IDisposable
             SaveConfig();
         }
 
-        if (DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
+        if (!_wsConnected && DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
         {
             _ = RefreshMessages();
         }
@@ -175,6 +187,8 @@ public class ChatWindow : IDisposable
 
     public void Dispose()
     {
+        _wsCts?.Cancel();
+        _ws?.Dispose();
     }
 
     private void SaveConfig()
@@ -203,6 +217,95 @@ public class ChatWindow : IDisposable
         {
             // ignored
         }
+    }
+
+    private async Task RunWebSocket(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
+        {
+            try
+            {
+                _ws?.Dispose();
+                _ws = new ClientWebSocket();
+                if (!string.IsNullOrEmpty(_config.AuthToken))
+                {
+                    _ws.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
+                }
+                var uri = BuildWebSocketUri();
+                await _ws.ConnectAsync(uri, token);
+                _wsConnected = true;
+
+                var buffer = new byte[8192];
+                while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
+                {
+                    var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        break;
+                    }
+                    var count = result.Count;
+                    while (!result.EndOfMessage)
+                    {
+                        result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer, count, buffer.Length - count), token);
+                        count += result.Count;
+                    }
+                    var json = Encoding.UTF8.GetString(buffer, 0, count);
+                    ChatMessageDto? msg = null;
+                    try
+                    {
+                        msg = JsonSerializer.Deserialize<ChatMessageDto>(json);
+                    }
+                    catch
+                    {
+                        // ignored
+                    }
+                    if (msg != null)
+                    {
+                        _ = PluginServices.Framework.RunOnTick(() =>
+                        {
+                            if (msg.ChannelId == _channelId)
+                            {
+                                _messages.Add(msg);
+                            }
+                        });
+                    }
+                }
+            }
+            catch
+            {
+                // ignored - reconnect
+            }
+            finally
+            {
+                _wsConnected = false;
+                _ws?.Dispose();
+                _ws = null;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), token);
+            }
+            catch
+            {
+                // ignore cancellation
+            }
+        }
+    }
+
+    private Uri BuildWebSocketUri()
+    {
+        var baseUri = _config.HelperBaseUrl.TrimEnd('/') + "/ws/messages";
+        var builder = new UriBuilder(baseUri);
+        if (builder.Scheme == "https")
+        {
+            builder.Scheme = "wss";
+        }
+        else if (builder.Scheme == "http")
+        {
+            builder.Scheme = "ws";
+        }
+        return builder.Uri;
     }
 
     protected class ChatMessageDto
