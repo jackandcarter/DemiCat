@@ -81,11 +81,19 @@ async def key_embed(interaction: discord.Interaction) -> None:
         await interaction.response.send_message("Guild only", ephemeral=True)
         return
 
-    allowed_roles = await _authorized_role_ids(interaction.guild.id)
-    member_role_ids = {r.id for r in interaction.user.roles}
-    if not (member_role_ids & allowed_roles):
-        await interaction.response.send_message("You are not authorized", ephemeral=True)
-        return
+    if (
+        interaction.user.id != interaction.guild.owner_id
+        and not interaction.user.guild_permissions.administrator
+    ):
+        allowed_roles = await _authorized_role_ids(interaction.guild.id)
+        member_role_ids = {r.id for r in interaction.user.roles}
+        if not (member_role_ids & allowed_roles):
+            await interaction.response.send_message(
+                "You are not authorized", ephemeral=True
+            )
+            return
+    else:
+        allowed_roles = await _authorized_role_ids(interaction.guild.id)
 
     cfg = getattr(interaction.client, "cfg", None)
     image_url = None
