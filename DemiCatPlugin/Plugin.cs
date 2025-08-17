@@ -37,6 +37,10 @@ public class Plugin : IDalamudPlugin
     public Plugin()
     {
         _config = PluginInterface.GetPluginConfig() as Config ?? new Config();
+        if (_config.Roles.RemoveAll(r => r == "chat") > 0)
+        {
+            PluginInterface.SavePluginConfig(_config);
+        }
 
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _httpClient, RefreshRoles);
@@ -45,7 +49,6 @@ public class Plugin : IDalamudPlugin
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
 
         _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
-        _mainWindow.HasChatRole = _config.Roles.Contains("chat");
 
         if (_config.Enabled)
         {
@@ -287,9 +290,9 @@ public class Plugin : IDalamudPlugin
             var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
             _ = PluginServices.Framework.RunOnTick(() =>
             {
+                dto.Roles.RemoveAll(r => r == "chat");
                 _config.Roles = dto.Roles;
                 _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
-                _mainWindow.HasChatRole = _config.Roles.Contains("chat");
                 PluginServices.PluginInterface.SavePluginConfig(_config);
             });
         }
