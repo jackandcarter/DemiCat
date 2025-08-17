@@ -97,11 +97,84 @@ public class EventCreateWindow
         {
             _ = CreateEvent();
         }
+        ImGui.SameLine();
+        if (ImGui.Button("Save Template"))
+        {
+            SaveTemplate();
+        }
 
         if (!string.IsNullOrEmpty(_lastResult))
         {
             ImGui.TextUnformatted(_lastResult);
         }
+    }
+
+    public void LoadTemplate(Template template)
+    {
+        _title = template.Title;
+        _description = template.Description;
+        _time = string.IsNullOrEmpty(template.Time) ? DateTime.UtcNow.ToString("o") : template.Time;
+        _url = template.Url;
+        _imageUrl = template.ImageUrl;
+        _thumbnailUrl = template.ThumbnailUrl;
+        _color = template.Color;
+
+        _fields.Clear();
+        if (template.Fields != null)
+        {
+            foreach (var f in template.Fields)
+            {
+                _fields.Add(new Field { Name = f.Name, Value = f.Value, Inline = f.Inline });
+            }
+        }
+
+        if (template.Buttons != null)
+        {
+            foreach (var button in _buttons)
+            {
+                var tb = template.Buttons.FirstOrDefault(b => b.Tag == button.Tag);
+                if (tb != null)
+                {
+                    button.Include = tb.Include;
+                    button.Label = tb.Label;
+                    button.Emoji = tb.Emoji;
+                    button.Style = tb.Style;
+                }
+            }
+        }
+    }
+
+    private void SaveTemplate()
+    {
+        var tmpl = new Template
+        {
+            Name = _title,
+            Title = _title,
+            Description = _description,
+            Time = _time,
+            Url = _url,
+            ImageUrl = _imageUrl,
+            ThumbnailUrl = _thumbnailUrl,
+            Color = _color,
+            Fields = _fields.Select(f => new Template.TemplateField
+            {
+                Name = f.Name,
+                Value = f.Value,
+                Inline = f.Inline
+            }).ToList(),
+            Buttons = _buttons.Select(b => new Template.TemplateButton
+            {
+                Tag = b.Tag,
+                Include = b.Include,
+                Label = b.Label,
+                Emoji = b.Emoji,
+                Style = b.Style
+            }).ToList()
+        };
+
+        _config.Templates.Add(tmpl);
+        PluginServices.PluginInterface.SavePluginConfig(_config);
+        _lastResult = "Template saved";
     }
 
     private async Task CreateEvent()
