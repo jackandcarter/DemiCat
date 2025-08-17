@@ -15,6 +15,7 @@ from pathlib import Path
 import asyncio
 import json
 import logging
+import getpass
 from urllib.parse import quote_plus
 
 from sqlalchemy import text
@@ -37,7 +38,7 @@ class DatabaseConfig:
     host: str = "localhost"
     port: int = 3306
     database: str = "demibot"
-    user: str = "root"
+    user: str = ""
     password: str = ""
 
     @property
@@ -109,6 +110,12 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
                 input(f"Database name [{cfg.database.database}]: ")
                 or cfg.database.database
             )
+        cfg.database.user = (
+            input(f"Username [{cfg.database.user}]: ") or cfg.database.user
+        )
+        pwd = getpass.getpass("Password: ")
+        if pwd:
+            cfg.database.password = pwd
 
     def _check_database() -> bool:
         try:
@@ -137,6 +144,9 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
         )
         changed = True
     else:
+        if not cfg.database.user or not cfg.database.password:
+            _prompt_database()
+            changed = True
         mode = "remote" if cfg.database.use_remote else "local"
         print(
             f"Using {mode} MySQL database at "
