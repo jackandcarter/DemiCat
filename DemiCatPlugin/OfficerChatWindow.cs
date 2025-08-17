@@ -67,7 +67,7 @@ public class OfficerChatWindow : ChatWindow
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            var dto = await JsonSerializer.DeserializeAsync<OfficerChannelListDto>(stream) ?? new OfficerChannelListDto();
             _ = PluginServices.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Officer);
@@ -79,7 +79,7 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
-    private class ChannelListDto
+    private class OfficerChannelListDto
     {
         [JsonPropertyName("officer_chat")]
         public List<string> Officer { get; set; } = new();
