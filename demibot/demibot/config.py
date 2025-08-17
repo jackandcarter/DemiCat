@@ -10,7 +10,7 @@ startup and the resulting configuration will be written back to disk with
 permissions ``0o600`` to restrict access.
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 import asyncio
 import json
@@ -31,21 +31,33 @@ class ServerConfig:
 
 
 @dataclass
-class DatabaseConfig:
-    """Database configuration supporting local or remote MySQL instances."""
+class DBProfile:
+    """Connection information for a single database profile."""
 
-    use_remote: bool = False
     host: str = "localhost"
     port: int = 3306
     database: str = "demibot"
     user: str = ""
     password: str = ""
 
+
+@dataclass
+class DatabaseConfig:
+    """Database configuration containing local and remote profiles."""
+
+    use_remote: bool = False
+    local: DBProfile = field(default_factory=DBProfile)
+    remote: DBProfile = field(default_factory=DBProfile)
+
+    def active(self) -> DBProfile:
+        return self.remote if self.use_remote else self.local
+
     @property
     def url(self) -> str:
+        cfg = self.active()
         return (
-            f"mysql+aiomysql://{quote_plus(self.user)}:{quote_plus(self.password)}"
-            f"@{self.host}:{self.port}/{self.database}"
+            f"mysql+aiomysql://{quote_plus(cfg.user)}:{quote_plus(cfg.password)}"
+            f"@{cfg.host}:{cfg.port}/{cfg.database}"
         )
 
 
@@ -63,9 +75,14 @@ def load_config() -> AppConfig:
         except json.JSONDecodeError:
             logging.warning("Invalid JSON in %s, using defaults", CFG_PATH)
             return AppConfig()
+        db_data = data.get("database", {})
         return AppConfig(
             server=ServerConfig(**data.get("server", {})),
-            database=DatabaseConfig(**data.get("database", {})),
+            database=DatabaseConfig(
+                use_remote=db_data.get("use_remote", False),
+                local=DBProfile(**db_data.get("local", {})),
+                remote=DBProfile(**db_data.get("remote", {})),
+            ),
             discord_token=data.get("discord_token", ""),
         )
     return AppConfig()
@@ -102,25 +119,23 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
         if port:
             cfg.server.port = int(port)
 
+    def _prompt_profile(name: str, profile: DBProfile) -> None:
+        profile.host = input(f"{name} host [{profile.host}]: ") or profile.host
+        port = input(f"{name} port [{profile.port}]: ") or profile.port
+        profile.port = int(port)
+        profile.database = (
+            input(f"{name} database [{profile.database}]: ") or profile.database
+        )
+        profile.user = input(f"{name} username [{profile.user}]: ") or profile.user
+        pwd = getpass.getpass(f"{name} password: ")
+        if pwd:
+            profile.password = pwd
+
     def _prompt_database() -> None:
+        _prompt_profile("Local", cfg.database.local)
+        _prompt_profile("Remote", cfg.database.remote)
         resp = input("Use remote MySQL server? (y/N): ").strip().lower()
         cfg.database.use_remote = resp.startswith("y")
-        if cfg.database.use_remote:
-            cfg.database.host = (
-                input(f"Remote host [{cfg.database.host}]: ") or cfg.database.host
-            )
-            port = input(f"Remote port [{cfg.database.port}]: ") or cfg.database.port
-            cfg.database.port = int(port)
-            cfg.database.database = (
-                input(f"Database name [{cfg.database.database}]: ")
-                or cfg.database.database
-            )
-        cfg.database.user = (
-            input(f"Username [{cfg.database.user}]: ") or cfg.database.user
-        )
-        pwd = getpass.getpass("Password: ")
-        if pwd:
-            cfg.database.password = pwd
 
     def _check_database() -> bool:
         try:
@@ -137,7 +152,11 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             return False
 
     needs_prompt = force_reconfigure or not (
-        cfg.discord_token and cfg.database.user and cfg.database.password
+        cfg.discord_token
+        and cfg.database.local.user
+        and cfg.database.local.password
+        and cfg.database.remote.user
+        and cfg.database.remote.password
     )
 
     if needs_prompt:
