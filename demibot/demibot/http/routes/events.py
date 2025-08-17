@@ -75,6 +75,7 @@ async def create_event(
             channel_id=channel_id,
             guild_id=ctx.guild.id,
             payload_json=json.dumps(dto.model_dump()),
+            source="demibot",
         )
     )
     await db.commit()
