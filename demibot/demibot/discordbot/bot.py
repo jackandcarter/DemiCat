@@ -39,6 +39,19 @@ class DemiBot(commands.Bot):
             else:
                 logger.info("Loaded extension %s", module_path)
 
+        try:
+            synced = await self.tree.sync()
+            logger.info("Synced %d global command(s)", len(synced))
+            dev_guild_id = getattr(self.cfg, "dev_guild_id", None)
+            if dev_guild_id:
+                guild = discord.Object(id=dev_guild_id)
+                self.tree.copy_global_to(guild=guild)
+                guild_synced = await self.tree.sync(guild=guild)
+                logger.info(
+                    "Synced %d command(s) to guild %s", len(guild_synced), dev_guild_id
+                )
+        except Exception:
+            logger.exception("Failed to sync application commands")
 
 def create_bot(cfg: AppConfig) -> DemiBot:
     return DemiBot(cfg)

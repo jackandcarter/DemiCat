@@ -66,6 +66,7 @@ class AppConfig:
     server: ServerConfig = ServerConfig()
     database: DatabaseConfig = DatabaseConfig()
     discord_token: str = ""
+    dev_guild_id: int | None = None
 
 
 def load_config() -> AppConfig:
@@ -84,6 +85,7 @@ def load_config() -> AppConfig:
                 remote=DBProfile(**db_data.get("remote", {})),
             ),
             discord_token=data.get("discord_token", ""),
+            dev_guild_id=data.get("dev_guild_id"),
         )
     return AppConfig()
 
@@ -93,6 +95,7 @@ def save_config(cfg: AppConfig) -> None:
         "server": asdict(cfg.server),
         "database": asdict(cfg.database),
         "discord_token": cfg.discord_token,
+        "dev_guild_id": cfg.dev_guild_id,
     }
     CFG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CFG_PATH.write_text(json.dumps(data, indent=2))
