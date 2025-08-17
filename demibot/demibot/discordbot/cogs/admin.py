@@ -28,6 +28,25 @@ class Admin(commands.Cog):
         self.bot = bot
 
 
+async def _authorized_role_ids(guild_id: int) -> set[int]:
+    """Return a set of Discord role IDs authorized for the guild."""
+    async for db in get_session():
+        guild_res = await db.execute(
+            select(Guild).where(Guild.discord_guild_id == guild_id)
+        )
+        guild = guild_res.scalars().first()
+        if guild is None:
+            return set()
+        result = await db.execute(
+            select(Role.id).where(
+                Role.guild_id == guild.id,
+                (Role.is_officer.is_(True) | Role.is_chat.is_(True)),
+            )
+        )
+        return {row[0] for row in result}
+    return set()
+
+
 @demibot.command(name="clear", description="Delete all user records for this guild")
 async def clear_users(interaction: discord.Interaction) -> None:
     async for db in get_session():
@@ -58,64 +77,93 @@ async def clear_users(interaction: discord.Interaction) -> None:
 
 @demibot.command(name="embed", description="Post key generation embed")
 async def key_embed(interaction: discord.Interaction) -> None:
+    if interaction.guild is None:
+        await interaction.response.send_message("Guild only", ephemeral=True)
+        return
+
+    allowed_roles = await _authorized_role_ids(interaction.guild.id)
+    member_role_ids = {r.id for r in interaction.user.roles}
+    if not (member_role_ids & allowed_roles):
+        await interaction.response.send_message("You are not authorized", ephemeral=True)
+        return
+
+    cfg = getattr(interaction.client, "cfg", None)
+    image_url = None
+    if cfg is not None:
+        security = getattr(cfg, "security", cfg)
+        image_url = getattr(security, "sync_image_url", None)
+
     embed = discord.Embed(
-        title="Generate API Key",
-        description="Click the button below to generate your key",
+        title="Generate Sync Key",
+        description=(
+            "Use the button below to generate a **Sync Key** for the DemiCat plugin. "
+            "This key links your Discord account with the bot."
+        ),
     )
+    if image_url:
+        embed.set_image(url=image_url)
 
     class KeyView(discord.ui.View):
+        def __init__(self, allowed: set[int]) -> None:
+            super().__init__(timeout=180)
+            self.allowed = allowed
+
         @discord.ui.button(label="Generate Key", style=discord.ButtonStyle.primary)
         async def generate(
-            self, interaction_button: discord.Interaction, button: discord.ui.Button
+            self, button_inter: discord.Interaction, button: discord.ui.Button
         ) -> None:
+            if not (set(r.id for r in button_inter.user.roles) & self.allowed):
+                await button_inter.response.send_message(
+                    "You are not authorized", ephemeral=True
+                )
+                return
+
             token = secrets.token_hex(16)
             try:
                 async for db in get_session():
                     guild_res = await db.execute(
                         select(Guild).where(
-                            Guild.discord_guild_id == interaction.guild.id
+                            Guild.discord_guild_id == button_inter.guild.id
                         )
                     )
                     guild = guild_res.scalars().first()
                     if guild is None:
                         guild = Guild(
-                            discord_guild_id=interaction.guild.id,
-                            name=interaction.guild.name,
+                            discord_guild_id=button_inter.guild.id,
+                            name=button_inter.guild.name,
                         )
                         db.add(guild)
                         await db.flush()
+
                     user_res = await db.execute(
                         select(User).where(
-                            User.discord_user_id == interaction_button.user.id
+                            User.discord_user_id == button_inter.user.id
                         )
                     )
                     user = user_res.scalars().first()
                     if user is None:
                         user = User(
-                            discord_user_id=interaction_button.user.id,
-                            global_name=interaction_button.user.global_name,
-                            discriminator=interaction_button.user.discriminator,
+                            discord_user_id=button_inter.user.id,
+                            global_name=button_inter.user.global_name,
+                            discriminator=button_inter.user.discriminator,
                         )
                         db.add(user)
                         await db.flush()
+
                     db.add(UserKey(user_id=user.id, guild_id=guild.id, token=token))
                     await db.commit()
             except Exception:
-                await interaction_button.response.send_message(
+                await button_inter.response.send_message(
                     "Failed to generate key", ephemeral=True
                 )
                 return
-            try:
-                await interaction_button.user.send(f"Your API key: {token}")
-                await interaction_button.response.send_message(
-                    "Sent you a DM with your key", ephemeral=True
-                )
-            except discord.Forbidden:
-                await interaction_button.response.send_message(
-                    "Unable to send DM", ephemeral=True
-                )
 
-    await interaction.response.send_message(embed=embed, view=KeyView())
+            await button_inter.response.send_message(
+                f"Your sync key: {token}", ephemeral=True
+            )
+
+    view = KeyView(allowed_roles)
+    await interaction.response.send_message(embed=embed, view=view)
 
 
 @demibot.command(
