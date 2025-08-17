@@ -124,7 +124,14 @@ public class TemplatesWindow
             ImageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
             Color = tmpl.Color > 0 ? (uint?)tmpl.Color : null,
-            Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value }).ToList()
+            Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
+            Buttons = tmpl.Buttons?.Where(b => b.Include).Select(b => new EmbedButtonDto
+            {
+                Label = b.Label,
+                CustomId = $"rsvp:{b.Tag}",
+                Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                Style = b.Style
+            }).ToList()
         };
     }
 
