@@ -59,7 +59,7 @@ class GuildChannel(Base):
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     discord_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     global_name: Mapped[Optional[str]] = mapped_column(String(255))
     discriminator: Mapped[Optional[str]] = mapped_column(String(10))
@@ -73,7 +73,7 @@ class UserKey(Base):
     __tablename__ = "user_keys"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     enabled: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -90,7 +90,7 @@ class Membership(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
 
 
 class Role(Base):
@@ -121,7 +121,7 @@ class Message(Base):
     discord_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
-    author_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    author_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"))
     author_name: Mapped[str] = mapped_column(String(255))
     content_raw: Mapped[str] = mapped_column(Text)
     content_display: Mapped[str] = mapped_column(Text)
@@ -157,5 +157,5 @@ class Attendance(Base):
     discord_message_id: Mapped[int] = mapped_column(
         BigInteger, primary_key=True
     )
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), primary_key=True)
     choice: Mapped[RSVP] = mapped_column(String(10))
