@@ -24,7 +24,6 @@ public class ChatWindow : IDisposable
     protected string _channelId;
     protected string _input = string.Empty;
     protected bool _useCharacterName;
-    protected DateTime _lastFetch = DateTime.MinValue;
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
@@ -71,11 +70,6 @@ public class ChatWindow : IDisposable
             SaveConfig();
         }
 
-        if (!_wsConnected && DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
-        {
-            _ = RefreshMessages();
-        }
-
         ImGui.BeginChild("##chatScroll", new Vector2(0, -30), true);
         foreach (var msg in _messages)
         {
@@ -105,6 +99,7 @@ public class ChatWindow : IDisposable
         if (_channels.Count > 0)
         {
             _channelId = _channels[_selectedIndex];
+            _ = RefreshMessages();
         }
     }
 
@@ -176,7 +171,6 @@ public class ChatWindow : IDisposable
             {
                 _messages.Clear();
                 _messages.AddRange(msgs);
-                _lastFetch = DateTime.UtcNow;
             });
         }
         catch
