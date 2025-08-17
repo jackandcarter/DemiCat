@@ -191,12 +191,12 @@ public class ChatWindow : IDisposable
         _ws?.Dispose();
     }
 
-    private void SaveConfig()
+    protected void SaveConfig()
     {
         PluginServices.PluginInterface.SavePluginConfig(_config);
     }
 
-    private async Task FetchChannels()
+    protected virtual async Task FetchChannels()
     {
         _channelsLoaded = true;
         try
