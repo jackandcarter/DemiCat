@@ -4,7 +4,9 @@ using System.Text;
 using System.Text.Json;
 using System.Numerics;
 using System.Threading.Tasks;
+using System.Linq;
 using Dalamud.Bindings.ImGui;
+using DiscordHelper;
 
 namespace DemiCatPlugin;
 
@@ -15,6 +17,8 @@ public class TemplatesWindow
     private int _selectedIndex = -1;
     private bool _showPreview;
     private string _previewContent = string.Empty;
+    private EventView? _previewEvent;
+    private TemplateType _selectedType;
 
     public string ChannelId { get; set; } = string.Empty;
 
@@ -27,9 +31,20 @@ public class TemplatesWindow
     public void Draw()
     {
         ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
-        for (var i = 0; i < _config.Templates.Count; i++)
+        var typeNames = Enum.GetNames<TemplateType>();
+        var typeIndex = (int)_selectedType;
+        ImGui.SetNextItemWidth(-1);
+        if (ImGui.Combo("Type", ref typeIndex, typeNames, typeNames.Length))
         {
-            var name = _config.Templates[i].Name;
+            _selectedType = (TemplateType)typeIndex;
+            _selectedIndex = -1;
+            _showPreview = false;
+        }
+
+        var templates = _config.Templates.Where(t => t.Type == _selectedType).ToList();
+        for (var i = 0; i < templates.Count; i++)
+        {
+            var name = templates[i].Name;
             if (ImGui.Selectable(name, _selectedIndex == i))
             {
                 _selectedIndex = i;
@@ -43,16 +58,31 @@ public class TemplatesWindow
         ImGui.BeginChild("TemplateContent", new Vector2(0, 0), false);
         if (_selectedIndex >= 0)
         {
-            var tmpl = _config.Templates[_selectedIndex];
-            if (ImGui.Button("Preview"))
+            var templates = _config.Templates.Where(t => t.Type == _selectedType).ToList();
+            if (_selectedIndex < templates.Count)
             {
-                _previewContent = tmpl.Content;
-                _showPreview = true;
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("Post"))
-            {
-                _ = PostTemplate(tmpl.Content);
+                var tmpl = templates[_selectedIndex];
+                if (ImGui.Button("Preview"))
+                {
+                    if (tmpl.Type == TemplateType.Event)
+                    {
+                        _previewEvent?.Dispose();
+                        _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask);
+                        _previewContent = string.Empty;
+                    }
+                    else
+                    {
+                        _previewContent = tmpl.Content;
+                        _previewEvent?.Dispose();
+                        _previewEvent = null;
+                    }
+                    _showPreview = true;
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Post"))
+                {
+                    _ = PostTemplate(tmpl);
+                }
             }
         }
         else
@@ -65,13 +95,40 @@ public class TemplatesWindow
         {
             if (ImGui.Begin("Template Preview", ref _showPreview))
             {
-                ImGui.TextUnformatted(_previewContent);
+                if (_previewEvent != null)
+                {
+                    _previewEvent.Draw();
+                }
+                else
+                {
+                    ImGui.TextUnformatted(_previewContent);
+                }
             }
             ImGui.End();
         }
     }
 
-    private async Task PostTemplate(string content)
+    private EmbedDto ToEmbedDto(Template tmpl)
+    {
+        DateTimeOffset? ts = null;
+        if (!string.IsNullOrWhiteSpace(tmpl.Time) && DateTimeOffset.TryParse(tmpl.Time, out var parsed))
+        {
+            ts = parsed;
+        }
+
+        return new EmbedDto
+        {
+            Title = tmpl.Title,
+            Description = tmpl.Description,
+            Timestamp = ts,
+            ImageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
+            ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
+            Color = tmpl.Color > 0 ? (uint?)tmpl.Color : null,
+            Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value }).ToList()
+        };
+    }
+
+    private async Task PostTemplate(Template tmpl)
     {
         if (string.IsNullOrWhiteSpace(ChannelId))
         {
@@ -79,14 +136,57 @@ public class TemplatesWindow
         }
         try
         {
-            var body = new { channelId = ChannelId, content, useCharacterName = _config.UseCharacterName };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/messages");
-            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
+            if (tmpl.Type == TemplateType.Event)
             {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
+                var buttons = tmpl.Buttons?
+                    .Where(b => b.Include)
+                    .Select(b => new
+                    {
+                        label = b.Label,
+                        customId = $"rsvp:{b.Tag}",
+                        emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                        style = (int)b.Style
+                    })
+                    .ToList();
+
+                var body = new
+                {
+                    channelId = ChannelId,
+                    title = tmpl.Title,
+                    time = string.IsNullOrWhiteSpace(tmpl.Time) ? DateTime.UtcNow.ToString("o") : tmpl.Time,
+                    description = tmpl.Description,
+                    url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
+                    imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
+                    thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
+                    color = tmpl.Color > 0 ? (uint?)tmpl.Color : null,
+                    fields = tmpl.Fields != null && tmpl.Fields.Count > 0
+                        ? tmpl.Fields
+                            .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
+                            .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
+                            .ToList()
+                        : null,
+                    buttons = buttons != null && buttons.Count > 0 ? buttons : null
+                };
+
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/events");
+                request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                if (!string.IsNullOrEmpty(_config.AuthToken))
+                {
+                    request.Headers.Add("X-Api-Key", _config.AuthToken);
+                }
+                await _httpClient.SendAsync(request);
             }
-            await _httpClient.SendAsync(request);
+            else
+            {
+                var body = new { channelId = ChannelId, content = tmpl.Content, useCharacterName = _config.UseCharacterName };
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/messages");
+                request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                if (!string.IsNullOrEmpty(_config.AuthToken))
+                {
+                    request.Headers.Add("X-Api-Key", _config.AuthToken);
+                }
+                await _httpClient.SendAsync(request);
+            }
         }
         catch
         {

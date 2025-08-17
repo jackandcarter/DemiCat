@@ -6,7 +6,7 @@ namespace DemiCatPlugin;
 public class Config : IPluginConfiguration
 { 
     // Required by Dalamud
-    public int Version { get; set; } = 1;
+    public int Version { get; set; } = 2;
 
     public bool Enabled { get; set; } = true;
     public string HelperBaseUrl { get; set; } = "http://localhost:8000";
