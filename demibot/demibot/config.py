@@ -123,22 +123,38 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             cfg.server.port = int(port)
 
     def _prompt_profile(name: str, profile: DBProfile) -> None:
+        """Prompt for basic connection details for a profile."""
+
         profile.host = input(f"{name} host [{profile.host}]: ") or profile.host
         port = input(f"{name} port [{profile.port}]: ") or profile.port
         profile.port = int(port)
         profile.database = (
             input(f"{name} database [{profile.database}]: ") or profile.database
         )
-        profile.user = input(f"{name} username [{profile.user}]: ") or profile.user
-        pwd = getpass.getpass(f"{name} password: ")
-        if pwd:
-            profile.password = pwd
 
     def _prompt_database() -> None:
+        """Prompt for database configuration including credentials."""
+
         _prompt_profile("Local", cfg.database.local)
         _prompt_profile("Remote", cfg.database.remote)
         resp = input("Use remote MySQL server? (y/N): ").strip().lower()
         cfg.database.use_remote = resp.startswith("y")
+
+        cfg.database.local.user = (
+            input(f"Local username [{cfg.database.local.user}]: ")
+            or cfg.database.local.user
+        )
+        pwd = getpass.getpass("Local password: ")
+        if pwd:
+            cfg.database.local.password = pwd
+
+        cfg.database.remote.user = (
+            input(f"Remote username [{cfg.database.remote.user}]: ")
+            or cfg.database.remote.user
+        )
+        pwd = getpass.getpass("Remote password: ")
+        if pwd:
+            cfg.database.remote.password = pwd
 
     def _check_database() -> bool:
         try:
@@ -154,12 +170,9 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             print(f"Database connection failed: {exc}")
             return False
 
+    active_profile = cfg.database.active()
     needs_prompt = force_reconfigure or not (
-        cfg.discord_token
-        and cfg.database.local.user
-        and cfg.database.local.password
-        and cfg.database.remote.user
-        and cfg.database.remote.password
+        cfg.discord_token and active_profile.user and active_profile.password
     )
 
     if needs_prompt:
