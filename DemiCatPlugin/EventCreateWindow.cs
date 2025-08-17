@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
+using DiscordHelper;
 
 namespace DemiCatPlugin;
 
@@ -24,9 +25,12 @@ public class EventCreateWindow
     private int _color;
     private readonly List<Field> _fields = new();
     private string? _lastResult;
-    private bool _includeYes = true;
-    private bool _includeMaybe = true;
-    private bool _includeNo = true;
+    private readonly List<ButtonConfig> _buttons = new()
+    {
+        new ButtonConfig("yes", "Yes", "✅", ButtonStyle.Success),
+        new ButtonConfig("maybe", "Maybe", "❔", ButtonStyle.Secondary),
+        new ButtonConfig("no", "No", "❌", ButtonStyle.Danger),
+    };
 
     public string ChannelId { private get; set; } = string.Empty;
 
@@ -45,9 +49,28 @@ public class EventCreateWindow
         ImGui.InputText("Image URL", ref _imageUrl, 260);
         ImGui.InputText("Thumbnail URL", ref _thumbnailUrl, 260);
         ImGui.InputInt("Color", ref _color);
-        ImGui.Checkbox("Yes Button", ref _includeYes);
-        ImGui.Checkbox("Maybe Button", ref _includeMaybe);
-        ImGui.Checkbox("No Button", ref _includeNo);
+        foreach (var button in _buttons)
+        {
+            ImGui.PushID(button.Tag);
+            ImGui.Checkbox("Include", ref button.Include);
+            ImGui.SameLine();
+            ImGui.InputText("Label", ref button.Label, 32);
+            ImGui.SameLine();
+            ImGui.InputText("Emoji", ref button.Emoji, 16);
+            ImGui.SameLine();
+            var style = button.Style.ToString();
+            if (ImGui.BeginCombo("Style", style))
+            {
+                foreach (ButtonStyle bs in Enum.GetValues<ButtonStyle>())
+                {
+                    var sel = bs == button.Style;
+                    if (ImGui.Selectable(bs.ToString(), sel)) button.Style = bs;
+                    if (sel) ImGui.SetItemDefaultFocus();
+                }
+                ImGui.EndCombo();
+            }
+            ImGui.PopID();
+        }
 
         if (ImGui.TreeNode("Fields"))
         {
@@ -85,11 +108,16 @@ public class EventCreateWindow
     {
         try
         {
-            var attendance = new List<string>();
-            if (_includeYes) attendance.Add("yes");
-            if (_includeMaybe) attendance.Add("maybe");
-            if (_includeNo) attendance.Add("no");
-            if (attendance.Count == 0) attendance.AddRange(new[] { "yes", "maybe", "no" });
+            var buttons = _buttons
+                .Where(b => b.Include)
+                .Select(b => new
+                {
+                    label = b.Label,
+                    customId = $"rsvp:{b.Tag}",
+                    emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                    style = (int)b.Style
+                })
+                .ToList();
 
             var body = new
             {
@@ -107,7 +135,7 @@ public class EventCreateWindow
                         .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
                         .ToList()
                     : null,
-                attendance
+                buttons = buttons.Count > 0 ? buttons : null
             };
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/events");
@@ -132,5 +160,22 @@ public class EventCreateWindow
         public string Name = string.Empty;
         public string Value = string.Empty;
         public bool Inline;
+    }
+
+    private class ButtonConfig
+    {
+        public ButtonConfig(string tag, string label, string emoji, ButtonStyle style)
+        {
+            Tag = tag;
+            Label = label;
+            Emoji = emoji;
+            Style = style;
+        }
+
+        public string Tag;
+        public bool Include = true;
+        public string Label;
+        public string Emoji;
+        public ButtonStyle Style;
     }
 }

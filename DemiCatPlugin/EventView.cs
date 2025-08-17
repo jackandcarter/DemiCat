@@ -135,9 +135,22 @@ public class EventView : IDisposable
             foreach (var button in Buttons)
             {
                 var id = button.CustomId ?? button.Label;
-                if (ImGui.Button($"{button.Label}##{id}{_dto.Id}", new Vector2(-1, 0)))
+                var text = string.IsNullOrEmpty(button.Emoji) ? button.Label : $"{button.Emoji} {button.Label}";
+                var styled = button.Style.HasValue;
+                if (styled)
+                {
+                    var color = GetStyleColor(button.Style!.Value);
+                    ImGui.PushStyleColor(ImGuiCol.Button, color);
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Lighten(color, 1.1f));
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, Lighten(color, 1.2f));
+                }
+                if (ImGui.Button($"{text}##{id}{_dto.Id}", new Vector2(-1, 0)))
                 {
                     _ = SendInteraction(id);
+                }
+                if (styled)
+                {
+                    ImGui.PopStyleColor(3);
                 }
             }
         }
@@ -146,6 +159,27 @@ public class EventView : IDisposable
         {
             ImGui.TextUnformatted(_lastResult);
         }
+    }
+
+    private static Vector4 GetStyleColor(ButtonStyle style)
+    {
+        return style switch
+        {
+            ButtonStyle.Primary => new Vector4(0.345f, 0.396f, 0.949f, 1f),
+            ButtonStyle.Secondary => new Vector4(0.31f, 0.329f, 0.361f, 1f),
+            ButtonStyle.Success => new Vector4(0.341f, 0.949f, 0.529f, 1f),
+            ButtonStyle.Danger => new Vector4(0.929f, 0.258f, 0.27f, 1f),
+            _ => new Vector4(0.345f, 0.396f, 0.949f, 1f),
+        };
+    }
+
+    private static Vector4 Lighten(Vector4 color, float amount)
+    {
+        return new Vector4(
+            MathF.Min(color.X * amount, 1f),
+            MathF.Min(color.Y * amount, 1f),
+            MathF.Min(color.Z * amount, 1f),
+            color.W);
     }
 
     private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)
