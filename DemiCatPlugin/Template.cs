@@ -8,6 +8,8 @@ public class Template
     public string Name { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
 
+    public TemplateType Type { get; set; } = TemplateType.Message;
+
     // Event template data
     public string Title { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
@@ -34,5 +36,11 @@ public class Template
         public string Emoji { get; set; } = string.Empty;
         public ButtonStyle Style { get; set; } = ButtonStyle.Secondary;
     }
+}
+
+public enum TemplateType
+{
+    Message,
+    Event
 }
 

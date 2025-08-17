@@ -149,6 +149,7 @@ public class EventCreateWindow
         var tmpl = new Template
         {
             Name = _title,
+            Type = TemplateType.Event,
             Title = _title,
             Description = _description,
             Time = _time,
