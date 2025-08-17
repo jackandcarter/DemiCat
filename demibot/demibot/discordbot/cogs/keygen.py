@@ -64,5 +64,11 @@ async def key_command(interaction: discord.Interaction) -> None:
         await interaction.response.send_message("Unable to send DM", ephemeral=True)
 
 
+@app_commands.command(name="generatekey", description="Generate an API key")
+async def generatekey(interaction: discord.Interaction) -> None:
+    await key_command.callback(interaction)
+
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(KeyGen(bot))
+    bot.tree.add_command(generatekey)
