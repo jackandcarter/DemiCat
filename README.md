@@ -66,7 +66,8 @@ Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-gam
 
 Use the **Key** and **Sync Key** obtained from `/demibot embed` and enter both values in the
 plugin settings. Press **Connect/Sync** (or **Validate** if you already have a key) to link the
-plugin with the bot.
+plugin with the bot. Entering a new key later requires reconnecting or pressing **Sync** again so
+your roles refresh; otherwise the officer tab will not appear until roles are reloaded.
 
 ### 4. Insert API keys
 Insert API keys into the `api_keys` table to authorize HTTP requests:

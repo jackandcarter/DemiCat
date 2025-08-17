@@ -18,6 +18,7 @@ discordbot_pkg.__path__ = [str(root / "demibot/discordbot")]
 sys.modules.setdefault("demibot.discordbot", discordbot_pkg)
 
 from demibot.discordbot.cogs import admin as admin_module
+from demibot.discordbot.cogs import keygen as keygen_module
 from demibot.db.models import (
     Guild,
     Role,
@@ -55,6 +56,25 @@ class ButtonInteraction:
         self.guild = SimpleNamespace(id=1, name="Test Guild")
         self.user = user
         self.response = DummyResponse()
+
+
+class SlashInteraction:
+    def __init__(self, user) -> None:
+        self.guild = SimpleNamespace(id=1, name="Test Guild")
+        self.user = user
+        self.response = DummyResponse()
+
+
+class SlashUser:
+    def __init__(self, roles) -> None:
+        self.id = 2
+        self.global_name = "Member"
+        self.discriminator = "0001"
+        self.roles = roles
+        self.sent: str | None = None
+
+    async def send(self, message):  # pragma: no cover - simple stub
+        self.sent = message
 
 
 async def _setup_db() -> None:
@@ -140,6 +160,50 @@ async def _generate(user_roles):
         return membership_roles, key.roles_cached, button_inter.response
 
 
+async def _generate_slash(user_roles):
+    await _setup_db()
+
+    user = SlashUser(user_roles)
+    interaction = SlashInteraction(user)
+    await keygen_module.key_command.callback(interaction)
+
+    async for db in get_session():
+        user_row = (
+            await db.execute(select(User).where(User.discord_user_id == user.id))
+        ).scalar_one()
+        guild_row = (
+            await db.execute(select(Guild).where(Guild.discord_guild_id == 1))
+        ).scalar_one()
+        membership = (
+            await db.execute(
+                select(Membership).where(
+                    Membership.guild_id == guild_row.id,
+                    Membership.user_id == user_row.id,
+                )
+            )
+        ).scalar_one()
+        membership_roles = (
+            (
+                await db.execute(
+                    select(MembershipRole.role_id).where(
+                        MembershipRole.membership_id == membership.id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        key = (
+            await db.execute(
+                select(UserKey).where(
+                    UserKey.user_id == user_row.id,
+                    UserKey.guild_id == guild_row.id,
+                )
+            )
+        ).scalar_one()
+        return membership_roles, key.roles_cached, interaction.response
+
+
 def test_non_officer_generates_key_and_no_roles():
     roles = [SimpleNamespace(id=99, name="Member")]
     membership_roles, cached, response = asyncio.run(_generate(roles))
@@ -154,3 +218,19 @@ def test_officer_generates_key_and_role_classified():
     assert membership_roles == [10]
     assert cached == "10"
     assert response.args and "Your sync key" in response.args[0]
+
+
+def test_slash_non_officer_generates_key_and_no_roles():
+    roles = [SimpleNamespace(id=99, name="Member")]
+    membership_roles, cached, response = asyncio.run(_generate_slash(roles))
+    assert membership_roles == []
+    assert cached == "99"
+    assert response.args and "Sent you a DM" in response.args[0]
+
+
+def test_slash_officer_generates_key_and_role_classified():
+    roles = [SimpleNamespace(id=10, name="Officer")]
+    membership_roles, cached, response = asyncio.run(_generate_slash(roles))
+    assert membership_roles == [10]
+    assert cached == "10"
+    assert response.args and "Sent you a DM" in response.args[0]

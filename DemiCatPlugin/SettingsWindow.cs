@@ -84,7 +84,7 @@ public class SettingsWindow : IDisposable
                 _invalidKey = false;
                 _config.AuthToken = _apiKey;
                 SaveConfig();
-                _ = _refreshRoles();
+                await _refreshRoles();
             }
             else
             {
