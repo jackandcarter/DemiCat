@@ -27,7 +27,6 @@ public class MainWindow
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
-    public bool HasChatRole { get; set; }
 
     public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient)
     {
@@ -112,7 +111,7 @@ public class MainWindow
                 ImGui.EndTabItem();
             }
 
-            if (HasChatRole && _chat != null && ImGui.BeginTabItem("Chat"))
+            if (_chat != null && ImGui.BeginTabItem("Chat"))
             {
                 _chat.Draw();
                 ImGui.EndTabItem();
