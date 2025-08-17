@@ -27,7 +27,6 @@ public class ChatWindow : IDisposable
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
-    private bool _wsConnected;
 
     public ChatWindow(Config config, HttpClient httpClient)
     {
@@ -227,7 +226,6 @@ public class ChatWindow : IDisposable
                 }
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
-                _wsConnected = true;
 
                 var buffer = new byte[8192];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -271,7 +269,6 @@ public class ChatWindow : IDisposable
             }
             finally
             {
-                _wsConnected = false;
                 _ws?.Dispose();
                 _ws = null;
             }
