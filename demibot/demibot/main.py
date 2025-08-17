@@ -7,6 +7,7 @@ import asyncio
 from threading import Thread
 
 import logging
+import re
 import sys
 
 from demibot import log_config
@@ -37,9 +38,11 @@ def main() -> None:
     log_config.setup_logging()
     cfg = ensure_config(force_reconfigure=args.reconfigure)
 
-    logging.info("Initialising database")
+    db_url = cfg.database.url
+    masked_url = re.sub(r":[^:@/]+@", ":***@", db_url)
+    logging.info("Initialising database at %s", masked_url)
     try:
-        asyncio.run(init_db(cfg.database.url))
+        asyncio.run(init_db(db_url))
     except Exception:
         logging.exception("Database initialization failed")
         sys.exit(1)
