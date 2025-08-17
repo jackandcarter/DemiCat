@@ -27,6 +27,8 @@ from demibot.db.models import (
     UserKey,
 )
 from demibot.db.session import init_db, get_session
+from demibot.http.deps import api_key_auth
+from demibot.http.routes import validate_roles
 
 
 class DummyResponse:
@@ -68,7 +70,7 @@ async def _setup_db() -> None:
         db.add(guild)
         db.add(
             Role(
-                id=10,
+                id=20,
                 guild_id=guild.id,
                 name="Officer",
                 is_officer=True,
@@ -137,20 +139,29 @@ async def _generate(user_roles):
                 )
             )
         ).scalar_one()
-        return membership_roles, key.roles_cached, button_inter.response
+        ctx = await api_key_auth(x_api_key=key.token, db=db)
+        roles_resp = await validate_roles.roles(ctx)
+        return (
+            membership_roles,
+            key.roles_cached,
+            button_inter.response,
+            roles_resp.roles,
+        )
 
 
 def test_non_officer_generates_key_and_no_roles():
     roles = [SimpleNamespace(id=99, name="Member")]
-    membership_roles, cached, response = asyncio.run(_generate(roles))
+    membership_roles, cached, response, http_roles = asyncio.run(_generate(roles))
     assert membership_roles == []
     assert cached == "99"
     assert response.args and "Your sync key" in response.args[0]
+    assert "officer" not in http_roles
 
 
 def test_officer_generates_key_and_role_classified():
     roles = [SimpleNamespace(id=10, name="Officer")]
-    membership_roles, cached, response = asyncio.run(_generate(roles))
-    assert membership_roles == [10]
+    membership_roles, cached, response, http_roles = asyncio.run(_generate(roles))
+    assert membership_roles == [20]
     assert cached == "10"
     assert response.args and "Your sync key" in response.args[0]
+    assert "officer" in http_roles

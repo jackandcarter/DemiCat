@@ -7,6 +7,8 @@ from sqlalchemy import select
 from demibot.discordbot.cogs import admin as admin_module
 from demibot.db.models import Guild, Role, User, UserKey, Membership, MembershipRole
 from demibot.db.session import init_db, get_session
+from demibot.http.deps import api_key_auth
+from demibot.http.routes import validate_roles
 
 
 class DummyResponse:
@@ -42,10 +44,11 @@ def _setup_db() -> None:
             db.add(guild)
             db.add(
                 Role(
-                    id=10,
+                    id=20,
                     guild_id=guild.id,
                     name="Officer",
                     discord_role_id=10,
+                    is_officer=True,
                 )
             )
             user = User(
@@ -94,8 +97,11 @@ def test_resync_rebuilds_membership_and_roles():
                     select(UserKey).where(UserKey.user_id == 1, UserKey.guild_id == 1)
                 )
             ).scalar_one()
-            return membership_roles, key.roles_cached
+            ctx = await api_key_auth(x_api_key=key.token, db=db)
+            roles_resp = await validate_roles.roles(ctx)
+            return membership_roles, key.roles_cached, roles_resp.roles
 
-    roles, cached = asyncio.run(check())
-    assert roles == [10]
+    roles, cached, http_roles = asyncio.run(check())
+    assert roles == [20]
     assert cached == "10"
+    assert "officer" in http_roles
