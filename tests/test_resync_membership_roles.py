@@ -40,7 +40,14 @@ def _setup_db() -> None:
         async for db in get_session():
             guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
             db.add(guild)
-            db.add(Role(id=10, guild_id=guild.id, name="Officer"))
+            db.add(
+                Role(
+                    id=10,
+                    guild_id=guild.id,
+                    name="Officer",
+                    discord_role_id=10,
+                )
+            )
             user = User(
                 id=1, discord_user_id=2, global_name="Member", discriminator="0001"
             )
