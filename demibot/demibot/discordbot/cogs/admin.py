@@ -92,8 +92,6 @@ async def key_embed(interaction: discord.Interaction) -> None:
                 "You are not authorized", ephemeral=True
             )
             return
-    else:
-        allowed_roles = await _authorized_role_ids(interaction.guild.id)
 
     cfg = getattr(interaction.client, "cfg", None)
     image_url = None
@@ -112,9 +110,8 @@ async def key_embed(interaction: discord.Interaction) -> None:
         embed.set_image(url=image_url)
 
     class KeyView(discord.ui.View):
-        def __init__(self, allowed: set[int]) -> None:
+        def __init__(self) -> None:
             super().__init__(timeout=180)
-            self.allowed = allowed
 
         @discord.ui.button(label="Generate Key", style=discord.ButtonStyle.primary)
         async def generate(
@@ -138,9 +135,7 @@ async def key_embed(interaction: discord.Interaction) -> None:
                         await db.flush()
 
                     user_res = await db.execute(
-                        select(User).where(
-                            User.discord_user_id == button_inter.user.id
-                        )
+                        select(User).where(User.discord_user_id == button_inter.user.id)
                     )
                     user = user_res.scalars().first()
                     if user is None:
@@ -175,13 +170,14 @@ async def key_embed(interaction: discord.Interaction) -> None:
                         )
                     )
                     member_role_ids = {r.id for r in member_roles}
-                    for role_id in self.allowed:
-                        if role_id in member_role_ids:
-                            db.add(
-                                MembershipRole(
-                                    membership_id=membership.id, role_id=role_id
-                                )
-                            )
+                    stored_roles = await db.execute(
+                        select(Role.id).where(Role.guild_id == guild.id)
+                    )
+                    stored_role_ids = {row[0] for row in stored_roles}
+                    for role_id in member_role_ids & stored_role_ids:
+                        db.add(
+                            MembershipRole(membership_id=membership.id, role_id=role_id)
+                        )
 
                     db.add(
                         UserKey(
@@ -202,7 +198,7 @@ async def key_embed(interaction: discord.Interaction) -> None:
                 f"Your sync key: {token}", ephemeral=True
             )
 
-    view = KeyView(allowed_roles)
+    view = KeyView()
     await interaction.response.send_message(embed=embed, view=view)
 
 
@@ -258,6 +254,10 @@ async def resync_members(interaction: discord.Interaction) -> None:
                 "No keys for this guild", ephemeral=True
             )
             return
+        stored_role_res = await db.execute(
+            select(Role.id).where(Role.guild_id == guild.id)
+        )
+        stored_role_ids = {row[0] for row in stored_role_res}
         result = await db.execute(
             select(UserKey, User)
             .join(User, User.id == UserKey.user_id)
@@ -266,17 +266,36 @@ async def resync_members(interaction: discord.Interaction) -> None:
         for key, user in result.all():
             member = interaction.guild.get_member(user.discord_user_id)
             if member:
-                roles = [str(r.id) for r in member.roles if r.name != "@everyone"]
-                key.roles_cached = ",".join(roles)
+                member_roles = [r for r in member.roles if r.name != "@everyone"]
+                member_role_ids = {r.id for r in member_roles}
+                membership_res = await db.execute(
+                    select(Membership).where(
+                        Membership.guild_id == guild.id,
+                        Membership.user_id == user.id,
+                    )
+                )
+                membership = membership_res.scalars().first()
+                if membership is None:
+                    membership = Membership(guild_id=guild.id, user_id=user.id)
+                    db.add(membership)
+                    await db.flush()
+                await db.execute(
+                    delete(MembershipRole).where(
+                        MembershipRole.membership_id == membership.id
+                    )
+                )
+                for role_id in member_role_ids & stored_role_ids:
+                    db.add(MembershipRole(membership_id=membership.id, role_id=role_id))
+                key.roles_cached = ",".join(str(r.id) for r in member_roles)
                 count += 1
         await db.commit()
     await interaction.response.send_message(f"Resynced {count} members", ephemeral=True)
 
 
-
-
 class ConfigWizard(discord.ui.View):
-    def __init__(self, guild: discord.Guild, title: str, final_label: str, success_message: str) -> None:
+    def __init__(
+        self, guild: discord.Guild, title: str, final_label: str, success_message: str
+    ) -> None:
         super().__init__(timeout=300)
         self.guild = guild
         self.title = title
@@ -296,14 +315,26 @@ class ConfigWizard(discord.ui.View):
             for r in guild.roles
             if r.name != "@everyone"
         ]
-        self.back_button = discord.ui.Button(label="Back", style=discord.ButtonStyle.secondary)
+        self.back_button = discord.ui.Button(
+            label="Back", style=discord.ButtonStyle.secondary
+        )
         self.back_button.callback = self.on_back
-        self.next_button = discord.ui.Button(label="Next", style=discord.ButtonStyle.primary)
+        self.next_button = discord.ui.Button(
+            label="Next", style=discord.ButtonStyle.primary
+        )
         self.next_button.callback = self.on_next
-        self.finish_button = discord.ui.Button(label=final_label, style=discord.ButtonStyle.success)
+        self.finish_button = discord.ui.Button(
+            label=final_label, style=discord.ButtonStyle.success
+        )
         self.finish_button.callback = self.on_finish
 
-    async def render(self, inter: discord.Interaction, *, initial: bool = False, followup: bool = False) -> None:
+    async def render(
+        self,
+        inter: discord.Interaction,
+        *,
+        initial: bool = False,
+        followup: bool = False,
+    ) -> None:
         self.clear_items()
         embed = discord.Embed(title=self.title, description=f"Step {self.step + 1} / 4")
         if self.step == 0:
@@ -316,9 +347,11 @@ class ConfigWizard(discord.ui.View):
                 for o in select.options:
                     if int(o.value) in self.event_channel_ids:
                         o.default = True
+
             async def cb(i: discord.Interaction) -> None:
                 self.event_channel_ids = [int(v) for v in select.values]
                 await i.response.defer()
+
             select.callback = cb
             self.add_item(select)
         elif self.step == 1:
@@ -331,9 +364,11 @@ class ConfigWizard(discord.ui.View):
                 for o in select.options:
                     if int(o.value) in self.fc_chat_channel_ids:
                         o.default = True
+
             async def cb(i: discord.Interaction) -> None:
                 self.fc_chat_channel_ids = [int(v) for v in select.values]
                 await i.response.defer()
+
             select.callback = cb
             self.add_item(select)
         elif self.step == 2:
@@ -346,9 +381,11 @@ class ConfigWizard(discord.ui.View):
                 for o in select.options:
                     if int(o.value) in self.officer_chat_channel_ids:
                         o.default = True
+
             async def cb(i: discord.Interaction) -> None:
                 self.officer_chat_channel_ids = [int(v) for v in select.values]
                 await i.response.defer()
+
             select.callback = cb
             self.add_item(select)
         else:
@@ -361,9 +398,11 @@ class ConfigWizard(discord.ui.View):
                     if o.value == str(self.officer_role_id):
                         o.default = True
                         break
+
             async def officer_cb(i: discord.Interaction) -> None:
                 self.officer_role_id = int(officer_select.values[0])
                 await i.response.defer()
+
             officer_select.callback = officer_cb
             self.add_item(officer_select)
         if self.step > 0:
@@ -375,7 +414,9 @@ class ConfigWizard(discord.ui.View):
         if initial:
             await inter.response.send_message(embed=embed, view=self, ephemeral=True)
         elif followup:
-            await inter.followup.edit_message(message_id=inter.message.id, embed=embed, view=self)
+            await inter.followup.edit_message(
+                message_id=inter.message.id, embed=embed, view=self
+            )
         else:
             await inter.response.edit_message(embed=embed, view=self)
 
@@ -385,25 +426,35 @@ class ConfigWizard(discord.ui.View):
 
     async def on_next(self, interaction: discord.Interaction) -> None:
         if self.step == 0 and not self.event_channel_ids:
-            await interaction.response.send_message("Select at least one event channel", ephemeral=True)
+            await interaction.response.send_message(
+                "Select at least one event channel", ephemeral=True
+            )
             return
         if self.step == 1 and not self.fc_chat_channel_ids:
-            await interaction.response.send_message("Select at least one FC chat channel", ephemeral=True)
+            await interaction.response.send_message(
+                "Select at least one FC chat channel", ephemeral=True
+            )
             return
         if self.step == 2 and not self.officer_chat_channel_ids:
-            await interaction.response.send_message("Select at least one officer chat channel", ephemeral=True)
+            await interaction.response.send_message(
+                "Select at least one officer chat channel", ephemeral=True
+            )
             return
         self.step += 1
         await self.render(interaction)
 
     async def on_finish(self, interaction: discord.Interaction) -> None:
-        if not all([
-            self.event_channel_ids,
-            self.fc_chat_channel_ids,
-            self.officer_chat_channel_ids,
-            self.officer_role_id,
-        ]):
-            await interaction.response.send_message("All selections are required", ephemeral=True)
+        if not all(
+            [
+                self.event_channel_ids,
+                self.fc_chat_channel_ids,
+                self.officer_chat_channel_ids,
+                self.officer_role_id,
+            ]
+        ):
+            await interaction.response.send_message(
+                "All selections are required", ephemeral=True
+            )
             return
         try:
             async for db in get_session():
@@ -458,7 +509,9 @@ class ConfigWizard(discord.ui.View):
                     )
                 await db.commit()
         except Exception:
-            await interaction.response.send_message("Failed to save settings", ephemeral=True)
+            await interaction.response.send_message(
+                "Failed to save settings", ephemeral=True
+            )
             return
         summary = (
             f"{self.success_message}\n"
@@ -469,6 +522,8 @@ class ConfigWizard(discord.ui.View):
         )
         await interaction.response.send_message(summary, ephemeral=True)
         self.stop()
+
+
 @demibot.command(name="settings", description="Open settings wizard")
 async def settings_wizard(interaction: discord.Interaction) -> None:
     view = ConfigWizard(
@@ -478,6 +533,7 @@ async def settings_wizard(interaction: discord.Interaction) -> None:
         success_message="Settings saved",
     )
     await view.render(interaction, initial=True)
+
 
 @demibot.command(name="setup", description="Initial setup wizard")
 async def setup_wizard(interaction: discord.Interaction) -> None:
@@ -492,6 +548,7 @@ async def setup_wizard(interaction: discord.Interaction) -> None:
         success_message="Setup complete",
     )
     await view.render(interaction, initial=True)
+
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Admin(bot))
