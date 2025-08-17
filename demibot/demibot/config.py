@@ -63,8 +63,8 @@ class DatabaseConfig:
 
 @dataclass
 class AppConfig:
-    server: ServerConfig = ServerConfig()
-    database: DatabaseConfig = DatabaseConfig()
+    server: ServerConfig = field(default_factory=ServerConfig)
+    database: DatabaseConfig = field(default_factory=DatabaseConfig)
     discord_token: str = ""
     dev_guild_id: int | None = None
 
@@ -171,8 +171,12 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             return False
 
     active_profile = cfg.database.active()
-    needs_prompt = force_reconfigure or not (
-        cfg.discord_token and active_profile.user and active_profile.password
+    # Reconfigure if any required credentials are missing
+    needs_prompt = (
+        force_reconfigure
+        or not cfg.discord_token
+        or not active_profile.user
+        or not active_profile.password
     )
 
     if needs_prompt:
