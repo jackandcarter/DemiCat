@@ -13,8 +13,8 @@ source .venv/bin/activate
 pip install -e .
 ```
 
-Create the initial `config.json` by running the service with the
-`--reconfigure` flag:
+Create the initial configuration file (stored at `~/.config/demibot/config.json`)
+by running the service with the `--reconfigure` flag:
 
 ```bash
 python -m demibot.main --reconfigure
@@ -27,7 +27,7 @@ You will be prompted for required settings:
 * `Remote host`, `Remote port` and `Database name` (if remote is selected)
 * `Enter Discord bot token`
 
-The answers are written to `demibot/demibot/config.json`. Edit this file to
+The answers are written to `~/.config/demibot/config.json`. Edit this file to
 adjust `server`, `database` or `discord_token` values (for example, change
 `server.port`), or rerun the command with `--reconfigure` to update it.
 
