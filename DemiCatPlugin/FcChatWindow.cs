@@ -13,43 +13,26 @@ public class FcChatWindow : ChatWindow
 {
     private readonly List<UserDto> _users = new();
     private DateTime _lastUserFetch = DateTime.MinValue;
-    private readonly string _channelName;
 
     public FcChatWindow(Config config, HttpClient httpClient) : base(config, httpClient)
     {
         _channelId = config.FcChannelId;
-        _channelName = string.IsNullOrEmpty(config.FcChannelName) ? config.FcChannelId : config.FcChannelName;
     }
 
     public override void Draw()
     {
-        if (string.IsNullOrEmpty(_channelId))
-        {
-            ImGui.TextUnformatted("No FC channel configured");
-            return;
-        }
-
-        if (DateTime.UtcNow - _lastFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
-        {
-            _ = RefreshMessages();
-        }
+        var originalChatChannel = _config.ChatChannelId;
 
         if (DateTime.UtcNow - _lastUserFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
         {
             _ = RefreshUsers();
         }
 
-        ImGui.TextUnformatted($"Channel: #{_channelName}");
-
-        ImGui.BeginChild("##chatScroll", new Vector2(-150, -30), true);
-        foreach (var msg in _messages)
-        {
-            ImGui.TextWrapped($"{msg.AuthorName}: {FormatContent(msg)}");
-        }
+        ImGui.BeginChild("##fcChat", new Vector2(-150, 0), false);
+        base.Draw();
         ImGui.EndChild();
 
         ImGui.SameLine();
-
         ImGui.BeginChild("##userList", new Vector2(150, -30), true);
         foreach (var user in _users)
         {
@@ -60,11 +43,15 @@ public class FcChatWindow : ChatWindow
         }
         ImGui.EndChild();
 
-        var send = ImGui.InputText("##chatInput", ref _input, 512, ImGuiInputTextFlags.EnterReturnsTrue);
-        ImGui.SameLine();
-        if (ImGui.Button("Send") || send)
+        if (_config.ChatChannelId != originalChatChannel || _config.FcChannelId != _channelId)
         {
-            _ = SendMessage();
+            _config.ChatChannelId = originalChatChannel;
+            _config.FcChannelId = _channelId;
+            SaveConfig();
+        }
+        else
+        {
+            _config.ChatChannelId = originalChatChannel;
         }
     }
 
