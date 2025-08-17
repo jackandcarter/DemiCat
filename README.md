@@ -56,15 +56,15 @@ python -m demibot.main
 ```
 The first run will start the Discord bot and HTTP API using the values in `.env`.
 
-With the bot online, run `/demibot_embed` in your Discord server to receive a DM with
-your **Key** and **Sync Key**. Each user should generate their own keys with this
-command for plugin authentication.
+With the bot online, run `/demibot embed` in your Discord server to post a key generation message.
+Members can click the button to receive their **Key** and **Sync Key** in an ephemeral reply.
+Each user should generate their own keys with this command for plugin authentication.
 
 ### 3. Configure the Dalamud plugin
 Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-game, open the plugin configuration and set the
 **Helper Base URL** and **Server Address** if needed (both default to `http://localhost:8000`).
 
-Use the **Key** and **Sync Key** obtained from `/demibot_embed` and enter both values in the
+Use the **Key** and **Sync Key** obtained from `/demibot embed` and enter both values in the
 plugin settings. Press **Connect/Sync** (or **Validate** if you already have a key) to link the
 plugin with the bot.
 
@@ -110,8 +110,7 @@ all data for the guild.
 - `/demibot_settings` – reopen the setup wizard with current settings for further adjustments (administrator only).
 - `/demibot_resync [users]` – resync stored role data. Supply space-separated user mentions or IDs to resync specific members or
   omit to resync everyone (administrator only).
-- `/demibot_embed` – send yourself an embed with a button to generate or reveal your **Key** and **Sync Key** for plugin
-  authentication.
+- `/demibot embed` – post an embed with a button to generate or reveal your **Key** and **Sync Key** for plugin authentication.
 - `/demibot_reset` – clear stored guild data and immediately rerun the setup wizard (server owner or administrator).
 - `/demibot_clear` – purge all guild configuration and data (server owner only).
 
