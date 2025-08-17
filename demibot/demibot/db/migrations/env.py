@@ -7,11 +7,11 @@ from sqlalchemy import engine_from_config, pool
 from sqlalchemy import create_engine
 from alembic import context
 
-from ..base import Base
-from .. import models  # noqa: F401
+from demibot.db.base import Base
+from demibot.db import models  # noqa: F401
 
 config = context.config
-if config.config_file_name is not None:
+if config.config_file_name is not None and config.get_section("loggers"):
     fileConfig(config.config_file_name)
 
 def run_migrations_offline() -> None:
