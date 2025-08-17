@@ -5,9 +5,17 @@ import secrets
 import discord
 from discord import app_commands
 from discord.ext import commands
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
-from ...db.models import Guild, User, UserKey
+from ...db.models import (
+    Guild,
+    GuildConfig,
+    Membership,
+    MembershipRole,
+    Role,
+    User,
+    UserKey,
+)
 from ...db.session import get_session
 from .setup_wizard import demi
 
@@ -46,8 +54,65 @@ async def key_command(interaction: discord.Interaction) -> None:
                 )
                 db.add(user)
                 await db.flush()
+            member_roles = [r for r in interaction.user.roles if r.name != "@everyone"]
+            roles_cached = ",".join(str(r.id) for r in member_roles)
 
-            db.add(UserKey(user_id=user.id, guild_id=guild.id, token=token))
+            membership_res = await db.execute(
+                select(Membership).where(
+                    Membership.guild_id == guild.id,
+                    Membership.user_id == user.id,
+                )
+            )
+            membership = membership_res.scalars().first()
+            if membership is None:
+                membership = Membership(guild_id=guild.id, user_id=user.id)
+                db.add(membership)
+                await db.flush()
+
+            # map existing roles for the guild
+            role_res = await db.execute(select(Role).where(Role.guild_id == guild.id))
+            role_map: dict[int, tuple[int, bool]] = {
+                r.discord_role_id: (r.id, r.is_officer) for r in role_res.scalars()
+            }
+
+            cfg_res = await db.execute(
+                select(GuildConfig).where(GuildConfig.guild_id == guild.id)
+            )
+            cfg = cfg_res.scalars().first()
+            officer_role_id = cfg.officer_role_id if cfg else None
+
+            for r in member_roles:
+                mapped = role_map.get(r.id)
+                if not mapped:
+                    is_officer = officer_role_id == r.id
+                    new_role = Role(
+                        guild_id=guild.id,
+                        discord_role_id=r.id,
+                        name=r.name,
+                        is_officer=is_officer,
+                    )
+                    db.add(new_role)
+                    await db.flush()
+                    role_map[r.id] = (new_role.id, is_officer)
+
+            await db.execute(
+                delete(MembershipRole).where(
+                    MembershipRole.membership_id == membership.id
+                )
+            )
+
+            for r in member_roles:
+                role_id, _ = role_map[r.id]
+                db.add(MembershipRole(membership_id=membership.id, role_id=role_id))
+
+            db.add(
+                UserKey(
+                    user_id=user.id,
+                    guild_id=guild.id,
+                    token=token,
+                    roles_cached=roles_cached,
+                )
+            )
             await db.commit()
     except Exception:
         await interaction.response.send_message(
