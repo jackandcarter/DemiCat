@@ -15,6 +15,7 @@ from pathlib import Path
 import asyncio
 import json
 import logging
+from urllib.parse import quote_plus
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -42,7 +43,7 @@ class DatabaseConfig:
     @property
     def url(self) -> str:
         return (
-            f"mysql+aiomysql://{self.user}:{self.password}"
+            f"mysql+aiomysql://{quote_plus(self.user)}:{quote_plus(self.password)}"
             f"@{self.host}:{self.port}/{self.database}"
         )
 

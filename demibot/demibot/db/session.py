@@ -57,3 +57,22 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
         raise RuntimeError("Engine not initialized")
     async with _Session() as session:
         yield session
+
+
+def test_password_with_special_chars():
+    """Ensure engines handle credentials with special characters."""
+
+    from urllib.parse import quote_plus
+    import asyncio
+
+    password = "p@ss/w:rd?123"
+    url = f"sqlite+aiosqlite:///:memory:?password={quote_plus(password)}"
+
+    async def _check() -> None:
+        engine = await init_db(url)
+        async with engine.connect() as conn:
+            result = await conn.execute(text("SELECT 1"))
+            assert result.scalar_one() == 1
+        await engine.dispose()
+
+    asyncio.run(_check())
