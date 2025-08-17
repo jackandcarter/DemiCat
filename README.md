@@ -24,10 +24,10 @@ Key environment variables include:
 - `DEMIBOT_WS_PATH` – WebSocket path (default `/ws/embeds`)
 - `DISCORD_TOKEN` – Discord bot token
 
-> **Security note:** The `.env` file and `demibot/demibot/config.json` contain the
+> **Security note:** The `.env` file and `~/.config/demibot/config.json` contain the
 > Discord token and database credentials. Treat these files as secrets and set
 > restrictive permissions so only your user can read them (e.g. `chmod 600
-> demibot/demibot/config.json`).
+> ~/.config/demibot/config.json`).
 
 ## Setup
 

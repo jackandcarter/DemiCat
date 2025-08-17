@@ -21,7 +21,7 @@ from urllib.parse import quote_plus
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-CFG_PATH = Path(__file__).with_name("config.json")
+CFG_PATH = Path.home() / ".config" / "demibot" / "config.json"
 
 
 @dataclass
@@ -77,6 +77,7 @@ def save_config(cfg: AppConfig) -> None:
         "database": asdict(cfg.database),
         "discord_token": cfg.discord_token,
     }
+    CFG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CFG_PATH.write_text(json.dumps(data, indent=2))
     try:
         CFG_PATH.chmod(0o600)
@@ -94,8 +95,7 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
         ``config.json`` file already exists.
     """
 
-    cfg = load_config() if CFG_PATH.exists() else AppConfig()
-    changed = False
+    cfg = load_config()
 
     def _prompt_server() -> None:
         port = input(f"Server port [{cfg.server.port}]: ").strip()
@@ -136,7 +136,9 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             print(f"Database connection failed: {exc}")
             return False
 
-    needs_prompt = force_reconfigure or not CFG_PATH.exists()
+    needs_prompt = force_reconfigure or not (
+        cfg.discord_token and cfg.database.user and cfg.database.password
+    )
 
     if needs_prompt:
         _prompt_server()
@@ -148,31 +150,6 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             input(f"Enter Discord bot token [{cfg.discord_token}]: ").strip()
             or cfg.discord_token
         )
-        changed = True
-    else:
-        if not cfg.database.user or not cfg.database.password:
-            _prompt_database()
-            changed = True
-        mode = "remote" if cfg.database.use_remote else "local"
-        print(
-            f"Using {mode} MySQL database at "
-            f"{cfg.database.host}:{cfg.database.port}/{cfg.database.database}"
-        )
-        if not _check_database():
-            print("Unable to connect. Reconfiguring...")
-            while True:
-                _prompt_database()
-                if _check_database():
-                    break
-            cfg.discord_token = (
-                input(f"Enter Discord bot token [{cfg.discord_token}]: ").strip()
-                or cfg.discord_token
-            )
-            changed = True
-        elif not cfg.discord_token:
-            cfg.discord_token = input("Enter Discord bot token: ").strip()
-            changed = True
 
-    if changed:
-        save_config(cfg)
+    save_config(cfg)
     return cfg
