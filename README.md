@@ -31,6 +31,14 @@ Key environment variables include:
 
 ## Setup
 
+Run the helper script to bootstrap both the Python and .NET parts of the
+project. It creates a virtual environment, installs dependencies from
+`demibot/pyproject.toml`, and builds the Dalamud plugin.
+
+```bash
+bash scripts/setup_env.sh
+```
+
 ### 1. Install dependencies and initialize the database
 ```bash
 cd demibot

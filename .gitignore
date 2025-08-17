@@ -6,5 +6,10 @@ node_modules/
 database/*.db
 __pycache__/
 
+# Local development artifacts
+.venv/
+.dotnet/
+DemiCatPlugin/packages.lock.json
+
 # DemiBot configuration
 demibot/demibot/config.json
