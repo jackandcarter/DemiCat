@@ -47,5 +47,18 @@ async def create_event(
     await interaction.response.send_message("Event created", ephemeral=True)
 
 
+@app_commands.command(name="createevent", description="Create a simple event")
+@app_commands.describe(
+    title="Title of the event",
+    time="Event time in ISO 8601 format (UTC)",
+    description="Event description",
+)
+async def createevent(
+    interaction: discord.Interaction, title: str, time: str, description: str
+) -> None:
+    await create_event.callback(interaction, title, time, description)
+
+
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Events(bot))
+    bot.tree.add_command(createevent)
