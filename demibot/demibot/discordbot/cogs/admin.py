@@ -171,13 +171,22 @@ async def key_embed(interaction: discord.Interaction) -> None:
                     )
                     member_role_ids = {r.id for r in member_roles}
                     stored_roles = await db.execute(
-                        select(Role.id).where(Role.guild_id == guild.id)
-                    )
-                    stored_role_ids = {row[0] for row in stored_roles}
-                    for role_id in member_role_ids & stored_role_ids:
-                        db.add(
-                            MembershipRole(membership_id=membership.id, role_id=role_id)
+                        select(Role.id, Role.discord_role_id).where(
+                            Role.guild_id == guild.id
                         )
+                    )
+                    role_map = {
+                        discord_role_id: role_id
+                        for role_id, discord_role_id in stored_roles
+                    }
+                    for role_id in member_role_ids:
+                        mapped = role_map.get(role_id)
+                        if mapped:
+                            db.add(
+                                MembershipRole(
+                                    membership_id=membership.id, role_id=mapped
+                                )
+                            )
 
                     db.add(
                         UserKey(
