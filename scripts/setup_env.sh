@@ -67,6 +67,6 @@ if [ -d "$ROOT_DIR/.dotnet" ]; then
 fi
 
 "$DOTNET_CMD" restore DemiCatPlugin/DemiCatPlugin.csproj
-"$DOTNET_CMD" build DemiCatPlugin/DemiCatPlugin.csproj
+"$DOTNET_CMD" build DemiCatPlugin/DemiCatPlugin.csproj -c Release
 
 echo "Environment setup complete."

@@ -33,7 +33,7 @@ Key environment variables include:
 
 Run the helper script to bootstrap both the Python and .NET parts of the
 project. It creates a virtual environment, installs dependencies from
-`demibot/pyproject.toml`, and builds the Dalamud plugin.
+`demibot/pyproject.toml`, and builds the Dalamud plugin in Release mode.
 
 ```bash
 bash scripts/setup_env.sh
