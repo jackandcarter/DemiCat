@@ -58,7 +58,6 @@ public class TemplatesWindow
         ImGui.BeginChild("TemplateContent", new Vector2(0, 0), false);
         if (_selectedIndex >= 0)
         {
-            var templates = _config.Templates.Where(t => t.Type == _selectedType).ToList();
             if (_selectedIndex < templates.Count)
             {
                 var tmpl = templates[_selectedIndex];
