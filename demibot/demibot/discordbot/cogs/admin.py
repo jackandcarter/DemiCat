@@ -251,11 +251,10 @@ class ConfigWizard(discord.ui.View):
         self.final_label = final_label
         self.success_message = success_message
         self.step = 0
-        self.event_channel_id: int | None = None
-        self.fc_chat_channel_id: int | None = None
-        self.officer_chat_channel_id: int | None = None
+        self.event_channel_ids: list[int] = []
+        self.fc_chat_channel_ids: list[int] = []
+        self.officer_chat_channel_ids: list[int] = []
         self.officer_role_id: int | None = None
-        self.chat_role_id: int | None = None
         self.channel_options = [
             discord.SelectOption(label=ch.name, value=str(ch.id))
             for ch in guild.text_channels
@@ -276,43 +275,55 @@ class ConfigWizard(discord.ui.View):
         self.clear_items()
         embed = discord.Embed(title=self.title, description=f"Step {self.step + 1} / 4")
         if self.step == 0:
-            select = discord.ui.Select(placeholder="Select event channel", options=self.channel_options)
-            if self.event_channel_id:
+            select = discord.ui.Select(
+                placeholder="Select event channels",
+                options=self.channel_options,
+                max_values=min(25, len(self.channel_options)),
+            )
+            if self.event_channel_ids:
                 for o in select.options:
-                    if o.value == str(self.event_channel_id):
+                    if int(o.value) in self.event_channel_ids:
                         o.default = True
-                        break
             async def cb(i: discord.Interaction) -> None:
-                self.event_channel_id = int(select.values[0])
-                await i.response.send_message("Event channel set", ephemeral=True)
+                self.event_channel_ids = [int(v) for v in select.values]
+                await i.response.defer()
             select.callback = cb
             self.add_item(select)
         elif self.step == 1:
-            select = discord.ui.Select(placeholder="Select FC chat channel", options=self.channel_options)
-            if self.fc_chat_channel_id:
+            select = discord.ui.Select(
+                placeholder="Select FC chat channels",
+                options=self.channel_options,
+                max_values=min(25, len(self.channel_options)),
+            )
+            if self.fc_chat_channel_ids:
                 for o in select.options:
-                    if o.value == str(self.fc_chat_channel_id):
+                    if int(o.value) in self.fc_chat_channel_ids:
                         o.default = True
-                        break
             async def cb(i: discord.Interaction) -> None:
-                self.fc_chat_channel_id = int(select.values[0])
-                await i.response.send_message("FC chat channel set", ephemeral=True)
+                self.fc_chat_channel_ids = [int(v) for v in select.values]
+                await i.response.defer()
             select.callback = cb
             self.add_item(select)
         elif self.step == 2:
-            select = discord.ui.Select(placeholder="Select officer chat channel", options=self.channel_options)
-            if self.officer_chat_channel_id:
+            select = discord.ui.Select(
+                placeholder="Select officer chat channels",
+                options=self.channel_options,
+                max_values=min(25, len(self.channel_options)),
+            )
+            if self.officer_chat_channel_ids:
                 for o in select.options:
-                    if o.value == str(self.officer_chat_channel_id):
+                    if int(o.value) in self.officer_chat_channel_ids:
                         o.default = True
-                        break
             async def cb(i: discord.Interaction) -> None:
-                self.officer_chat_channel_id = int(select.values[0])
-                await i.response.send_message("Officer chat channel set", ephemeral=True)
+                self.officer_chat_channel_ids = [int(v) for v in select.values]
+                await i.response.defer()
             select.callback = cb
             self.add_item(select)
         else:
-            officer_select = discord.ui.Select(placeholder="Select officer role", options=self.role_options)
+            officer_select = discord.ui.Select(
+                placeholder="Select officer role",
+                options=self.role_options,
+            )
             if self.officer_role_id:
                 for o in officer_select.options:
                     if o.value == str(self.officer_role_id):
@@ -320,20 +331,9 @@ class ConfigWizard(discord.ui.View):
                         break
             async def officer_cb(i: discord.Interaction) -> None:
                 self.officer_role_id = int(officer_select.values[0])
-                await i.response.send_message("Officer role set", ephemeral=True)
+                await i.response.defer()
             officer_select.callback = officer_cb
-            chat_select = discord.ui.Select(placeholder="Select chat role", options=self.role_options)
-            if self.chat_role_id:
-                for o in chat_select.options:
-                    if o.value == str(self.chat_role_id):
-                        o.default = True
-                        break
-            async def chat_cb(i: discord.Interaction) -> None:
-                self.chat_role_id = int(chat_select.values[0])
-                await i.response.send_message("Chat role set", ephemeral=True)
-            chat_select.callback = chat_cb
             self.add_item(officer_select)
-            self.add_item(chat_select)
         if self.step > 0:
             self.add_item(self.back_button)
         if self.step < 3:
@@ -352,25 +352,24 @@ class ConfigWizard(discord.ui.View):
         await self.render(interaction)
 
     async def on_next(self, interaction: discord.Interaction) -> None:
-        if self.step == 0 and not self.event_channel_id:
-            await interaction.response.send_message("Select an event channel", ephemeral=True)
+        if self.step == 0 and not self.event_channel_ids:
+            await interaction.response.send_message("Select at least one event channel", ephemeral=True)
             return
-        if self.step == 1 and not self.fc_chat_channel_id:
-            await interaction.response.send_message("Select an FC chat channel", ephemeral=True)
+        if self.step == 1 and not self.fc_chat_channel_ids:
+            await interaction.response.send_message("Select at least one FC chat channel", ephemeral=True)
             return
-        if self.step == 2 and not self.officer_chat_channel_id:
-            await interaction.response.send_message("Select an officer chat channel", ephemeral=True)
+        if self.step == 2 and not self.officer_chat_channel_ids:
+            await interaction.response.send_message("Select at least one officer chat channel", ephemeral=True)
             return
         self.step += 1
         await self.render(interaction)
 
     async def on_finish(self, interaction: discord.Interaction) -> None:
         if not all([
-            self.event_channel_id,
-            self.fc_chat_channel_id,
-            self.officer_chat_channel_id,
+            self.event_channel_ids,
+            self.fc_chat_channel_ids,
+            self.officer_chat_channel_ids,
             self.officer_role_id,
-            self.chat_role_id,
         ]):
             await interaction.response.send_message("All selections are required", ephemeral=True)
             return
@@ -394,43 +393,49 @@ class ConfigWizard(discord.ui.View):
                 if config is None:
                     config = GuildConfig(guild_id=guild.id)
                     db.add(config)
-                config.event_channel_id = self.event_channel_id
-                config.fc_chat_channel_id = self.fc_chat_channel_id
-                config.officer_chat_channel_id = self.officer_chat_channel_id
                 config.officer_role_id = self.officer_role_id
-                config.chat_role_id = self.chat_role_id
                 await db.execute(
                     delete(GuildChannel).where(
                         GuildChannel.guild_id == guild.id,
                         GuildChannel.kind.in_(["event", "fc_chat", "officer_chat"]),
                     )
                 )
-                db.add(
-                    GuildChannel(
-                        guild_id=guild.id,
-                        channel_id=self.event_channel_id,
-                        kind="event",
+                for cid in self.event_channel_ids:
+                    db.add(
+                        GuildChannel(
+                            guild_id=guild.id,
+                            channel_id=cid,
+                            kind="event",
+                        )
                     )
-                )
-                db.add(
-                    GuildChannel(
-                        guild_id=guild.id,
-                        channel_id=self.fc_chat_channel_id,
-                        kind="fc_chat",
+                for cid in self.fc_chat_channel_ids:
+                    db.add(
+                        GuildChannel(
+                            guild_id=guild.id,
+                            channel_id=cid,
+                            kind="fc_chat",
+                        )
                     )
-                )
-                db.add(
-                    GuildChannel(
-                        guild_id=guild.id,
-                        channel_id=self.officer_chat_channel_id,
-                        kind="officer_chat",
+                for cid in self.officer_chat_channel_ids:
+                    db.add(
+                        GuildChannel(
+                            guild_id=guild.id,
+                            channel_id=cid,
+                            kind="officer_chat",
+                        )
                     )
-                )
                 await db.commit()
         except Exception:
             await interaction.response.send_message("Failed to save settings", ephemeral=True)
             return
-        await interaction.response.send_message(self.success_message, ephemeral=True)
+        summary = (
+            f"{self.success_message}\n"
+            f"Event channels: {', '.join(f'<#{c}>' for c in self.event_channel_ids)}\n"
+            f"FC chat channels: {', '.join(f'<#{c}>' for c in self.fc_chat_channel_ids)}\n"
+            f"Officer chat channels: {', '.join(f'<#{c}>' for c in self.officer_chat_channel_ids)}\n"
+            f"Officer role: <@&{self.officer_role_id}>"
+        )
+        await interaction.response.send_message(summary, ephemeral=True)
         self.stop()
 @demibot.command(name="settings", description="Open settings wizard")
 async def settings_wizard(interaction: discord.Interaction) -> None:

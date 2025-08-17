@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import datetime
-from typing import List, Optional
+from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
@@ -39,12 +39,8 @@ class GuildConfig(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
-    event_channel_id: Mapped[Optional[int]] = mapped_column(BigInteger)
-    fc_chat_channel_id: Mapped[Optional[int]] = mapped_column(BigInteger)
-    officer_chat_channel_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     officer_visible_channel_id: Mapped[Optional[int]] = mapped_column(BigInteger)
     officer_role_id: Mapped[Optional[int]] = mapped_column(BigInteger)
-    chat_role_id: Mapped[Optional[int]] = mapped_column(BigInteger)
 
     guild: Mapped[Guild] = relationship(back_populates="config")
 
