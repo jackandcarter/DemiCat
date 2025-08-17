@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
+from enum import IntEnum
 
 # ---- Embeds ----
 
@@ -12,10 +13,20 @@ class EmbedFieldDto(BaseModel):
     value: str
     inline: bool | None = None
 
+class ButtonStyle(IntEnum):
+    primary = 1
+    secondary = 2
+    success = 3
+    danger = 4
+    link = 5
+
+
 class EmbedButtonDto(BaseModel):
     label: str
     url: Optional[str] = None
     customId: Optional[str] = None
+    emoji: Optional[str] = None
+    style: Optional[ButtonStyle] = None
 
 class EmbedDto(BaseModel):
     id: str

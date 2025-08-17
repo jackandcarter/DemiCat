@@ -31,4 +31,15 @@ public class EmbedButtonDto
     public string Label { get; set; } = string.Empty;
     public string? Url { get; set; }
     public string? CustomId { get; set; }
+    public string? Emoji { get; set; }
+    public ButtonStyle? Style { get; set; }
+}
+
+public enum ButtonStyle
+{
+    Primary = 1,
+    Secondary = 2,
+    Success = 3,
+    Danger = 4,
+    Link = 5,
 }

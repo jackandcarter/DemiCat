@@ -33,6 +33,7 @@ class CreateEventBody(BaseModel):
     thumbnailUrl: Optional[str] = None
     color: Optional[int] = None
     fields: List[FieldBody] | None = None
+    buttons: List[EmbedButtonDto] | None = None
     attendance: List[str] | None = None
 
 
@@ -43,9 +44,10 @@ async def create_event(
     db: AsyncSession = Depends(get_db),
 ):
     eid = str(int(datetime.utcnow().timestamp() * 1000))
-    buttons = []
-    for tag in (body.attendance or ["yes", "maybe", "no"]):
-        buttons.append(EmbedButtonDto(label=tag.capitalize(), customId=f"rsvp:{tag}"))
+    buttons = body.buttons or []
+    if not buttons:
+        for tag in (body.attendance or ["yes", "maybe", "no"]):
+            buttons.append(EmbedButtonDto(label=tag.capitalize(), customId=f"rsvp:{tag}"))
     dto = EmbedDto(
         id=eid,
         timestamp=datetime.fromisoformat(body.time.replace("Z", "+00:00"))
