@@ -120,12 +120,6 @@ async def key_embed(interaction: discord.Interaction) -> None:
         async def generate(
             self, button_inter: discord.Interaction, button: discord.ui.Button
         ) -> None:
-            if not (set(r.id for r in button_inter.user.roles) & self.allowed):
-                await button_inter.response.send_message(
-                    "You are not authorized", ephemeral=True
-                )
-                return
-
             token = secrets.token_hex(16)
             try:
                 async for db in get_session():
@@ -158,7 +152,45 @@ async def key_embed(interaction: discord.Interaction) -> None:
                         db.add(user)
                         await db.flush()
 
-                    db.add(UserKey(user_id=user.id, guild_id=guild.id, token=token))
+                    member_roles = [
+                        r for r in button_inter.user.roles if r.name != "@everyone"
+                    ]
+                    roles_cached = ",".join(str(r.id) for r in member_roles)
+
+                    membership_res = await db.execute(
+                        select(Membership).where(
+                            Membership.guild_id == guild.id,
+                            Membership.user_id == user.id,
+                        )
+                    )
+                    membership = membership_res.scalars().first()
+                    if membership is None:
+                        membership = Membership(guild_id=guild.id, user_id=user.id)
+                        db.add(membership)
+                        await db.flush()
+
+                    await db.execute(
+                        delete(MembershipRole).where(
+                            MembershipRole.membership_id == membership.id
+                        )
+                    )
+                    member_role_ids = {r.id for r in member_roles}
+                    for role_id in self.allowed:
+                        if role_id in member_role_ids:
+                            db.add(
+                                MembershipRole(
+                                    membership_id=membership.id, role_id=role_id
+                                )
+                            )
+
+                    db.add(
+                        UserKey(
+                            user_id=user.id,
+                            guild_id=guild.id,
+                            token=token,
+                            roles_cached=roles_cached,
+                        )
+                    )
                     await db.commit()
             except Exception:
                 await button_inter.response.send_message(
