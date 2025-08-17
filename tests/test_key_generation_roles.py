@@ -34,7 +34,9 @@ class DummyResponse:
         self.args = ()
         self.kwargs: dict | None = None
 
-    async def send_message(self, *args, **kwargs) -> None:  # pragma: no cover - simple stub
+    async def send_message(
+        self, *args, **kwargs
+    ) -> None:  # pragma: no cover - simple stub
         self.args = args
         self.kwargs = kwargs
 
@@ -64,7 +66,15 @@ async def _setup_db() -> None:
     async for db in get_session():
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
         db.add(guild)
-        db.add(Role(id=10, guild_id=guild.id, name="Officer", is_officer=True))
+        db.add(
+            Role(
+                id=10,
+                guild_id=guild.id,
+                name="Officer",
+                is_officer=True,
+                discord_role_id=10,
+            )
+        )
         db.add(
             User(
                 id=1,
@@ -109,12 +119,16 @@ async def _generate(user_roles):
             )
         ).scalar_one()
         membership_roles = (
-            await db.execute(
-                select(MembershipRole.role_id).where(
-                    MembershipRole.membership_id == membership.id
+            (
+                await db.execute(
+                    select(MembershipRole.role_id).where(
+                        MembershipRole.membership_id == membership.id
+                    )
                 )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
         key = (
             await db.execute(
                 select(UserKey).where(
@@ -140,4 +154,3 @@ def test_officer_generates_key_and_role_classified():
     assert membership_roles == [10]
     assert cached == "10"
     assert response.args and "Your sync key" in response.args[0]
-

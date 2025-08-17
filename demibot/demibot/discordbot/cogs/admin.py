@@ -477,6 +477,27 @@ class ConfigWizard(discord.ui.View):
                     config = GuildConfig(guild_id=guild.id)
                     db.add(config)
                 config.officer_role_id = self.officer_role_id
+                role_name = self.guild.get_role(self.officer_role_id)
+                role_name = role_name.name if role_name else "Officer"
+                role_res = await db.execute(
+                    select(Role).where(
+                        Role.guild_id == guild.id,
+                        Role.discord_role_id == self.officer_role_id,
+                    )
+                )
+                role = role_res.scalars().first()
+                if role is None:
+                    db.add(
+                        Role(
+                            guild_id=guild.id,
+                            name=role_name,
+                            discord_role_id=self.officer_role_id,
+                            is_officer=True,
+                        )
+                    )
+                else:
+                    role.name = role_name
+                    role.is_officer = True
                 await db.execute(
                     delete(GuildChannel).where(
                         GuildChannel.guild_id == guild.id,

@@ -95,6 +95,7 @@ class Role(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
+    discord_role_id: Mapped[int] = mapped_column(BigInteger, unique=True)
     name: Mapped[str] = mapped_column(String(255))
     is_officer: Mapped[bool] = mapped_column(Boolean, default=False)
     is_chat: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -118,7 +119,9 @@ class Message(Base):
     discord_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
-    author_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), ForeignKey("users.id"))
+    author_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id")
+    )
     author_name: Mapped[str] = mapped_column(String(255))
     content_raw: Mapped[str] = mapped_column(Text)
     content_display: Mapped[str] = mapped_column(Text)
@@ -151,8 +154,8 @@ class RSVP(enum.Enum):
 class Attendance(Base):
     __tablename__ = "attendance"
 
-    discord_message_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True
+    discord_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
     )
-    user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True)
     choice: Mapped[RSVP] = mapped_column(String(10))
