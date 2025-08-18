@@ -45,7 +45,7 @@ public class Plugin : IDalamudPlugin
         }
 
         _ui = new UiRenderer(_config, _httpClient);
-        _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(_services.Log), _services.Log, _services.PluginInterface);
+        _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
         _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config, _httpClient) : null;
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);

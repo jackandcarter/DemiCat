@@ -32,10 +32,9 @@ public class UiRenderer : IDisposable
         _httpClient = httpClient;
         _channelId = config.EventChannelId;
 
-        if (_config.Enabled)
+        if (_config.Enabled && !string.IsNullOrEmpty(_config.AuthToken))
         {
-            StartPolling();
-            _ = ConnectWebSocket();
+            StartNetworking();
         }
     }
 
@@ -59,6 +58,36 @@ public class UiRenderer : IDisposable
     {
         _pollCts?.Cancel();
         _pollCts = null;
+    }
+
+    public void StartNetworking()
+    {
+        StopPolling();
+
+        if (_webSocket != null)
+        {
+            try
+            {
+                if (_webSocket.State == WebSocketState.Open)
+                {
+                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+            _webSocket.Dispose();
+            _webSocket = null;
+        }
+
+        if (string.IsNullOrEmpty(_config.AuthToken) || !_config.Enabled)
+        {
+            return;
+        }
+
+        StartPolling();
+        _ = ConnectWebSocket();
     }
 
     private async Task PollLoop(CancellationToken token)
