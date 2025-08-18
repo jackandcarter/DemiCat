@@ -42,7 +42,7 @@ public class DeveloperWindow
             _config.ApiBaseUrl = _apiBaseUrl;
             _config.WebSocketPath = _wsPath;
 
-            if (_pluginInterface != null)
+            if (_pluginInterface != null && !_pluginInterface.IsDisposed)
                 _pluginInterface.SavePluginConfig(_config);
         }
 

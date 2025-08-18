@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
@@ -25,13 +26,13 @@ public class SettingsWindow : IDisposable
 
     public bool IsOpen;
 
-    public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles, IPluginLog log)
+    public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
         _config = config;
         _httpClient = httpClient;
         _refreshRoles = refreshRoles;
         _apiKey = config.AuthToken ?? string.Empty;
-        _devWindow = new DeveloperWindow(config, PluginServices.Instance!.PluginInterface);
+        _devWindow = new DeveloperWindow(config, pluginInterface);
         _log = log;
     }
 
