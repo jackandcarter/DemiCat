@@ -5,7 +5,9 @@ using System.Text;
 using System.Text.Json;
 using System.Numerics;
 using System.Threading.Tasks;
+using System.Linq;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
@@ -15,6 +17,7 @@ public class SettingsWindow : IDisposable
     private readonly HttpClient _httpClient;
     private readonly Func<Task> _refreshRoles;
     private readonly DeveloperWindow _devWindow;
+    private readonly IPluginLog _log;
 
     private string _apiKey = string.Empty;
     private bool _authFailed;
@@ -22,13 +25,14 @@ public class SettingsWindow : IDisposable
 
     public bool IsOpen;
 
-    public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles)
+    public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles, IPluginLog log)
     {
         _config = config;
         _httpClient = httpClient;
         _refreshRoles = refreshRoles;
         _apiKey = config.AuthToken ?? string.Empty;
         _devWindow = new DeveloperWindow(config);
+        _log = log;
     }
 
     public void Draw()
@@ -89,10 +93,14 @@ public class SettingsWindow : IDisposable
                 request.Headers.Add("X-Api-Key", key);
             }
 
+            _log.Info($"Sync URL: {url}");
+            _log.Info($"Headers: {string.Join(", ", request.Headers.Select(h => $"{h.Key}: {string.Join(";", h.Value)}"))}");
+
             var response = await _httpClient.SendAsync(request);
+            _log.Info($"Response Status: {response.StatusCode}");
             if (response.IsSuccessStatusCode)
             {
-                PluginServices.PluginLog.Info("API key validated successfully.");
+                _log.Info("API key validated successfully.");
                 _config.AuthToken = key;
                 _apiKey = key;
                 SaveConfig();
@@ -100,18 +108,18 @@ public class SettingsWindow : IDisposable
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
-                PluginServices.PluginLog.Warning("API key validation failed: unauthorized.");
+                _log.Warning("API key validation failed: unauthorized.");
                 _authFailed = true;
             }
             else
             {
-                PluginServices.PluginLog.Warning($"API key validation failed with status {response.StatusCode}.");
+                _log.Warning($"API key validation failed with status {response.StatusCode}.");
                 _networkError = true;
             }
         }
         catch (Exception ex)
         {
-            PluginServices.PluginLog.Error(ex, "Error validating API key.");
+            _log.Error(ex, "Error validating API key.");
             _networkError = true;
         }
     }

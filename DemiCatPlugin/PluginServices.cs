@@ -20,5 +20,5 @@ internal static class PluginServices
     internal static IFramework Framework { get; private set; } = null!;
 
     [PluginService]
-    internal static IPluginLog PluginLog { get; private set; } = null!;
+    internal static IPluginLog Log { get; private set; } = null!;
 }
