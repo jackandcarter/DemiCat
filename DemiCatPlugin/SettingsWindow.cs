@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Numerics;
@@ -16,7 +17,8 @@ public class SettingsWindow : IDisposable
     private readonly DeveloperWindow _devWindow;
 
     private string _apiKey = string.Empty;
-    private bool _invalidKey;
+    private bool _authFailed;
+    private bool _networkError;
 
     public bool IsOpen;
 
@@ -49,9 +51,13 @@ public class SettingsWindow : IDisposable
                     _ = Sync();
                 }
 
-                if (_invalidKey)
+                if (_authFailed)
                 {
-                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "Invalid API key");
+                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "Authentication failed");
+                }
+                else if (_networkError)
+                {
+                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "Network error");
                 }
                 ImGui.End();
             }
@@ -66,34 +72,47 @@ public class SettingsWindow : IDisposable
 
     private async Task Sync()
     {
+        _authFailed = false;
+        _networkError = false;
+
         try
         {
+            _apiKey = _apiKey.Trim();
+            var key = _apiKey;
             var url = $"{_config.ServerAddress.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
-                Content = new StringContent(JsonSerializer.Serialize(new { key = _apiKey }), Encoding.UTF8, "application/json")
+                Content = new StringContent(JsonSerializer.Serialize(new { key }), Encoding.UTF8, "application/json")
             };
-            if (!string.IsNullOrEmpty(_apiKey))
+            if (!string.IsNullOrEmpty(key))
             {
-                request.Headers.Add("X-Api-Key", _apiKey);
+                request.Headers.Add("X-Api-Key", key);
             }
 
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                _invalidKey = false;
-                _config.AuthToken = _apiKey;
+                PluginServices.PluginLog.Info("API key validated successfully.");
+                _config.AuthToken = key;
+                _apiKey = key;
                 SaveConfig();
                 _ = _refreshRoles();
             }
+            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                PluginServices.PluginLog.Warning("API key validation failed: unauthorized.");
+                _authFailed = true;
+            }
             else
             {
-                _invalidKey = true;
+                PluginServices.PluginLog.Warning($"API key validation failed with status {response.StatusCode}.");
+                _networkError = true;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            _invalidKey = true;
+            PluginServices.PluginLog.Error(ex, "Error validating API key.");
+            _networkError = true;
         }
     }
 
