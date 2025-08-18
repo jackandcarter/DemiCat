@@ -15,6 +15,8 @@ import pkgutil
 
 from fastapi import FastAPI
 
+from .ws import websocket_endpoint
+
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:  # pragma: no cover - imported for type hints only
@@ -25,6 +27,7 @@ def create_app(cfg: "AppConfig | None") -> FastAPI:
     """Create and configure the FastAPI application."""
 
     app = FastAPI()
+    app.add_api_websocket_route("/ws/messages", websocket_endpoint)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
