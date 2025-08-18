@@ -29,7 +29,7 @@ public class Plugin : IDalamudPlugin
 
     public Plugin()
     {
-        _services = PluginInterface.Create<PluginServices>();
+        _services = PluginInterface.Create<PluginServices>()!;
         if (_services.PluginInterface == null || _services.Log == null)
         {
             throw new InvalidOperationException("Failed to initialize plugin services.");
