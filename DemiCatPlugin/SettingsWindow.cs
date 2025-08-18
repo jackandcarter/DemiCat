@@ -52,7 +52,10 @@ public class SettingsWindow : IDisposable
 
                 if (ImGui.Button("Sync"))
                 {
-                    _ = Sync();
+                    Task.Run(Sync).ContinueWith(t =>
+                    {
+                        _log.Error(t.Exception!, "Unexpected error during sync");
+                    }, TaskContinuationOptions.OnlyOnFaulted);
                 }
 
                 if (_authFailed)
@@ -104,7 +107,7 @@ public class SettingsWindow : IDisposable
                 _config.AuthToken = key;
                 _apiKey = key;
                 SaveConfig();
-                _ = _refreshRoles();
+                await _refreshRoles();
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
@@ -121,6 +124,7 @@ public class SettingsWindow : IDisposable
         {
             _log.Error(ex, "Error validating API key.");
             _networkError = true;
+            throw;
         }
     }
 
