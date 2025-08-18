@@ -119,6 +119,7 @@ public class TemplatesWindow
         {
             Title = tmpl.Title,
             Description = tmpl.Description,
+            Url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
             Timestamp = ts,
             ImageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,

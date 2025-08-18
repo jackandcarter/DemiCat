@@ -36,6 +36,7 @@ class EmbedDto(BaseModel):
     authorIconUrl: Optional[str] = None
     title: Optional[str] = None
     description: Optional[str] = None
+    url: Optional[str] = None
     fields: List[EmbedFieldDto] | None = None
     thumbnailUrl: Optional[str] = None
     imageUrl: Optional[str] = None

@@ -12,6 +12,7 @@ public class EmbedDto
     public string? AuthorIconUrl { get; set; }
     public string? Title { get; set; }
     public string? Description { get; set; }
+    public string? Url { get; set; }
     public List<EmbedFieldDto>? Fields { get; set; }
     public string? ThumbnailUrl { get; set; }
     public string? ImageUrl { get; set; }

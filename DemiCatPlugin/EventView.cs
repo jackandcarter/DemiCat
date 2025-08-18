@@ -10,6 +10,7 @@ using DiscordHelper;
 using Dalamud.Interface.Textures;
 using Dalamud.Bindings.ImGui;
 using StbImageSharp;
+using System.Diagnostics;
 
 namespace DemiCatPlugin;
 
@@ -79,12 +80,31 @@ public class EventView : IDisposable
             ImGui.SameLine();
         }
 
-        var header = dto.Title ?? string.Empty;
+        if (!string.IsNullOrEmpty(dto.Title))
+        {
+            if (!string.IsNullOrEmpty(dto.Url))
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.6f, 1f, 1f));
+                ImGui.TextUnformatted(dto.Title);
+                ImGui.PopStyleColor();
+                if (ImGui.IsItemClicked())
+                {
+                    try { Process.Start(new ProcessStartInfo(dto.Url) { UseShellExecute = true }); } catch { }
+                }
+            }
+            else
+            {
+                ImGui.TextUnformatted(dto.Title);
+            }
+        }
         if (dto.Timestamp.HasValue)
         {
-            header += $" - {dto.Timestamp.Value.LocalDateTime}";
+            if (!string.IsNullOrEmpty(dto.Title))
+            {
+                ImGui.SameLine();
+            }
+            ImGui.TextUnformatted($"- {dto.Timestamp.Value.LocalDateTime}");
         }
-        ImGui.TextUnformatted(header);
 
         if (!string.IsNullOrEmpty(dto.Description))
         {
@@ -93,17 +113,42 @@ public class EventView : IDisposable
 
         if (dto.Fields != null && dto.Fields.Count > 0)
         {
-            if (ImGui.BeginTable($"fields{dto.Id}", 2, ImGuiTableFlags.Borders))
+            var fields = dto.Fields;
+            var index = 0;
+            while (index < fields.Count)
             {
-                foreach (var field in dto.Fields)
+                if (fields[index].Inline == true)
                 {
-                    ImGui.TableNextRow();
-                    ImGui.TableSetColumnIndex(0);
-                    ImGui.TextUnformatted(field.Name);
-                    ImGui.TableSetColumnIndex(1);
-                    ImGui.TextUnformatted(field.Value);
+                    var group = new List<EmbedFieldDto>();
+                    while (index < fields.Count && fields[index].Inline == true)
+                    {
+                        group.Add(fields[index]);
+                        index++;
+                    }
+                    var cols = Math.Min(3, group.Count);
+                    if (ImGui.BeginTable($"ifields{dto.Id}{index}", cols, ImGuiTableFlags.Borders))
+                    {
+                        for (var i = 0; i < group.Count; i++)
+                        {
+                            if (i % cols == 0)
+                            {
+                                ImGui.TableNextRow();
+                            }
+                            ImGui.TableSetColumnIndex(i % cols);
+                            var f = group[i];
+                            ImGui.TextUnformatted(f.Name);
+                            ImGui.TextWrapped(f.Value);
+                        }
+                        ImGui.EndTable();
+                    }
                 }
-                ImGui.EndTable();
+                else
+                {
+                    var f = fields[index];
+                    index++;
+                    ImGui.TextUnformatted(f.Name);
+                    ImGui.TextWrapped(f.Value);
+                }
             }
         }
 

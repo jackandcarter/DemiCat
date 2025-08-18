@@ -61,6 +61,7 @@ class Mirror(commands.Cog):
                         else None,
                         title=emb.title,
                         description=emb.description,
+                        url=emb.url,
                         fields=[
                             EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
                             for f in emb.fields
