@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-from threading import Thread
-
 import logging
 import re
 import sys
@@ -20,16 +18,7 @@ from .discordbot.bot import create_bot
 from .http.api import create_app
 
 
-def _run_uvicorn(app, host: str, port: int) -> None:
-    """Run the FastAPI application using Uvicorn."""
-    try:
-        uvicorn.run(app, host=host, port=port, log_level="info")
-    except Exception:
-        logging.exception("FastAPI server failed")
-        sys.exit(1)
-
-
-def main() -> None:
+async def main_async() -> None:
     parser = argparse.ArgumentParser(description="Start the DemiBot service")
     parser.add_argument(
         "--reconfigure",
@@ -46,7 +35,7 @@ def main() -> None:
     masked_url = re.sub(r":[^:@/]+@", ":***@", db_url)
     logging.info("Initialising database at %s", masked_url)
     try:
-        asyncio.run(init_db(db_url))
+        await init_db(db_url)
     except Exception:
         logging.exception("Database initialization failed")
         sys.exit(1)
@@ -58,25 +47,20 @@ def main() -> None:
     )
     try:
         app = create_app(cfg)
-        api_thread = Thread(
-            target=_run_uvicorn,
-            args=(app, cfg.server.host, cfg.server.port),
-            daemon=True,
-        )
-        api_thread.start()
-        logging.info("ApiBaseUrl: http://%s:%s", cfg.server.host, cfg.server.port)
-    except Exception:
-        logging.exception("Failed to start FastAPI server")
-        sys.exit(1)
-
-    logging.info("Starting Discord bot")
-    try:
         bot = create_bot(cfg)
-        asyncio.run(bot.start(cfg.discord_token))
+        config = uvicorn.Config(
+            app, host=cfg.server.host, port=cfg.server.port, log_level="info"
+        )
+        server = uvicorn.Server(config)
+        logging.info("ApiBaseUrl: http://%s:%s", cfg.server.host, cfg.server.port)
+        await asyncio.gather(
+            server.serve(),
+            bot.start(cfg.discord_token),
+        )
     except Exception:
-        logging.exception("Failed to start Discord bot")
+        logging.exception("Failed to start services")
         sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main_async())
