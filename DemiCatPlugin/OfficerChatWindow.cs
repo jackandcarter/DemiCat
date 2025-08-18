@@ -47,7 +47,7 @@ public class OfficerChatWindow : ChatWindow
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                _ = PluginServices.Framework.RunOnTick(() => _input = string.Empty);
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _input = string.Empty);
                 await RefreshMessages();
             }
         }
@@ -69,7 +69,7 @@ public class OfficerChatWindow : ChatWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<OfficerChannelListDto>(stream) ?? new OfficerChannelListDto();
-            _ = PluginServices.Framework.RunOnTick(() =>
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Officer);
             });

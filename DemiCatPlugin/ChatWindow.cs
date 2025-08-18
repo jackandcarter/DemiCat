@@ -135,7 +135,7 @@ public class ChatWindow : IDisposable
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                _ = PluginServices.Framework.RunOnTick(() => _input = string.Empty);
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _input = string.Empty);
                 await RefreshMessages();
             }
         }
@@ -166,7 +166,7 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var msgs = await JsonSerializer.DeserializeAsync<List<ChatMessageDto>>(stream) ?? new List<ChatMessageDto>();
-            _ = PluginServices.Framework.RunOnTick(() =>
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _messages.Clear();
                 _messages.AddRange(msgs);
@@ -186,7 +186,7 @@ public class ChatWindow : IDisposable
 
     protected void SaveConfig()
     {
-        PluginServices.PluginInterface.SavePluginConfig(_config);
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
     protected virtual async Task FetchChannels()
@@ -201,7 +201,7 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            _ = PluginServices.Framework.RunOnTick(() =>
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Chat);
             });
@@ -253,7 +253,7 @@ public class ChatWindow : IDisposable
                     }
                     if (msg != null)
                     {
-                        _ = PluginServices.Framework.RunOnTick(() =>
+                        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                         {
                             if (msg.ChannelId == _channelId)
                             {

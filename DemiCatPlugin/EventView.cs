@@ -242,15 +242,15 @@ public class EventView : IDisposable
                 var bytes = await _httpClient.GetByteArrayAsync(url).ConfigureAwait(false);
                 using var stream = new MemoryStream(bytes);
                 var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                var wrap = PluginServices.TextureProvider.CreateFromRaw(
+                var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
                     RawImageSpecification.Rgba32(image.Width, image.Height),
                     image.Data);
                 var texture = new ForwardingSharedImmediateTexture(wrap);
-                _ = PluginServices.Framework.RunOnTick(() => set(texture));
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
             }
             catch
             {
-                _ = PluginServices.Framework.RunOnTick(() => set(null));
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(null));
             }
         });
     }

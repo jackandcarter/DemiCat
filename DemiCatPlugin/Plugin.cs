@@ -30,7 +30,8 @@ public class Plugin : IDalamudPlugin
     public Plugin()
     {
         PluginInterface.Create<PluginServices>();
-        if (PluginServices.PluginInterface == null || PluginServices.Log == null)
+        var services = PluginServices.Instance;
+        if (services?.PluginInterface == null || services.Log == null)
         {
             throw new InvalidOperationException("Failed to initialize plugin services.");
         }
@@ -41,7 +42,7 @@ public class Plugin : IDalamudPlugin
         var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
         if (rolesRemoved || _config.Version != oldVersion)
         {
-            PluginServices.PluginInterface.SavePluginConfig(_config);
+            services.PluginInterface.SavePluginConfig(_config);
         }
 
         _ui = new UiRenderer(_config, _httpClient);
@@ -109,12 +110,12 @@ public class Plugin : IDalamudPlugin
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
             log.Info($"Roles received: {string.Join(", ", dto.Roles)}");
-            _ = PluginServices.Framework.RunOnTick(() =>
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 dto.Roles.RemoveAll(r => r == "chat");
                 _config.Roles = dto.Roles;
                 _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
-                PluginServices.PluginInterface.SavePluginConfig(_config);
+                PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
             });
         }
         catch (Exception ex)
