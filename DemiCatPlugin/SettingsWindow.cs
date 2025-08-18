@@ -31,7 +31,7 @@ public class SettingsWindow : IDisposable
         _httpClient = httpClient;
         _refreshRoles = refreshRoles;
         _apiKey = config.AuthToken ?? string.Empty;
-        _devWindow = new DeveloperWindow(config);
+        _devWindow = new DeveloperWindow(config, PluginServices.PluginInterface);
         _log = log;
     }
 

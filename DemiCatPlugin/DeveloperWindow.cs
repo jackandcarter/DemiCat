@@ -1,19 +1,22 @@
 using System;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Plugin;
 
 namespace DemiCatPlugin;
 
 public class DeveloperWindow
 {
     private readonly Config _config;
+    private readonly IDalamudPluginInterface? _pluginInterface;
     private string _apiBaseUrl;
     private string _wsPath;
 
     public bool IsOpen;
 
-    public DeveloperWindow(Config config)
+    public DeveloperWindow(Config config, IDalamudPluginInterface? pluginInterface)
     {
         _config = config;
+        _pluginInterface = pluginInterface;
         _apiBaseUrl = config.ApiBaseUrl;
         _wsPath = config.WebSocketPath;
     }
@@ -38,7 +41,11 @@ public class DeveloperWindow
         {
             _config.ApiBaseUrl = _apiBaseUrl;
             _config.WebSocketPath = _wsPath;
-            PluginServices.PluginInterface.SavePluginConfig(_config);
+
+            if (_pluginInterface != null && !_pluginInterface.Disposed)
+            {
+                _pluginInterface.SavePluginConfig(_config);
+            }
         }
 
         ImGui.End();
