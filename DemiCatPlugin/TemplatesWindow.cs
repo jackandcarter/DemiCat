@@ -41,10 +41,10 @@ public class TemplatesWindow
             _showPreview = false;
         }
 
-        var templates = _config.Templates.Where(t => t.Type == _selectedType).ToList();
-        for (var i = 0; i < templates.Count; i++)
+        var filteredTemplates = _config.Templates.Where(t => t.Type == _selectedType).ToList();
+        for (var i = 0; i < filteredTemplates.Count; i++)
         {
-            var name = templates[i].Name;
+            var name = filteredTemplates[i].Name;
             if (ImGui.Selectable(name, _selectedIndex == i))
             {
                 _selectedIndex = i;
@@ -58,9 +58,9 @@ public class TemplatesWindow
         ImGui.BeginChild("TemplateContent", new Vector2(0, 0), false);
         if (_selectedIndex >= 0)
         {
-            if (_selectedIndex < templates.Count)
+            if (_selectedIndex < filteredTemplates.Count)
             {
-                var tmpl = templates[_selectedIndex];
+                var tmpl = filteredTemplates[_selectedIndex];
                 if (ImGui.Button("Preview"))
                 {
                     if (tmpl.Type == TemplateType.Event)
