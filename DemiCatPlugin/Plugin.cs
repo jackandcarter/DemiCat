@@ -29,17 +29,23 @@ public class Plugin : IDalamudPlugin
 
     public Plugin()
     {
+        PluginInterface.Create<PluginServices>();
+        if (PluginServices.PluginInterface == null || PluginServices.Log == null)
+        {
+            throw new InvalidOperationException("Failed to initialize plugin services.");
+        }
+
         _config = PluginInterface.GetPluginConfig() as Config ?? new Config();
         var oldVersion = _config.Version;
         _config.Migrate();
         var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
         if (rolesRemoved || _config.Version != oldVersion)
         {
-            PluginInterface.SavePluginConfig(_config);
+            PluginServices.PluginInterface.SavePluginConfig(_config);
         }
 
         _ui = new UiRenderer(_config, _httpClient);
-        _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(PluginServices.Log), PluginServices.Log);
+        _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(Log), Log);
         _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config, _httpClient) : null;
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
@@ -48,7 +54,7 @@ public class Plugin : IDalamudPlugin
 
         if (_config.Enabled && _config.Roles.Count == 0)
         {
-            _ = RefreshRoles(PluginServices.Log);
+            _ = RefreshRoles(Log);
         }
 
         PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
