@@ -140,21 +140,12 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
         resp = input("Use remote MySQL server? (y/N): ").strip().lower()
         cfg.database.use_remote = resp.startswith("y")
 
-        cfg.database.local.user = (
-            input(f"Local username [{cfg.database.local.user}]: ")
-            or cfg.database.local.user
-        )
-        pwd = getpass.getpass("Local password: ")
+        profile = cfg.database.active()
+        name = "Remote" if cfg.database.use_remote else "Local"
+        profile.user = input(f"{name} username [{profile.user}]: ") or profile.user
+        pwd = getpass.getpass(f"{name} password: ")
         if pwd:
-            cfg.database.local.password = pwd
-
-        cfg.database.remote.user = (
-            input(f"Remote username [{cfg.database.remote.user}]: ")
-            or cfg.database.remote.user
-        )
-        pwd = getpass.getpass("Remote password: ")
-        if pwd:
-            cfg.database.remote.password = pwd
+            profile.password = pwd
 
     def _check_database() -> bool:
         try:
@@ -183,6 +174,10 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
         _prompt_server()
         while True:
             _prompt_database()
+            profile = cfg.database.active()
+            if not profile.user or not profile.password:
+                print("Username and password are required.")
+                continue
             if _check_database():
                 break
         cfg.discord_token = (
