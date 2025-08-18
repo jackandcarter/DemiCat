@@ -35,6 +35,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    logging.basicConfig(level=logging.DEBUG)
     log_config.setup_logging()
     cfg = ensure_config(force_reconfigure=args.reconfigure)
 

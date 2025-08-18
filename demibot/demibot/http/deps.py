@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fastapi import Depends, Header, HTTPException, status
+import logging
+from fastapi import Depends, Header, HTTPException, status, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,7 @@ async def get_db() -> AsyncSession:
 
 
 async def api_key_auth(
+    request: Request = None,
     x_api_key: str = Header(alias="X-Api-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> RequestContext:
@@ -35,6 +37,13 @@ async def api_key_auth(
     )
     result = await db.execute(stmt)
     row = result.one_or_none()
+    client_ip = request.client.host if request and request.client else "unknown"
+    logging.debug(
+        "API key auth client=%s token=%s result=%s",
+        client_ip,
+        x_api_key,
+        "hit" if row else "miss",
+    )
     if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user, guild, key = row
