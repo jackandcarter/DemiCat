@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
@@ -77,6 +78,21 @@ public class OfficerChatWindow : ChatWindow
         {
             // ignored
         }
+    }
+
+    protected override Uri BuildWebSocketUri()
+    {
+        var baseUri = _config.ApiBaseUrl.TrimEnd('/') + "/ws/officer-messages";
+        var builder = new UriBuilder(baseUri);
+        if (builder.Scheme == "https")
+        {
+            builder.Scheme = "wss";
+        }
+        else if (builder.Scheme == "http")
+        {
+            builder.Scheme = "ws";
+        }
+        return builder.Uri;
     }
 
     private class OfficerChannelListDto
