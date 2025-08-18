@@ -43,7 +43,7 @@ public class Plugin : IDalamudPlugin
         }
 
         _ui = new UiRenderer(_config, _httpClient);
-        _settings = new SettingsWindow(_config, _httpClient, RefreshRoles);
+        _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(PluginServices.Log), PluginServices.Log);
         _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config, _httpClient) : null;
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
@@ -55,7 +55,7 @@ public class Plugin : IDalamudPlugin
             _ = ConnectWebSocket();
             if (_config.Roles.Count == 0)
             {
-                _ = RefreshRoles();
+                _ = RefreshRoles(PluginServices.Log);
             }
         }
 
@@ -267,7 +267,7 @@ public class Plugin : IDalamudPlugin
         _settings.Dispose();
     }
 
-    private async Task RefreshRoles()
+    private async Task RefreshRoles(IPluginLog log)
     {
         if (string.IsNullOrEmpty(_config.AuthToken))
         {
@@ -276,11 +276,13 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ServerAddress.TrimEnd('/')}/roles");
+            var url = $"{_config.ServerAddress.TrimEnd('/')}/roles";
+            var request = new HttpRequestMessage(HttpMethod.Post, url);
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
+            log.Info($"Requesting roles from {url}");
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -288,6 +290,7 @@ public class Plugin : IDalamudPlugin
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
+            log.Info($"Roles received: {string.Join(", ", dto.Roles)}");
             _ = PluginServices.Framework.RunOnTick(() =>
             {
                 dto.Roles.RemoveAll(r => r == "chat");
@@ -296,9 +299,9 @@ public class Plugin : IDalamudPlugin
                 PluginServices.PluginInterface.SavePluginConfig(_config);
             });
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            log.Error(ex, "Error refreshing roles.");
         }
     }
 
