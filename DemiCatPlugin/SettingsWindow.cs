@@ -83,7 +83,7 @@ public class SettingsWindow : IDisposable
         {
             _apiKey = _apiKey.Trim();
             var key = _apiKey;
-            var url = $"{_config.ServerAddress.TrimEnd('/')}/validate";
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(JsonSerializer.Serialize(new { key }), Encoding.UTF8, "application/json")

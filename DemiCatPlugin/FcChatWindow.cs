@@ -71,7 +71,7 @@ public class FcChatWindow : ChatWindow
         try
         {
             var body = new { channelId = _channelId, content, useCharacterName = _useCharacterName };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/messages");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages");
             request.Content = new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
@@ -94,7 +94,7 @@ public class FcChatWindow : ChatWindow
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/users");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);

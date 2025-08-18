@@ -37,7 +37,10 @@ public class Plugin : IDalamudPlugin
     public Plugin()
     {
         _config = PluginInterface.GetPluginConfig() as Config ?? new Config();
-        if (_config.Roles.RemoveAll(r => r == "chat") > 0)
+        var oldVersion = _config.Version;
+        _config.Migrate();
+        var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
+        if (rolesRemoved || _config.Version != oldVersion)
         {
             PluginInterface.SavePluginConfig(_config);
         }
@@ -111,7 +114,7 @@ public class Plugin : IDalamudPlugin
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/embeds");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);
@@ -149,7 +152,7 @@ public class Plugin : IDalamudPlugin
         {
             _webSocket?.Dispose();
             _webSocket = new ClientWebSocket();
-            var baseUrl = _config.HelperBaseUrl.TrimEnd('/');
+            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
             var tokenPart = string.IsNullOrEmpty(_config.AuthToken)
                 ? string.Empty
                 : $"?token={Uri.EscapeDataString(_config.AuthToken)}";
@@ -276,7 +279,7 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            var url = $"{_config.ServerAddress.TrimEnd('/')}/roles";
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/roles";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
