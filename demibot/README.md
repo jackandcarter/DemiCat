@@ -22,6 +22,7 @@ python -m demibot.main --reconfigure
 
 You will be prompted for required settings:
 
+* `Server host` (default 127.0.0.1)
 * `Server port` (default 5050)
 * `Use remote MySQL server? (y/N)`
 * `Remote host`, `Remote port` and `Database name` (if remote is selected)
