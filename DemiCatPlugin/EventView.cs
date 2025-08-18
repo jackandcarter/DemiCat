@@ -214,7 +214,7 @@ public class EventView : IDisposable
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/interactions");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");
             var body = new { MessageId = _dto.Id, ChannelId = _dto.ChannelId, CustomId = customId };
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             if (!string.IsNullOrEmpty(_config.AuthToken))

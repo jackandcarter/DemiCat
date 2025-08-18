@@ -58,7 +58,7 @@ public class UiRenderer : IDisposable
     {
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/embeds");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);

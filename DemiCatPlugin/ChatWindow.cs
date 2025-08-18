@@ -126,7 +126,7 @@ public class ChatWindow : IDisposable
         try
         {
             var body = new { channelId = _channelId, content = _input, useCharacterName = _useCharacterName };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/messages");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
@@ -154,7 +154,7 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/messages/{_channelId}");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages/{_channelId}");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);
@@ -194,7 +194,7 @@ public class ChatWindow : IDisposable
         _channelsLoaded = true;
         try
         {
-            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/api/channels");
+            var response = await _httpClient.GetAsync($"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
             if (!response.IsSuccessStatusCode)
             {
                 return;
@@ -286,7 +286,7 @@ public class ChatWindow : IDisposable
 
     private Uri BuildWebSocketUri()
     {
-        var baseUri = _config.HelperBaseUrl.TrimEnd('/') + "/ws/messages";
+        var baseUri = _config.ApiBaseUrl.TrimEnd('/') + "/ws/messages";
         var builder = new UriBuilder(baseUri);
         if (builder.Scheme == "https")
         {

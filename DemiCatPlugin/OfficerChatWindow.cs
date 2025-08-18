@@ -37,7 +37,7 @@ public class OfficerChatWindow : ChatWindow
         try
         {
             var body = new { channelId = _channelId, content = _input, useCharacterName = _useCharacterName };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/officer-messages");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/officer-messages");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
@@ -61,7 +61,7 @@ public class OfficerChatWindow : ChatWindow
         _channelsLoaded = true;
         try
         {
-            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/api/channels");
+            var response = await _httpClient.GetAsync($"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
             if (!response.IsSuccessStatusCode)
             {
                 return;

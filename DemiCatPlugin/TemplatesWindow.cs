@@ -174,7 +174,7 @@ public class TemplatesWindow
                     buttons = buttons != null && buttons.Count > 0 ? buttons : null
                 };
 
-                var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/events");
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
                 request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
                 if (!string.IsNullOrEmpty(_config.AuthToken))
                 {
@@ -185,7 +185,7 @@ public class TemplatesWindow
             else
             {
                 var body = new { channelId = ChannelId, content = tmpl.Content, useCharacterName = _config.UseCharacterName };
-                var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/api/messages");
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages");
                 request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
                 if (!string.IsNullOrEmpty(_config.AuthToken))
                 {

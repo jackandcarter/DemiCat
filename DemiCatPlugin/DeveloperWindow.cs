@@ -6,8 +6,7 @@ namespace DemiCatPlugin;
 public class DeveloperWindow
 {
     private readonly Config _config;
-    private string _ip;
-    private int _port;
+    private string _apiBaseUrl;
     private string _wsPath;
 
     public bool IsOpen;
@@ -15,9 +14,7 @@ public class DeveloperWindow
     public DeveloperWindow(Config config)
     {
         _config = config;
-        var uri = new Uri(config.ServerAddress);
-        _ip = uri.Host;
-        _port = uri.Port;
+        _apiBaseUrl = config.ApiBaseUrl;
         _wsPath = config.WebSocketPath;
     }
 
@@ -34,13 +31,12 @@ public class DeveloperWindow
             return;
         }
 
-        ImGui.InputText("Server IP", ref _ip, 64);
-        ImGui.InputInt("Port", ref _port);
+        ImGui.InputText("API Base URL", ref _apiBaseUrl, 256);
         ImGui.InputText("WebSocket Path", ref _wsPath, 64);
 
         if (ImGui.Button("Save"))
         {
-            _config.ServerAddress = $"http://{_ip}:{_port}";
+            _config.ApiBaseUrl = _apiBaseUrl;
             _config.WebSocketPath = _wsPath;
             PluginServices.PluginInterface.SavePluginConfig(_config);
         }
