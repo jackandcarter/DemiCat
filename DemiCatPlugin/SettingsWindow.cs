@@ -17,6 +17,7 @@ public class SettingsWindow : IDisposable
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly Func<Task> _refreshRoles;
+    private readonly Action _startNetworking;
     private readonly DeveloperWindow _devWindow;
     private readonly IPluginLog _log;
 
@@ -27,11 +28,12 @@ public class SettingsWindow : IDisposable
 
     public bool IsOpen;
 
-    public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles, IPluginLog log, IDalamudPluginInterface pluginInterface)
+    public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles, Action startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
         _config = config;
         _httpClient = httpClient;
         _refreshRoles = refreshRoles;
+        _startNetworking = startNetworking;
         _apiKey = config.AuthToken ?? string.Empty;
         _apiBaseUrl = config.ApiBaseUrl;
         _devWindow = new DeveloperWindow(config, pluginInterface);
@@ -153,6 +155,8 @@ public class SettingsWindow : IDisposable
                 {
                     _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
                 }
+
+                _startNetworking();
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
