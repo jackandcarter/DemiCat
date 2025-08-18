@@ -11,7 +11,7 @@ public class Config : IPluginConfiguration
     public int Version { get; set; } = 3;
 
     public bool Enabled { get; set; } = true;
-    public string ApiBaseUrl { get; set; } = "http://localhost:8000";
+    public string ApiBaseUrl { get; set; } = "http://localhost:5050";
     public string WebSocketPath { get; set; } = "/ws/embeds";
     public int PollIntervalSeconds { get; set; } = 5;
     public string? AuthToken { get; set; }
