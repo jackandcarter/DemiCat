@@ -26,9 +26,11 @@ async def get_db() -> AsyncSession:
 
 async def api_key_auth(
     request: Request = None,
-    x_api_key: str = Header(alias="X-Api-Key"),
+    x_api_key: str | None = Header(None, alias="X-Api-Key"),
     db: AsyncSession = Depends(get_db),
 ) -> RequestContext:
+    if not x_api_key:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     stmt = (
         select(User, Guild, UserKey)
         .join(UserKey, User.id == UserKey.user_id)
