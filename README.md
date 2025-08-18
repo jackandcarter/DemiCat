@@ -74,7 +74,7 @@ plugin authentication.
 ### 3. Configure the Dalamud plugin
 Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-game,
 open the plugin configuration and set the `ApiBaseUrl` if needed (default
-`http://localhost:8000`).
+`http://localhost:5050`).
 
 Use the API key obtained from `/demibot embed` and enter it in the plugin
 **Settings** window under **API Key**. Press **Sync** to validate the key and

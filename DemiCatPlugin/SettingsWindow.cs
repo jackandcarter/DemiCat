@@ -21,6 +21,7 @@ public class SettingsWindow : IDisposable
     private readonly IPluginLog _log;
 
     private string _apiKey = string.Empty;
+    private string _apiBaseUrl = string.Empty;
     private bool _authFailed;
     private bool _networkError;
 
@@ -32,6 +33,7 @@ public class SettingsWindow : IDisposable
         _httpClient = httpClient;
         _refreshRoles = refreshRoles;
         _apiKey = config.AuthToken ?? string.Empty;
+        _apiBaseUrl = config.ApiBaseUrl;
         _devWindow = new DeveloperWindow(config, pluginInterface);
         _log = log;
     }
@@ -42,6 +44,12 @@ public class SettingsWindow : IDisposable
         {
             if (ImGui.Begin("DemiCat Settings", ref IsOpen))
             {
+                if (ImGui.InputText("API Base URL", ref _apiBaseUrl, 256))
+                {
+                    _config.ApiBaseUrl = _apiBaseUrl;
+                    SaveConfig();
+                }
+
                 ImGui.InputText("API Key", ref _apiKey, 64);
                 ImGui.SameLine();
                 ImGui.TextDisabled("\u03C0");
