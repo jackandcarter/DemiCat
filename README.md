@@ -15,18 +15,22 @@ DemiCat/
 - A Discord bot token and Apollo-managed channels
 - FFXIV with the [Dalamud](https://github.com/goatcorp/Dalamud) plugin framework
 
-## Environment Variables
+## Configuration
 
-Copy `demibot/.env.example` to `demibot/.env` and adjust values as needed.
-Key environment variables include:
+Settings for the bot are stored in `~/.config/demibot/config.json`. Create or
+update this file by running the service with the reconfigure flag:
 
-- `DEMIBOT_DB_URL` – Database connection URL
-- `DEMIBOT_WS_PATH` – WebSocket path (default `/ws/embeds`)
-- `DISCORD_TOKEN` – Discord bot token
+```bash
+python -m demibot.main --reconfigure
+```
 
-> **Security note:** The `.env` file and `~/.config/demibot/config.json` contain the
-> Discord token and database credentials. Treat these files as secrets and set
-> restrictive permissions so only your user can read them (e.g. `chmod 600
+The configuration file includes the database connection details, the Discord
+bot token and server options such as the WebSocket path (default
+`/ws/embeds`).
+
+> **Security note:** `~/.config/demibot/config.json` contains the Discord token
+> and database credentials. Treat this file as a secret and set restrictive
+> permissions so only your user can read it (e.g. `chmod 600
 > ~/.config/demibot/config.json`).
 
 ## Setup
@@ -51,22 +55,24 @@ Re-run the migration command after pulling updates to apply any schema changes.
 
 ### 2. Configure and start the bot
 ```bash
-cp .env.example .env
-python -m demibot.main
+python -m demibot.main --reconfigure
 ```
-The first run will start the Discord bot and HTTP API using the values in `.env`.
+The first run will prompt for required settings and write them to
+`~/.config/demibot/config.json` before starting the Discord bot and HTTP API.
 
-With the bot online, run `/demibot embed` in your Discord server to post a key generation message.
-Members can click the button to receive their **Key** and **Sync Key** in an ephemeral reply.
-Each user should generate their own keys with this command for plugin authentication.
+With the bot online, run `/demibot embed` in your Discord server to post a key
+generation message. Members can click the button to receive their API key in an
+ephemeral reply. Each user should generate their own key with this command for
+plugin authentication.
 
 ### 3. Configure the Dalamud plugin
-Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-game, open the plugin configuration and set the
-**Helper Base URL** and **Server Address** if needed (both default to `http://localhost:8000`).
+Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-game,
+open the plugin configuration and set the `ApiBaseUrl` if needed (default
+`http://localhost:8000`).
 
-Use the **Key** and **Sync Key** obtained from `/demibot embed` and enter both values in the
-plugin settings. Press **Connect/Sync** (or **Validate** if you already have a key) to link the
-plugin with the bot.
+Use the API key obtained from `/demibot embed` and enter it in the plugin
+**Settings** window under **API Key**. Press **Sync** to validate the key and
+link the plugin with the bot.
 
 ### 4. Insert API keys
 Insert API keys into the `api_keys` table to authorize HTTP requests:
@@ -110,7 +116,7 @@ all data for the guild.
 - `/demibot_settings` – reopen the setup wizard with current settings for further adjustments (administrator only).
 - `/demibot_resync [users]` – resync stored role data. Supply space-separated user mentions or IDs to resync specific members or
   omit to resync everyone (administrator only).
-- `/demibot embed` – post an embed with a button to generate or reveal your **Key** and **Sync Key** for plugin authentication.
+- `/demibot embed` – post an embed with a button to generate or reveal your API key for plugin authentication.
 - `/demibot_reset` – clear stored guild data and immediately rerun the setup wizard (server owner or administrator).
 - `/demibot_clear` – purge all guild configuration and data (server owner only).
 
