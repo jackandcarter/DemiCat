@@ -174,7 +174,7 @@ public class EventCreateWindow
         };
 
         _config.Templates.Add(tmpl);
-        PluginServices.PluginInterface.SavePluginConfig(_config);
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
         _lastResult = "Template saved";
     }
 

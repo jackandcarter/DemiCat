@@ -5,20 +5,27 @@ using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
-internal static class PluginServices
+internal class PluginServices
 {
-    [PluginService]
-    internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    internal static PluginServices? Instance { get; private set; }
 
     [PluginService]
-    internal static IClientState ClientState { get; private set; } = null!;
+    internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
 
     [PluginService]
-    internal static ITextureProvider TextureProvider { get; private set; } = null!;
+    internal IClientState ClientState { get; private set; } = null!;
 
     [PluginService]
-    internal static IFramework Framework { get; private set; } = null!;
+    internal ITextureProvider TextureProvider { get; private set; } = null!;
 
     [PluginService]
-    internal static IPluginLog Log { get; private set; } = null!;
+    internal IFramework Framework { get; private set; } = null!;
+
+    [PluginService]
+    internal IPluginLog Log { get; private set; } = null!;
+
+    public PluginServices()
+    {
+        Instance = this;
+    }
 }

@@ -97,7 +97,7 @@ public class UiRenderer : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream) ?? new List<EmbedDto>();
-            _ = PluginServices.Framework.RunOnTick(() =>
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _embedDtos.Clear();
                 _embedDtos.AddRange(embeds);
@@ -168,7 +168,7 @@ public class UiRenderer : IDisposable
                 var embed = JsonSerializer.Deserialize<EmbedDto>(json);
                 if (embed != null)
                 {
-                    _ = PluginServices.Framework.RunOnTick(() =>
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                     {
                         var index = _embedDtos.FindIndex(e => e.Id == embed.Id);
                         if (index >= 0)
@@ -235,7 +235,7 @@ public class UiRenderer : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream) ?? new List<EmbedDto>();
-            _ = PluginServices.Framework.RunOnTick(() =>
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _embedDtos.Clear();
                 _embedDtos.AddRange(embeds);

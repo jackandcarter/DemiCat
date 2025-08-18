@@ -147,7 +147,7 @@ public class MainWindow
 
     private void SaveConfig()
     {
-        PluginServices.PluginInterface.SavePluginConfig(_config);
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
     private async Task FetchChannels()
