@@ -284,7 +284,7 @@ public class ChatWindow : IDisposable
         }
     }
 
-    private Uri BuildWebSocketUri()
+    protected virtual Uri BuildWebSocketUri()
     {
         var baseUri = _config.ApiBaseUrl.TrimEnd('/') + "/ws/messages";
         var builder = new UriBuilder(baseUri);

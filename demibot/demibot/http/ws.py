@@ -9,11 +9,15 @@ from .deps import RequestContext, api_key_auth
 
 class ConnectionManager:
     def __init__(self) -> None:
-        self.connections: Dict[WebSocket, Tuple[int, List[str]]] = {}
+        self.connections: Dict[WebSocket, Tuple[int, List[str], str]] = {}
 
     async def connect(self, websocket: WebSocket, ctx: RequestContext) -> None:
         await websocket.accept()
-        self.connections[websocket] = (ctx.guild.id, ctx.roles)
+        self.connections[websocket] = (
+            ctx.guild.id,
+            ctx.roles,
+            websocket.scope.get("path", ""),
+        )
 
     def disconnect(self, websocket: WebSocket) -> None:
         if websocket in self.connections:
@@ -23,10 +27,13 @@ class ConnectionManager:
         self, message: str, guild_id: int, officer_only: bool = False
     ) -> None:
         dead: list[WebSocket] = []
-        for ws, (gid, roles) in list(self.connections.items()):
+        for ws, (gid, roles, path) in list(self.connections.items()):
             if gid != guild_id:
                 continue
-            if officer_only and "officer" not in roles:
+            if officer_only:
+                if "officer" not in roles or path != "/ws/officer-messages":
+                    continue
+            elif path == "/ws/officer-messages":
                 continue
             try:
                 await ws.send_text(message)
