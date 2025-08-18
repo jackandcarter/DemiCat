@@ -4,6 +4,7 @@ obj/
 node_modules/
 .env
 database/*.db
+test*.db
 __pycache__/
 
 # Local development artifacts

@@ -10,10 +10,13 @@ DemiCat/
 
 ## Prerequisites
 
-- [Python 3.10+](https://www.python.org/)
+- [Python 3.11+](https://www.python.org/)
 - A database (SQLite by default, MySQL optional)
 - A Discord bot token and Apollo-managed channels
 - FFXIV with the [Dalamud](https://github.com/goatcorp/Dalamud) plugin framework
+
+Optional tools for automated setup:
+- [uv](https://github.com/astral-sh/uv) or [Homebrew](https://brew.sh/) for installing Python/.NET if missing
 
 ## Configuration
 
@@ -36,11 +39,13 @@ bot token and server options such as the WebSocket path (default
 ## Setup
 
 Run the helper script to bootstrap both the Python and .NET parts of the
-project. It creates a virtual environment, installs dependencies from
-`demibot/pyproject.toml`, and builds the Dalamud plugin in Release mode.
+project. It ensures Python 3.11+ and the latest .NET SDK are installed (using
+`uv` or `brew` when available), creates a virtual environment, installs
+dependencies from `demibot/pyproject.toml`, and builds the Dalamud plugin in
+Release mode.
 
 ```bash
-bash scripts/setup_env.sh
+bash scripts/setup_env.sh [--unit-tests] [--integration-tests]
 ```
 
 ### 1. Install dependencies and initialize the database
