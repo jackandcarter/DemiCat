@@ -34,7 +34,7 @@ cd "$ROOT_DIR"
 # Python 3.11+ detection/installation
 # -----------------------------
 PYTHON=${PYTHON:-python3}
-if ! command -v "$PYTHON" >/dev/null 2>&1 || ! "$PYTHON" -c 'import sys; exit(0 if sys.version_info >= (3,11) else 1)'; then
+if ! command -v "$PYTHON" >/dev/null 2>&1; then
     echo "Python 3.11+ not found. Attempting installation..."
     if command -v uv >/dev/null 2>&1; then
         uv python install 3.11
@@ -44,6 +44,18 @@ if ! command -v "$PYTHON" >/dev/null 2>&1 || ! "$PYTHON" -c 'import sys; exit(0 
         PYTHON="$(brew --prefix python@3.11)/bin/python3.11"
     else
         echo "Neither 'uv' nor 'brew' is available to install Python." >&2
+        exit 1
+    fi
+elif ! "$PYTHON" -c 'import sys; exit(0 if sys.version_info >= (3,11) else 1)'; then
+    echo "$("$PYTHON" -V 2>&1) detected, but Python 3.11+ is required. Attempting installation..."
+    if command -v uv >/dev/null 2>&1; then
+        uv python install 3.11
+        PYTHON="$(uv python find 3.11)"
+    elif command -v brew >/dev/null 2>&1; then
+        brew install python@3.11
+        PYTHON="$(brew --prefix python@3.11)/bin/python3.11"
+    else
+        echo "Automatic upgrade unavailable. Please install Python 3.11+ manually." >&2
         exit 1
     fi
 fi
@@ -93,19 +105,30 @@ PY
 # -----------------------------
 # .NET SDK and plugin build
 # -----------------------------
-if command -v dotnet >/dev/null 2>&1; then
-    DOTNET_CMD="$(command -v dotnet)"
-else
-    echo ".NET SDK not found. Attempting installation..."
+install_dotnet() {
     if command -v brew >/dev/null 2>&1; then
         brew install dotnet-sdk
         DOTNET_CMD="$(command -v dotnet)"
     else
         curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-        bash /tmp/dotnet-install.sh --version latest --install-dir "$ROOT_DIR/.dotnet"
+        bash /tmp/dotnet-install.sh --version 9.0.100 --install-dir "$ROOT_DIR/.dotnet"
         DOTNET_CMD="$ROOT_DIR/.dotnet/dotnet"
         export PATH="$ROOT_DIR/.dotnet:$PATH"
     fi
+}
+
+REQUIRED_DOTNET_MAJOR=9
+if command -v dotnet >/dev/null 2>&1; then
+    DOTNET_CMD="$(command -v dotnet)"
+    DOTNET_VERSION="$($DOTNET_CMD --version)"
+    DOTNET_MAJOR="${DOTNET_VERSION%%.*}"
+    if (( DOTNET_MAJOR < REQUIRED_DOTNET_MAJOR )); then
+        echo ".NET SDK $DOTNET_VERSION detected, but $REQUIRED_DOTNET_MAJOR.x or newer is required. Attempting installation..."
+        install_dotnet
+    fi
+else
+    echo ".NET SDK not found. Attempting installation..."
+    install_dotnet
 fi
 
 "$DOTNET_CMD" restore DemiCatPlugin/DemiCatPlugin.csproj

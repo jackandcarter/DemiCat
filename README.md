@@ -10,6 +10,7 @@ DemiCat/
 
 ## Prerequisites
 
+- [.NET SDK 9+](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
 - [Python 3.11+](https://www.python.org/)
 - A database (SQLite by default, MySQL optional)
 - A Discord bot token and Apollo-managed channels
@@ -39,7 +40,7 @@ bot token and server options such as the WebSocket path (default
 ## Setup
 
 Run the helper script to bootstrap both the Python and .NET parts of the
-project. It ensures Python 3.11+ and the latest .NET SDK are installed (using
+project. It verifies Python 3.11+ and the .NET 9 SDK are installed (using
 `uv` or `brew` when available), creates a virtual environment, installs
 dependencies from `demibot/pyproject.toml`, and builds the Dalamud plugin in
 Release mode.
