@@ -26,7 +26,7 @@ CFG_PATH = Path.home() / ".config" / "demibot" / "config.json"
 
 @dataclass
 class ServerConfig:
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 5050
 
 
@@ -118,6 +118,9 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
     cfg = load_config()
 
     def _prompt_server() -> None:
+        host = input(f"Server host [{cfg.server.host}]: ").strip()
+        if host:
+            cfg.server.host = host
         port = input(f"Server port [{cfg.server.port}]: ").strip()
         if port:
             cfg.server.port = int(port)

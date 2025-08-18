@@ -64,6 +64,7 @@ def main() -> None:
             daemon=True,
         )
         api_thread.start()
+        logging.info("ApiBaseUrl: http://%s:%s", cfg.server.host, cfg.server.port)
     except Exception:
         logging.exception("Failed to start FastAPI server")
         sys.exit(1)
