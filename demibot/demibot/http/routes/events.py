@@ -58,8 +58,9 @@ async def create_event(
         authorIconUrl=None,
         title=body.title,
         description=body.description,
+        url=body.url,
         fields=[
-            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline or False)
+            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
             for f in (body.fields or [])
         ],
         thumbnailUrl=body.thumbnailUrl,
