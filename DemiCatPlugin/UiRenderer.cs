@@ -19,6 +19,7 @@ public class UiRenderer : IDisposable
     private readonly HttpClient _httpClient;
     private readonly Config _config;
     private readonly Dictionary<string, EventView> _embeds = new();
+    private readonly object _embedLock = new();
     private readonly List<EmbedDto> _embedDtos = new();
     private string _channelId;
     private EventView? _current;
@@ -198,24 +199,27 @@ public class UiRenderer : IDisposable
 
     public void SetEmbeds(IEnumerable<EmbedDto> embeds)
     {
-        var ids = new HashSet<string>();
-        foreach (var dto in embeds)
+        lock (_embedLock)
         {
-            ids.Add(dto.Id);
-            if (_embeds.TryGetValue(dto.Id, out var view))
+            var ids = new HashSet<string>();
+            foreach (var dto in embeds)
             {
-                view.Update(dto);
+                ids.Add(dto.Id);
+                if (_embeds.TryGetValue(dto.Id, out var view))
+                {
+                    view.Update(dto);
+                }
+                else
+                {
+                    _embeds[dto.Id] = new EventView(dto, _config, _httpClient, RefreshEmbeds);
+                }
             }
-            else
-            {
-                _embeds[dto.Id] = new EventView(dto, _config, _httpClient, RefreshEmbeds);
-            }
-        }
 
-        foreach (var key in _embeds.Keys.Where(k => !ids.Contains(k)).ToList())
-        {
-            _embeds[key].Dispose();
-            _embeds.Remove(key);
+            foreach (var key in _embeds.Keys.Where(k => !ids.Contains(k)).ToList())
+            {
+                _embeds[key].Dispose();
+                _embeds.Remove(key);
+            }
         }
     }
 
@@ -256,12 +260,20 @@ public class UiRenderer : IDisposable
 
         ImGui.SameLine();
 
+        List<EventView> embeds;
+        lock (_embedLock)
+        {
+            embeds = _embeds.Values
+                .Where(v => string.IsNullOrEmpty(_channelId) || v.ChannelId == _channelId)
+                .ToList();
+        }
+
         ImGui.BeginChild("##eventScroll", new Vector2(0, 0), true);
 
         var scrollY = ImGui.GetScrollY();
         _current = null;
 
-        foreach (var view in _embeds.Values.Where(v => string.IsNullOrEmpty(_channelId) || v.ChannelId == _channelId))
+        foreach (var view in embeds)
         {
             var start = ImGui.GetCursorPosY();
             view.Draw();
@@ -295,11 +307,17 @@ public class UiRenderer : IDisposable
             _webSocket = null;
         }
 
-        foreach (var view in _embeds.Values)
+        List<EventView> views;
+        lock (_embedLock)
+        {
+            views = _embeds.Values.ToList();
+            _embeds.Clear();
+        }
+
+        foreach (var view in views)
         {
             view.Dispose();
         }
-        _embeds.Clear();
     }
 }
 
