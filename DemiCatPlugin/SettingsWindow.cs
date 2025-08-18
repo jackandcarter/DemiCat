@@ -82,6 +82,27 @@ public class SettingsWindow : IDisposable
         _authFailed = false;
         _networkError = false;
 
+        if (_httpClient == null)
+        {
+            _log.Error("Cannot sync: HTTP client is not initialized.");
+            _networkError = true;
+            return;
+        }
+
+        if (string.IsNullOrEmpty(_config.ApiBaseUrl))
+        {
+            _log.Error("Cannot sync: API base URL is not configured.");
+            _networkError = true;
+            return;
+        }
+
+        if (PluginServices.Instance?.PluginInterface == null)
+        {
+            _log.Error("Cannot sync: plugin interface is not available.");
+            _networkError = true;
+            return;
+        }
+
         try
         {
             _apiKey = _apiKey.Trim();
@@ -107,7 +128,22 @@ public class SettingsWindow : IDisposable
                 _config.AuthToken = key;
                 _apiKey = key;
                 SaveConfig();
-                await _refreshRoles();
+
+                if (_refreshRoles != null)
+                {
+                    try
+                    {
+                        await _refreshRoles();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to refresh roles after key validation.");
+                    }
+                }
+                else
+                {
+                    _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
+                }
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
@@ -124,13 +160,19 @@ public class SettingsWindow : IDisposable
         {
             _log.Error(ex, "Error validating API key.");
             _networkError = true;
-            throw;
+            return;
         }
     }
 
     private void SaveConfig()
     {
-        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+        var pluginInterface = PluginServices.Instance?.PluginInterface;
+        if (pluginInterface == null)
+        {
+            _log.Error("Plugin interface is not available; cannot save configuration.");
+            return;
+        }
+        pluginInterface.SavePluginConfig(_config);
     }
 
     public void Dispose()
