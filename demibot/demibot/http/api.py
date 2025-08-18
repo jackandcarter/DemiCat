@@ -1,18 +1,44 @@
 from __future__ import annotations
 
-"""Minimal Flask application factory for DemiBot."""
+"""FastAPI application factory for DemiBot.
 
-from flask import Flask
+This module creates the HTTP API used by the DemiBot service.  All route
+modules under :mod:`demibot.http.routes` expose an ``APIRouter`` instance named
+``router``.  ``create_app`` dynamically imports each module and registers its
+router with the FastAPI application.  This keeps the application setup
+declarative and automatically includes any new route modules that are added in
+the future.
+"""
 
-from ..config import AppConfig
+from importlib import import_module
+import pkgutil
+
+from fastapi import FastAPI
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pragma: no cover - imported for type hints only
+    from ..config import AppConfig
 
 
-def create_app(cfg: AppConfig) -> Flask:
-    app = Flask(__name__)
+def create_app(cfg: "AppConfig | None") -> FastAPI:
+    """Create and configure the FastAPI application."""
 
-    @app.route("/health")
-    def health() -> dict[str, str]:
+    app = FastAPI()
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        """Simple health check endpoint."""
         return {"status": "ok"}
+
+    # Dynamically include routers from all modules in the routes package
+    from . import routes as routes_pkg
+
+    for _, module_name, _ in pkgutil.iter_modules(routes_pkg.__path__):
+        module = import_module(f"{routes_pkg.__name__}.{module_name}")
+        router = getattr(module, "router", None)
+        if router is not None:
+            app.include_router(router)
 
     return app
 

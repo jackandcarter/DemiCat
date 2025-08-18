@@ -10,6 +10,8 @@ import logging
 import re
 import sys
 
+import uvicorn
+
 from demibot import log_config
 
 from .config import ensure_config
@@ -18,11 +20,12 @@ from .discordbot.bot import create_bot
 from .http.api import create_app
 
 
-def _run_flask(app, host: str, port: int) -> None:
+def _run_uvicorn(app, host: str, port: int) -> None:
+    """Run the FastAPI application using Uvicorn."""
     try:
-        app.run(host=host, port=port)
+        uvicorn.run(app, host=host, port=port, log_level="info")
     except Exception:
-        logging.exception("Flask server failed")
+        logging.exception("FastAPI server failed")
         sys.exit(1)
 
 
@@ -49,20 +52,20 @@ def main() -> None:
         sys.exit(1)
 
     logging.info(
-        "Starting Flask server on %s:%s",
+        "Starting FastAPI server on %s:%s",
         cfg.server.host,
         cfg.server.port,
     )
     try:
         app = create_app(cfg)
-        flask_thread = Thread(
-            target=_run_flask,
+        api_thread = Thread(
+            target=_run_uvicorn,
             args=(app, cfg.server.host, cfg.server.port),
             daemon=True,
         )
-        flask_thread.start()
+        api_thread.start()
     except Exception:
-        logging.exception("Failed to start Flask server")
+        logging.exception("Failed to start FastAPI server")
         sys.exit(1)
 
     logging.info("Starting Discord bot")
