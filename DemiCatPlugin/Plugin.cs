@@ -15,8 +15,8 @@ public class Plugin : IDalamudPlugin
     public string Name => "DemiCat";
 
     [PluginService] internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
-    [PluginService] internal IPluginLog Log { get; private set; } = null!;
 
+    private readonly PluginServices _services;
     private readonly UiRenderer _ui;
     private readonly SettingsWindow _settings;
     private readonly ChatWindow? _chatWindow;
@@ -29,24 +29,23 @@ public class Plugin : IDalamudPlugin
 
     public Plugin()
     {
-        PluginInterface.Create<PluginServices>();
-        var services = PluginServices.Instance;
-        if (services?.PluginInterface == null || services.Log == null)
+        _services = PluginInterface.Create<PluginServices>();
+        if (_services.PluginInterface == null || _services.Log == null)
         {
             throw new InvalidOperationException("Failed to initialize plugin services.");
         }
 
-        _config = PluginInterface.GetPluginConfig() as Config ?? new Config();
+        _config = _services.PluginInterface.GetPluginConfig() as Config ?? new Config();
         var oldVersion = _config.Version;
         _config.Migrate();
         var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
         if (rolesRemoved || _config.Version != oldVersion)
         {
-            services.PluginInterface.SavePluginConfig(_config);
+            _services.PluginInterface.SavePluginConfig(_config);
         }
 
         _ui = new UiRenderer(_config, _httpClient);
-        _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(Log), Log);
+        _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(_services.Log), _services.Log);
         _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config, _httpClient) : null;
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
@@ -55,29 +54,29 @@ public class Plugin : IDalamudPlugin
 
         if (_config.Enabled && _config.Roles.Count == 0)
         {
-            _ = RefreshRoles(Log);
+            _ = RefreshRoles(_services.Log);
         }
 
-        PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
-        PluginInterface.UiBuilder.Draw += _settings.Draw;
+        _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
+        _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
         _openMainUi = () => _mainWindow.IsOpen = true;
-        PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
+        _services.PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
         _openConfigUi = () => _settings.IsOpen = true;
-        PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
+        _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
-        Log.Info("DemiCat loaded.");
+        _services.Log.Info("DemiCat loaded.");
     }
 
 
     public void Dispose()
     {
         // Unsubscribe UI draw handlers
-        PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
-        PluginInterface.UiBuilder.Draw -= _settings.Draw;
+        _services.PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
+        _services.PluginInterface.UiBuilder.Draw -= _settings.Draw;
 
         // Unsubscribe UI open handlers
-        PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
-        PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
+        _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
+        _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
 
         _httpClient.Dispose();
         _chatWindow?.Dispose();
@@ -110,12 +109,12 @@ public class Plugin : IDalamudPlugin
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
             log.Info($"Roles received: {string.Join(", ", dto.Roles)}");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            _ = _services.Framework.RunOnTick(() =>
             {
                 dto.Roles.RemoveAll(r => r == "chat");
                 _config.Roles = dto.Roles;
                 _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
-                PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+                _services.PluginInterface.SavePluginConfig(_config);
             });
         }
         catch (Exception ex)
