@@ -58,6 +58,8 @@ public class ChatWindow : IDisposable
         set => _channelsLoaded = value;
     }
 
+    public PresenceSidebar Presence => _presence;
+
     public ChatWindow(Config config, HttpClient httpClient, PresenceSidebar presence)
     {
         _config = config;

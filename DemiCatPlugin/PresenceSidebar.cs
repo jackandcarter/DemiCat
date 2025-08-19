@@ -27,6 +27,16 @@ public class PresenceSidebar : IDisposable
         _httpClient = httpClient;
     }
 
+    public void Reset()
+    {
+        _loaded = false;
+        _wsCts?.Cancel();
+        _ws?.Dispose();
+        _ws = null;
+        _wsCts = new CancellationTokenSource();
+        _wsTask = RunWebSocket(_wsCts.Token);
+    }
+
     public void Draw()
     {
         if (_wsTask == null)
