@@ -170,6 +170,8 @@ public class EventView : IDisposable
             ImGui.Text($"Mentions: {string.Join(", ", dto.Mentions)}");
         }
 
+        DrawButtons();
+
         ImGui.Separator();
     }
 
