@@ -137,7 +137,7 @@ public class TemplatesWindow
 
     private async Task PostTemplate(Template tmpl)
     {
-        if (string.IsNullOrWhiteSpace(ChannelId))
+        if (string.IsNullOrWhiteSpace(ChannelId) || !ApiHelpers.ValidateApiBaseUrl(_config))
         {
             return;
         }

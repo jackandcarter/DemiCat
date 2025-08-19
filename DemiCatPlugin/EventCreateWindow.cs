@@ -180,6 +180,10 @@ public class EventCreateWindow
 
     private async Task CreateEvent()
     {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return;
+        }
         try
         {
             var buttons = _buttons
