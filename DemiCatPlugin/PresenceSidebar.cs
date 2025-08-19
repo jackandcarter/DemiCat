@@ -27,6 +27,12 @@ public class PresenceSidebar : IDisposable
         _httpClient = httpClient;
     }
 
+    public void Reload()
+    {
+        _loaded = false;
+        _presences.Clear();
+    }
+
     public void Reset()
     {
         _loaded = false;
@@ -74,7 +80,6 @@ public class PresenceSidebar : IDisposable
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
-            _loaded = true;
             return;
         }
         try
@@ -87,7 +92,6 @@ public class PresenceSidebar : IDisposable
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
-                _loaded = true;
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
@@ -97,14 +101,11 @@ public class PresenceSidebar : IDisposable
                 _presences.Clear();
                 _presences.AddRange(list);
             });
+            _loaded = true;
         }
         catch
         {
             // ignore
-        }
-        finally
-        {
-            _loaded = true;
         }
     }
 
