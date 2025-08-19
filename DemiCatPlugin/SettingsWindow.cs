@@ -23,8 +23,7 @@ public class SettingsWindow : IDisposable
 
     private string _apiKey = string.Empty;
     private string _apiBaseUrl = string.Empty;
-    private bool _authFailed;
-    private bool _networkError;
+    private string _syncStatus = string.Empty;
 
     public bool IsOpen;
 
@@ -64,19 +63,27 @@ public class SettingsWindow : IDisposable
 
                 if (ImGui.Button("Sync"))
                 {
+                    _syncStatus = "Validating API key...";
                     Task.Run(Sync).ContinueWith(t =>
                     {
                         _log.Error(t.Exception!, "Unexpected error during sync");
                     }, TaskContinuationOptions.OnlyOnFaulted);
                 }
 
-                if (_authFailed)
+                if (!string.IsNullOrEmpty(_syncStatus))
                 {
-                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "Authentication failed");
-                }
-                else if (_networkError)
-                {
-                    ImGui.TextColored(new Vector4(1, 0, 0, 1), "Network error");
+                    if (_syncStatus == "API key validated")
+                    {
+                        ImGui.TextColored(new Vector4(0, 1, 0, 1), _syncStatus);
+                    }
+                    else if (_syncStatus == "Authentication failed" || _syncStatus == "Network error")
+                    {
+                        ImGui.TextColored(new Vector4(1, 0, 0, 1), _syncStatus);
+                    }
+                    else
+                    {
+                        ImGui.Text(_syncStatus);
+                    }
                 }
                 ImGui.End();
             }
@@ -91,27 +98,24 @@ public class SettingsWindow : IDisposable
 
     private async Task Sync()
     {
-        _authFailed = false;
-        _networkError = false;
-
         if (_httpClient == null)
         {
             _log.Error("Cannot sync: HTTP client is not initialized.");
-            _networkError = true;
+            _syncStatus = "Network error";
             return;
         }
 
         if (string.IsNullOrEmpty(_config.ApiBaseUrl))
         {
             _log.Error("Cannot sync: API base URL is not configured.");
-            _networkError = true;
+            _syncStatus = "Network error";
             return;
         }
 
         if (PluginServices.Instance?.PluginInterface == null)
         {
             _log.Error("Cannot sync: plugin interface is not available.");
-            _networkError = true;
+            _syncStatus = "Network error";
             return;
         }
 
@@ -160,9 +164,11 @@ public class SettingsWindow : IDisposable
                 }
 
                 _startNetworking();
+                _syncStatus = "API key validated";
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
+
                 _log.Warning($"API key validation failed: unauthorized. Response Body: {responseBody}");
                 _authFailed = true;
             }
@@ -170,25 +176,41 @@ public class SettingsWindow : IDisposable
             {
                 _log.Warning($"API key validation failed with status {response.StatusCode}. Response Body: {responseBody}");
                 _networkError = true;
+
+                _log.Warning("API key validation failed: unauthorized.");
+                _syncStatus = "Authentication failed";
+            }
+            else
+            {
+                _log.Warning($"API key validation failed with status {response.StatusCode}.");
+                _syncStatus = "Network error";
+
             }
         }
         catch (Exception ex)
         {
             _log.Error(ex, "Error validating API key.");
-            _networkError = true;
+            _syncStatus = "Network error";
             return;
         }
     }
 
     private void SaveConfig()
     {
-        var pluginInterface = PluginServices.Instance?.PluginInterface;
-        if (pluginInterface == null)
+        var services = PluginServices.Instance;
+        if (services?.PluginInterface == null)
         {
             _log.Error("Plugin interface is not available; cannot save configuration.");
             return;
         }
-        pluginInterface.SavePluginConfig(_config);
+
+        if (services.Framework == null)
+        {
+            _log.Error("Framework is not available; cannot save configuration.");
+            return;
+        }
+
+        _ = services.Framework.RunOnTick(() => services.PluginInterface.SavePluginConfig(_config));
     }
 
     public void Dispose()
