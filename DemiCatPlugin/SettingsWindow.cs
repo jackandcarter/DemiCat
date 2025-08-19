@@ -17,7 +17,7 @@ public class SettingsWindow : IDisposable
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly Func<Task<bool>> _refreshRoles;
-    private readonly Action _startNetworking;
+    private readonly Func<Task> _startNetworking;
     private readonly DeveloperWindow _devWindow;
     private readonly IPluginLog _log;
 
@@ -32,7 +32,7 @@ public class SettingsWindow : IDisposable
     public ChatWindow? ChatWindow { get; set; }
     public OfficerChatWindow? OfficerChatWindow { get; set; }
 
-    public SettingsWindow(Config config, HttpClient httpClient, Func<Task<bool>> refreshRoles, Action startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
+    public SettingsWindow(Config config, HttpClient httpClient, Func<Task<bool>> refreshRoles, Func<Task> startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
         _config = config;
         _httpClient = httpClient;
@@ -193,7 +193,7 @@ public class SettingsWindow : IDisposable
                     _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
                 }
 
-                _startNetworking();
+                await _startNetworking();
                 if (MainWindow != null) MainWindow.ChannelsLoaded = false;
                 if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 if (OfficerChatWindow != null) OfficerChatWindow.ChannelsLoaded = false;
