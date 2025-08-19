@@ -30,4 +30,3 @@ jobs:
               dotnet test "$proj" --no-build --configuration Release
             done
           fi
-
