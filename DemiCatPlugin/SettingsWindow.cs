@@ -27,6 +27,10 @@ public class SettingsWindow : IDisposable
 
     public bool IsOpen;
 
+    public MainWindow? MainWindow { get; set; }
+    public ChatWindow? ChatWindow { get; set; }
+    public OfficerChatWindow? OfficerChatWindow { get; set; }
+
     public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles, Action startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
         _config = config;
@@ -164,6 +168,9 @@ public class SettingsWindow : IDisposable
                 }
 
                 _startNetworking();
+                if (MainWindow != null) MainWindow.ChannelsLoaded = false;
+                if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
+                if (OfficerChatWindow != null) OfficerChatWindow.ChannelsLoaded = false;
                 _syncStatus = "API key validated";
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)

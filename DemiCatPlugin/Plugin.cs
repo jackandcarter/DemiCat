@@ -49,6 +49,9 @@ public class Plugin : IDalamudPlugin
         _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config, _httpClient) : null;
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
+        _settings.MainWindow = _mainWindow;
+        _settings.ChatWindow = _chatWindow;
+        _settings.OfficerChatWindow = _officerChatWindow;
 
         _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
 

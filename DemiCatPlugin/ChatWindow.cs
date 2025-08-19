@@ -28,6 +28,12 @@ public class ChatWindow : IDisposable
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
 
+    public bool ChannelsLoaded
+    {
+        get => _channelsLoaded;
+        set => _channelsLoaded = value;
+    }
+
     public ChatWindow(Config config, HttpClient httpClient)
     {
         _config = config;
@@ -87,7 +93,6 @@ public class ChatWindow : IDisposable
 
     public void SetChannels(List<string> channels)
     {
-        _channelsLoaded = true;
         _channels.Clear();
         _channels.AddRange(channels);
         if (!string.IsNullOrEmpty(_channelId))
@@ -191,7 +196,6 @@ public class ChatWindow : IDisposable
 
     protected virtual async Task FetchChannels()
     {
-        _channelsLoaded = true;
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
@@ -209,6 +213,7 @@ public class ChatWindow : IDisposable
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Chat);
+                _channelsLoaded = true;
             });
         }
         catch
