@@ -157,6 +157,20 @@ class Attendance(Base):
     choice: Mapped[str] = mapped_column(String(50))
 
 
+class Presence(Base):
+    __tablename__ = "presences"
+    __table_args__ = (
+        Index("ix_presences_guild_id_status", "guild_id", "status"),
+    )
+
+    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    status: Mapped[str] = mapped_column(String(16))
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class RecurringEvent(Base):
     __tablename__ = "recurring_events"
 

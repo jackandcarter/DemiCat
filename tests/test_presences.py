@@ -14,7 +14,9 @@ sys.modules.setdefault("demibot.http", http_pkg)
 
 from demibot.http.ws import ConnectionManager
 from demibot.http.routes.presences import list_presences
-from demibot.discordbot.presence_store import set_presence, Presence
+from demibot.discordbot.presence_store import set_presence, Presence as StorePresence
+from demibot.db.models import Presence as DbPresence, User
+from demibot.db.session import init_db, get_session
 import asyncio
 
 
@@ -54,8 +56,25 @@ def test_presence_broadcast_filtered_by_path():
 
 def test_list_presences_returns_data():
     async def _run():
-        set_presence(1, Presence(id=10, name="Alice", status="online"))
-        set_presence(1, Presence(id=20, name="Bob", status="offline"))
+        set_presence(1, StorePresence(id=10, name="Alice", status="online"))
+        set_presence(1, StorePresence(id=20, name="Bob", status="offline"))
+        ctx = StubContext(1)
+        res = await list_presences(ctx=ctx)
+        assert {(p["id"], p["status"]) for p in res} == {("10", "online"), ("20", "offline")}
+
+    asyncio.run(_run())
+
+
+def test_list_presences_reads_from_db():
+    async def _run():
+        url = "sqlite+aiosqlite://"
+        await init_db(url)
+        async for db in get_session():
+            db.add(User(id=1, discord_user_id=10, global_name="Alice"))
+            db.add(User(id=2, discord_user_id=20, global_name="Bob"))
+            db.add(DbPresence(guild_id=1, user_id=10, status="online"))
+            db.add(DbPresence(guild_id=1, user_id=20, status="offline"))
+            await db.commit()
         ctx = StubContext(1)
         res = await list_presences(ctx=ctx)
         assert {(p["id"], p["status"]) for p in res} == {("10", "online"), ("20", "offline")}

@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+
 import discord
 from discord.ext import commands
+from sqlalchemy import select
 
+from ...db.models import Presence as DbPresence
+from ...db.session import get_session
 from ...http.ws import manager
-from ..presence_store import Presence, set_presence
+from ..presence_store import Presence as StorePresence, set_presence
 
 
 class PresenceTracker(commands.Cog):
@@ -18,26 +23,45 @@ class PresenceTracker(commands.Cog):
             return "offline"
         return "online"
 
-    def _update(self, member: discord.Member) -> dict[str, str]:
-        data = Presence(
+    async def _update(self, member: discord.Member) -> dict[str, str]:
+        data = StorePresence(
             id=member.id,
             name=member.display_name or member.name,
             status=self._status(member),
         )
         set_presence(member.guild.id, data)
+        async for db in get_session():
+            stmt = select(DbPresence).where(
+                DbPresence.guild_id == member.guild.id,
+                DbPresence.user_id == member.id,
+            )
+            res = await db.execute(stmt)
+            row = res.scalars().first()
+            if row is None:
+                db.add(
+                    DbPresence(
+                        guild_id=member.guild.id,
+                        user_id=member.id,
+                        status=data.status,
+                    )
+                )
+            else:
+                row.status = data.status
+                row.updated_at = datetime.utcnow()
+            await db.commit()
         return {"id": str(member.id), "name": data.name, "status": data.status}
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
         for guild in self.bot.guilds:
             for member in guild.members:
-                self._update(member)
+                await self._update(member)
 
     @commands.Cog.listener()
     async def on_presence_update(
         self, before: discord.Member, after: discord.Member
     ) -> None:
-        payload = self._update(after)
+        payload = await self._update(after)
         await manager.broadcast_text(
             json.dumps(payload), after.guild.id, path="/ws/presences"
         )
