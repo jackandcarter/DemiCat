@@ -58,6 +58,30 @@ public class EventCreateWindow
                      ((int)(colorVec.Y * 255) << 8) |
                      (int)(colorVec.Z * 255);
         }
+
+        if (!_rolesLoaded)
+        {
+            _ = FetchRoles();
+        }
+        if (_rolesLoaded)
+        {
+            if (_roles.Count > 0)
+            {
+                ImGui.Text("Mention Roles");
+                foreach (var role in _roles)
+                {
+                    var sel = _mentions.Contains(role.Id);
+                    if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
+                    {
+                        if (sel) _mentions.Add(role.Id); else _mentions.Remove(role.Id);
+                    }
+                }
+            }
+            else if (_roleFetchFailed)
+            {
+                ImGui.TextUnformatted("Failed to load roles");
+            }
+        }
         foreach (var button in _buttons)
         {
             ImGui.PushID(button.Tag);
@@ -118,6 +142,44 @@ public class EventCreateWindow
         }
     }
 
+    private async Task FetchRoles()
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            _rolesLoaded = true;
+            _roleFetchFailed = true;
+            return;
+        }
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/guild-roles");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                _rolesLoaded = true;
+                _roleFetchFailed = true;
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var roles = await JsonSerializer.DeserializeAsync<List<RoleDto>>(stream) ?? new List<RoleDto>();
+            PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _roles.Clear();
+                _roles.AddRange(roles);
+                _rolesLoaded = true;
+            });
+        }
+        catch
+        {
+            _rolesLoaded = true;
+            _roleFetchFailed = true;
+        }
+    }
+
     public void LoadTemplate(Template template)
     {
         _title = template.Title;
@@ -129,6 +191,14 @@ public class EventCreateWindow
         _imageUrl = template.ImageUrl;
         _thumbnailUrl = template.ThumbnailUrl;
         _color = (int)template.Color;
+        _mentions.Clear();
+        if (template.Mentions != null)
+        {
+            foreach (var m in template.Mentions)
+            {
+                _mentions.Add(m);
+            }
+        }
 
         _fields.Clear();
         if (template.Fields != null)
@@ -181,7 +251,8 @@ public class EventCreateWindow
                 Label = b.Label,
                 Emoji = b.Emoji,
                 Style = b.Style
-            }).ToList()
+            }).ToList(),
+            Mentions = _mentions.ToList()
         };
 
         _config.Templates.Add(tmpl);
@@ -224,7 +295,8 @@ public class EventCreateWindow
                         .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
                         .ToList()
                     : null,
-                buttons = buttons.Count > 0 ? buttons : null
+                buttons = buttons.Count > 0 ? buttons : null,
+                mentions = _mentions.Count > 0 ? _mentions.ToList() : null
             };
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");

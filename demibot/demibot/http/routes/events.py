@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from typing import List, Optional
 
+import discord
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
@@ -13,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto
 from ..ws import manager
+from ..discord_client import discord_client
 from ...db.models import Embed, GuildChannel
 
 router = APIRouter(prefix="/api")
@@ -36,6 +38,7 @@ class CreateEventBody(BaseModel):
     fields: List[FieldBody] | None = None
     buttons: List[EmbedButtonDto] | None = None
     attendance: List[str] | None = None
+    mentions: List[str] | None = None
 
 
 @router.post("/events")
@@ -70,6 +73,60 @@ async def create_event(
     else:
         ts = datetime.utcnow()
 
+    mention_ids = [int(m) for m in body.mentions or []]
+
+    discord_msg_id: int | None = None
+    channel_id = int(body.channelId)
+    if discord_client:
+        channel = discord_client.get_channel(channel_id)
+        if isinstance(channel, discord.abc.Messageable):
+            emb = discord.Embed(title=body.title, description=body.description)
+            emb.timestamp = ts
+            if body.color is not None:
+                emb.colour = body.color
+            if body.url:
+                emb.url = body.url
+            for f in body.fields or []:
+                emb.add_field(name=f.name, value=f.value, inline=f.inline)
+            if body.thumbnailUrl:
+                emb.set_thumbnail(url=body.thumbnailUrl)
+            if body.imageUrl:
+                emb.set_image(url=body.imageUrl)
+
+            view: discord.ui.View | None = None
+            if buttons:
+                view = discord.ui.View()
+                for b in buttons:
+                    style = (
+                        discord.ButtonStyle(b.style)
+                        if b.style is not None
+                        else discord.ButtonStyle.secondary
+                    )
+                    if b.url:
+                        view.add_item(
+                            discord.ui.Button(
+                                label=b.label,
+                                url=b.url,
+                                emoji=b.emoji,
+                                style=style,
+                            )
+                        )
+                    else:
+                        view.add_item(
+                            discord.ui.Button(
+                                label=b.label,
+                                custom_id=b.customId,
+                                emoji=b.emoji,
+                                style=style,
+                            )
+                        )
+            content = " ".join(f"<@&{m}>" for m in mention_ids) or None
+            sent = await channel.send(content=content, embed=emb, view=view)
+            discord_msg_id = sent.id
+
+    if discord_msg_id is not None:
+        eid = str(discord_msg_id)
+
     dto = EmbedDto(
         id=eid,
         timestamp=ts,
@@ -87,9 +144,8 @@ async def create_event(
         imageUrl=body.imageUrl,
         buttons=buttons,
         channelId=int(body.channelId) if body.channelId.isdigit() else None,
-        mentions=None,
+        mentions=mention_ids or None,
     )
-    channel_id = int(body.channelId)
     db.add(
         Embed(
             discord_message_id=int(eid),
