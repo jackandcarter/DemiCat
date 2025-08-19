@@ -189,3 +189,14 @@ class SignupPreset(Base):
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
     buttons_json: Mapped[str] = mapped_column(Text)
+
+
+class EventButton(Base):
+    __tablename__ = "event_buttons"
+
+    message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    tag: Mapped[str] = mapped_column(String(50), primary_key=True)
+    label: Mapped[str] = mapped_column(String(255))
+    emoji: Mapped[Optional[str]] = mapped_column(String(64))
+    style: Mapped[Optional[int]] = mapped_column(Integer)
+    max_signups: Mapped[Optional[int]] = mapped_column(Integer)
