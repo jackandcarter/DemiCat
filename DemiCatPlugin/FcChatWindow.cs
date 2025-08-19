@@ -57,7 +57,7 @@ public class FcChatWindow : ChatWindow
 
     protected override async Task SendMessage()
     {
-        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
             return;
         }
@@ -92,6 +92,8 @@ public class FcChatWindow : ChatWindow
 
     private async Task RefreshUsers()
     {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");

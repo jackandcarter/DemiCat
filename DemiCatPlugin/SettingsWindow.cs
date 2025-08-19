@@ -130,9 +130,8 @@ public class SettingsWindow : IDisposable
             return;
         }
 
-        if (string.IsNullOrEmpty(_config.ApiBaseUrl))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
-            _log.Error("Cannot sync: API base URL is not configured.");
             _ = framework.RunOnTick(() => _syncStatus = "Network error");
             return;
         }

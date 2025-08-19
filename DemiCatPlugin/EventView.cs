@@ -257,6 +257,12 @@ public class EventView : IDisposable
 
     public async Task SendInteraction(string customId)
     {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            _lastResult = "Signup failed";
+            return;
+        }
+
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");

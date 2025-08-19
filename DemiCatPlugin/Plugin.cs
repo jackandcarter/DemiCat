@@ -92,7 +92,7 @@ public class Plugin : IDalamudPlugin
 
     private async Task<bool> RefreshRoles(IPluginLog log)
     {
-        if (string.IsNullOrEmpty(_config.AuthToken))
+        if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
         {
             return false;
         }
