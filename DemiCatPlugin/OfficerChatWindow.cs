@@ -30,7 +30,7 @@ public class OfficerChatWindow : ChatWindow
 
     protected override async Task SendMessage()
     {
-        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
             return;
         }

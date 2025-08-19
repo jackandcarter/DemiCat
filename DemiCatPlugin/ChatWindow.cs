@@ -130,7 +130,7 @@ public class ChatWindow : IDisposable
 
     protected virtual async Task SendMessage()
     {
-        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
             return;
         }
@@ -170,7 +170,7 @@ public class ChatWindow : IDisposable
 
     public async Task RefreshMessages()
     {
-        if (string.IsNullOrEmpty(_channelId))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(_channelId))
         {
             return;
         }
