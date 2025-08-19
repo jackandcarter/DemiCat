@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using DiscordHelper;
 using Dalamud.Plugin;
@@ -128,6 +129,7 @@ public class Plugin : IDalamudPlugin
 
     private class RolesDto
     {
+        [JsonPropertyName("roles")]
         public List<string> Roles { get; set; } = new();
     }
 }
