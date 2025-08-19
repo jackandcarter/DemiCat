@@ -36,6 +36,7 @@ public class Template
         public string Label { get; set; } = string.Empty;
         public string Emoji { get; set; } = string.Empty;
         public ButtonStyle Style { get; set; } = ButtonStyle.Secondary;
+        public int? MaxSignups { get; set; }
     }
 }
 

@@ -25,12 +25,9 @@ public class EventCreateWindow
     private int _color;
     private readonly List<Field> _fields = new();
     private string? _lastResult;
-    private readonly List<ButtonConfig> _buttons = new()
-    {
-        new ButtonConfig("yes", "Yes", "✅", ButtonStyle.Success),
-        new ButtonConfig("maybe", "Maybe", "❔", ButtonStyle.Secondary),
-        new ButtonConfig("no", "No", "❌", ButtonStyle.Danger),
-    };
+    private readonly List<ButtonConfig> _buttons = new();
+    private int _selectedPreset = -1;
+    private string _presetName = string.Empty;
 
     public string ChannelId { private get; set; } = string.Empty;
 
@@ -38,6 +35,7 @@ public class EventCreateWindow
     {
         _config = config;
         _httpClient = httpClient;
+        ResetDefaultButtons();
     }
 
     public void Draw()
@@ -82,14 +80,24 @@ public class EventCreateWindow
                 ImGui.TextUnformatted("Failed to load roles");
             }
         }
-        foreach (var button in _buttons)
+        for (var i = 0; i < _buttons.Count; i++)
         {
-            ImGui.PushID(button.Tag);
+            var button = _buttons[i];
+            ImGui.PushID(i);
             ImGui.Checkbox("Include", ref button.Include);
+            ImGui.SameLine();
+            ImGui.InputText("Tag", ref button.Tag, 32);
             ImGui.SameLine();
             ImGui.InputText("Label", ref button.Label, 32);
             ImGui.SameLine();
             ImGui.InputText("Emoji", ref button.Emoji, 16);
+            ImGui.SameLine();
+            var max = button.MaxSignups ?? 0;
+            ImGui.SetNextItemWidth(60);
+            if (ImGui.InputInt("Max", ref max))
+            {
+                button.MaxSignups = max > 0 ? max : null;
+            }
             ImGui.SameLine();
             var style = button.Style.ToString();
             if (ImGui.BeginCombo("Style", style))
@@ -102,7 +110,45 @@ public class EventCreateWindow
                 }
                 ImGui.EndCombo();
             }
+            ImGui.SameLine();
+            if (ImGui.Button("Remove"))
+            {
+                _buttons.RemoveAt(i);
+                i--;
+            }
             ImGui.PopID();
+        }
+        if (ImGui.Button("Add Option"))
+        {
+            _buttons.Add(new ButtonConfig($"opt{_buttons.Count + 1}", "Option", string.Empty, ButtonStyle.Secondary));
+        }
+
+        if (_config.SignupPresets.Count > 0)
+        {
+            var preview = _selectedPreset >= 0 && _selectedPreset < _config.SignupPresets.Count
+                ? _config.SignupPresets[_selectedPreset].Name
+                : string.Empty;
+            if (ImGui.BeginCombo("Presets", preview))
+            {
+                for (var i = 0; i < _config.SignupPresets.Count; i++)
+                {
+                    var name = _config.SignupPresets[i].Name;
+                    var sel = i == _selectedPreset;
+                    if (ImGui.Selectable(name, sel))
+                    {
+                        _selectedPreset = i;
+                        LoadPreset(_config.SignupPresets[i]);
+                    }
+                    if (sel) ImGui.SetItemDefaultFocus();
+                }
+                ImGui.EndCombo();
+            }
+        }
+        ImGui.InputText("Preset Name", ref _presetName, 64);
+        ImGui.SameLine();
+        if (ImGui.Button("Save Preset"))
+        {
+            SavePreset();
         }
 
         if (ImGui.TreeNode("Fields"))
@@ -209,19 +255,21 @@ public class EventCreateWindow
             }
         }
 
-        if (template.Buttons != null)
+        if (template.Buttons != null && template.Buttons.Count > 0)
         {
-            foreach (var button in _buttons)
+            _buttons.Clear();
+            foreach (var b in template.Buttons)
             {
-                var tb = template.Buttons.FirstOrDefault(b => b.Tag == button.Tag);
-                if (tb != null)
+                _buttons.Add(new ButtonConfig(b.Tag, b.Label, b.Emoji, b.Style)
                 {
-                    button.Include = tb.Include;
-                    button.Label = tb.Label;
-                    button.Emoji = tb.Emoji;
-                    button.Style = tb.Style;
-                }
+                    Include = b.Include,
+                    MaxSignups = b.MaxSignups
+                });
             }
+        }
+        else
+        {
+            ResetDefaultButtons();
         }
     }
 
@@ -250,7 +298,8 @@ public class EventCreateWindow
                 Include = b.Include,
                 Label = b.Label,
                 Emoji = b.Emoji,
-                Style = b.Style
+                Style = b.Style,
+                MaxSignups = b.MaxSignups
             }).ToList(),
             Mentions = _mentions.ToList()
         };
@@ -275,7 +324,8 @@ public class EventCreateWindow
                     label = b.Label,
                     customId = $"rsvp:{b.Tag}",
                     emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                    style = (int)b.Style
+                    style = (int)b.Style,
+                    maxSignups = b.MaxSignups
                 })
                 .ToList();
 
@@ -315,6 +365,48 @@ public class EventCreateWindow
         }
     }
 
+    private void LoadPreset(SignupPreset preset)
+    {
+        _buttons.Clear();
+        foreach (var b in preset.Buttons)
+        {
+            _buttons.Add(new ButtonConfig(b.Tag, b.Label, b.Emoji, b.Style)
+            {
+                Include = b.Include,
+                MaxSignups = b.MaxSignups
+            });
+        }
+    }
+
+    private void SavePreset()
+    {
+        if (string.IsNullOrWhiteSpace(_presetName)) return;
+        var preset = new SignupPreset
+        {
+            Name = _presetName,
+            Buttons = _buttons.Select(b => new Template.TemplateButton
+            {
+                Tag = b.Tag,
+                Include = b.Include,
+                Label = b.Label,
+                Emoji = b.Emoji,
+                Style = b.Style,
+                MaxSignups = b.MaxSignups
+            }).ToList()
+        };
+        _config.SignupPresets.Add(preset);
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+        _presetName = string.Empty;
+    }
+
+    private void ResetDefaultButtons()
+    {
+        _buttons.Clear();
+        _buttons.Add(new ButtonConfig("yes", "Yes", "✅", ButtonStyle.Success));
+        _buttons.Add(new ButtonConfig("maybe", "Maybe", "❔", ButtonStyle.Secondary));
+        _buttons.Add(new ButtonConfig("no", "No", "❌", ButtonStyle.Danger));
+    }
+
 
     private class Field
     {
@@ -338,5 +430,6 @@ public class EventCreateWindow
         public string Label;
         public string Emoji;
         public ButtonStyle Style;
+        public int? MaxSignups;
     }
 }

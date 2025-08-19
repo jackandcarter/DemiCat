@@ -4,13 +4,14 @@ import json
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..ws import manager
-from ...db.models import Attendance, Embed, GuildChannel, RSVP, User
+from ...db.models import Attendance, Embed, GuildChannel, User
 
 router = APIRouter(prefix="/api")
 
@@ -21,11 +22,12 @@ class InteractionBody(BaseModel):
     CustomId: str
 
 
-def summarize(att: Dict[str, List[str]]) -> List[dict]:
+def summarize(att: Dict[str, List[str]], labels: Dict[str, str], order: List[str]) -> List[dict]:
     fields = []
-    for key in ["yes", "maybe", "no"]:
+    for key in order:
         people = att.get(key, [])
-        fields.append({"name": key.capitalize(), "value": ", ".join(people) if people else "—"})
+        label = labels.get(key, key.capitalize())
+        fields.append({"name": label, "value": ", ".join(people) if people else "—"})
     return fields
 
 
@@ -37,23 +39,58 @@ async def post_interaction(
 ):
     choice = body.CustomId.split(":", 1)[1] if ":" in body.CustomId else body.CustomId
     message_id = int(body.MessageId)
+    embed = (
+        await db.execute(select(Embed).where(Embed.discord_message_id == message_id))
+    ).scalar_one_or_none()
+    labels: Dict[str, str] = {}
+    order: List[str] = []
+    limits: Dict[str, int] = {}
+    if embed:
+        payload = json.loads(embed.payload_json)
+        for b in payload.get("buttons", []):
+            cid = b.get("customId") or ""
+            if cid.startswith("rsvp:"):
+                tag = cid.split(":", 1)[1]
+                order.append(tag)
+                if label := b.get("label"):
+                    labels[tag] = label
+                if (lim := b.get("maxSignups")) is not None:
+                    limits[tag] = lim
 
     stmt = select(Attendance).where(
         Attendance.discord_message_id == message_id,
         Attendance.user_id == ctx.user.id,
     )
     row = (await db.execute(stmt)).scalar_one_or_none()
-    if row and row.choice.value == choice:
+    if row and row.choice == choice:
         await db.delete(row)
     else:
-        if row:
-            row.choice = RSVP(choice)
-        else:
+        if row and row.choice != choice:
+            limit = limits.get(choice)
+            if limit is not None:
+                count_stmt = select(func.count()).where(
+                    Attendance.discord_message_id == message_id,
+                    Attendance.choice == choice,
+                )
+                count = (await db.execute(count_stmt)).scalar_one()
+                if count >= limit:
+                    return JSONResponse({"error": "Full"}, status_code=400)
+            row.choice = choice
+        elif row is None:
+            limit = limits.get(choice)
+            if limit is not None:
+                count_stmt = select(func.count()).where(
+                    Attendance.discord_message_id == message_id,
+                    Attendance.choice == choice,
+                )
+                count = (await db.execute(count_stmt)).scalar_one()
+                if count >= limit:
+                    return JSONResponse({"error": "Full"}, status_code=400)
             db.add(
                 Attendance(
                     discord_message_id=message_id,
                     user_id=ctx.user.id,
-                    choice=RSVP(choice),
+                    choice=choice,
                 )
             )
     await db.commit()
@@ -70,17 +107,13 @@ async def post_interaction(
         .where(Attendance.discord_message_id == message_id)
     )
     rows = await db.execute(stmt)
-    summary: Dict[str, List[str]] = {"yes": [], "maybe": [], "no": []}
-    for choice, name, discrim, uid in rows.all():
+    summary: Dict[str, List[str]] = {}
+    for c, name, discrim, uid in rows.all():
         display = name or discrim or str(uid)
-        summary[choice.value].append(display)
+        summary.setdefault(c, []).append(display)
 
-    embed = (
-        await db.execute(select(Embed).where(Embed.discord_message_id == message_id))
-    ).scalar_one_or_none()
     if embed:
-        payload = json.loads(embed.payload_json)
-        payload["fields"] = summarize(summary)
+        payload["fields"] = summarize(summary, labels, order or list(summary.keys()))
         embed.payload_json = json.dumps(payload)
         await db.commit()
         kind = (
