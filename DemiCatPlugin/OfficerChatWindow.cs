@@ -129,7 +129,7 @@ public class OfficerChatWindow : ChatWindow
     private class OfficerChannelListDto
     {
         [JsonPropertyName("officer_chat")]
-        public List<string> Officer { get; set; } = new();
+        public List<ChannelDto> Officer { get; set; } = new();
     }
 }
 
