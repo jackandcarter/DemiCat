@@ -24,16 +24,23 @@ class ConnectionManager:
             del self.connections[websocket]
 
     async def broadcast_text(
-        self, message: str, guild_id: int, officer_only: bool = False
+        self,
+        message: str,
+        guild_id: int,
+        officer_only: bool = False,
+        path: str | None = None,
     ) -> None:
         dead: list[WebSocket] = []
-        for ws, (gid, roles, path) in list(self.connections.items()):
+        for ws, (gid, roles, ws_path) in list(self.connections.items()):
             if gid != guild_id:
                 continue
             if officer_only:
-                if "officer" not in roles or path != "/ws/officer-messages":
+                if "officer" not in roles or ws_path != "/ws/officer-messages":
                     continue
-            elif path == "/ws/officer-messages":
+            elif path is not None:
+                if ws_path != path:
+                    continue
+            elif ws_path == "/ws/officer-messages":
                 continue
             try:
                 await ws.send_text(message)

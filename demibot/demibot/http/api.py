@@ -30,6 +30,7 @@ def create_app(cfg: "AppConfig | None") -> FastAPI:
     app.add_api_websocket_route("/ws/messages", websocket_endpoint)
     app.add_api_websocket_route("/ws/embeds", websocket_endpoint)
     app.add_api_websocket_route("/ws/officer-messages", websocket_endpoint)
+    app.add_api_websocket_route("/ws/presences", websocket_endpoint)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

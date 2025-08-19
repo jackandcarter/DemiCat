@@ -10,7 +10,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
 
-public class MainWindow
+public class MainWindow : IDisposable
 {
     private readonly Config _config;
     private readonly UiRenderer _ui;
@@ -19,6 +19,7 @@ public class MainWindow
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
+    private readonly PresencePane _presence;
     private readonly HttpClient _httpClient;
     private readonly List<ChannelDto> _channels = new();
     private readonly List<ChannelDto> _fcChatChannels = new();
@@ -47,6 +48,7 @@ public class MainWindow
         _httpClient = httpClient;
         _create = new EventCreateWindow(config, httpClient);
         _templates = new TemplatesWindow(config, httpClient);
+        _presence = new PresencePane(config, httpClient);
         _channelId = config.EventChannelId;
         _ui.ChannelId = _channelId;
         _create.ChannelId = _channelId;
@@ -151,6 +153,9 @@ public class MainWindow
         }
         ImGui.EndChild();
 
+        ImGui.SameLine();
+        _presence.Draw();
+
         ImGui.End();
         ImGui.PopStyleColor(5);
     }
@@ -158,6 +163,11 @@ public class MainWindow
     private void SaveConfig()
     {
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+    }
+
+    public void Dispose()
+    {
+        _presence.Dispose();
     }
 
     private async Task FetchChannels()
