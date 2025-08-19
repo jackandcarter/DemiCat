@@ -15,7 +15,7 @@ from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto
 from ..ws import manager
 from ..discord_client import discord_client
-from ...db.models import Embed, GuildChannel, RecurringEvent
+from ...db.models import Embed, EventButton, GuildChannel, RecurringEvent
 
 router = APIRouter(prefix="/api")
 
@@ -156,6 +156,20 @@ async def create_event(
             source="demibot",
         )
     )
+    for b in buttons:
+        cid = b.customId
+        if cid and cid.startswith("rsvp:"):
+            tag = cid.split(":", 1)[1]
+            db.add(
+                EventButton(
+                    message_id=int(eid),
+                    tag=tag,
+                    label=b.label,
+                    emoji=b.emoji,
+                    style=int(b.style) if b.style is not None else None,
+                    max_signups=b.maxSignups,
+                )
+            )
     if body.repeat in ("daily", "weekly"):
         interval = timedelta(days=1 if body.repeat == "daily" else 7)
         next_post = ts + interval

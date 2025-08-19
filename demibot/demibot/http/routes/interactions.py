@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..ws import manager
-from ...db.models import Attendance, Embed, GuildChannel, User
+from ...db.models import Attendance, Embed, EventButton, GuildChannel, User
 
 router = APIRouter(prefix="/api")
 
@@ -45,17 +45,18 @@ async def post_interaction(
     labels: Dict[str, str] = {}
     order: List[str] = []
     limits: Dict[str, int] = {}
+
+    rows = await db.execute(
+        select(EventButton).where(EventButton.message_id == message_id)
+    )
+    for b in rows.scalars():
+        order.append(b.tag)
+        labels[b.tag] = b.label
+        if b.max_signups is not None:
+            limits[b.tag] = b.max_signups
+
     if embed:
         payload = json.loads(embed.payload_json)
-        for b in payload.get("buttons", []):
-            cid = b.get("customId") or ""
-            if cid.startswith("rsvp:"):
-                tag = cid.split(":", 1)[1]
-                order.append(tag)
-                if label := b.get("label"):
-                    labels[tag] = label
-                if (lim := b.get("maxSignups")) is not None:
-                    limits[tag] = lim
 
     stmt = select(Attendance).where(
         Attendance.discord_message_id == message_id,
