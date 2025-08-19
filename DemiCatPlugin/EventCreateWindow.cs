@@ -38,6 +38,7 @@ public class EventCreateWindow
         _config = config;
         _httpClient = httpClient;
         ResetDefaultButtons();
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
     }
 
     public void Draw()
@@ -143,21 +144,23 @@ public class EventCreateWindow
             _buttons.Add(new ButtonConfig($"opt{_buttons.Count + 1}", "Option", string.Empty, ButtonStyle.Secondary));
         }
 
-        if (_config.SignupPresets.Count > 0)
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+        var presets = SignupPresetService.Presets;
+        if (presets.Count > 0)
         {
-            var preview = _selectedPreset >= 0 && _selectedPreset < _config.SignupPresets.Count
-                ? _config.SignupPresets[_selectedPreset].Name
+            var preview = _selectedPreset >= 0 && _selectedPreset < presets.Count
+                ? presets[_selectedPreset].Name
                 : string.Empty;
             if (ImGui.BeginCombo("Presets", preview))
             {
-                for (var i = 0; i < _config.SignupPresets.Count; i++)
+                for (var i = 0; i < presets.Count; i++)
                 {
-                    var name = _config.SignupPresets[i].Name;
+                    var name = presets[i].Name;
                     var sel = i == _selectedPreset;
                     if (ImGui.Selectable(name, sel))
                     {
                         _selectedPreset = i;
-                        LoadPreset(_config.SignupPresets[i]);
+                        LoadPreset(presets[i]);
                     }
                     if (sel) ImGui.SetItemDefaultFocus();
                 }
@@ -415,8 +418,7 @@ public class EventCreateWindow
                 MaxSignups = b.MaxSignups
             }).ToList()
         };
-        _config.SignupPresets.Add(preset);
-        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+        _ = SignupPresetService.Create(preset, _httpClient, _config);
         _presetName = string.Empty;
     }
 

@@ -180,3 +180,12 @@ class RecurringEvent(Base):
     repeat: Mapped[str] = mapped_column(String(16))
     next_post_at: Mapped[datetime] = mapped_column(DateTime)
     payload_json: Mapped[str] = mapped_column(Text)
+
+
+class SignupPreset(Base):
+    __tablename__ = "signup_presets"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    buttons_json: Mapped[str] = mapped_column(Text)

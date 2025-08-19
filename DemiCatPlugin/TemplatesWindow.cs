@@ -30,6 +30,7 @@ public class TemplatesWindow
 
     public void Draw()
     {
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
         ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
         var typeNames = Enum.GetNames<TemplateType>();
         var typeIndex = (int)_selectedType;
