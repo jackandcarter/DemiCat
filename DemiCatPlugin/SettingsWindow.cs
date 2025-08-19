@@ -119,7 +119,7 @@ public class SettingsWindow : IDisposable
         if (framework == null)
         {
             _log.Error("Cannot sync: framework is not available.");
-            _syncStatus = "Network error";
+            PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
             return;
         }
 
