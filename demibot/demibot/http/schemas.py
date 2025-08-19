@@ -56,3 +56,11 @@ class ChatMessage(BaseModel):
     authorName: str
     content: str
     mentions: List[Mention] | None = None
+
+# ---- Presence ----
+
+
+class PresenceDto(BaseModel):
+    id: str
+    name: str
+    status: str

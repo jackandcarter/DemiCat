@@ -85,6 +85,7 @@ public class Plugin : IDalamudPlugin
         _httpClient.Dispose();
         _chatWindow?.Dispose();
         _officerChatWindow.Dispose();
+        _mainWindow.Dispose();
         _ui.Dispose();
         _settings.Dispose();
     }
