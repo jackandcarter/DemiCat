@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
-from typing import List, Optional
+from typing import List, Optional, Any
 
 import discord
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -177,6 +177,7 @@ async def create_event(
         payload["repeat"] = None
         db.add(
             RecurringEvent(
+                id=int(eid),
                 guild_id=ctx.guild.id,
                 channel_id=channel_id,
                 repeat=body.repeat,
@@ -197,3 +198,83 @@ async def create_event(
         json.dumps(dto.model_dump(mode="json")), ctx.guild.id, kind == "officer_chat"
     )
     return {"ok": True, "id": eid}
+
+
+class RepeatPatchBody(BaseModel):
+    repeat: Optional[str] = None
+    time: Optional[str] = None
+
+
+@router.get("/events/repeat")
+async def list_recurring_events(
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> List[dict[str, Any]]:
+    result = await db.execute(
+        select(RecurringEvent).where(RecurringEvent.guild_id == ctx.guild.id)
+    )
+    rows: List[dict[str, Any]] = []
+    for ev in result.scalars():
+        try:
+            payload = json.loads(ev.payload_json)
+            title = payload.get("title")
+        except Exception:
+            title = None
+        rows.append(
+            {
+                "id": str(ev.id),
+                "channelId": str(ev.channel_id),
+                "repeat": ev.repeat,
+                "next": ev.next_post_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                "title": title,
+            }
+        )
+    return rows
+
+
+@router.patch("/events/{event_id}/repeat", response_model=None)
+async def update_recurring_event(
+    event_id: str,
+    body: RepeatPatchBody,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    rid = int(event_id)
+    ev = await db.get(RecurringEvent, rid)
+    if not ev or ev.guild_id != ctx.guild.id:
+        raise HTTPException(status_code=404)
+    if body.repeat in ("daily", "weekly"):
+        ev.repeat = body.repeat
+    if body.time:
+        time_str = body.time.replace("Z", "+00:00")
+        if "." in time_str:
+            head, tail = time_str.split(".", 1)
+            if "+" in tail:
+                frac, tz = tail.split("+", 1)
+                time_str = f"{head}.{frac[:6]}+{tz}"
+            elif "-" in tail:
+                frac, tz = tail.split("-", 1)
+                time_str = f"{head}.{frac[:6]}-{tz}"
+            else:
+                time_str = f"{head}.{tail[:6]}"
+        try:
+            ts = datetime.fromisoformat(time_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid time format")
+        ev.next_post_at = ts
+    await db.commit()
+    return {"ok": True}
+
+
+@router.delete("/events/{event_id}/repeat")
+async def delete_recurring_event(
+    event_id: str,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, bool]:
+    rid = int(event_id)
+    ev = await db.get(RecurringEvent, rid)
+    if ev and ev.guild_id == ctx.guild.id:
+        await db.delete(ev)
+        await db.commit()
+    return {"ok": True}

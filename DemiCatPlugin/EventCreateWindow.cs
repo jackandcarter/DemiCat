@@ -30,6 +30,8 @@ public class EventCreateWindow
     private int _selectedPreset = -1;
     private string _presetName = string.Empty;
     private RepeatOption _repeat = RepeatOption.None;
+    private readonly List<RepeatSchedule> _schedules = new();
+    private bool _schedulesLoaded;
 
     public string ChannelId { private get; set; } = string.Empty;
 
@@ -205,6 +207,26 @@ public class EventCreateWindow
             SaveTemplate();
         }
 
+        if (!_schedulesLoaded)
+        {
+            _ = FetchSchedules();
+        }
+        if (_schedulesLoaded && _schedules.Count > 0)
+        {
+            ImGui.Separator();
+            ImGui.TextUnformatted("Repeat Schedules");
+            for (var i = 0; i < _schedules.Count; i++)
+            {
+                var s = _schedules[i];
+                ImGui.TextUnformatted($"{s.Title} ({s.Repeat}) next {s.Next}");
+                ImGui.SameLine();
+                if (ImGui.Button($"Cancel##{i}"))
+                {
+                    _ = CancelSchedule(s.Id);
+                }
+            }
+        }
+
         if (!string.IsNullOrEmpty(_lastResult))
         {
             ImGui.TextUnformatted(_lastResult);
@@ -246,6 +268,65 @@ public class EventCreateWindow
         {
             _rolesLoaded = true;
             _roleFetchFailed = true;
+        }
+    }
+
+    private async Task FetchSchedules()
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            _schedulesLoaded = true;
+            return;
+        }
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/repeat");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                var stream = await response.Content.ReadAsStreamAsync();
+                var schedules = await JsonSerializer.DeserializeAsync<List<RepeatSchedule>>(stream) ?? new();
+                PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _schedules.Clear();
+                    _schedules.AddRange(schedules);
+                    _schedulesLoaded = true;
+                });
+            }
+            else
+            {
+                _schedulesLoaded = true;
+            }
+        }
+        catch
+        {
+            _schedulesLoaded = true;
+        }
+    }
+
+    private async Task CancelSchedule(string id)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Delete, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/{id}/repeat");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                _schedulesLoaded = false;
+            }
+        }
+        catch
+        {
+            // ignored
         }
     }
 
@@ -461,5 +542,13 @@ public class EventCreateWindow
         public string Emoji;
         public ButtonStyle Style;
         public int? MaxSignups;
+    }
+
+    private class RepeatSchedule
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Title { get; set; } = string.Empty;
+        public string Repeat { get; set; } = string.Empty;
+        public string Next { get; set; } = string.Empty;
     }
 }
