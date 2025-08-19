@@ -35,7 +35,21 @@ public class ChatWindow : IDisposable
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
-    private readonly Dictionary<string, ISharedImmediateTexture?> _textureCache = new();
+    private const int TextureCacheCapacity = 100;
+    private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
+    private readonly LinkedList<string> _textureLru = new();
+
+    private class TextureCacheEntry
+    {
+        public ISharedImmediateTexture? Texture;
+        public LinkedListNode<string> Node;
+
+        public TextureCacheEntry(ISharedImmediateTexture? texture, LinkedListNode<string> node)
+        {
+            Texture = texture;
+            Node = node;
+        }
+    }
 
     public bool ChannelsLoaded
     {
@@ -71,6 +85,7 @@ public class ChatWindow : IDisposable
             {
                 _channelId = _channels[_selectedIndex].Id;
                 _config.ChatChannelId = _channelId;
+                ClearTextureCache();
                 SaveConfig();
                 _ = RefreshMessages();
             }
@@ -280,10 +295,40 @@ public class ChatWindow : IDisposable
         }
     }
 
+    public void ClearTextureCache()
+    {
+        foreach (var entry in _textureCache.Values)
+        {
+            entry.Texture?.Dispose();
+        }
+        _textureCache.Clear();
+        _textureLru.Clear();
+        foreach (var m in _messages)
+        {
+            if (m.AvatarTexture != null)
+            {
+                m.AvatarTexture.Dispose();
+                m.AvatarTexture = null;
+            }
+            if (m.Attachments != null)
+            {
+                foreach (var a in m.Attachments)
+                {
+                    if (a.Texture != null)
+                    {
+                        a.Texture.Dispose();
+                        a.Texture = null;
+                    }
+                }
+            }
+        }
+    }
+
     public void Dispose()
     {
         _wsCts?.Cancel();
         _ws?.Dispose();
+        ClearTextureCache();
     }
 
     protected void SaveConfig()
@@ -447,12 +492,32 @@ public class ChatWindow : IDisposable
             set(null);
             return;
         }
+
         if (_textureCache.TryGetValue(url, out var cached))
         {
-            set(cached);
+            _textureLru.Remove(cached.Node);
+            _textureLru.AddFirst(cached.Node);
+            set(cached.Texture);
             return;
         }
-        _textureCache[url] = null;
+
+        var node = _textureLru.AddFirst(url);
+        _textureCache[url] = new TextureCacheEntry(null, node);
+
+        if (_textureCache.Count > TextureCacheCapacity)
+        {
+            var last = _textureLru.Last;
+            if (last != null)
+            {
+                if (_textureCache.TryGetValue(last.Value, out var toRemove))
+                {
+                    toRemove.Texture?.Dispose();
+                    _textureCache.Remove(last.Value);
+                }
+                _textureLru.RemoveLast();
+            }
+        }
+
         _ = Task.Run(async () =>
         {
             try
@@ -464,7 +529,10 @@ public class ChatWindow : IDisposable
                     RawImageSpecification.Rgba32(image.Width, image.Height),
                     image.Data);
                 var texture = new ForwardingSharedImmediateTexture(wrap);
-                _textureCache[url] = texture;
+                if (_textureCache.TryGetValue(url, out var entry))
+                {
+                    entry.Texture = texture;
+                }
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
             }
             catch
