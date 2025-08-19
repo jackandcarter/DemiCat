@@ -137,7 +137,9 @@ public class SettingsWindow : IDisposable
             _log.Info($"Headers: {string.Join(", ", request.Headers.Select(h => $"{h.Key}: {string.Join(";", h.Value)}"))}");
 
             var response = await _httpClient.SendAsync(request);
+            var responseBody = await response.Content.ReadAsStringAsync();
             _log.Info($"Response Status: {response.StatusCode}");
+            _log.Info($"Response Body: {responseBody}");
             if (response.IsSuccessStatusCode)
             {
                 _log.Info("API key validated successfully.");
@@ -166,6 +168,15 @@ public class SettingsWindow : IDisposable
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
+
+                _log.Warning($"API key validation failed: unauthorized. Response Body: {responseBody}");
+                _authFailed = true;
+            }
+            else
+            {
+                _log.Warning($"API key validation failed with status {response.StatusCode}. Response Body: {responseBody}");
+                _networkError = true;
+
                 _log.Warning("API key validation failed: unauthorized.");
                 _syncStatus = "Authentication failed";
             }
@@ -173,6 +184,7 @@ public class SettingsWindow : IDisposable
             {
                 _log.Warning($"API key validation failed with status {response.StatusCode}.");
                 _syncStatus = "Network error";
+
             }
         }
         catch (Exception ex)
