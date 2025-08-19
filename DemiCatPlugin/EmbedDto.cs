@@ -35,6 +35,7 @@ public class EmbedButtonDto
     public string? CustomId { get; set; }
     public string? Emoji { get; set; }
     public ButtonStyle? Style { get; set; }
+    public int? MaxSignups { get; set; }
 }
 
 public enum ButtonStyle

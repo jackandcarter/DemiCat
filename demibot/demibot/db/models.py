@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import enum
 from datetime import datetime
 from typing import Optional
 
@@ -146,12 +145,6 @@ class Embed(Base):
     )
 
 
-class RSVP(enum.Enum):
-    yes = "yes"
-    maybe = "maybe"
-    no = "no"
-
-
 class Attendance(Base):
     __tablename__ = "attendance"
 
@@ -159,4 +152,4 @@ class Attendance(Base):
     user_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
     )
-    choice: Mapped[RSVP] = mapped_column(String(10))
+    choice: Mapped[str] = mapped_column(String(50))

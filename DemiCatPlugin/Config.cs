@@ -24,6 +24,7 @@ public class Config : IPluginConfiguration
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
     public List<Template> Templates { get; set; } = new();
+    public List<SignupPreset> SignupPresets { get; set; } = new();
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }

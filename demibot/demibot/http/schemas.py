@@ -27,6 +27,7 @@ class EmbedButtonDto(BaseModel):
     customId: Optional[str] = None
     emoji: Optional[str] = None
     style: Optional[ButtonStyle] = None
+    maxSignups: Optional[int] = None
 
 class EmbedDto(BaseModel):
     id: str

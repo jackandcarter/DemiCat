@@ -130,7 +130,8 @@ public class TemplatesWindow
                 Label = b.Label,
                 CustomId = $"rsvp:{b.Tag}",
                 Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                Style = b.Style
+                Style = b.Style,
+                MaxSignups = b.MaxSignups
             }).ToList(),
             Mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
         };
@@ -153,7 +154,8 @@ public class TemplatesWindow
                         label = b.Label,
                         customId = $"rsvp:{b.Tag}",
                         emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                        style = (int)b.Style
+                        style = (int)b.Style,
+                        maxSignups = b.MaxSignups
                     })
                     .ToList();
 
