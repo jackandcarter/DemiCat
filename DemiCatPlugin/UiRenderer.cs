@@ -114,6 +114,8 @@ public class UiRenderer : IDisposable
 
     private async Task PollEmbeds()
     {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds");
@@ -144,6 +146,11 @@ public class UiRenderer : IDisposable
     private async Task ConnectWebSocket()
     {
         if (_webSocket != null && _webSocket.State == WebSocketState.Open)
+        {
+            return;
+        }
+
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             return;
         }
@@ -274,6 +281,8 @@ public class UiRenderer : IDisposable
 
     public async Task RefreshEmbeds()
     {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds");
