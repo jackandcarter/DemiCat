@@ -48,7 +48,16 @@ public class EventCreateWindow
         ImGui.InputText("URL", ref _url, 260);
         ImGui.InputText("Image URL", ref _imageUrl, 260);
         ImGui.InputText("Thumbnail URL", ref _thumbnailUrl, 260);
-        ImGui.InputInt("Color", ref _color);
+        var colorVec = new Vector3(
+            ((_color >> 16) & 0xFF) / 255f,
+            ((_color >> 8) & 0xFF) / 255f,
+            (_color & 0xFF) / 255f);
+        if (ImGui.ColorEdit3("Color", ref colorVec))
+        {
+            _color = ((int)(colorVec.X * 255) << 16) |
+                     ((int)(colorVec.Y * 255) << 8) |
+                     (int)(colorVec.Z * 255);
+        }
         foreach (var button in _buttons)
         {
             ImGui.PushID(button.Tag);
@@ -119,7 +128,7 @@ public class EventCreateWindow
         _url = template.Url;
         _imageUrl = template.ImageUrl;
         _thumbnailUrl = template.ThumbnailUrl;
-        _color = template.Color;
+        _color = (int)template.Color;
 
         _fields.Clear();
         if (template.Fields != null)
@@ -158,7 +167,7 @@ public class EventCreateWindow
             Url = _url,
             ImageUrl = _imageUrl,
             ThumbnailUrl = _thumbnailUrl,
-            Color = _color,
+            Color = (uint)_color,
             Fields = _fields.Select(f => new Template.TemplateField
             {
                 Name = f.Name,
