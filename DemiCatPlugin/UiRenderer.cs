@@ -25,11 +25,11 @@ public class UiRenderer : IDisposable
     private string _channelId;
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _pollCts;
-    private int _connecting;
     private readonly List<ChannelDto> _channels = new();
     private bool _channelsLoaded;
     private bool _channelFetchFailed;
     private int _selectedIndex;
+    private readonly SemaphoreSlim _connectGate = new(1, 1);
 
     public UiRenderer(Config config, HttpClient httpClient)
     {
@@ -92,7 +92,7 @@ public class UiRenderer : IDisposable
         }
 
         StartPolling();
-        _ = ConnectWebSocket();
+        await ConnectWebSocket();
     }
 
     private async Task PollLoop(CancellationToken token)
@@ -149,54 +149,53 @@ public class UiRenderer : IDisposable
 
     private async Task ConnectWebSocket()
     {
-        if (_webSocket != null && _webSocket.State == WebSocketState.Open)
-        {
-            return;
-        }
-
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            return;
-        }
-
-        if (Interlocked.Exchange(ref _connecting, 1) == 1)
-        {
-            return;
-        }
-
+        await _connectGate.WaitAsync();
         try
         {
-            _webSocket = new ClientWebSocket();
-            if (!string.IsNullOrEmpty(_config.AuthToken))
+            if (_webSocket != null && _webSocket.State == WebSocketState.Open)
             {
-                _webSocket.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
+                return;
             }
-            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
-            var wsUrl = new Uri(($"{baseUrl}/ws/embeds")
-                .Replace("http://", "ws://")
-                .Replace("https://", "wss://"));
-            await _webSocket.ConnectAsync(wsUrl, CancellationToken.None);
-            StopPolling();
-            await ReceiveLoop();
-        }
-        catch (WebSocketException ex)
-        {
-            var status = ex.Data.Contains("StatusCode") ? ex.Data["StatusCode"] : ex.WebSocketErrorCode;
-            PluginServices.Instance!.Log.Error(ex, $"Failed to connect WebSocket. Status: {status}");
-            _webSocket?.Dispose();
-            _webSocket = null;
-            StartPolling();
-        }
-        catch (Exception ex)
-        {
-            PluginServices.Instance!.Log.Error(ex, "Failed to connect WebSocket");
-            _webSocket?.Dispose();
-            _webSocket = null;
-            StartPolling();
+
+            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                return;
+            }
+
+            try
+            {
+                _webSocket = new ClientWebSocket();
+                if (!string.IsNullOrEmpty(_config.AuthToken))
+                {
+                    _webSocket.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
+                }
+                var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
+                var wsUrl = new Uri(($"{baseUrl}/ws/embeds")
+                    .Replace("http://", "ws://")
+                    .Replace("https://", "wss://"));
+                await _webSocket.ConnectAsync(wsUrl, CancellationToken.None);
+                StopPolling();
+                await ReceiveLoop();
+            }
+            catch (WebSocketException ex)
+            {
+                var status = ex.Data.Contains("StatusCode") ? ex.Data["StatusCode"] : ex.WebSocketErrorCode;
+                PluginServices.Instance!.Log.Error(ex, $"Failed to connect WebSocket. Status: {status}");
+                _webSocket?.Dispose();
+                _webSocket = null;
+                StartPolling();
+            }
+            catch (Exception ex)
+            {
+                PluginServices.Instance!.Log.Error(ex, "Failed to connect WebSocket");
+                _webSocket?.Dispose();
+                _webSocket = null;
+                StartPolling();
+            }
         }
         finally
         {
-            Interlocked.Exchange(ref _connecting, 0);
+            _connectGate.Release();
         }
     }
 
