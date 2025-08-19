@@ -19,6 +19,7 @@ public class TemplatesWindow
     private string _previewContent = string.Empty;
     private EventView? _previewEvent;
     private TemplateType _selectedType;
+    private string? _lastResult;
 
     public string ChannelId { get; set; } = string.Empty;
 
@@ -91,6 +92,11 @@ public class TemplatesWindow
         }
         ImGui.EndChild();
 
+        if (!string.IsNullOrEmpty(_lastResult))
+        {
+            ImGui.TextUnformatted(_lastResult);
+        }
+
         if (_showPreview)
         {
             if (ImGui.Begin("Template Preview", ref _showPreview))
@@ -140,8 +146,12 @@ public class TemplatesWindow
 
     private async Task PostTemplate(Template tmpl)
     {
-        if (string.IsNullOrWhiteSpace(ChannelId) || !ApiHelpers.ValidateApiBaseUrl(_config))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(ChannelId))
         {
+            if (string.IsNullOrWhiteSpace(ChannelId))
+            {
+                _lastResult = "No channel selected";
+            }
             return;
         }
         try
@@ -201,10 +211,11 @@ public class TemplatesWindow
                 }
                 await _httpClient.SendAsync(request);
             }
+            _lastResult = "Template posted";
         }
         catch
         {
-            // ignored
+            _lastResult = "Failed to post template";
         }
     }
 
