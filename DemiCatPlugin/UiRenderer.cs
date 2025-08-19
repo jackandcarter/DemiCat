@@ -35,7 +35,7 @@ public class UiRenderer : IDisposable
 
         if (_config.Enabled && !string.IsNullOrEmpty(_config.AuthToken))
         {
-            StartNetworking();
+            _ = StartNetworking();
         }
     }
 
@@ -61,7 +61,7 @@ public class UiRenderer : IDisposable
         _pollCts = null;
     }
 
-    public void StartNetworking()
+    public async Task StartNetworking()
     {
         StopPolling();
 
@@ -71,7 +71,7 @@ public class UiRenderer : IDisposable
             {
                 if (_webSocket.State == WebSocketState.Open)
                 {
-                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
+                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
                 }
             }
             catch
