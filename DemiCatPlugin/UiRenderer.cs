@@ -23,7 +23,6 @@ public class UiRenderer : IDisposable
     private readonly object _embedLock = new();
     private readonly List<EmbedDto> _embedDtos = new();
     private string _channelId;
-    private EventView? _current;
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _pollCts;
     private int _connecting;
@@ -337,12 +336,6 @@ public class UiRenderer : IDisposable
             ImGui.TextUnformatted(_channelFetchFailed ? "Failed to load channels" : "No channels available");
         }
 
-        ImGui.BeginChild("##eventButtons", new Vector2(120, 0), true);
-        _current?.DrawButtons();
-        ImGui.EndChild();
-
-        ImGui.SameLine();
-
         List<EventView> embeds;
         lock (_embedLock)
         {
@@ -352,19 +345,9 @@ public class UiRenderer : IDisposable
         }
 
         ImGui.BeginChild("##eventScroll", new Vector2(0, 0), true);
-
-        var scrollY = ImGui.GetScrollY();
-        _current = null;
-
         foreach (var view in embeds)
         {
-            var start = ImGui.GetCursorPosY();
             view.Draw();
-            var end = ImGui.GetCursorPosY();
-            if (_current == null && scrollY >= start && scrollY < end)
-            {
-                _current = view;
-            }
         }
 
         ImGui.EndChild();
