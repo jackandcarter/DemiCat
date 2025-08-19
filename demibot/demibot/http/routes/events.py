@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional
 
 import discord
@@ -15,7 +15,7 @@ from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto
 from ..ws import manager
 from ..discord_client import discord_client
-from ...db.models import Embed, GuildChannel
+from ...db.models import Embed, GuildChannel, RecurringEvent
 
 router = APIRouter(prefix="/api")
 
@@ -39,6 +39,7 @@ class CreateEventBody(BaseModel):
     buttons: List[EmbedButtonDto] | None = None
     attendance: List[str] | None = None
     mentions: List[str] | None = None
+    repeat: Optional[str] = None
 
 
 @router.post("/events")
@@ -151,10 +152,24 @@ async def create_event(
             discord_message_id=int(eid),
             channel_id=channel_id,
             guild_id=ctx.guild.id,
-            payload_json=json.dumps(dto.model_dump()),
+            payload_json=json.dumps(dto.model_dump(mode="json")),
             source="demibot",
         )
     )
+    if body.repeat in ("daily", "weekly"):
+        interval = timedelta(days=1 if body.repeat == "daily" else 7)
+        next_post = ts + interval
+        payload = body.model_dump()
+        payload["repeat"] = None
+        db.add(
+            RecurringEvent(
+                guild_id=ctx.guild.id,
+                channel_id=channel_id,
+                repeat=body.repeat,
+                next_post_at=next_post,
+                payload_json=json.dumps(payload),
+            )
+        )
     await db.commit()
     kind = (
         await db.execute(
@@ -165,6 +180,6 @@ async def create_event(
         )
     ).scalar_one_or_none()
     await manager.broadcast_text(
-        json.dumps(dto.model_dump()), ctx.guild.id, kind == "officer_chat"
+        json.dumps(dto.model_dump(mode="json")), ctx.guild.id, kind == "officer_chat"
     )
     return {"ok": True, "id": eid}

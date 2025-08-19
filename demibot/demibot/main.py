@@ -16,6 +16,7 @@ from .config import ensure_config
 from .db.session import init_db
 from .discordbot.bot import create_bot
 from .http.api import create_app
+from .repeat_events import recurring_event_poster
 
 
 async def main_async() -> None:
@@ -56,6 +57,7 @@ async def main_async() -> None:
         await asyncio.gather(
             server.serve(),
             bot.start(cfg.discord_token),
+            recurring_event_poster(),
         )
     except Exception:
         logging.exception("Failed to start services")
