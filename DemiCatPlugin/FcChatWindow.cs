@@ -106,9 +106,12 @@ public class FcChatWindow : ChatWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var users = await JsonSerializer.DeserializeAsync<List<UserDto>>(stream) ?? new List<UserDto>();
-            _users.Clear();
-            _users.AddRange(users);
-            _lastUserFetch = DateTime.UtcNow;
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _users.Clear();
+                _users.AddRange(users);
+                _lastUserFetch = DateTime.UtcNow;
+            });
         }
         catch
         {
