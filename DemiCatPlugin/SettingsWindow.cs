@@ -105,21 +105,21 @@ public class SettingsWindow : IDisposable
         if (_httpClient == null)
         {
             _log.Error("Cannot sync: HTTP client is not initialized.");
-            PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = "Network error");
+            _ = PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
             return;
         }
 
         if (string.IsNullOrEmpty(_config.ApiBaseUrl))
         {
             _log.Error("Cannot sync: API base URL is not configured.");
-            PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = "Network error");
+            _ = PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
             return;
         }
 
         if (PluginServices.Instance?.PluginInterface == null)
         {
             _log.Error("Cannot sync: plugin interface is not available.");
-            PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = "Network error");
+            _ = PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
             return;
         }
 
@@ -177,23 +177,23 @@ public class SettingsWindow : IDisposable
                 if (MainWindow != null) MainWindow.ChannelsLoaded = false;
                 if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 if (OfficerChatWindow != null) OfficerChatWindow.ChannelsLoaded = false;
-                PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = rolesRefreshed ? "API key validated" : "Roles sync failed");
+                _ = PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = rolesRefreshed ? "API key validated" : "Roles sync failed");
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 _log.Warning($"API key validation failed: unauthorized. Response Body: {responseBody}");
-                PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = "Authentication failed");
+                _ = PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Authentication failed");
             }
             else
             {
                 _log.Warning($"API key validation failed with status {response.StatusCode}. Response Body: {responseBody}");
-                PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = "Network error");
+                _ = PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
             }
         }
         catch (Exception ex)
         {
             _log.Error(ex, "Error validating API key.");
-            PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = "Network error");
+            _ = PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
             return;
         }
     }
