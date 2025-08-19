@@ -89,11 +89,11 @@ public class Plugin : IDalamudPlugin
         _settings.Dispose();
     }
 
-    private async Task RefreshRoles(IPluginLog log)
+    private async Task<bool> RefreshRoles(IPluginLog log)
     {
         if (string.IsNullOrEmpty(_config.AuthToken))
         {
-            return;
+            return false;
         }
 
         try
@@ -108,7 +108,9 @@ public class Plugin : IDalamudPlugin
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
-                return;
+                var responseBody = await response.Content.ReadAsStringAsync();
+                log.Error($"Failed to fetch roles: {response.StatusCode}. Response Body: {responseBody}");
+                return false;
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
@@ -120,10 +122,12 @@ public class Plugin : IDalamudPlugin
                 _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
                 _services.PluginInterface.SavePluginConfig(_config);
             });
+            return true;
         }
         catch (Exception ex)
         {
             log.Error(ex, "Error refreshing roles.");
+            return false;
         }
     }
 

@@ -16,7 +16,7 @@ public class SettingsWindow : IDisposable
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
-    private readonly Func<Task> _refreshRoles;
+    private readonly Func<Task<bool>> _refreshRoles;
     private readonly Action _startNetworking;
     private readonly DeveloperWindow _devWindow;
     private readonly IPluginLog _log;
@@ -31,7 +31,7 @@ public class SettingsWindow : IDisposable
     public ChatWindow? ChatWindow { get; set; }
     public OfficerChatWindow? OfficerChatWindow { get; set; }
 
-    public SettingsWindow(Config config, HttpClient httpClient, Func<Task> refreshRoles, Action startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
+    public SettingsWindow(Config config, HttpClient httpClient, Func<Task<bool>> refreshRoles, Action startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
         _config = config;
         _httpClient = httpClient;
@@ -80,7 +80,7 @@ public class SettingsWindow : IDisposable
                     {
                         ImGui.TextColored(new Vector4(0, 1, 0, 1), _syncStatus);
                     }
-                    else if (_syncStatus == "Authentication failed" || _syncStatus == "Network error")
+                    else if (_syncStatus == "Authentication failed" || _syncStatus == "Network error" || _syncStatus == "Roles sync failed")
                     {
                         ImGui.TextColored(new Vector4(1, 0, 0, 1), _syncStatus);
                     }
@@ -151,15 +151,21 @@ public class SettingsWindow : IDisposable
                 _apiKey = key;
                 SaveConfig();
 
+                bool rolesRefreshed = false;
                 if (_refreshRoles != null)
                 {
                     try
                     {
-                        await _refreshRoles();
+                        rolesRefreshed = await _refreshRoles();
+                        if (!rolesRefreshed)
+                        {
+                            _log.Warning("Role refresh after key validation reported failure.");
+                        }
                     }
                     catch (Exception ex)
                     {
                         _log.Error(ex, "Failed to refresh roles after key validation.");
+                        rolesRefreshed = false;
                     }
                 }
                 else
@@ -171,7 +177,7 @@ public class SettingsWindow : IDisposable
                 if (MainWindow != null) MainWindow.ChannelsLoaded = false;
                 if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 if (OfficerChatWindow != null) OfficerChatWindow.ChannelsLoaded = false;
-                PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = "API key validated");
+                PluginServices.Instance.Framework.RunOnTick(() => _syncStatus = rolesRefreshed ? "API key validated" : "Roles sync failed");
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
