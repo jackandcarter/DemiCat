@@ -32,6 +32,10 @@ public class EventCreateWindow
     private RepeatOption _repeat = RepeatOption.None;
     private readonly List<RepeatSchedule> _schedules = new();
     private bool _schedulesLoaded;
+    private readonly List<RoleDto> _roles = new();
+    private readonly HashSet<string> _mentions = new();
+    private bool _rolesLoaded;
+    private bool _roleFetchFailed;
 
     public string ChannelId { private get; set; } = string.Empty;
 
@@ -91,10 +95,11 @@ public class EventCreateWindow
                 ImGui.Text("Mention Roles");
                 foreach (var role in _roles)
                 {
-                    var sel = _mentions.Contains(role.Id);
+                    var roleId = role.Id.ToString();
+                    var sel = _mentions.Contains(roleId);
                     if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
                     {
-                        if (sel) _mentions.Add(role.Id); else _mentions.Remove(role.Id);
+                        if (sel) _mentions.Add(roleId); else _mentions.Remove(roleId);
                     }
                 }
             }
@@ -346,7 +351,7 @@ public class EventCreateWindow
         {
             foreach (var m in template.Mentions)
             {
-                _mentions.Add(m);
+                _mentions.Add(m.ToString());
             }
         }
 
@@ -405,7 +410,7 @@ public class EventCreateWindow
                 Style = b.Style,
                 MaxSignups = b.MaxSignups
             }).ToList(),
-            Mentions = _mentions.ToList()
+            Mentions = _mentions.Select(ulong.Parse).ToList()
         };
 
         _config.Templates.Add(tmpl);
@@ -454,7 +459,7 @@ public class EventCreateWindow
                         .ToList()
                     : null,
                 buttons = buttons.Count > 0 ? buttons : null,
-                mentions = _mentions.Count > 0 ? _mentions.ToList() : null,
+                mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null,
                 repeat = _repeat == RepeatOption.None ? null : _repeat.ToString().ToLowerInvariant()
             };
 
