@@ -168,23 +168,13 @@ public class SettingsWindow : IDisposable
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
-
                 _log.Warning($"API key validation failed: unauthorized. Response Body: {responseBody}");
-                _authFailed = true;
-            }
-            else
-            {
-                _log.Warning($"API key validation failed with status {response.StatusCode}. Response Body: {responseBody}");
-                _networkError = true;
-
-                _log.Warning("API key validation failed: unauthorized.");
                 _syncStatus = "Authentication failed";
             }
             else
             {
-                _log.Warning($"API key validation failed with status {response.StatusCode}.");
+                _log.Warning($"API key validation failed with status {response.StatusCode}. Response Body: {responseBody}");
                 _syncStatus = "Network error";
-
             }
         }
         catch (Exception ex)
