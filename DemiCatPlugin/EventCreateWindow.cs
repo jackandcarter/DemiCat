@@ -262,7 +262,7 @@ public class EventCreateWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var roles = await JsonSerializer.DeserializeAsync<List<RoleDto>>(stream) ?? new List<RoleDto>();
-            PluginServices.Instance!.Framework.RunOnTick(() =>
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _roles.Clear();
                 _roles.AddRange(roles);
@@ -295,7 +295,7 @@ public class EventCreateWindow
             {
                 var stream = await response.Content.ReadAsStreamAsync();
                 var schedules = await JsonSerializer.DeserializeAsync<List<RepeatSchedule>>(stream) ?? new();
-                PluginServices.Instance!.Framework.RunOnTick(() =>
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _schedules.Clear();
                     _schedules.AddRange(schedules);

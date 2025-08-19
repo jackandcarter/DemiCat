@@ -70,7 +70,7 @@ public class SettingsWindow : IDisposable
                 {
                     _syncStatus = "Validating API key...";
                     _syncInProgress = true;
-                    Task.Run(async () =>
+                    _ = Task.Run(async () =>
                     {
                         try
                         {
