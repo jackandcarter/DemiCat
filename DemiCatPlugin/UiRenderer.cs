@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Numerics;
 using System.Threading.Tasks;
 using System.IO;
@@ -26,6 +27,10 @@ public class UiRenderer : IDisposable
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _pollCts;
     private int _connecting;
+    private readonly List<ChannelDto> _channels = new();
+    private bool _channelsLoaded;
+    private bool _channelFetchFailed;
+    private int _selectedIndex;
 
     public UiRenderer(Config config, HttpClient httpClient)
     {
@@ -312,6 +317,26 @@ public class UiRenderer : IDisposable
 
     public void Draw()
     {
+        if (!_channelsLoaded)
+        {
+            _ = FetchChannels();
+        }
+        if (_channels.Count > 0)
+        {
+            var channelNames = _channels.Select(c => c.Name).ToArray();
+            if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
+            {
+                _channelId = _channels[_selectedIndex].Id;
+                _config.EventChannelId = _channelId;
+                SaveConfig();
+                _ = RefreshEmbeds();
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted(_channelFetchFailed ? "Failed to load channels" : "No channels available");
+        }
+
         ImGui.BeginChild("##eventButtons", new Vector2(120, 0), true);
         _current?.DrawButtons();
         ImGui.EndChild();
@@ -343,6 +368,82 @@ public class UiRenderer : IDisposable
         }
 
         ImGui.EndChild();
+    }
+
+    private void SaveConfig()
+    {
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private async Task FetchChannels()
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
+            _channelFetchFailed = true;
+            _channelsLoaded = true;
+            return;
+        }
+
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _channelFetchFailed = true;
+                _channelsLoaded = true;
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            ResolveChannelNames(dto.Event);
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channels.Clear();
+                _channels.AddRange(dto.Event);
+                if (!string.IsNullOrEmpty(_channelId))
+                {
+                    _selectedIndex = _channels.FindIndex(c => c.Id == _channelId);
+                    if (_selectedIndex < 0) _selectedIndex = 0;
+                }
+                if (_channels.Count > 0)
+                {
+                    _channelId = _channels[_selectedIndex].Id;
+                }
+                _channelsLoaded = true;
+                _channelFetchFailed = false;
+            });
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
+            _channelFetchFailed = true;
+            _channelsLoaded = true;
+        }
+    }
+
+    private static void ResolveChannelNames(List<ChannelDto> channels)
+    {
+        foreach (var c in channels)
+        {
+            if (string.IsNullOrWhiteSpace(c.Name))
+            {
+                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}; using ID as fallback.");
+                c.Name = c.Id;
+            }
+        }
+    }
+
+    private class ChannelListDto
+    {
+        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
     }
 
     public void Dispose()

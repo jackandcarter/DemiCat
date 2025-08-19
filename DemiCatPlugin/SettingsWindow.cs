@@ -71,7 +71,6 @@ public class SettingsWindow : IDisposable
                 {
                     _config.EnableFcChat = enableFc;
                     SaveConfig();
-                    if (MainWindow != null) MainWindow.ChannelsLoaded = false;
                     if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 }
 
@@ -203,7 +202,6 @@ public class SettingsWindow : IDisposable
                 }
 
                 await _startNetworking();
-                if (MainWindow != null) MainWindow.ChannelsLoaded = false;
                 if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 if (OfficerChatWindow != null) OfficerChatWindow.ChannelsLoaded = false;
                 _ = framework.RunOnTick(() => _syncStatus = rolesRefreshed ? "API key validated" : "Roles sync failed");

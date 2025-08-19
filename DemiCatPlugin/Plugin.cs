@@ -151,7 +151,6 @@ public class Plugin : IDalamudPlugin
                 _config.Roles = dto.Roles;
                 _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
                 _config.EnableFcChat = hasChat;
-                _mainWindow.ChannelsLoaded = false;
                 _chatWindow.ChannelsLoaded = false;
                 _services.PluginInterface.SavePluginConfig(_config);
             });
