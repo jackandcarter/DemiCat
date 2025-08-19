@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Numerics;
 using System.Threading.Tasks;
+using System.Linq;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -19,9 +20,9 @@ public class MainWindow
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
     private readonly HttpClient _httpClient;
-    private readonly List<string> _channels = new();
-    private readonly List<string> _fcChatChannels = new();
-    private readonly List<string> _officerChatChannels = new();
+    private readonly List<ChannelDto> _channels = new();
+    private readonly List<ChannelDto> _fcChatChannels = new();
+    private readonly List<ChannelDto> _officerChatChannels = new();
     private bool _channelsLoaded;
     private bool _channelFetchFailed;
     private int _selectedIndex;
@@ -91,9 +92,10 @@ public class MainWindow
         if (_channels.Count > 0)
         {
             ImGui.SetNextItemWidth(-1);
-            if (ImGui.Combo("Event", ref _selectedIndex, _channels.ToArray(), _channels.Count))
+            var channelNames = _channels.Select(c => c.Name).ToArray();
+            if (ImGui.Combo("Event", ref _selectedIndex, channelNames, channelNames.Length))
             {
-                _channelId = _channels[_selectedIndex];
+                _channelId = _channels[_selectedIndex].Id;
                 _config.EventChannelId = _channelId;
                 SaveConfig();
                 _ui.ChannelId = _channelId;
@@ -200,12 +202,12 @@ public class MainWindow
                 _officer.ChannelsLoaded = true;
                 if (!string.IsNullOrEmpty(_channelId))
                 {
-                    _selectedIndex = _channels.IndexOf(_channelId);
+                    _selectedIndex = _channels.FindIndex(c => c.Id == _channelId);
                     if (_selectedIndex < 0) _selectedIndex = 0;
                 }
                 if (_channels.Count > 0)
                 {
-                    _channelId = _channels[_selectedIndex];
+                    _channelId = _channels[_selectedIndex].Id;
                     _ui.ChannelId = _channelId;
                     _create.ChannelId = _channelId;
                     _templates.ChannelId = _channelId;
@@ -225,9 +227,9 @@ public class MainWindow
 
     private class ChannelListDto
     {
-        [JsonPropertyName("event")] public List<string> Event { get; set; } = new();
-        [JsonPropertyName("fc_chat")] public List<string> FcChat { get; set; } = new();
-        [JsonPropertyName("officer_chat")] public List<string> OfficerChat { get; set; } = new();
-        [JsonPropertyName("officer_visible")] public List<string> OfficerVisible { get; set; } = new();
+        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
+        [JsonPropertyName("fc_chat")] public List<ChannelDto> FcChat { get; set; } = new();
+        [JsonPropertyName("officer_chat")] public List<ChannelDto> OfficerChat { get; set; } = new();
+        [JsonPropertyName("officer_visible")] public List<ChannelDto> OfficerVisible { get; set; } = new();
     }
 }

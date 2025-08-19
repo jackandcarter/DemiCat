@@ -9,6 +9,7 @@ using System.Text.RegularExpressions;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -18,7 +19,7 @@ public class ChatWindow : IDisposable
     protected readonly Config _config;
     protected readonly HttpClient _httpClient;
     protected readonly List<ChatMessageDto> _messages = new();
-    protected readonly List<string> _channels = new();
+    protected readonly List<ChannelDto> _channels = new();
     protected int _selectedIndex;
     protected bool _channelsLoaded;
     protected bool _channelFetchFailed;
@@ -59,9 +60,10 @@ public class ChatWindow : IDisposable
 
         if (_channels.Count > 0)
         {
-            if (ImGui.Combo("Channel", ref _selectedIndex, _channels.ToArray(), _channels.Count))
+            var channelNames = _channels.Select(c => c.Name).ToArray();
+            if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
-                _channelId = _channels[_selectedIndex];
+                _channelId = _channels[_selectedIndex].Id;
                 _config.ChatChannelId = _channelId;
                 SaveConfig();
                 _ = RefreshMessages();
@@ -98,18 +100,18 @@ public class ChatWindow : IDisposable
 
     }
 
-    public void SetChannels(List<string> channels)
+    public void SetChannels(List<ChannelDto> channels)
     {
         _channels.Clear();
         _channels.AddRange(channels);
         if (!string.IsNullOrEmpty(_channelId))
         {
-            _selectedIndex = _channels.IndexOf(_channelId);
+            _selectedIndex = _channels.FindIndex(c => c.Id == _channelId);
             if (_selectedIndex < 0) _selectedIndex = 0;
         }
         if (_channels.Count > 0)
         {
-            _channelId = _channels[_selectedIndex];
+            _channelId = _channels[_selectedIndex].Id;
             _ = RefreshMessages();
         }
     }
@@ -366,6 +368,6 @@ public class ChatWindow : IDisposable
 
     protected class ChannelListDto
     {
-        [JsonPropertyName("fc_chat")] public List<string> Chat { get; set; } = new();
+        [JsonPropertyName("fc_chat")] public List<ChannelDto> Chat { get; set; } = new();
     }
 }

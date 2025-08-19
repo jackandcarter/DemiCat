@@ -51,6 +51,7 @@ class GuildChannel(Base):
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), primary_key=True)
     channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     kind: Mapped[str] = mapped_column(String(24), primary_key=True)
+    name: Mapped[Optional[str]] = mapped_column(String(255))
 
 
 class User(Base):
