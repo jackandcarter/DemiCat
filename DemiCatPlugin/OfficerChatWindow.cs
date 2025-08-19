@@ -69,6 +69,10 @@ public class OfficerChatWindow : ChatWindow
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _channelFetchFailed = true;
+                _channelsLoaded = true;
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
@@ -77,11 +81,14 @@ public class OfficerChatWindow : ChatWindow
             {
                 SetChannels(dto.Officer);
                 _channelsLoaded = true;
+                _channelFetchFailed = false;
             });
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
+            _channelFetchFailed = true;
+            _channelsLoaded = true;
         }
     }
 

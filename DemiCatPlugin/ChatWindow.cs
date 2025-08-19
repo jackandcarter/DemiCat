@@ -21,6 +21,7 @@ public class ChatWindow : IDisposable
     protected readonly List<string> _channels = new();
     protected int _selectedIndex;
     protected bool _channelsLoaded;
+    protected bool _channelFetchFailed;
     protected string _channelId;
     protected string _input = string.Empty;
     protected bool _useCharacterName;
@@ -67,7 +68,7 @@ public class ChatWindow : IDisposable
         }
         else
         {
-            ImGui.TextUnformatted("No channels available");
+            ImGui.TextUnformatted(_channelFetchFailed ? "Failed to load channels" : "No channels available");
         }
         if (ImGui.Checkbox("Use Character Name", ref _useCharacterName))
         {
@@ -206,6 +207,10 @@ public class ChatWindow : IDisposable
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _channelFetchFailed = true;
+                _channelsLoaded = true;
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
@@ -214,11 +219,14 @@ public class ChatWindow : IDisposable
             {
                 SetChannels(dto.Chat);
                 _channelsLoaded = true;
+                _channelFetchFailed = false;
             });
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
+            _channelFetchFailed = true;
+            _channelsLoaded = true;
         }
     }
 

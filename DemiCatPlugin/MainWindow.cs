@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
@@ -22,6 +23,7 @@ public class MainWindow
     private readonly List<string> _fcChatChannels = new();
     private readonly List<string> _officerChatChannels = new();
     private bool _channelsLoaded;
+    private bool _channelFetchFailed;
     private int _selectedIndex;
     private string _channelId;
 
@@ -102,7 +104,7 @@ public class MainWindow
         }
         else
         {
-            ImGui.TextUnformatted("No channels available");
+            ImGui.TextUnformatted(_channelFetchFailed ? "Failed to load channels" : "No channels available");
         }
         ImGui.EndChild();
 
@@ -168,6 +170,10 @@ public class MainWindow
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _channelFetchFailed = true;
+                _channelsLoaded = true;
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
@@ -196,10 +202,13 @@ public class MainWindow
             }
 
             _channelsLoaded = true;
+            _channelFetchFailed = false;
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
+            _channelFetchFailed = true;
+            _channelsLoaded = true;
         }
     }
 
