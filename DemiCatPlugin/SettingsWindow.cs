@@ -202,6 +202,8 @@ public class SettingsWindow : IDisposable
                 }
 
                 await _startNetworking();
+                MainWindow?.Ui.ResetChannels();
+                (ChatWindow?.Presence ?? OfficerChatWindow?.Presence)?.Reset();
                 if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 if (OfficerChatWindow != null) OfficerChatWindow.ChannelsLoaded = false;
                 _ = framework.RunOnTick(() => _syncStatus = rolesRefreshed ? "API key validated" : "Roles sync failed");

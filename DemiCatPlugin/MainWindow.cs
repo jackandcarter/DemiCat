@@ -17,6 +17,7 @@ public class MainWindow : IDisposable
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
+    public UiRenderer Ui => _ui;
 
     public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient)
     {

@@ -352,6 +352,12 @@ public class UiRenderer : IDisposable
         ImGui.EndChild();
     }
 
+    public void ResetChannels()
+    {
+        _channelsLoaded = false;
+        _channels.Clear();
+    }
+
     private void SaveConfig()
     {
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
