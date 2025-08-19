@@ -123,8 +123,10 @@ class Message(Base):
         BIGINT(unsigned=True), ForeignKey("users.id")
     )
     author_name: Mapped[str] = mapped_column(String(255))
+    author_avatar_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     content_raw: Mapped[str] = mapped_column(Text)
     content_display: Mapped[str] = mapped_column(Text)
+    attachments_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     is_officer: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

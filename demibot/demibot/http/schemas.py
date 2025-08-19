@@ -51,11 +51,21 @@ class Mention(BaseModel):
     id: str
     name: str
 
+
+class AttachmentDto(BaseModel):
+    url: str
+    filename: Optional[str] = None
+    contentType: Optional[str] = None
+
+
 class ChatMessage(BaseModel):
     id: str
     channelId: str
     authorName: str
+    authorAvatarUrl: Optional[str] = None
+    timestamp: Optional[datetime] = None
     content: str
+    attachments: List[AttachmentDto] | None = None
     mentions: List[Mention] | None = None
 
 # ---- Presence ----
