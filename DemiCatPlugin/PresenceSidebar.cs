@@ -7,12 +7,11 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
 
-public class PresencePane : IDisposable
+public class PresenceSidebar : IDisposable
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
@@ -22,7 +21,7 @@ public class PresencePane : IDisposable
     private CancellationTokenSource? _wsCts;
     private bool _loaded;
 
-    public PresencePane(Config config, HttpClient httpClient)
+    public PresenceSidebar(Config config, HttpClient httpClient)
     {
         _config = config;
         _httpClient = httpClient;
@@ -40,7 +39,6 @@ public class PresencePane : IDisposable
             _ = Refresh();
         }
 
-        ImGui.BeginChild("PresenceList", new Vector2(150, 0), true);
         var online = _presences.Where(p => p.Status != "offline").OrderBy(p => p.Name).ToList();
         var offline = _presences.Where(p => p.Status == "offline").OrderBy(p => p.Name).ToList();
         ImGui.TextUnformatted($"Online - {online.Count}");
@@ -54,7 +52,6 @@ public class PresencePane : IDisposable
         {
             ImGui.TextUnformatted(p.Name);
         }
-        ImGui.EndChild();
     }
 
     public void Dispose()
@@ -179,3 +176,4 @@ public class PresencePane : IDisposable
         return builder.Uri;
     }
 }
+

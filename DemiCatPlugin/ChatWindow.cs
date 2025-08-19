@@ -32,6 +32,7 @@ public class ChatWindow : IDisposable
     protected string _input = string.Empty;
     protected bool _useCharacterName;
     protected string _statusMessage = string.Empty;
+    protected readonly PresenceSidebar _presence;
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
@@ -57,10 +58,11 @@ public class ChatWindow : IDisposable
         set => _channelsLoaded = value;
     }
 
-    public ChatWindow(Config config, HttpClient httpClient)
+    public ChatWindow(Config config, HttpClient httpClient, PresenceSidebar presence)
     {
         _config = config;
         _httpClient = httpClient;
+        _presence = presence;
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
     }
@@ -77,6 +79,13 @@ public class ChatWindow : IDisposable
         {
             _ = FetchChannels();
         }
+
+        ImGui.BeginChild("##presence", new Vector2(150, 0), true);
+        _presence.Draw();
+        ImGui.EndChild();
+        ImGui.SameLine();
+
+        ImGui.BeginChild("##chatArea", new Vector2(0, 0), false);
 
         if (_channels.Count > 0)
         {
@@ -171,6 +180,7 @@ public class ChatWindow : IDisposable
             ImGui.TextUnformatted(_statusMessage);
         }
 
+        ImGui.EndChild();
     }
 
     public void SetChannels(List<ChannelDto> channels)

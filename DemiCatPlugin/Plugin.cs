@@ -22,6 +22,7 @@ public class Plugin : IDalamudPlugin
     private readonly SettingsWindow _settings;
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
+    private readonly PresenceSidebar _presenceSidebar;
     private readonly MainWindow _mainWindow;
     private Config _config;
     private readonly HttpClient _httpClient = new();
@@ -47,8 +48,9 @@ public class Plugin : IDalamudPlugin
 
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
-        _chatWindow = new FcChatWindow(_config, _httpClient);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient);
+        _presenceSidebar = new PresenceSidebar(_config, _httpClient);
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceSidebar);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceSidebar);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
         _settings.MainWindow = _mainWindow;
         _settings.ChatWindow = _chatWindow;
@@ -83,6 +85,7 @@ public class Plugin : IDalamudPlugin
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
 
         _httpClient.Dispose();
+        _presenceSidebar.Dispose();
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();
         _mainWindow.Dispose();

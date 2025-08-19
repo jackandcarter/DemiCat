@@ -14,7 +14,7 @@ public class FcChatWindow : ChatWindow
     private readonly List<UserDto> _users = new();
     private DateTime _lastUserFetch = DateTime.MinValue;
 
-    public FcChatWindow(Config config, HttpClient httpClient) : base(config, httpClient)
+    public FcChatWindow(Config config, HttpClient httpClient, PresenceSidebar presence) : base(config, httpClient, presence)
     {
         _channelId = config.FcChannelId;
     }
