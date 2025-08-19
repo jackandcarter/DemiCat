@@ -194,7 +194,12 @@ public class ChatWindow : IDisposable
         _channelsLoaded = true;
         try
         {
-            var response = await _httpClient.GetAsync($"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
                 return;
