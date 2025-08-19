@@ -175,6 +175,7 @@ public class ChatWindow : IDisposable
 
     public void SetChannels(List<ChannelDto> channels)
     {
+        ResolveChannelNames(channels);
         _channels.Clear();
         _channels.AddRange(channels);
         if (!string.IsNullOrEmpty(_channelId))
@@ -186,6 +187,18 @@ public class ChatWindow : IDisposable
         {
             _channelId = _channels[_selectedIndex].Id;
             _ = RefreshMessages();
+        }
+    }
+
+    protected void ResolveChannelNames(List<ChannelDto> channels)
+    {
+        foreach (var c in channels)
+        {
+            if (string.IsNullOrWhiteSpace(c.Name))
+            {
+                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}; using ID as fallback.");
+                c.Name = c.Id;
+            }
         }
     }
 
@@ -365,6 +378,7 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            ResolveChannelNames(dto.Chat);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Chat);

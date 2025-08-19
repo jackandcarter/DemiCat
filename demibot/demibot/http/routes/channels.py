@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ..discord_client import discord_client
 from ...db.models import GuildChannel
+from ...channel_names import ensure_channel_name
 
 router = APIRouter(prefix="/api")
 
@@ -29,25 +29,10 @@ async def get_channels(
     }
     updated = False
     for kind, channel_id, name in result.all():
-        if not name and discord_client:
-            channel = discord_client.get_channel(channel_id)
-            if channel is None:
-                try:
-                    channel = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
-                except Exception:  # pragma: no cover - network errors
-                    channel = None
-            if channel is not None:
-                name = channel.name
-                await db.execute(
-                    update(GuildChannel)
-                    .where(
-                        GuildChannel.guild_id == ctx.guild.id,
-                        GuildChannel.channel_id == channel_id,
-                        GuildChannel.kind == kind,
-                    )
-                    .values(name=name)
-                )
-                updated = True
+        new_name = await ensure_channel_name(db, ctx.guild.id, channel_id, kind, name)
+        if new_name and new_name != name:
+            name = new_name
+            updated = True
         by_kind.setdefault(kind, []).append({"id": str(channel_id), "name": name or ""})
     if updated:
         await db.commit()

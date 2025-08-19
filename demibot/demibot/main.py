@@ -16,7 +16,9 @@ from .config import ensure_config
 from .db.session import init_db
 from .discordbot.bot import create_bot
 from .http.api import create_app
+from .http.discord_client import set_discord_client
 from .repeat_events import recurring_event_poster
+from .channel_names import channel_name_resync
 
 
 async def main_async() -> None:
@@ -49,6 +51,7 @@ async def main_async() -> None:
     try:
         app = create_app(cfg)
         bot = create_bot(cfg)
+        set_discord_client(bot)
         config = uvicorn.Config(
             app, host=cfg.server.host, port=cfg.server.port, log_level="info"
         )
@@ -58,6 +61,7 @@ async def main_async() -> None:
             server.serve(),
             bot.start(cfg.discord_token),
             recurring_event_poster(),
+            channel_name_resync(),
         )
     except Exception:
         logging.exception("Failed to start services")

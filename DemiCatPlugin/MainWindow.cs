@@ -198,6 +198,10 @@ public class MainWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            ResolveChannelNames(dto.Event);
+            ResolveChannelNames(dto.FcChat);
+            ResolveChannelNames(dto.OfficerChat);
+            ResolveChannelNames(dto.OfficerVisible);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
@@ -232,6 +236,18 @@ public class MainWindow : IDisposable
             PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
             _channelFetchFailed = true;
             _channelsLoaded = true;
+        }
+    }
+
+    private static void ResolveChannelNames(List<ChannelDto> channels)
+    {
+        foreach (var c in channels)
+        {
+            if (string.IsNullOrWhiteSpace(c.Name))
+            {
+                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}; using ID as fallback.");
+                c.Name = c.Id;
+            }
         }
     }
 
