@@ -24,6 +24,7 @@ public class SettingsWindow : IDisposable
     private string _apiKey = string.Empty;
     private string _apiBaseUrl = string.Empty;
     private string _syncStatus = string.Empty;
+    private bool _syncInProgress;
 
     public bool IsOpen;
 
@@ -65,13 +66,25 @@ public class SettingsWindow : IDisposable
                     _devWindow.IsOpen = true;
                 }
 
-                if (ImGui.Button("Sync"))
+                if (ImGui.Button("Sync") && !_syncInProgress)
                 {
                     _syncStatus = "Validating API key...";
-                    Task.Run(Sync).ContinueWith(t =>
+                    _syncInProgress = true;
+                    Task.Run(async () =>
                     {
-                        _log.Error(t.Exception!, "Unexpected error during sync");
-                    }, TaskContinuationOptions.OnlyOnFaulted);
+                        try
+                        {
+                            await Sync();
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Error(ex, "Unexpected error during sync");
+                        }
+                        finally
+                        {
+                            _syncInProgress = false;
+                        }
+                    });
                 }
 
                 if (!string.IsNullOrEmpty(_syncStatus))
