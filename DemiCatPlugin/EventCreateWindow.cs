@@ -415,8 +415,12 @@ public class EventCreateWindow
 
     private async Task CreateEvent()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(ChannelId))
         {
+            if (string.IsNullOrWhiteSpace(ChannelId))
+            {
+                _lastResult = "No channel selected";
+            }
             return;
         }
         try
