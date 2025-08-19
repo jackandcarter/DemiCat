@@ -2,6 +2,7 @@ using System;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Numerics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -36,19 +37,42 @@ public class EventCreateWindow
     private readonly HashSet<string> _mentions = new();
     private bool _rolesLoaded;
     private bool _roleFetchFailed;
-
-    public string ChannelId { private get; set; } = string.Empty;
+    private readonly List<ChannelDto> _channels = new();
+    private bool _channelsLoaded;
+    private bool _channelFetchFailed;
+    private int _selectedIndex;
+    private string _channelId = string.Empty;
 
     public EventCreateWindow(Config config, HttpClient httpClient)
     {
         _config = config;
         _httpClient = httpClient;
+        _channelId = config.EventChannelId;
         ResetDefaultButtons();
         _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
     }
 
     public void Draw()
     {
+        if (!_channelsLoaded)
+        {
+            _ = FetchChannels();
+        }
+        if (_channels.Count > 0)
+        {
+            var channelNames = _channels.Select(c => c.Name).ToArray();
+            if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
+            {
+                _channelId = _channels[_selectedIndex].Id;
+                _config.EventChannelId = _channelId;
+                SaveConfig();
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted(_channelFetchFailed ? "Failed to load channels" : "No channels available");
+        }
+
         ImGui.InputText("Title", ref _title, 256);
         ImGui.InputText("Time", ref _time, 64);
         var repeatPreview = _repeat.ToString();
@@ -420,9 +444,9 @@ public class EventCreateWindow
 
     private async Task CreateEvent()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(ChannelId))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId))
         {
-            if (string.IsNullOrWhiteSpace(ChannelId))
+            if (string.IsNullOrWhiteSpace(_channelId))
             {
                 _lastResult = "No channel selected";
             }
@@ -444,7 +468,7 @@ public class EventCreateWindow
 
             var body = new
             {
-                channelId = ChannelId,
+                channelId = _channelId,
                 title = _title,
                 time = _time,
                 description = _description,
@@ -490,6 +514,82 @@ public class EventCreateWindow
                 MaxSignups = b.MaxSignups
             });
         }
+    }
+
+    private void SaveConfig()
+    {
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private async Task FetchChannels()
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
+            _channelFetchFailed = true;
+            _channelsLoaded = true;
+            return;
+        }
+
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _channelFetchFailed = true;
+                _channelsLoaded = true;
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            ResolveChannelNames(dto.Event);
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channels.Clear();
+                _channels.AddRange(dto.Event);
+                if (!string.IsNullOrEmpty(_channelId))
+                {
+                    _selectedIndex = _channels.FindIndex(c => c.Id == _channelId);
+                    if (_selectedIndex < 0) _selectedIndex = 0;
+                }
+                if (_channels.Count > 0)
+                {
+                    _channelId = _channels[_selectedIndex].Id;
+                }
+                _channelsLoaded = true;
+                _channelFetchFailed = false;
+            });
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
+            _channelFetchFailed = true;
+            _channelsLoaded = true;
+        }
+    }
+
+    private static void ResolveChannelNames(List<ChannelDto> channels)
+    {
+        foreach (var c in channels)
+        {
+            if (string.IsNullOrWhiteSpace(c.Name))
+            {
+                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}; using ID as fallback.");
+                c.Name = c.Id;
+            }
+        }
+    }
+
+    private class ChannelListDto
+    {
+        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
     }
 
     private void SavePreset()
