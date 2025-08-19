@@ -1,4 +1,14 @@
-from . import channels, messages, officer_messages, users, embeds, events, interactions, validate_roles
+from . import (
+    channels,
+    messages,
+    officer_messages,
+    users,
+    embeds,
+    events,
+    interactions,
+    validate_roles,
+    guild_roles,
+)
 
 __all__ = [
     "channels",
@@ -9,4 +19,5 @@ __all__ = [
     "events",
     "interactions",
     "validate_roles",
+    "guild_roles",
 ]

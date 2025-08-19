@@ -131,7 +131,8 @@ public class TemplatesWindow
                 CustomId = $"rsvp:{b.Tag}",
                 Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
                 Style = b.Style
-            }).ToList()
+            }).ToList(),
+            Mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
         };
     }
 
@@ -173,8 +174,9 @@ public class TemplatesWindow
                             .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
                             .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
                             .ToList()
-                        : null,
-                    buttons = buttons != null && buttons.Count > 0 ? buttons : null
+                    : null,
+                    buttons = buttons != null && buttons.Count > 0 ? buttons : null,
+                    mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
                 };
 
                 var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");

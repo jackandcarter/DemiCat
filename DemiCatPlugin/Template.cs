@@ -20,6 +20,7 @@ public class Template
     public uint Color { get; set; }
     public List<TemplateField> Fields { get; set; } = new();
     public List<TemplateButton> Buttons { get; set; } = new();
+    public List<ulong> Mentions { get; set; } = new();
 
     public class TemplateField
     {
