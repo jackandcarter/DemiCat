@@ -185,13 +185,20 @@ public class SettingsWindow : IDisposable
 
     private void SaveConfig()
     {
-        var pluginInterface = PluginServices.Instance?.PluginInterface;
-        if (pluginInterface == null)
+        var services = PluginServices.Instance;
+        if (services?.PluginInterface == null)
         {
             _log.Error("Plugin interface is not available; cannot save configuration.");
             return;
         }
-        pluginInterface.SavePluginConfig(_config);
+
+        if (services.Framework == null)
+        {
+            _log.Error("Framework is not available; cannot save configuration.");
+            return;
+        }
+
+        _ = services.Framework.RunOnTick(() => services.PluginInterface.SavePluginConfig(_config));
     }
 
     public void Dispose()
