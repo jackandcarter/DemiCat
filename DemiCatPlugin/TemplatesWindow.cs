@@ -123,7 +123,7 @@ public class TemplatesWindow
             Timestamp = ts,
             ImageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
-            Color = tmpl.Color > 0 ? (uint?)tmpl.Color : null,
+            Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
             Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
             Buttons = tmpl.Buttons?.Where(b => b.Include).Select(b => new EmbedButtonDto
             {
@@ -167,7 +167,7 @@ public class TemplatesWindow
                     url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
                     imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
                     thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
-                    color = tmpl.Color > 0 ? (uint?)tmpl.Color : null,
+                    color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
                     fields = tmpl.Fields != null && tmpl.Fields.Count > 0
                         ? tmpl.Fields
                             .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
