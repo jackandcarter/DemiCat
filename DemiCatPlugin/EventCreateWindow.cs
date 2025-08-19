@@ -18,7 +18,7 @@ public class EventCreateWindow
 
     private string _title = string.Empty;
     private string _description = string.Empty;
-    private string _time = DateTime.UtcNow.ToString("o");
+    private string _time = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'");
     private string _imageUrl = string.Empty;
     private string _url = string.Empty;
     private string _thumbnailUrl = string.Empty;
@@ -113,7 +113,9 @@ public class EventCreateWindow
     {
         _title = template.Title;
         _description = template.Description;
-        _time = string.IsNullOrEmpty(template.Time) ? DateTime.UtcNow.ToString("o") : template.Time;
+        _time = string.IsNullOrEmpty(template.Time)
+            ? DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'")
+            : template.Time;
         _url = template.Url;
         _imageUrl = template.ImageUrl;
         _thumbnailUrl = template.ThumbnailUrl;

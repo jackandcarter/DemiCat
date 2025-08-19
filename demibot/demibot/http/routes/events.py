@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,11 +48,28 @@ async def create_event(
     if not buttons:
         for tag in (body.attendance or ["yes", "maybe", "no"]):
             buttons.append(EmbedButtonDto(label=tag.capitalize(), customId=f"rsvp:{tag}"))
+    if body.time:
+        time_str = body.time.replace("Z", "+00:00")
+        if "." in time_str:
+            head, tail = time_str.split(".", 1)
+            if "+" in tail:
+                frac, tz = tail.split("+", 1)
+                time_str = f"{head}.{frac[:6]}+{tz}"
+            elif "-" in tail:
+                frac, tz = tail.split("-", 1)
+                time_str = f"{head}.{frac[:6]}-{tz}"
+            else:
+                time_str = f"{head}.{tail[:6]}"
+        try:
+            ts = datetime.fromisoformat(time_str)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid time format")
+    else:
+        ts = datetime.utcnow()
+
     dto = EmbedDto(
         id=eid,
-        timestamp=datetime.fromisoformat(body.time.replace("Z", "+00:00"))
-        if body.time
-        else datetime.utcnow(),
+        timestamp=ts,
         color=body.color,
         authorName=None,
         authorIconUrl=None,
