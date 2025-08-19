@@ -410,6 +410,21 @@ public class ChatWindow : IDisposable
     {
         while (!token.IsCancellationRequested)
         {
+            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    _statusMessage = "Invalid API base URL");
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), token);
+                }
+                catch
+                {
+                    // ignore cancellation
+                }
+                continue;
+            }
+
             try
             {
                 _ws?.Dispose();
