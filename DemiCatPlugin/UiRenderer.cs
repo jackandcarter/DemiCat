@@ -25,6 +25,7 @@ public class UiRenderer : IDisposable
     private EventView? _current;
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _pollCts;
+    private int _connecting;
 
     public UiRenderer(Config config, HttpClient httpClient)
     {
@@ -147,9 +148,13 @@ public class UiRenderer : IDisposable
             return;
         }
 
+        if (Interlocked.Exchange(ref _connecting, 1) == 1)
+        {
+            return;
+        }
+
         try
         {
-            _webSocket?.Dispose();
             _webSocket = new ClientWebSocket();
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
@@ -167,12 +172,20 @@ public class UiRenderer : IDisposable
         {
             var status = ex.Data.Contains("StatusCode") ? ex.Data["StatusCode"] : ex.WebSocketErrorCode;
             PluginServices.Instance!.Log.Error(ex, $"Failed to connect WebSocket. Status: {status}");
+            _webSocket?.Dispose();
+            _webSocket = null;
             StartPolling();
         }
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Failed to connect WebSocket");
+            _webSocket?.Dispose();
+            _webSocket = null;
             StartPolling();
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _connecting, 0);
         }
     }
 
