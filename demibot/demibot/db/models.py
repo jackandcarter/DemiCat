@@ -174,7 +174,7 @@ class Presence(Base):
 class RecurringEvent(Base):
     __tablename__ = "recurring_events"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     channel_id: Mapped[int] = mapped_column(BigInteger)
     repeat: Mapped[str] = mapped_column(String(16))
