@@ -70,6 +70,14 @@ public class OfficerChatWindow : ChatWindow
 
     protected override async Task FetchChannels()
     {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
+            _channelFetchFailed = true;
+            _channelsLoaded = true;
+            return;
+        }
+
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
