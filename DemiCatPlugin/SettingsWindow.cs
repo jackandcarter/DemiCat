@@ -52,7 +52,8 @@ public class SettingsWindow : IDisposable
                     SaveConfig();
                 }
 
-                ImGui.InputText("API Key", ref _apiKey, 64);
+                // Allow room for longer server-generated API keys
+                ImGui.InputText("API Key", ref _apiKey, 256);
                 ImGui.SameLine();
                 ImGui.TextDisabled("\u03C0");
                 var io = ImGui.GetIO();
