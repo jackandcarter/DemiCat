@@ -8,7 +8,7 @@ from sqlalchemy import select
 
 from ...db.models import Embed, GuildChannel, Message
 from ...db.session import get_session, init_db
-from ...http.schemas import ChatMessage, EmbedDto, EmbedFieldDto, Mention
+from ...http.schemas import ChatMessage, EmbedDto, EmbedFieldDto, Mention, AttachmentDto
 from ...http.ws import manager
 
 
@@ -107,6 +107,19 @@ class Mirror(commands.Cog):
             is_officer = kind == "officer_chat"
 
             # Persist the message
+            attachments_json = None
+            if message.attachments:
+                attachments_json = json.dumps(
+                    [
+                        {
+                            "url": a.url,
+                            "filename": a.filename,
+                            "contentType": a.content_type,
+                        }
+                        for a in message.attachments
+                    ]
+                )
+
             db.add(
                 Message(
                     discord_message_id=message.id,
@@ -115,8 +128,12 @@ class Mirror(commands.Cog):
                     author_id=message.author.id,
                     author_name=message.author.display_name
                     or message.author.name,
+                    author_avatar_url=str(message.author.display_avatar.url)
+                    if message.author.display_avatar
+                    else None,
                     content_raw=message.content,
                     content_display=message.content,
+                    attachments_json=attachments_json,
                     is_officer=is_officer,
                 )
             )
@@ -131,11 +148,24 @@ class Mirror(commands.Cog):
                 if not m.bot
             ]
 
+            attachments = [
+                AttachmentDto(
+                    url=a.url,
+                    filename=a.filename,
+                    contentType=a.content_type,
+                )
+                for a in message.attachments
+            ] or None
             dto = ChatMessage(
                 id=str(message.id),
                 channelId=str(channel_id),
                 authorName=message.author.display_name or message.author.name,
+                authorAvatarUrl=str(message.author.display_avatar.url)
+                if message.author.display_avatar
+                else None,
+                timestamp=message.created_at,
                 content=message.content,
+                attachments=attachments,
                 mentions=mentions or None,
             )
             await manager.broadcast_text(

@@ -10,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ..schemas import ChatMessage
+from ..schemas import ChatMessage, AttachmentDto
 from ..ws import manager
 from ...db.models import Message
 from ..discord_client import discord_client
@@ -41,12 +41,22 @@ async def get_messages(
     result = await db.execute(stmt)
     out: list[ChatMessage] = []
     for m in result.scalars():
+        attachments = None
+        if m.attachments_json:
+            try:
+                data = json.loads(m.attachments_json)
+                attachments = [AttachmentDto(**a) for a in data]
+            except Exception:
+                attachments = None
         out.append(
             ChatMessage(
                 id=str(m.discord_message_id),
                 channelId=str(m.channel_id),
                 authorName=m.author_name,
+                authorAvatarUrl=m.author_avatar_url,
+                timestamp=m.created_at,
                 content=m.content_display,
+                attachments=attachments,
             )
         )
     return [o.model_dump() for o in out]
@@ -81,11 +91,14 @@ async def post_message(
     )
     db.add(msg)
     await db.commit()
+    await db.refresh(msg)
 
     dto = ChatMessage(
         id=str(discord_msg_id),
         channelId=str(channel_id),
         authorName=msg.author_name,
+        authorAvatarUrl=msg.author_avatar_url,
+        timestamp=msg.created_at,
         content=msg.content_display,
     )
     await manager.broadcast_text(

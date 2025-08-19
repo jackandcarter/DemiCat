@@ -11,6 +11,11 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
+using StbImageSharp;
+using System.IO;
+using DiscordHelper;
+using System.Diagnostics;
 
 namespace DemiCatPlugin;
 
@@ -30,6 +35,7 @@ public class ChatWindow : IDisposable
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
+    private readonly Dictionary<string, ISharedImmediateTexture?> _textureCache = new();
 
     public bool ChannelsLoaded
     {
@@ -82,7 +88,59 @@ public class ChatWindow : IDisposable
         ImGui.BeginChild("##chatScroll", new Vector2(0, -30), true);
         foreach (var msg in _messages)
         {
-            ImGui.TextWrapped($"{msg.AuthorName}: {FormatContent(msg)}");
+            ImGui.BeginGroup();
+            if (!string.IsNullOrEmpty(msg.AuthorAvatarUrl) && msg.AvatarTexture == null)
+            {
+                LoadTexture(msg.AuthorAvatarUrl, t => msg.AvatarTexture = t);
+            }
+            if (msg.AvatarTexture != null)
+            {
+                var wrap = msg.AvatarTexture.GetWrapOrEmpty();
+                ImGui.Image(wrap.Handle, new Vector2(32, 32));
+            }
+            else
+            {
+                ImGui.Dummy(new Vector2(32, 32));
+            }
+            ImGui.SameLine();
+
+            ImGui.BeginGroup();
+            ImGui.TextUnformatted(msg.AuthorName);
+            ImGui.SameLine();
+            ImGui.TextUnformatted(msg.Timestamp.ToLocalTime().ToString());
+            ImGui.TextWrapped(FormatContent(msg));
+            if (msg.Attachments != null)
+            {
+                foreach (var att in msg.Attachments)
+                {
+                    if (att.ContentType != null && att.ContentType.StartsWith("image") )
+                    {
+                        if (att.Texture == null)
+                        {
+                            LoadTexture(att.Url, t => att.Texture = t);
+                        }
+                        if (att.Texture != null)
+                        {
+                            var wrapAtt = att.Texture.GetWrapOrEmpty();
+                            var size = new Vector2(wrapAtt.Width, wrapAtt.Height);
+                            ImGui.Image(wrapAtt.Handle, size);
+                        }
+                    }
+                    else
+                    {
+                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.6f, 1f, 1f));
+                        ImGui.TextUnformatted(att.Filename ?? att.Url);
+                        if (ImGui.IsItemClicked())
+                        {
+                            try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
+                        }
+                        ImGui.PopStyleColor();
+                    }
+                }
+            }
+            ImGui.EndGroup();
+
+            ImGui.EndGroup();
         }
         ImGui.EndChild();
 
@@ -196,7 +254,24 @@ public class ChatWindow : IDisposable
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _messages.Clear();
-                _messages.AddRange(msgs);
+                foreach (var m in msgs)
+                {
+                    _messages.Add(m);
+                    if (!string.IsNullOrEmpty(m.AuthorAvatarUrl))
+                    {
+                        LoadTexture(m.AuthorAvatarUrl, t => m.AvatarTexture = t);
+                    }
+                    if (m.Attachments != null)
+                    {
+                        foreach (var a in m.Attachments)
+                        {
+                            if (a.ContentType != null && a.ContentType.StartsWith("image"))
+                            {
+                                LoadTexture(a.Url, t => a.Texture = t);
+                            }
+                        }
+                    }
+                }
             });
         }
         catch (Exception ex)
@@ -306,6 +381,20 @@ public class ChatWindow : IDisposable
                             if (msg.ChannelId == _channelId)
                             {
                                 _messages.Add(msg);
+                                if (!string.IsNullOrEmpty(msg.AuthorAvatarUrl))
+                                {
+                                    LoadTexture(msg.AuthorAvatarUrl, t => msg.AvatarTexture = t);
+                                }
+                                if (msg.Attachments != null)
+                                {
+                                    foreach (var a in msg.Attachments)
+                                    {
+                                        if (a.ContentType != null && a.ContentType.StartsWith("image"))
+                                        {
+                                            LoadTexture(a.Url, t => a.Texture = t);
+                                        }
+                                    }
+                                }
                             }
                         });
                     }
@@ -351,19 +440,65 @@ public class ChatWindow : IDisposable
         return builder.Uri;
     }
 
+    private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            set(null);
+            return;
+        }
+        if (_textureCache.TryGetValue(url, out var cached))
+        {
+            set(cached);
+            return;
+        }
+        _textureCache[url] = null;
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var bytes = await _httpClient.GetByteArrayAsync(url).ConfigureAwait(false);
+                using var stream = new MemoryStream(bytes);
+                var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+                var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
+                    RawImageSpecification.Rgba32(image.Width, image.Height),
+                    image.Data);
+                var texture = new ForwardingSharedImmediateTexture(wrap);
+                _textureCache[url] = texture;
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
+            }
+            catch
+            {
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(null));
+            }
+        });
+    }
+
     protected class ChatMessageDto
     {
         public string Id { get; set; } = string.Empty;
         public string ChannelId { get; set; } = string.Empty;
         public string AuthorName { get; set; } = string.Empty;
+        public string? AuthorAvatarUrl { get; set; }
+        public DateTime Timestamp { get; set; }
         public string Content { get; set; } = string.Empty;
+        public List<AttachmentDto>? Attachments { get; set; }
         public List<MentionDto>? Mentions { get; set; }
+        [JsonIgnore] public ISharedImmediateTexture? AvatarTexture { get; set; }
     }
 
     protected class MentionDto
     {
         public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+    }
+
+    protected class AttachmentDto
+    {
+        public string Url { get; set; } = string.Empty;
+        public string? Filename { get; set; }
+        public string? ContentType { get; set; }
+        [JsonIgnore] public ISharedImmediateTexture? Texture { get; set; }
     }
 
     protected class ChannelListDto
