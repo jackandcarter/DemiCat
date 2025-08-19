@@ -299,14 +299,14 @@ public class ChatWindow : IDisposable
     {
         foreach (var entry in _textureCache.Values)
         {
-            if (entry.Texture?.GetWrapOrEmpty() is IDalamudTextureWrap wrap)
+            if (entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
                 wrap.Dispose();
         }
         _textureCache.Clear();
         _textureLru.Clear();
         foreach (var m in _messages)
         {
-            if (m.AvatarTexture?.GetWrapOrEmpty() is IDalamudTextureWrap wrap)
+            if (m.AvatarTexture?.GetWrapOrEmpty() is IDisposable wrap)
             {
                 wrap.Dispose();
                 m.AvatarTexture = null;
@@ -315,7 +315,7 @@ public class ChatWindow : IDisposable
             {
                 foreach (var a in m.Attachments)
                 {
-                    if (a.Texture?.GetWrapOrEmpty() is IDalamudTextureWrap wrapAtt)
+                    if (a.Texture?.GetWrapOrEmpty() is IDisposable wrapAtt)
                     {
                         wrapAtt.Dispose();
                         a.Texture = null;
@@ -512,7 +512,7 @@ public class ChatWindow : IDisposable
             {
                 if (_textureCache.TryGetValue(last.Value, out var toRemove))
                 {
-                    if (toRemove.Texture?.GetWrapOrEmpty() is IDalamudTextureWrap wrap)
+                    if (toRemove.Texture?.GetWrapOrEmpty() is IDisposable wrap)
                         wrap.Dispose();
                     _textureCache.Remove(last.Value);
                 }
