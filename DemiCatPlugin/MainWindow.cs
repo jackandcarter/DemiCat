@@ -123,7 +123,7 @@ public class MainWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
-            if (_chat != null && ImGui.BeginTabItem("Chat"))
+            if (_config.EnableFcChat && _chat != null && ImGui.BeginTabItem("Chat"))
             {
                 _chat.Draw();
                 ImGui.EndTabItem();
@@ -210,8 +210,18 @@ public class MainWindow : IDisposable
                 _fcChatChannels.AddRange(dto.FcChat);
                 _officerChatChannels.Clear();
                 _officerChatChannels.AddRange(dto.OfficerChat);
-                _chat?.SetChannels(_fcChatChannels);
-                if (_chat != null) _chat.ChannelsLoaded = true;
+                if (_chat != null)
+                {
+                    if (_config.EnableFcChat)
+                    {
+                        _chat.SetChannels(_fcChatChannels);
+                        _chat.ChannelsLoaded = true;
+                    }
+                    else
+                    {
+                        _chat.ChannelsLoaded = false;
+                    }
+                }
                 _officer.SetChannels(_officerChatChannels);
                 _officer.ChannelsLoaded = true;
                 if (!string.IsNullOrEmpty(_channelId))

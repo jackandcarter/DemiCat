@@ -20,7 +20,7 @@ public class Plugin : IDalamudPlugin
     private readonly PluginServices _services;
     private readonly UiRenderer _ui;
     private readonly SettingsWindow _settings;
-    private readonly ChatWindow? _chatWindow;
+    private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
     private readonly MainWindow _mainWindow;
     private Config _config;
@@ -47,7 +47,7 @@ public class Plugin : IDalamudPlugin
 
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
-        _chatWindow = _config.EnableFcChat ? new FcChatWindow(_config, _httpClient) : null;
+        _chatWindow = new FcChatWindow(_config, _httpClient);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
         _settings.MainWindow = _mainWindow;
@@ -83,7 +83,7 @@ public class Plugin : IDalamudPlugin
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
 
         _httpClient.Dispose();
-        _chatWindow?.Dispose();
+        _chatWindow.Dispose();
         _officerChatWindow.Dispose();
         _mainWindow.Dispose();
         _ui.Dispose();
@@ -116,11 +116,43 @@ public class Plugin : IDalamudPlugin
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
             log.Info($"Roles received: {string.Join(", ", dto.Roles)}");
+
+            var channelUrl = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels";
+            var channelRequest = new HttpRequestMessage(HttpMethod.Get, channelUrl);
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                channelRequest.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            List<ChannelDto> chatChannels = new();
+            try
+            {
+                var channelResponse = await _httpClient.SendAsync(channelRequest);
+                if (channelResponse.IsSuccessStatusCode)
+                {
+                    var channelStream = await channelResponse.Content.ReadAsStreamAsync();
+                    var channelsDto = await JsonSerializer.DeserializeAsync<ChannelListDto>(channelStream) ?? new ChannelListDto();
+                    chatChannels = channelsDto.Chat;
+                }
+                else
+                {
+                    var responseBody = await channelResponse.Content.ReadAsStringAsync();
+                    log.Error($"Failed to fetch channels: {channelResponse.StatusCode}. Response Body: {responseBody}");
+                }
+            }
+            catch (Exception ex)
+            {
+                log.Error(ex, "Error fetching channels.");
+            }
+            var hasChat = chatChannels.Count > 0;
+
             _ = _services.Framework.RunOnTick(() =>
             {
                 dto.Roles.RemoveAll(r => r == "chat");
                 _config.Roles = dto.Roles;
                 _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+                _config.EnableFcChat = hasChat;
+                _mainWindow.ChannelsLoaded = false;
+                _chatWindow.ChannelsLoaded = false;
                 _services.PluginInterface.SavePluginConfig(_config);
             });
             return true;
@@ -136,5 +168,10 @@ public class Plugin : IDalamudPlugin
     {
         [JsonPropertyName("roles")]
         public List<string> Roles { get; set; } = new();
+    }
+
+    private class ChannelListDto
+    {
+        [JsonPropertyName("fc_chat")] public List<ChannelDto> Chat { get; set; } = new();
     }
 }

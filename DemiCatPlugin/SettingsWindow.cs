@@ -66,6 +66,15 @@ public class SettingsWindow : IDisposable
                     _devWindow.IsOpen = true;
                 }
 
+                var enableFc = _config.EnableFcChat;
+                if (ImGui.Checkbox("Enable FC Chat", ref enableFc))
+                {
+                    _config.EnableFcChat = enableFc;
+                    SaveConfig();
+                    if (MainWindow != null) MainWindow.ChannelsLoaded = false;
+                    if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
+                }
+
                 if (ImGui.Button("Sync") && !_syncInProgress)
                 {
                     _syncStatus = "Validating API key...";
