@@ -59,7 +59,6 @@ public class OfficerChatWindow : ChatWindow
 
     protected override async Task FetchChannels()
     {
-        _channelsLoaded = true;
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
@@ -77,6 +76,7 @@ public class OfficerChatWindow : ChatWindow
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Officer);
+                _channelsLoaded = true;
             });
         }
         catch

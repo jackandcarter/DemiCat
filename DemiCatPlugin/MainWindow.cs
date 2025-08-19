@@ -28,6 +28,12 @@ public class MainWindow
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
 
+    public bool ChannelsLoaded
+    {
+        get => _channelsLoaded;
+        set => _channelsLoaded = value;
+    }
+
     public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient)
     {
         _config = config;
@@ -173,7 +179,9 @@ public class MainWindow
             _officerChatChannels.Clear();
             _officerChatChannels.AddRange(dto.OfficerChat);
             _chat?.SetChannels(_fcChatChannels);
+            if (_chat != null) _chat.ChannelsLoaded = true;
             _officer.SetChannels(_officerChatChannels);
+            _officer.ChannelsLoaded = true;
             if (!string.IsNullOrEmpty(_channelId))
             {
                 _selectedIndex = _channels.IndexOf(_channelId);
