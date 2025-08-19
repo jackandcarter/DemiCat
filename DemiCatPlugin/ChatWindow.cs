@@ -25,6 +25,7 @@ public class ChatWindow : IDisposable
     protected string _channelId;
     protected string _input = string.Empty;
     protected bool _useCharacterName;
+    protected string _statusMessage = string.Empty;
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
@@ -90,6 +91,11 @@ public class ChatWindow : IDisposable
             _ = SendMessage();
         }
 
+        if (!string.IsNullOrEmpty(_statusMessage))
+        {
+            ImGui.TextUnformatted(_statusMessage);
+        }
+
     }
 
     public void SetChannels(List<string> channels)
@@ -141,13 +147,24 @@ public class ChatWindow : IDisposable
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _input = string.Empty);
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _input = string.Empty;
+                    _statusMessage = string.Empty;
+                });
                 await RefreshMessages();
             }
+            else
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to send message. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            PluginServices.Instance!.Log.Error(ex, "Error sending message");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
         }
     }
 
@@ -168,6 +185,8 @@ public class ChatWindow : IDisposable
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to refresh messages. Status: {response.StatusCode}. Response Body: {responseBody}");
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
@@ -178,9 +197,9 @@ public class ChatWindow : IDisposable
                 _messages.AddRange(msgs);
             });
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            PluginServices.Instance!.Log.Error(ex, "Error refreshing messages");
         }
     }
 

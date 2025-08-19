@@ -47,13 +47,24 @@ public class OfficerChatWindow : ChatWindow
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _input = string.Empty);
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _input = string.Empty;
+                    _statusMessage = string.Empty;
+                });
                 await RefreshMessages();
             }
+            else
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to send officer message. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            PluginServices.Instance!.Log.Error(ex, "Error sending officer message");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
         }
     }
 
