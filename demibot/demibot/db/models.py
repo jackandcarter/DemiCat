@@ -153,3 +153,14 @@ class Attendance(Base):
         BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
     )
     choice: Mapped[str] = mapped_column(String(50))
+
+
+class RecurringEvent(Base):
+    __tablename__ = "recurring_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
+    channel_id: Mapped[int] = mapped_column(BigInteger)
+    repeat: Mapped[str] = mapped_column(String(16))
+    next_post_at: Mapped[datetime] = mapped_column(DateTime)
+    payload_json: Mapped[str] = mapped_column(Text)

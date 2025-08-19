@@ -6,6 +6,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
+using System.Globalization;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 
@@ -28,6 +29,7 @@ public class EventCreateWindow
     private readonly List<ButtonConfig> _buttons = new();
     private int _selectedPreset = -1;
     private string _presetName = string.Empty;
+    private RepeatOption _repeat = RepeatOption.None;
 
     public string ChannelId { private get; set; } = string.Empty;
 
@@ -42,6 +44,24 @@ public class EventCreateWindow
     {
         ImGui.InputText("Title", ref _title, 256);
         ImGui.InputText("Time", ref _time, 64);
+        var repeatPreview = _repeat.ToString();
+        if (ImGui.BeginCombo("Repeat", repeatPreview))
+        {
+            foreach (RepeatOption opt in Enum.GetValues<RepeatOption>())
+            {
+                var sel = opt == _repeat;
+                if (ImGui.Selectable(opt.ToString(), sel)) _repeat = opt;
+                if (sel) ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+        if (_repeat != RepeatOption.None &&
+            DateTime.TryParse(_time, null, DateTimeStyles.AdjustToUniversal, out var baseTime))
+        {
+            var next = _repeat == RepeatOption.Daily ? baseTime.AddDays(1) : baseTime.AddDays(7);
+            var nextStr = next.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'");
+            ImGui.TextUnformatted($"Next: {nextStr}");
+        }
         ImGui.InputTextMultiline("Description", ref _description, 4096, new Vector2(400, 100));
         ImGui.InputText("URL", ref _url, 260);
         ImGui.InputText("Image URL", ref _imageUrl, 260);
@@ -346,7 +366,8 @@ public class EventCreateWindow
                         .ToList()
                     : null,
                 buttons = buttons.Count > 0 ? buttons : null,
-                mentions = _mentions.Count > 0 ? _mentions.ToList() : null
+                mentions = _mentions.Count > 0 ? _mentions.ToList() : null,
+                repeat = _repeat == RepeatOption.None ? null : _repeat.ToString().ToLowerInvariant()
             };
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
@@ -407,6 +428,13 @@ public class EventCreateWindow
         _buttons.Add(new ButtonConfig("no", "No", "❌", ButtonStyle.Danger));
     }
 
+
+    private enum RepeatOption
+    {
+        None,
+        Daily,
+        Weekly
+    }
 
     private class Field
     {
