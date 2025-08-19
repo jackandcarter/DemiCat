@@ -152,7 +152,6 @@ public class MainWindow
 
     private async Task FetchChannels()
     {
-        _channelsLoaded = true;
         try
         {
             var response = await _httpClient.GetAsync($"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
@@ -182,6 +181,8 @@ public class MainWindow
                 _create.ChannelId = _channelId;
                 _templates.ChannelId = _channelId;
             }
+
+            _channelsLoaded = true;
         }
         catch
         {
