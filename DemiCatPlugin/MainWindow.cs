@@ -178,31 +178,34 @@ public class MainWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            _channels.Clear();
-            _channels.AddRange(dto.Event);
-            _fcChatChannels.Clear();
-            _fcChatChannels.AddRange(dto.FcChat);
-            _officerChatChannels.Clear();
-            _officerChatChannels.AddRange(dto.OfficerChat);
-            _chat?.SetChannels(_fcChatChannels);
-            if (_chat != null) _chat.ChannelsLoaded = true;
-            _officer.SetChannels(_officerChatChannels);
-            _officer.ChannelsLoaded = true;
-            if (!string.IsNullOrEmpty(_channelId))
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                _selectedIndex = _channels.IndexOf(_channelId);
-                if (_selectedIndex < 0) _selectedIndex = 0;
-            }
-            if (_channels.Count > 0)
-            {
-                _channelId = _channels[_selectedIndex];
-                _ui.ChannelId = _channelId;
-                _create.ChannelId = _channelId;
-                _templates.ChannelId = _channelId;
-            }
+                _channels.Clear();
+                _channels.AddRange(dto.Event);
+                _fcChatChannels.Clear();
+                _fcChatChannels.AddRange(dto.FcChat);
+                _officerChatChannels.Clear();
+                _officerChatChannels.AddRange(dto.OfficerChat);
+                _chat?.SetChannels(_fcChatChannels);
+                if (_chat != null) _chat.ChannelsLoaded = true;
+                _officer.SetChannels(_officerChatChannels);
+                _officer.ChannelsLoaded = true;
+                if (!string.IsNullOrEmpty(_channelId))
+                {
+                    _selectedIndex = _channels.IndexOf(_channelId);
+                    if (_selectedIndex < 0) _selectedIndex = 0;
+                }
+                if (_channels.Count > 0)
+                {
+                    _channelId = _channels[_selectedIndex];
+                    _ui.ChannelId = _channelId;
+                    _create.ChannelId = _channelId;
+                    _templates.ChannelId = _channelId;
+                }
 
-            _channelsLoaded = true;
-            _channelFetchFailed = false;
+                _channelsLoaded = true;
+                _channelFetchFailed = false;
+            });
         }
         catch (Exception ex)
         {
