@@ -263,6 +263,7 @@ public class ChatWindow : IDisposable
                 }
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
 
                 var buffer = new byte[8192];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -300,9 +301,11 @@ public class ChatWindow : IDisposable
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // ignored - reconnect
+                PluginServices.Instance!.Log.Error(ex, "WebSocket connection error");
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    _statusMessage = $"Connection failed: {ex.Message}");
             }
             finally
             {
@@ -312,6 +315,8 @@ public class ChatWindow : IDisposable
 
             try
             {
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    _statusMessage = "Reconnecting...");
                 await Task.Delay(TimeSpan.FromSeconds(5), token);
             }
             catch
