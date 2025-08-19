@@ -163,8 +163,15 @@ public class UiRenderer : IDisposable
             StopPolling();
             await ReceiveLoop();
         }
-        catch
+        catch (WebSocketException ex)
         {
+            var status = ex.Data.Contains("StatusCode") ? ex.Data["StatusCode"] : ex.WebSocketErrorCode;
+            PluginServices.Instance!.Log.Error(ex, $"Failed to connect WebSocket. Status: {status}");
+            StartPolling();
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Failed to connect WebSocket");
             StartPolling();
         }
     }
