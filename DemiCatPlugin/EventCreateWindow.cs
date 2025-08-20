@@ -28,7 +28,9 @@ public class EventCreateWindow
     private int _color;
     private readonly List<Field> _fields = new();
     private string? _lastResult;
-    private readonly List<ButtonConfig> _buttons = new();
+    private readonly List<Template.TemplateButton> _buttons = new();
+    private readonly SignupOptionEditor _optionEditor = new();
+    private int _editingButtonIndex = -1;
     private int _selectedPreset = -1;
     private string _presetName = string.Empty;
     private RepeatOption _repeat = RepeatOption.None;
@@ -140,29 +142,12 @@ public class EventCreateWindow
             ImGui.PushID(i);
             ImGui.Checkbox("Include", ref button.Include);
             ImGui.SameLine();
-            ImGui.InputText("Tag", ref button.Tag, 32);
+            ImGui.TextUnformatted($"{button.Label} ({button.Tag})");
             ImGui.SameLine();
-            ImGui.InputText("Label", ref button.Label, 32);
-            ImGui.SameLine();
-            ImGui.InputText("Emoji", ref button.Emoji, 16);
-            ImGui.SameLine();
-            var max = button.MaxSignups ?? 0;
-            ImGui.SetNextItemWidth(60);
-            if (ImGui.InputInt("Max", ref max))
+            if (ImGui.Button("Edit"))
             {
-                button.MaxSignups = max > 0 ? max : null;
-            }
-            ImGui.SameLine();
-            var style = button.Style.ToString();
-            if (ImGui.BeginCombo("Style", style))
-            {
-                foreach (ButtonStyle bs in Enum.GetValues<ButtonStyle>())
-                {
-                    var sel = bs == button.Style;
-                    if (ImGui.Selectable(bs.ToString(), sel)) button.Style = bs;
-                    if (sel) ImGui.SetItemDefaultFocus();
-                }
-                ImGui.EndCombo();
+                _editingButtonIndex = i;
+                _optionEditor.Open(button, b => _buttons[_editingButtonIndex] = b);
             }
             ImGui.SameLine();
             if (ImGui.Button("Remove"))
@@ -174,8 +159,17 @@ public class EventCreateWindow
         }
         if (ImGui.Button("Add Option"))
         {
-            _buttons.Add(new ButtonConfig($"opt{_buttons.Count + 1}", "Option", string.Empty, ButtonStyle.Secondary));
+            _editingButtonIndex = -1;
+            var btn = new Template.TemplateButton
+            {
+                Tag = $"opt{_buttons.Count + 1}",
+                Label = "Option",
+                Emoji = string.Empty,
+                Style = ButtonStyle.Secondary
+            };
+            _optionEditor.Open(btn, b => _buttons.Add(b));
         }
+        _optionEditor.Draw();
 
         _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
         var presets = SignupPresetService.Presets;
@@ -406,9 +400,13 @@ public class EventCreateWindow
             _buttons.Clear();
             foreach (var b in template.Buttons)
             {
-                _buttons.Add(new ButtonConfig(b.Tag, b.Label, b.Emoji, b.Style)
+                _buttons.Add(new Template.TemplateButton
                 {
+                    Tag = b.Tag,
                     Include = b.Include,
+                    Label = b.Label,
+                    Emoji = b.Emoji,
+                    Style = b.Style,
                     MaxSignups = b.MaxSignups
                 });
             }
@@ -521,9 +519,13 @@ public class EventCreateWindow
         _buttons.Clear();
         foreach (var b in preset.Buttons)
         {
-            _buttons.Add(new ButtonConfig(b.Tag, b.Label, b.Emoji, b.Style)
+            _buttons.Add(new Template.TemplateButton
             {
+                Tag = b.Tag,
                 Include = b.Include,
+                Label = b.Label,
+                Emoji = b.Emoji,
+                Style = b.Style,
                 MaxSignups = b.MaxSignups
             });
         }
@@ -636,9 +638,27 @@ public class EventCreateWindow
     private void ResetDefaultButtons()
     {
         _buttons.Clear();
-        _buttons.Add(new ButtonConfig("yes", "Yes", "✅", ButtonStyle.Success));
-        _buttons.Add(new ButtonConfig("maybe", "Maybe", "❔", ButtonStyle.Secondary));
-        _buttons.Add(new ButtonConfig("no", "No", "❌", ButtonStyle.Danger));
+        _buttons.Add(new Template.TemplateButton
+        {
+            Tag = "yes",
+            Label = "Yes",
+            Emoji = "✅",
+            Style = ButtonStyle.Success
+        });
+        _buttons.Add(new Template.TemplateButton
+        {
+            Tag = "maybe",
+            Label = "Maybe",
+            Emoji = "❔",
+            Style = ButtonStyle.Secondary
+        });
+        _buttons.Add(new Template.TemplateButton
+        {
+            Tag = "no",
+            Label = "No",
+            Emoji = "❌",
+            Style = ButtonStyle.Danger
+        });
     }
 
 
@@ -654,24 +674,6 @@ public class EventCreateWindow
         public string Name = string.Empty;
         public string Value = string.Empty;
         public bool Inline;
-    }
-
-    private class ButtonConfig
-    {
-        public ButtonConfig(string tag, string label, string emoji, ButtonStyle style)
-        {
-            Tag = tag;
-            Label = label;
-            Emoji = emoji;
-            Style = style;
-        }
-
-        public string Tag;
-        public bool Include = true;
-        public string Label;
-        public string Emoji;
-        public ButtonStyle Style;
-        public int? MaxSignups;
     }
 
     private class RepeatSchedule
