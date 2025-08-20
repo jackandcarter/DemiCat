@@ -191,7 +191,7 @@ public class ChatWindow : IDisposable
     public void SetChannels(List<ChannelDto> channels)
     {
         ResolveChannelNames(channels);
-        channels.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id);
+        channels.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name));
         _channels.Clear();
         _channels.AddRange(channels);
         if (!string.IsNullOrEmpty(_channelId))
@@ -213,7 +213,6 @@ public class ChatWindow : IDisposable
             if (string.IsNullOrWhiteSpace(c.Name))
             {
                 PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}.");
-                c.Name = c.Id;
             }
         }
     }
@@ -407,7 +406,6 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            ResolveChannelNames(dto.Chat);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Chat);
