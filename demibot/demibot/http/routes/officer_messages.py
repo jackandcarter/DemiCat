@@ -109,7 +109,7 @@ async def post_officer_message(
         json.dumps(dto.model_dump()),
         ctx.guild.id,
         officer_only=True,
-        path="/ws/messages",
+        path="/ws/officer-messages",
     )
 
     return {"ok": True, "id": str(discord_msg_id)}
