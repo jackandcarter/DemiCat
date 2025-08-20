@@ -613,6 +613,13 @@ public class EventCreateWindow
         _presetName = string.Empty;
     }
 
+    public void ResetRoles()
+    {
+        _roles.Clear();
+        _rolesLoaded = false;
+        _roleFetchFailed = false;
+    }
+
     private void ResetDefaultButtons()
     {
         _buttons.Clear();
