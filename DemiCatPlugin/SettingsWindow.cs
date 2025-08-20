@@ -203,6 +203,7 @@ public class SettingsWindow : IDisposable
 
                 await _startNetworking();
                 MainWindow?.Ui.ResetChannels();
+                MainWindow?.ResetEventCreateRoles();
                 var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
                 presence?.Reset();
                 presence?.Reload();

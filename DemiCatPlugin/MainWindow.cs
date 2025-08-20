@@ -100,6 +100,11 @@ public class MainWindow : IDisposable
         ImGui.PopStyleColor(5);
     }
 
+    public void ResetEventCreateRoles()
+    {
+        _create.ResetRoles();
+    }
+
     private void SaveConfig()
     {
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
