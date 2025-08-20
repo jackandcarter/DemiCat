@@ -106,7 +106,7 @@ async def post_officer_message(
         content=msg.content_display,
     )
     await manager.broadcast_text(
-        json.dumps(dto.model_dump()),
+        dto.model_dump_json(),
         ctx.guild.id,
         officer_only=True,
         path="/ws/officer-messages",
