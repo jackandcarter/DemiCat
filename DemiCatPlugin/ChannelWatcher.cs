@@ -57,9 +57,9 @@ public class ChannelWatcher : IDisposable
                     }
                     _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                     {
-                        _ = _ui.RefreshChannels();
-                        _ = _chatWindow.RefreshChannels();
-                        _ = _officerChatWindow.RefreshChannels();
+                        _ = SafeRefresh(_ui.RefreshChannels);
+                        _ = SafeRefresh(_chatWindow.RefreshChannels);
+                        _ = SafeRefresh(_officerChatWindow.RefreshChannels);
                     });
                 }
             }
@@ -73,6 +73,18 @@ public class ChannelWatcher : IDisposable
                 _ws = null;
             }
             try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
+        }
+    }
+
+    private static async Task SafeRefresh(Func<Task> refresh)
+    {
+        try
+        {
+            await refresh();
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Channel refresh failed");
         }
     }
 
