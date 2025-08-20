@@ -31,6 +31,7 @@ public class SettingsWindow : IDisposable
     public MainWindow? MainWindow { get; set; }
     public ChatWindow? ChatWindow { get; set; }
     public OfficerChatWindow? OfficerChatWindow { get; set; }
+    public ChannelWatcher? ChannelWatcher { get; set; }
 
     public SettingsWindow(Config config, HttpClient httpClient, Func<Task<bool>> refreshRoles, Func<Task> startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
@@ -209,14 +210,23 @@ public class SettingsWindow : IDisposable
                 }
 
                 await _startNetworking();
+                ChannelWatcher?.Start();
+                ChatWindow?.StartNetworking();
+                OfficerChatWindow?.StartNetworking();
+                _ = ChatWindow?.RefreshChannels();
+                _ = OfficerChatWindow?.RefreshChannels();
+                _ = ChatWindow?.RefreshMessages();
+                _ = OfficerChatWindow?.RefreshMessages();
                 MainWindow?.Ui.ResetChannels();
                 MainWindow?.ResetEventCreateRoles();
                 var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
                 presence?.Reset();
                 presence?.Reload();
-                if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
-                if (OfficerChatWindow != null) OfficerChatWindow.ChannelsLoaded = false;
-                _ = framework.RunOnTick(() => _syncStatus = "API key validated");
+                _ = framework.RunOnTick(() =>
+                {
+                    _syncStatus = "API key validated";
+                    if (MainWindow != null) MainWindow.IsOpen = true;
+                });
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {

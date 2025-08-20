@@ -69,14 +69,17 @@ public class ChatWindow : IDisposable
         _useCharacterName = config.UseCharacterName;
     }
 
+    public void StartNetworking()
+    {
+        _wsCts?.Cancel();
+        _ws?.Dispose();
+        _ws = null;
+        _wsCts = new CancellationTokenSource();
+        _wsTask = RunWebSocket(_wsCts.Token);
+    }
+
     public virtual void Draw()
     {
-        if (_wsTask == null)
-        {
-            _wsCts = new CancellationTokenSource();
-            _wsTask = RunWebSocket(_wsCts.Token);
-        }
-
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
