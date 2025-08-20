@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
 using System.Globalization;
+using System.Net;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 
@@ -37,6 +38,7 @@ public class EventCreateWindow
     private readonly HashSet<string> _mentions = new();
     private bool _rolesLoaded;
     private bool _roleFetchFailed;
+    private string _roleErrorMessage = string.Empty;
     private readonly List<ChannelDto> _channels = new();
     private bool _channelsLoaded;
     private bool _channelFetchFailed;
@@ -129,7 +131,7 @@ public class EventCreateWindow
             }
             else if (_roleFetchFailed)
             {
-                ImGui.TextUnformatted("Failed to load roles");
+                ImGui.TextUnformatted(string.IsNullOrEmpty(_roleErrorMessage) ? "Failed to load roles" : _roleErrorMessage);
             }
         }
         for (var i = 0; i < _buttons.Count; i++)
@@ -266,8 +268,10 @@ public class EventCreateWindow
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
+            PluginServices.Instance!.Log.Warning("Cannot fetch roles: API base URL is not configured.");
             _rolesLoaded = true;
             _roleFetchFailed = true;
+            _roleErrorMessage = "Failed to load roles";
             return;
         }
         try
@@ -280,8 +284,13 @@ public class EventCreateWindow
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch roles. Status: {response.StatusCode}. Response Body: {responseBody}");
                 _rolesLoaded = true;
                 _roleFetchFailed = true;
+                _roleErrorMessage = response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden
+                    ? "Role request unauthorized"
+                    : "Failed to load roles";
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
@@ -291,12 +300,16 @@ public class EventCreateWindow
                 _roles.Clear();
                 _roles.AddRange(roles);
                 _rolesLoaded = true;
+                _roleFetchFailed = false;
+                _roleErrorMessage = string.Empty;
             });
         }
-        catch
+        catch (Exception ex)
         {
+            PluginServices.Instance!.Log.Error(ex, "Error fetching roles");
             _rolesLoaded = true;
             _roleFetchFailed = true;
+            _roleErrorMessage = "Failed to load roles";
         }
     }
 
