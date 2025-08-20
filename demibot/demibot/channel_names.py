@@ -20,12 +20,12 @@ async def ensure_channel_name(
 ) -> str | None:
     """Ensure the channel's name is stored in the database.
 
-    If ``current_name`` is falsy, the Discord API is queried for the channel's
-    name and the database is updated.  The resolved name is returned (or
-    ``None`` if it could not be resolved).
+    If ``current_name`` is falsy or composed solely of digits, the Discord API
+    is queried for the channel's name and the database is updated.  The
+    resolved name is returned (or ``None`` if it could not be resolved).
     """
 
-    if current_name or not discord_client:
+    if (current_name and not current_name.isdigit()) or not discord_client:
         return current_name
     channel = discord_client.get_channel(channel_id)
     if channel is None:
