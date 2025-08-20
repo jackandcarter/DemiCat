@@ -225,6 +225,8 @@ public class ChatWindow : IDisposable
             }
         }
         text = Regex.Replace(text, "<a?:([a-zA-Z0-9_]+):\\d+>", ":$1:");
+
+        text = MarkdownFormatter.Format(text);
         return text;
     }
 
