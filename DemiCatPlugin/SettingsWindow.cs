@@ -76,7 +76,6 @@ public class SettingsWindow : IDisposable
 
                 if (ImGui.Button("Sync") && !_syncInProgress)
                 {
-                    _syncStatus = "Validating API key...";
                     _syncInProgress = true;
                     _ = Task.Run(async () =>
                     {
@@ -168,6 +167,7 @@ public class SettingsWindow : IDisposable
             _log.Info($"Sync URL: {url}");
             _log.Info($"Headers: {string.Join(", ", request.Headers.Select(h => $"{h.Key}: {string.Join(";", h.Value)}"))}");
 
+            _ = framework.RunOnTick(() => _syncStatus = "Validating API key...");
             var response = await _httpClient.SendAsync(request);
             var responseBody = await response.Content.ReadAsStringAsync();
             _log.Info($"Response Status: {response.StatusCode}");
