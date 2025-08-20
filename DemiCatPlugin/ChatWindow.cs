@@ -369,6 +369,12 @@ public class ChatWindow : IDisposable
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
+    public Task RefreshChannels()
+    {
+        _channelsLoaded = false;
+        return FetchChannels();
+    }
+
     protected virtual async Task FetchChannels()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
