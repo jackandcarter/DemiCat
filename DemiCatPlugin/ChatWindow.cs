@@ -322,6 +322,26 @@ public class ChatWindow : IDisposable
         }
     }
 
+    private void DisposeMessageTextures(ChatMessageDto msg)
+    {
+        if (msg.AvatarTexture?.GetWrapOrEmpty() is IDisposable wrap)
+        {
+            wrap.Dispose();
+            msg.AvatarTexture = null;
+        }
+        if (msg.Attachments != null)
+        {
+            foreach (var a in msg.Attachments)
+            {
+                if (a.Texture?.GetWrapOrEmpty() is IDisposable wrapAtt)
+                {
+                    wrapAtt.Dispose();
+                    a.Texture = null;
+                }
+            }
+        }
+    }
+
     public void ClearTextureCache()
     {
         foreach (var entry in _textureCache.Values)
@@ -333,22 +353,7 @@ public class ChatWindow : IDisposable
         _textureLru.Clear();
         foreach (var m in _messages)
         {
-            if (m.AvatarTexture?.GetWrapOrEmpty() is IDisposable wrap)
-            {
-                wrap.Dispose();
-                m.AvatarTexture = null;
-            }
-            if (m.Attachments != null)
-            {
-                foreach (var a in m.Attachments)
-                {
-                    if (a.Texture?.GetWrapOrEmpty() is IDisposable wrapAtt)
-                    {
-                        wrapAtt.Dispose();
-                        a.Texture = null;
-                    }
-                }
-            }
+            DisposeMessageTextures(m);
         }
     }
 
@@ -454,38 +459,66 @@ public class ChatWindow : IDisposable
                         count += result.Count;
                     }
                     var json = Encoding.UTF8.GetString(buffer, 0, count);
-                    ChatMessageDto? msg = null;
                     try
                     {
-                        msg = JsonSerializer.Deserialize<ChatMessageDto>(json);
+                        using var document = JsonDocument.Parse(json);
+                        if (document.RootElement.TryGetProperty("deletedId", out var delProp))
+                        {
+                            var id = delProp.GetString();
+                            if (!string.IsNullOrEmpty(id))
+                            {
+                                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                                {
+                                    var index = _messages.FindIndex(m => m.Id == id);
+                                    if (index >= 0)
+                                    {
+                                        DisposeMessageTextures(_messages[index]);
+                                        _messages.RemoveAt(index);
+                                    }
+                                });
+                            }
+                        }
+                        else
+                        {
+                            var msg = document.RootElement.Deserialize<ChatMessageDto>();
+                            if (msg != null)
+                            {
+                                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                                {
+                                    if (msg.ChannelId == _channelId)
+                                    {
+                                        var index = _messages.FindIndex(m => m.Id == msg.Id);
+                                        if (index >= 0)
+                                        {
+                                            DisposeMessageTextures(_messages[index]);
+                                            _messages[index] = msg;
+                                        }
+                                        else
+                                        {
+                                            _messages.Add(msg);
+                                        }
+                                        if (!string.IsNullOrEmpty(msg.AuthorAvatarUrl))
+                                        {
+                                            LoadTexture(msg.AuthorAvatarUrl, t => msg.AvatarTexture = t);
+                                        }
+                                        if (msg.Attachments != null)
+                                        {
+                                            foreach (var a in msg.Attachments)
+                                            {
+                                                if (a.ContentType != null && a.ContentType.StartsWith("image"))
+                                                {
+                                                    LoadTexture(a.Url, t => a.Texture = t);
+                                                }
+                                            }
+                                        }
+                                    }
+                                });
+                            }
+                        }
                     }
                     catch
                     {
                         // ignored
-                    }
-                    if (msg != null)
-                    {
-                        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                        {
-                            if (msg.ChannelId == _channelId)
-                            {
-                                _messages.Add(msg);
-                                if (!string.IsNullOrEmpty(msg.AuthorAvatarUrl))
-                                {
-                                    LoadTexture(msg.AuthorAvatarUrl, t => msg.AvatarTexture = t);
-                                }
-                                if (msg.Attachments != null)
-                                {
-                                    foreach (var a in msg.Attachments)
-                                    {
-                                        if (a.ContentType != null && a.ContentType.StartsWith("image"))
-                                        {
-                                            LoadTexture(a.Url, t => a.Texture = t);
-                                        }
-                                    }
-                                }
-                            }
-                        });
                     }
                 }
             }
