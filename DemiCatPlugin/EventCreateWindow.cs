@@ -550,6 +550,7 @@ public class EventCreateWindow
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
             ResolveChannelNames(dto.Event);
+            dto.Event.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
