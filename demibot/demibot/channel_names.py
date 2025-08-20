@@ -52,6 +52,7 @@ async def ensure_channel_name(
         )
         .values(name=name)
     )
+    await db.commit()
     return name
 
 
@@ -77,6 +78,48 @@ async def resync_channel_names_once() -> None:
         break
 
 
+async def retry_null_channel_names(max_attempts: int = 3) -> None:
+    """Retry resolving channel names that are still ``NULL``.
+
+    Channels whose names cannot be resolved after ``max_attempts`` attempts are
+    logged with their guild and channel IDs for further investigation.
+    """
+
+    async for db in get_session():
+        unresolved: list[tuple[int, int]] = []
+        for attempt in range(max_attempts):
+            result = await db.execute(
+                select(
+                    GuildChannel.guild_id,
+                    GuildChannel.channel_id,
+                    GuildChannel.kind,
+                ).where(GuildChannel.name.is_(None))
+            )
+            rows = result.all()
+            if not rows:
+                break
+            unresolved = []
+            updated = False
+            for guild_id, channel_id, kind in rows:
+                name = await ensure_channel_name(db, guild_id, channel_id, kind, None)
+                if name is None:
+                    unresolved.append((guild_id, channel_id))
+                else:
+                    updated = True
+            if updated:
+                await db.commit()
+            if not unresolved:
+                break
+        for guild_id, channel_id in unresolved:
+            logging.warning(
+                "Channel name missing for %s in guild %s after %s attempts",
+                channel_id,
+                guild_id,
+                max_attempts,
+            )
+        break
+
+
 SYNC_INTERVAL = 3600
 
 
@@ -86,6 +129,7 @@ async def channel_name_resync() -> None:
     while True:
         try:
             await resync_channel_names_once()
+            await retry_null_channel_names()
         except Exception:  # pragma: no cover - best effort
             logging.exception("Channel name resync failed")
         await asyncio.sleep(SYNC_INTERVAL)
