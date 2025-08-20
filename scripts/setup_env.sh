@@ -131,6 +131,14 @@ else
     install_dotnet
 fi
 
+if ! "$DOTNET_CMD" nuget list source | grep -q Dalamud; then
+    if [[ -n "${GITHUB_USERNAME:-}" && -n "${GITHUB_TOKEN:-}" ]]; then
+        "$DOTNET_CMD" nuget add source https://nuget.pkg.github.com/goatcorp/index.json --name Dalamud --username "$GITHUB_USERNAME" --password "$GITHUB_TOKEN" --store-password-in-clear-text
+    else
+        "$DOTNET_CMD" nuget add source https://nuget.pkg.github.com/goatcorp/index.json --name Dalamud
+    fi
+fi
+
 "$DOTNET_CMD" restore DemiCatPlugin/DemiCatPlugin.csproj
 "$DOTNET_CMD" build DemiCatPlugin/DemiCatPlugin.csproj -c Release
 
