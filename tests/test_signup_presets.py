@@ -36,11 +36,28 @@ async def _run_test() -> None:
         db.add(guild)
         await db.commit()
         ctx = SimpleNamespace(guild=guild)
-        body = SignupPresetBody(name="Raid", buttons=[{"tag": "yes", "label": "Yes"}])
+        body = SignupPresetBody(
+            name="Raid",
+            buttons=[{"tag": "yes", "label": "Yes", "emoji": "✅", "style": 3, "maxSignups": 5}],
+        )
         res = await create_signup_preset(body=body, ctx=ctx, db=db)
         pid = res["id"]
         presets = await list_signup_presets(ctx=ctx, db=db)
-        assert presets == [{"id": pid, "name": "Raid", "buttons": [{"tag": "yes", "label": "Yes"}]}]
+        assert presets == [
+            {
+                "id": pid,
+                "name": "Raid",
+                "buttons": [
+                    {
+                        "tag": "yes",
+                        "label": "Yes",
+                        "emoji": "✅",
+                        "style": 3,
+                        "maxSignups": 5,
+                    }
+                ],
+            }
+        ]
         await delete_signup_preset(preset_id=pid, ctx=ctx, db=db)
         presets = await list_signup_presets(ctx=ctx, db=db)
         assert presets == []
