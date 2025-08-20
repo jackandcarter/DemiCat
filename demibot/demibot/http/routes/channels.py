@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse as FastAPIJSONResponse
+import json
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -10,6 +12,21 @@ from ...channel_names import ensure_channel_name
 from ..ws import manager
 
 router = APIRouter(prefix="/api")
+
+
+class JSONResponse(FastAPIJSONResponse):
+    def __init__(self, content, *args, ensure_ascii: bool = False, **kwargs):
+        self.ensure_ascii = ensure_ascii
+        super().__init__(content, *args, **kwargs)
+
+    def render(self, content) -> bytes:
+        return json.dumps(
+            content,
+            ensure_ascii=self.ensure_ascii,
+            allow_nan=False,
+            indent=None,
+            separators=(",", ":"),
+        ).encode("utf-8")
 
 
 @router.get("/channels")
@@ -47,7 +64,7 @@ async def get_channels(
     if updated:
         await db.commit()
         await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
-    return by_kind
+    return JSONResponse(content=by_kind, ensure_ascii=False)
 
 
 @router.post("/channels/refresh")
