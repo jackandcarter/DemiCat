@@ -86,6 +86,7 @@ class Mirror(commands.Cog):
                         json.dumps(dto.model_dump()),
                         guild_id,
                         officer_only=is_officer,
+                        path="/ws/embeds",
                     )
                     stored = True
                 if stored:
@@ -169,7 +170,10 @@ class Mirror(commands.Cog):
                 mentions=mentions or None,
             )
             await manager.broadcast_text(
-                json.dumps(dto.model_dump()), guild_id, officer_only=is_officer
+                json.dumps(dto.model_dump()),
+                guild_id,
+                officer_only=is_officer,
+                path="/ws/messages",
             )
             break
 

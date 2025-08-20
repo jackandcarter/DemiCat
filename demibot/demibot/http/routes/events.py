@@ -195,7 +195,10 @@ async def create_event(
         )
     ).scalar_one_or_none()
     await manager.broadcast_text(
-        json.dumps(dto.model_dump(mode="json")), ctx.guild.id, kind == "officer_chat"
+        json.dumps(dto.model_dump(mode="json")),
+        ctx.guild.id,
+        officer_only=kind == "officer_chat",
+        path="/ws/embeds",
     )
     return {"ok": True, "id": eid}
 

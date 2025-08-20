@@ -102,7 +102,10 @@ async def post_message(
         content=msg.content_display,
     )
     await manager.broadcast_text(
-        json.dumps(dto.model_dump()), ctx.guild.id, officer_only=False
+        json.dumps(dto.model_dump()),
+        ctx.guild.id,
+        officer_only=False,
+        path="/ws/messages",
     )
 
     return {"ok": True, "id": str(discord_msg_id)}

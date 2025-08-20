@@ -126,7 +126,10 @@ async def post_interaction(
             )
         ).scalar_one_or_none()
         await manager.broadcast_text(
-            json.dumps(payload), embed.guild_id, kind == "officer_chat"
+            json.dumps(payload),
+            embed.guild_id,
+            officer_only=kind == "officer_chat",
+            path="/ws/embeds",
         )
 
     return {"ok": True}
