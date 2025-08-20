@@ -123,7 +123,7 @@ public class EventCreateWindow
                 ImGui.Text("Mention Roles");
                 foreach (var role in _roles)
                 {
-                    var roleId = role.Id.ToString();
+                    var roleId = role.Id;
                     var sel = _mentions.Contains(roleId);
                     if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
                     {
