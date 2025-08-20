@@ -124,13 +124,13 @@ public class SettingsWindow : IDisposable
 
     private async Task Sync()
     {
+        var framework = PluginServices.Instance?.Framework;
         try
         {
-            var framework = PluginServices.Instance?.Framework;
             if (framework == null)
             {
                 _log.Error("Cannot sync: framework is not available.");
-                PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
+                framework?.RunOnTick(() => _syncStatus = "Network error");
                 return;
             }
 
@@ -224,11 +224,11 @@ public class SettingsWindow : IDisposable
                     var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
                     presence?.Reset();
                     presence?.Reload();
-                    _ = framework.RunOnTick(() =>
+                    _ = framework.RunOnTick(() => _syncStatus = "API key validated");
+                    if (MainWindow != null)
                     {
-                        _syncStatus = "API key validated";
-                        if (MainWindow != null) MainWindow.IsOpen = true;
-                    });
+                        _ = framework.RunOnTick(() => MainWindow.IsOpen = true);
+                    }
                 }
                 else if (response.StatusCode == HttpStatusCode.Unauthorized)
                 {
