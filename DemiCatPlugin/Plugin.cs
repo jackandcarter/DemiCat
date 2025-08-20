@@ -88,7 +88,7 @@ public class Plugin : IDalamudPlugin
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();
         _mainWindow.Dispose();
-        _ui.Dispose();
+        _ui.DisposeAsync().GetAwaiter().GetResult();
         _channelWatcher.Dispose();
         _settings.Dispose();
     }

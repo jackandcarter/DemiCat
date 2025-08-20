@@ -15,7 +15,7 @@ using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
 
-public class UiRenderer : IDisposable
+public class UiRenderer : IAsyncDisposable, IDisposable
 {
     private readonly HttpClient _httpClient;
     private readonly Config _config;
@@ -440,7 +440,7 @@ public class UiRenderer : IDisposable
         [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         StopPolling();
         if (_webSocket != null)
@@ -449,7 +449,7 @@ public class UiRenderer : IDisposable
             {
                 if (_webSocket.State == WebSocketState.Open)
                 {
-                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).Wait();
+                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
                 }
             }
             catch
@@ -471,6 +471,11 @@ public class UiRenderer : IDisposable
         {
             view.Dispose();
         }
+    }
+
+    public void Dispose()
+    {
+        DisposeAsync().GetAwaiter().GetResult();
     }
 }
 
