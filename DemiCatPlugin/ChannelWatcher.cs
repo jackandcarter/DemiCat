@@ -25,6 +25,8 @@ public class ChannelWatcher : IDisposable
 
     public void Start()
     {
+        _cts?.Cancel();
+        _ws?.Dispose();
         _cts = new CancellationTokenSource();
         _task = Run(_cts.Token);
     }

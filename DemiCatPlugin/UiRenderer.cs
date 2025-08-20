@@ -36,11 +36,6 @@ public class UiRenderer : IDisposable
         _config = config;
         _httpClient = httpClient;
         _channelId = config.EventChannelId;
-
-        if (_config.Enabled && !string.IsNullOrEmpty(_config.AuthToken))
-        {
-            _ = StartNetworking();
-        }
     }
 
     public string ChannelId
