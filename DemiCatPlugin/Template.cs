@@ -8,7 +8,7 @@ public class Template
     public string Name { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
 
-    public TemplateType Type { get; set; } = TemplateType.Message;
+    public TemplateType Type { get; set; } = TemplateType.Event;
 
     // Event template data
     public string Title { get; set; } = string.Empty;
@@ -42,7 +42,6 @@ public class Template
 
 public enum TemplateType
 {
-    Message,
     Event
 }
 

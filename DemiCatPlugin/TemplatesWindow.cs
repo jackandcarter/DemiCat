@@ -18,9 +18,7 @@ public class TemplatesWindow
     private readonly HttpClient _httpClient;
     private int _selectedIndex = -1;
     private bool _showPreview;
-    private string _previewContent = string.Empty;
     private EventView? _previewEvent;
-    private TemplateType _selectedType;
     private string? _lastResult;
     private readonly List<ChannelDto> _channels = new();
     private bool _channelsLoaded;
@@ -58,17 +56,7 @@ public class TemplatesWindow
 
         _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
         ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
-        var typeNames = Enum.GetNames<TemplateType>();
-        var typeIndex = (int)_selectedType;
-        ImGui.SetNextItemWidth(-1);
-        if (ImGui.Combo("Type", ref typeIndex, typeNames, typeNames.Length))
-        {
-            _selectedType = (TemplateType)typeIndex;
-            _selectedIndex = -1;
-            _showPreview = false;
-        }
-
-        var filteredTemplates = _config.Templates.Where(t => t.Type == _selectedType).ToList();
+        var filteredTemplates = _config.Templates.Where(t => t.Type == TemplateType.Event).ToList();
         for (var i = 0; i < filteredTemplates.Count; i++)
         {
             var name = filteredTemplates[i].Name;
@@ -83,32 +71,19 @@ public class TemplatesWindow
         ImGui.SameLine();
 
         ImGui.BeginChild("TemplateContent", new Vector2(0, 0), false);
-        if (_selectedIndex >= 0)
+        if (_selectedIndex >= 0 && _selectedIndex < filteredTemplates.Count)
         {
-            if (_selectedIndex < filteredTemplates.Count)
+            var tmpl = filteredTemplates[_selectedIndex];
+            if (ImGui.Button("Preview"))
             {
-                var tmpl = filteredTemplates[_selectedIndex];
-                if (ImGui.Button("Preview"))
-                {
-                    if (tmpl.Type == TemplateType.Event)
-                    {
-                        _previewEvent?.Dispose();
-                        _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask);
-                        _previewContent = string.Empty;
-                    }
-                    else
-                    {
-                        _previewContent = tmpl.Content;
-                        _previewEvent?.Dispose();
-                        _previewEvent = null;
-                    }
-                    _showPreview = true;
-                }
-                ImGui.SameLine();
-                if (ImGui.Button("Post"))
-                {
-                    _ = PostTemplate(tmpl);
-                }
+                _previewEvent?.Dispose();
+                _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask);
+                _showPreview = true;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Post"))
+            {
+                _ = PostTemplate(tmpl);
             }
         }
         else
@@ -126,16 +101,9 @@ public class TemplatesWindow
         {
             if (ImGui.Begin("Template Preview", ref _showPreview))
             {
-                if (_previewEvent != null)
-                {
-                    _previewEvent.Draw();
-                }
-                else
-                {
-                    ImGui.TextUnformatted(_previewContent);
-                }
-        }
-        ImGui.End();
+                _previewEvent?.Draw();
+            }
+            ImGui.End();
         }
     }
 
@@ -257,61 +225,47 @@ public class TemplatesWindow
         }
         try
         {
-            if (tmpl.Type == TemplateType.Event)
-            {
-                var buttons = tmpl.Buttons?
-                    .Where(b => b.Include)
-                    .Select(b => new
-                    {
-                        label = b.Label,
-                        customId = $"rsvp:{b.Tag}",
-                        emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                        style = (int)b.Style,
-                        maxSignups = b.MaxSignups
-                    })
-                    .ToList();
+            var buttons = tmpl.Buttons?
+                .Where(b => b.Include)
+                .Select(b => new
+                {
+                    label = b.Label,
+                    customId = $"rsvp:{b.Tag}",
+                    emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                    style = (int)b.Style,
+                    maxSignups = b.MaxSignups
+                })
+                .ToList();
 
-                var body = new
-                {
-                    channelId = _channelId,
-                    title = tmpl.Title,
-                    time = string.IsNullOrWhiteSpace(tmpl.Time)
-                        ? DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'")
-                        : tmpl.Time,
-                    description = tmpl.Description,
-                    url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
-                    imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
-                    thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
-                    color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
-                    fields = tmpl.Fields != null && tmpl.Fields.Count > 0
-                        ? tmpl.Fields
-                            .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
-                            .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
-                            .ToList()
-                    : null,
-                    buttons = buttons != null && buttons.Count > 0 ? buttons : null,
-                    mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
-                };
-
-                var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
-                request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-                if (!string.IsNullOrEmpty(_config.AuthToken))
-                {
-                    request.Headers.Add("X-Api-Key", _config.AuthToken);
-                }
-                await _httpClient.SendAsync(request);
-            }
-            else
+            var body = new
             {
-                var body = new { channelId = _channelId, content = tmpl.Content, useCharacterName = _config.UseCharacterName };
-                var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages");
-                request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-                if (!string.IsNullOrEmpty(_config.AuthToken))
-                {
-                    request.Headers.Add("X-Api-Key", _config.AuthToken);
-                }
-                await _httpClient.SendAsync(request);
+                channelId = _channelId,
+                title = tmpl.Title,
+                time = string.IsNullOrWhiteSpace(tmpl.Time)
+                    ? DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'")
+                    : tmpl.Time,
+                description = tmpl.Description,
+                url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
+                imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
+                thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
+                color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
+                fields = tmpl.Fields != null && tmpl.Fields.Count > 0
+                    ? tmpl.Fields
+                        .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
+                        .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
+                        .ToList()
+                : null,
+                buttons = buttons != null && buttons.Count > 0 ? buttons : null,
+                mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
+            };
+
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
+            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
+            await _httpClient.SendAsync(request);
             _lastResult = "Template posted";
         }
         catch
