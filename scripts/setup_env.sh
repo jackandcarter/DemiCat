@@ -112,6 +112,9 @@ if deps:
     subprocess.check_call(['pip', 'install', *deps])
 PY
 
+# Install development/test dependencies
+pip install -r demibot/requirements-dev.txt
+
 # -----------------------------
 # .NET SDK and plugin build
 # -----------------------------
