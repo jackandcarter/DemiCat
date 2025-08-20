@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..deps import RequestContext, api_key_auth, get_db
 from ...db.models import GuildChannel
 from ...channel_names import ensure_channel_name
+from ..ws import manager
 
 router = APIRouter(prefix="/api")
 
@@ -36,4 +37,5 @@ async def get_channels(
         by_kind.setdefault(kind, []).append({"id": str(channel_id), "name": name or ""})
     if updated:
         await db.commit()
+        await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
     return by_kind

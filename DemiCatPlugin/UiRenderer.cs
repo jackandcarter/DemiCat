@@ -358,6 +358,12 @@ public class UiRenderer : IDisposable
         _channels.Clear();
     }
 
+    public Task RefreshChannels()
+    {
+        ResetChannels();
+        return FetchChannels();
+    }
+
     private void SaveConfig()
     {
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
