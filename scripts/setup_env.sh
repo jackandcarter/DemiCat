@@ -9,6 +9,8 @@ Bootstraps the development environment by ensuring Python 3.11+ and the
 latest .NET SDK are available, creating a virtual environment, installing
 Python dependencies, and building the Dalamud plugin.
 
+Requires one of: 'uv', 'brew', or 'apt' to install Python if necessary.
+
 Optional flags:
   --unit-tests          Run unit tests (pytest -m "not integration")
   --integration-tests   Run integration tests (pytest -m integration)
@@ -42,8 +44,12 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
     elif command -v brew >/dev/null 2>&1; then
         brew install python@3.11
         PYTHON="$(brew --prefix python@3.11)/bin/python3.11"
+    elif command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update
+        sudo apt-get install -y python3.11 python3.11-venv
+        PYTHON="$(command -v python3.11)"
     else
-        echo "Neither 'uv' nor 'brew' is available to install Python." >&2
+        echo "Neither 'uv', 'brew', nor 'apt' is available to install Python." >&2
         exit 1
     fi
 elif ! "$PYTHON" -c 'import sys; exit(0 if sys.version_info >= (3,11) else 1)'; then
@@ -54,6 +60,10 @@ elif ! "$PYTHON" -c 'import sys; exit(0 if sys.version_info >= (3,11) else 1)'; 
     elif command -v brew >/dev/null 2>&1; then
         brew install python@3.11
         PYTHON="$(brew --prefix python@3.11)/bin/python3.11"
+    elif command -v apt-get >/dev/null 2>&1; then
+        sudo apt-get update
+        sudo apt-get install -y python3.11 python3.11-venv
+        PYTHON="$(command -v python3.11)"
     else
         echo "Automatic upgrade unavailable. Please install Python 3.11+ manually." >&2
         exit 1
