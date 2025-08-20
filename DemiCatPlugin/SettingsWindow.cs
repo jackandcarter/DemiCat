@@ -96,18 +96,21 @@ public class SettingsWindow : IDisposable
 
                 if (!string.IsNullOrEmpty(_syncStatus))
                 {
+                    Vector4 color;
                     if (_syncStatus == "API key validated")
                     {
-                        ImGui.TextColored(new Vector4(0, 1, 0, 1), _syncStatus);
+                        color = new Vector4(0, 1, 0, 1);
                     }
-                    else if (_syncStatus == "Authentication failed" || _syncStatus == "Network error" || _syncStatus == "Roles sync failed")
+                    else if (_syncStatus == "Authentication failed" || _syncStatus == "Network error")
                     {
-                        ImGui.TextColored(new Vector4(1, 0, 0, 1), _syncStatus);
+                        color = new Vector4(1, 0, 0, 1);
                     }
                     else
                     {
-                        ImGui.Text(_syncStatus);
+                        color = new Vector4(1, 1, 1, 1);
                     }
+
+                    ImGui.TextColored(color, _syncStatus);
                 }
                 ImGui.End();
             }
@@ -179,12 +182,11 @@ public class SettingsWindow : IDisposable
                 _apiKey = key;
                 SaveConfig();
 
-                bool rolesRefreshed = false;
                 if (_refreshRoles != null)
                 {
                     try
                     {
-                        rolesRefreshed = await _refreshRoles();
+                        var rolesRefreshed = await _refreshRoles();
                         if (!rolesRefreshed)
                         {
                             _log.Warning("Role refresh after key validation reported failure.");
@@ -193,7 +195,6 @@ public class SettingsWindow : IDisposable
                     catch (Exception ex)
                     {
                         _log.Error(ex, "Failed to refresh roles after key validation.");
-                        rolesRefreshed = false;
                     }
                 }
                 else
@@ -209,7 +210,7 @@ public class SettingsWindow : IDisposable
                 presence?.Reload();
                 if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 if (OfficerChatWindow != null) OfficerChatWindow.ChannelsLoaded = false;
-                _ = framework.RunOnTick(() => _syncStatus = rolesRefreshed ? "API key validated" : "Roles sync failed");
+                _ = framework.RunOnTick(() => _syncStatus = "API key validated");
             }
             else if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
