@@ -13,20 +13,11 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
-      - name: Restore .NET tools
-        if: ${{ hashFiles('**/dotnet-tools.json') != '' }}
-        run: dotnet tool restore
-      - name: Restore dependencies
+      - name: Restore
         run: dotnet restore DemiCatPlugin/DemiCatPlugin.csproj
       - name: Build
-        run: dotnet build DemiCatPlugin/DemiCatPlugin.csproj --configuration Release --no-restore
+        run: dotnet build DemiCatPlugin/DemiCatPlugin.csproj --configuration Release
       - name: Test
-        run: |
-          test_projects=$(find . -name '*Tests.csproj')
-          if [ -z "$test_projects" ]; then
-            echo 'No test projects found.'
-          else
-            for proj in $test_projects; do
-              dotnet test "$proj" --no-build --configuration Release
-            done
-          fi
+        if: ${{ hashFiles('**/*Tests.csproj') != '' }}
+        run: dotnet test tests --configuration Release
+
