@@ -185,9 +185,11 @@ public class SettingsWindow : IDisposable
                 if (response.IsSuccessStatusCode)
                 {
                     _log.Info("API key validated successfully.");
-                    _config.AuthToken = key;
-                    _apiKey = key;
+                    var newKey = key;
+                    _config.AuthToken = newKey;
+                    _apiKey = newKey;
                     SaveConfig();
+                    MainWindow?.ReloadSignupPresets();
 
                     if (_refreshRoles != null)
                     {
