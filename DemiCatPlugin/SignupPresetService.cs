@@ -13,6 +13,12 @@ internal static class SignupPresetService
 
     internal static IReadOnlyList<SignupPreset> Presets => _presets;
 
+    internal static void Reset()
+    {
+        _presets = new();
+        _loaded = false;
+    }
+
     internal static async Task EnsureLoaded(HttpClient httpClient, Config config)
     {
         if (!_loaded)

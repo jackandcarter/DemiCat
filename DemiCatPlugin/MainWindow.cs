@@ -14,6 +14,7 @@ public class MainWindow : IDisposable
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
+    private readonly HttpClient _httpClient;
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
@@ -26,6 +27,7 @@ public class MainWindow : IDisposable
         _chat = chat;
         _officer = officer;
         _settings = settings;
+        _httpClient = httpClient;
         _create = new EventCreateWindow(config, httpClient);
         _templates = new TemplatesWindow(config, httpClient);
     }
@@ -103,6 +105,12 @@ public class MainWindow : IDisposable
     public void ResetEventCreateRoles()
     {
         _create.ResetRoles();
+    }
+
+    public void ReloadSignupPresets()
+    {
+        SignupPresetService.Reset();
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
     }
 
     private void SaveConfig()
