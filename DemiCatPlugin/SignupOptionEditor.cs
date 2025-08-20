@@ -33,9 +33,15 @@ public class SignupOptionEditor
         var open = _open;
         if (ImGui.BeginPopupModal("Signup Option", ref open, ImGuiWindowFlags.AlwaysAutoResize))
         {
-            ImGui.InputText("Tag", ref _working.Tag, 32);
-            ImGui.InputText("Label", ref _working.Label, 64);
-            ImGui.InputText("Emoji", ref _working.Emoji, 16);
+            var tag = _working.Tag;
+            if (ImGui.InputText("Tag", ref tag, 32))
+                _working.Tag = tag;
+            var label = _working.Label;
+            if (ImGui.InputText("Label", ref label, 64))
+                _working.Label = label;
+            var emoji = _working.Emoji;
+            if (ImGui.InputText("Emoji", ref emoji, 16))
+                _working.Emoji = emoji;
             var max = _working.MaxSignups ?? 0;
             if (ImGui.InputInt("Max Signups", ref max))
             {
