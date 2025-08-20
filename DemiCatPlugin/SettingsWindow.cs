@@ -75,7 +75,8 @@ public class SettingsWindow : IDisposable
                     if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 }
 
-                if (ImGui.Button("Sync") && !_syncInProgress)
+                ImGui.BeginDisabled(_syncInProgress);
+                if (ImGui.Button("Sync"))
                 {
                     _syncInProgress = true;
                     _ = Task.Run(async () =>
@@ -88,12 +89,9 @@ public class SettingsWindow : IDisposable
                         {
                             _log.Error(ex, "Unexpected error during sync");
                         }
-                        finally
-                        {
-                            _syncInProgress = false;
-                        }
                     });
                 }
+                ImGui.EndDisabled();
 
                 if (!string.IsNullOrEmpty(_syncStatus))
                 {
@@ -126,124 +124,131 @@ public class SettingsWindow : IDisposable
 
     private async Task Sync()
     {
-        var framework = PluginServices.Instance?.Framework;
-        if (framework == null)
-        {
-            _log.Error("Cannot sync: framework is not available.");
-            PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
-            return;
-        }
-
-        if (_httpClient == null)
-        {
-            _log.Error("Cannot sync: HTTP client is not initialized.");
-            _ = framework.RunOnTick(() => _syncStatus = "Network error");
-            return;
-        }
-
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            _ = framework.RunOnTick(() => _syncStatus = "Network error");
-            return;
-        }
-
-        if (PluginServices.Instance?.PluginInterface == null)
-        {
-            _log.Error("Cannot sync: plugin interface is not available.");
-            _ = framework.RunOnTick(() => _syncStatus = "Network error");
-            return;
-        }
-
         try
         {
-            _apiKey = _apiKey.Trim();
-            if (string.IsNullOrWhiteSpace(_apiKey))
+            var framework = PluginServices.Instance?.Framework;
+            if (framework == null)
             {
-                _ = framework.RunOnTick(() => _syncStatus = "API key required");
+                _log.Error("Cannot sync: framework is not available.");
+                PluginServices.Instance?.Framework?.RunOnTick(() => _syncStatus = "Network error");
                 return;
             }
 
-            var key = _apiKey;
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/validate";
-            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            if (_httpClient == null)
             {
-                Content = new StringContent(JsonSerializer.Serialize(new { key }), Encoding.UTF8, "application/json")
-            };
-            if (!string.IsNullOrEmpty(key))
-            {
-                request.Headers.Add("X-Api-Key", key);
+                _log.Error("Cannot sync: HTTP client is not initialized.");
+                _ = framework.RunOnTick(() => _syncStatus = "Network error");
+                return;
             }
 
-            _log.Info($"Sync URL: {url}");
-            _log.Info($"Headers: {string.Join(", ", request.Headers.Select(h => $"{h.Key}: {string.Join(";", h.Value)}"))}");
-
-            _ = framework.RunOnTick(() => _syncStatus = "Validating API key...");
-            var response = await _httpClient.SendAsync(request);
-            var responseBody = await response.Content.ReadAsStringAsync();
-            _log.Info($"Response Status: {response.StatusCode}");
-            _log.Info($"Response Body: {responseBody}");
-            if (response.IsSuccessStatusCode)
+            if (!ApiHelpers.ValidateApiBaseUrl(_config))
             {
-                _log.Info("API key validated successfully.");
-                _config.AuthToken = key;
-                _apiKey = key;
-                SaveConfig();
+                _ = framework.RunOnTick(() => _syncStatus = "Network error");
+                return;
+            }
 
-                if (_refreshRoles != null)
+            if (PluginServices.Instance?.PluginInterface == null)
+            {
+                _log.Error("Cannot sync: plugin interface is not available.");
+                _ = framework.RunOnTick(() => _syncStatus = "Network error");
+                return;
+            }
+
+            try
+            {
+                _apiKey = _apiKey.Trim();
+                if (string.IsNullOrWhiteSpace(_apiKey))
                 {
-                    try
+                    _ = framework.RunOnTick(() => _syncStatus = "API key required");
+                    return;
+                }
+
+                var key = _apiKey;
+                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/validate";
+                var request = new HttpRequestMessage(HttpMethod.Post, url)
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(new { key }), Encoding.UTF8, "application/json")
+                };
+                if (!string.IsNullOrEmpty(key))
+                {
+                    request.Headers.Add("X-Api-Key", key);
+                }
+
+                _log.Info($"Sync URL: {url}");
+                _log.Info($"Headers: {string.Join(", ", request.Headers.Select(h => $"{h.Key}: {string.Join(";", h.Value)}"))}");
+
+                _ = framework.RunOnTick(() => _syncStatus = "Validating API key...");
+                var response = await _httpClient.SendAsync(request);
+                var responseBody = await response.Content.ReadAsStringAsync();
+                _log.Info($"Response Status: {response.StatusCode}");
+                _log.Info($"Response Body: {responseBody}");
+                if (response.IsSuccessStatusCode)
+                {
+                    _log.Info("API key validated successfully.");
+                    _config.AuthToken = key;
+                    _apiKey = key;
+                    SaveConfig();
+
+                    if (_refreshRoles != null)
                     {
-                        var rolesRefreshed = await _refreshRoles();
-                        if (!rolesRefreshed)
+                        try
                         {
-                            _log.Warning("Role refresh after key validation reported failure.");
+                            var rolesRefreshed = await _refreshRoles();
+                            if (!rolesRefreshed)
+                            {
+                                _log.Warning("Role refresh after key validation reported failure.");
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Error(ex, "Failed to refresh roles after key validation.");
                         }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        _log.Error(ex, "Failed to refresh roles after key validation.");
+                        _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
                     }
+
+                    await _startNetworking();
+                    ChannelWatcher?.Start();
+                    ChatWindow?.StartNetworking();
+                    OfficerChatWindow?.StartNetworking();
+                    _ = ChatWindow?.RefreshChannels();
+                    _ = OfficerChatWindow?.RefreshChannels();
+                    _ = ChatWindow?.RefreshMessages();
+                    _ = OfficerChatWindow?.RefreshMessages();
+                    MainWindow?.Ui.ResetChannels();
+                    MainWindow?.ResetEventCreateRoles();
+                    var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
+                    presence?.Reset();
+                    presence?.Reload();
+                    _ = framework.RunOnTick(() =>
+                    {
+                        _syncStatus = "API key validated";
+                        if (MainWindow != null) MainWindow.IsOpen = true;
+                    });
+                }
+                else if (response.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    _log.Warning($"API key validation failed: unauthorized. Response Body: {responseBody}");
+                    _ = framework.RunOnTick(() => _syncStatus = "Authentication failed");
                 }
                 else
                 {
-                    _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
+                    _log.Warning($"API key validation failed with status {response.StatusCode}. Response Body: {responseBody}");
+                    _ = framework.RunOnTick(() => _syncStatus = "Network error");
                 }
-
-                await _startNetworking();
-                ChannelWatcher?.Start();
-                ChatWindow?.StartNetworking();
-                OfficerChatWindow?.StartNetworking();
-                _ = ChatWindow?.RefreshChannels();
-                _ = OfficerChatWindow?.RefreshChannels();
-                _ = ChatWindow?.RefreshMessages();
-                _ = OfficerChatWindow?.RefreshMessages();
-                MainWindow?.Ui.ResetChannels();
-                MainWindow?.ResetEventCreateRoles();
-                var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
-                presence?.Reset();
-                presence?.Reload();
-                _ = framework.RunOnTick(() =>
-                {
-                    _syncStatus = "API key validated";
-                    if (MainWindow != null) MainWindow.IsOpen = true;
-                });
             }
-            else if (response.StatusCode == HttpStatusCode.Unauthorized)
+            catch (Exception ex)
             {
-                _log.Warning($"API key validation failed: unauthorized. Response Body: {responseBody}");
-                _ = framework.RunOnTick(() => _syncStatus = "Authentication failed");
-            }
-            else
-            {
-                _log.Warning($"API key validation failed with status {response.StatusCode}. Response Body: {responseBody}");
+                _log.Error(ex, "Error validating API key.");
                 _ = framework.RunOnTick(() => _syncStatus = "Network error");
+                return;
             }
         }
-        catch (Exception ex)
+        finally
         {
-            _log.Error(ex, "Error validating API key.");
-            _ = framework.RunOnTick(() => _syncStatus = "Network error");
-            return;
+            _syncInProgress = false;
         }
     }
 
