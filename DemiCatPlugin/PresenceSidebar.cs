@@ -87,6 +87,8 @@ public class PresenceSidebar : IDisposable
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
+            PluginServices.Instance!.Log.Warning("Cannot refresh presences: API base URL is not configured.");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Invalid API URL");
             return;
         }
         try
@@ -123,7 +125,7 @@ public class PresenceSidebar : IDisposable
             if (!ApiHelpers.ValidateApiBaseUrl(_config))
             {
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = "Invalid API base URL");
+                    _statusMessage = "Invalid API URL");
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), token);
