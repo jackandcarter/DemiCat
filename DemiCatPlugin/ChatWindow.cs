@@ -188,6 +188,7 @@ public class ChatWindow : IDisposable
     public void SetChannels(List<ChannelDto> channels)
     {
         ResolveChannelNames(channels);
+        channels.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id);
         _channels.Clear();
         _channels.AddRange(channels);
         if (!string.IsNullOrEmpty(_channelId))
