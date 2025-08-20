@@ -32,9 +32,11 @@ async def ensure_channel_name(
         try:
             channel = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
         except Exception:  # pragma: no cover - network errors
-            return None
+            logging.warning("Failed to fetch channel %s", channel_id)
+            return str(channel_id)
     if channel is None:
-        return None
+        logging.warning("Channel %s not found", channel_id)
+        return str(channel_id)
     name = channel.name
     await db.execute(
         update(GuildChannel)
