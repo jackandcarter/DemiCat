@@ -209,7 +209,7 @@ public class ChatWindow : IDisposable
         {
             if (string.IsNullOrWhiteSpace(c.Name))
             {
-                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}; using ID as fallback.");
+                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}.");
                 c.Name = c.Id;
             }
         }
