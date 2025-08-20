@@ -23,6 +23,7 @@ public class TemplatesWindow
     private readonly List<ChannelDto> _channels = new();
     private bool _channelsLoaded;
     private bool _channelFetchFailed;
+    private string _channelErrorMessage = string.Empty;
     private int _channelIndex;
     private string _channelId = string.Empty;
 
@@ -51,7 +52,7 @@ public class TemplatesWindow
         }
         else
         {
-            ImGui.TextUnformatted(_channelFetchFailed ? "Failed to load channels" : "No channels available");
+            ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
         }
 
         _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
@@ -118,6 +119,7 @@ public class TemplatesWindow
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
             _channelFetchFailed = true;
+            _channelErrorMessage = "Invalid API URL";
             _channelsLoaded = true;
             return;
         }
@@ -135,6 +137,7 @@ public class TemplatesWindow
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
                 _channelFetchFailed = true;
+                _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
                 return;
             }
@@ -157,12 +160,14 @@ public class TemplatesWindow
                 }
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
+                _channelErrorMessage = string.Empty;
             });
         }
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
             _channelFetchFailed = true;
+            _channelErrorMessage = "Failed to load channels";
             _channelsLoaded = true;
         }
     }

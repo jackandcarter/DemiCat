@@ -30,7 +30,13 @@ public class OfficerChatWindow : ChatWindow
 
     protected override async Task SendMessage()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot send message: API base URL is not configured.");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Invalid API URL");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
             return;
         }
@@ -74,6 +80,7 @@ public class OfficerChatWindow : ChatWindow
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
             _channelFetchFailed = true;
+            _channelErrorMessage = "Invalid API URL";
             _channelsLoaded = true;
             return;
         }
@@ -91,6 +98,7 @@ public class OfficerChatWindow : ChatWindow
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
                 _channelFetchFailed = true;
+                _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
                 return;
             }
@@ -101,12 +109,14 @@ public class OfficerChatWindow : ChatWindow
                 SetChannels(dto.Officer);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
+                _channelErrorMessage = string.Empty;
             });
         }
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
             _channelFetchFailed = true;
+            _channelErrorMessage = "Failed to load channels";
             _channelsLoaded = true;
         }
     }

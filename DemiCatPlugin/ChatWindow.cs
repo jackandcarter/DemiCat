@@ -28,6 +28,7 @@ public class ChatWindow : IDisposable
     protected int _selectedIndex;
     protected bool _channelsLoaded;
     protected bool _channelFetchFailed;
+    protected string _channelErrorMessage = string.Empty;
     protected string _channelId;
     protected string _input = string.Empty;
     protected bool _useCharacterName;
@@ -106,7 +107,7 @@ public class ChatWindow : IDisposable
         }
         else
         {
-            ImGui.TextUnformatted(_channelFetchFailed ? "Failed to load channels" : "No channels available");
+            ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
         }
         if (ImGui.Checkbox("Use Character Name", ref _useCharacterName))
         {
@@ -235,7 +236,13 @@ public class ChatWindow : IDisposable
 
     protected virtual async Task SendMessage()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot send message: API base URL is not configured.");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Invalid API URL");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
         {
             return;
         }
@@ -384,6 +391,7 @@ public class ChatWindow : IDisposable
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
             _channelFetchFailed = true;
+            _channelErrorMessage = "Invalid API URL";
             _channelsLoaded = true;
             return;
         }
@@ -401,6 +409,7 @@ public class ChatWindow : IDisposable
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
                 _channelFetchFailed = true;
+                _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
                 return;
             }
@@ -411,12 +420,14 @@ public class ChatWindow : IDisposable
                 SetChannels(dto.Chat);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
+                _channelErrorMessage = string.Empty;
             });
         }
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
             _channelFetchFailed = true;
+            _channelErrorMessage = "Failed to load channels";
             _channelsLoaded = true;
         }
     }
@@ -428,7 +439,7 @@ public class ChatWindow : IDisposable
             if (!ApiHelpers.ValidateApiBaseUrl(_config))
             {
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = "Invalid API base URL");
+                    _statusMessage = "Invalid API URL");
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(5), token);

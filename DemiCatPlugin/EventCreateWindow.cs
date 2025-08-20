@@ -44,6 +44,7 @@ public class EventCreateWindow
     private readonly List<ChannelDto> _channels = new();
     private bool _channelsLoaded;
     private bool _channelFetchFailed;
+    private string _channelErrorMessage = string.Empty;
     private int _selectedIndex;
     private string _channelId = string.Empty;
 
@@ -74,7 +75,7 @@ public class EventCreateWindow
         }
         else
         {
-            ImGui.TextUnformatted(_channelFetchFailed ? "Failed to load channels" : "No channels available");
+            ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
         }
 
         ImGui.InputText("Title", ref _title, 256);
@@ -267,7 +268,7 @@ public class EventCreateWindow
             PluginServices.Instance!.Log.Warning("Cannot fetch roles: API base URL is not configured.");
             _rolesLoaded = true;
             _roleFetchFailed = true;
-            _roleErrorMessage = "Failed to load roles";
+            _roleErrorMessage = "Invalid API URL";
             return;
         }
         try
@@ -313,7 +314,9 @@ public class EventCreateWindow
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
+            PluginServices.Instance!.Log.Warning("Cannot fetch schedules: API base URL is not configured.");
             _schedulesLoaded = true;
+            _lastResult = "Invalid API URL";
             return;
         }
         try
@@ -338,11 +341,13 @@ public class EventCreateWindow
             else
             {
                 _schedulesLoaded = true;
+                _lastResult = "Failed to load schedules";
             }
         }
         catch
         {
             _schedulesLoaded = true;
+            _lastResult = "Failed to load schedules";
         }
     }
 
@@ -544,6 +549,7 @@ public class EventCreateWindow
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
             _channelFetchFailed = true;
+            _channelErrorMessage = "Invalid API URL";
             _channelsLoaded = true;
             return;
         }
@@ -561,6 +567,7 @@ public class EventCreateWindow
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
                 _channelFetchFailed = true;
+                _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
                 return;
             }
@@ -583,12 +590,14 @@ public class EventCreateWindow
                 }
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
+                _channelErrorMessage = string.Empty;
             });
         }
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
             _channelFetchFailed = true;
+            _channelErrorMessage = "Failed to load channels";
             _channelsLoaded = true;
         }
     }

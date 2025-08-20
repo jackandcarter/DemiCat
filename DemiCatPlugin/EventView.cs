@@ -261,7 +261,8 @@ public class EventView : IDisposable
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
-            _lastResult = "Signup failed";
+            PluginServices.Instance!.Log.Warning("Cannot send interaction: API base URL is not configured.");
+            _lastResult = "Invalid API URL";
             return;
         }
 
