@@ -20,4 +20,14 @@ jobs:
       - name: Test
         if: ${{ hashFiles('**/*Tests.csproj') != '' }}
         run: dotnet test tests --configuration Release
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run backend tests
+        run: |
+          python -m venv venv
+          source venv/bin/activate
+          pip install -r demibot/requirements-dev.txt
+          pytest
 
