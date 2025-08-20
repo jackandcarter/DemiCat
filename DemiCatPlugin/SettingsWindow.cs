@@ -156,6 +156,12 @@ public class SettingsWindow : IDisposable
         try
         {
             _apiKey = _apiKey.Trim();
+            if (string.IsNullOrWhiteSpace(_apiKey))
+            {
+                _ = framework.RunOnTick(() => _syncStatus = "API key required");
+                return;
+            }
+
             var key = _apiKey;
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/validate";
             var request = new HttpRequestMessage(HttpMethod.Post, url)
