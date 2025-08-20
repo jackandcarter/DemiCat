@@ -20,6 +20,7 @@ public class PresenceSidebar : IDisposable
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
     private bool _loaded;
+    private string _statusMessage = string.Empty;
 
     public PresenceSidebar(Config config, HttpClient httpClient)
     {
@@ -53,6 +54,12 @@ public class PresenceSidebar : IDisposable
         if (!_loaded)
         {
             _ = Refresh();
+        }
+
+        if (!string.IsNullOrEmpty(_statusMessage))
+        {
+            ImGui.TextUnformatted(_statusMessage);
+            ImGui.Spacing();
         }
 
         var online = _presences.Where(p => p.Status != "offline").OrderBy(p => p.Name).ToList();
@@ -113,6 +120,21 @@ public class PresenceSidebar : IDisposable
     {
         while (!token.IsCancellationRequested)
         {
+            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    _statusMessage = "Invalid API base URL");
+                try
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), token);
+                }
+                catch
+                {
+                    // ignore cancellation
+                }
+                continue;
+            }
+
             try
             {
                 _ws?.Dispose();
@@ -123,6 +145,7 @@ public class PresenceSidebar : IDisposable
                 }
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
@@ -158,9 +181,11 @@ public class PresenceSidebar : IDisposable
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore errors
+                PluginServices.Instance!.Log.Error(ex, "WebSocket connection error");
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    _statusMessage = $"Connection failed: {ex.Message}");
             }
             finally
             {
@@ -169,6 +194,8 @@ public class PresenceSidebar : IDisposable
             }
             try
             {
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    _statusMessage = "Reconnecting...");
                 await Task.Delay(TimeSpan.FromSeconds(5), token);
             }
             catch
