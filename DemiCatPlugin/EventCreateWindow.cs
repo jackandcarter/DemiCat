@@ -140,7 +140,9 @@ public class EventCreateWindow
         {
             var button = _buttons[i];
             ImGui.PushID(i);
-            ImGui.Checkbox("Include", ref button.Include);
+            var include = button.Include;
+            if (ImGui.Checkbox("Include", ref include))
+                button.Include = include;
             ImGui.SameLine();
             ImGui.TextUnformatted($"{button.Label} ({button.Tag})");
             ImGui.SameLine();
