@@ -31,7 +31,7 @@ async def get_channels(
     updated = False
     for kind, channel_id, name in result.all():
         new_name = await ensure_channel_name(db, ctx.guild.id, channel_id, kind, name)
-        if new_name and new_name != name:
+        if new_name is not None and new_name != name:
             name = new_name
             await db.execute(
                 update(GuildChannel)
@@ -63,7 +63,7 @@ async def refresh_channels(
     updated = False
     for kind, channel_id, name in result.all():
         new_name = await ensure_channel_name(db, ctx.guild.id, channel_id, kind, name)
-        if new_name and new_name != name:
+        if new_name is not None and new_name != name:
             await db.execute(
                 update(GuildChannel)
                 .where(
