@@ -177,6 +177,112 @@ class Mirror(commands.Cog):
             )
             break
 
+    @commands.Cog.listener()
+    async def on_message_edit(
+        self, before: discord.Message, after: discord.Message
+    ) -> None:
+        channel_id = after.channel.id
+
+        async for db in get_session():
+            result = await db.execute(
+                select(GuildChannel.kind, GuildChannel.guild_id).where(
+                    GuildChannel.channel_id == channel_id
+                )
+            )
+            row = result.one_or_none()
+            if row is None:
+                return  # channel not registered
+
+            kind, guild_id = row
+            is_officer = kind == "officer_chat"
+
+            msg = await db.get(Message, after.id)
+            if msg is None:
+                return
+
+            attachments_json = None
+            if after.attachments:
+                attachments_json = json.dumps(
+                    [
+                        {
+                            "url": a.url,
+                            "filename": a.filename,
+                            "contentType": a.content_type,
+                        }
+                        for a in after.attachments
+                    ]
+                )
+
+            msg.content_raw = after.content
+            msg.content_display = after.content
+            msg.attachments_json = attachments_json
+            await db.commit()
+
+            mentions = [
+                Mention(id=str(m.id), name=m.display_name or m.name)
+                for m in after.mentions
+                if not m.bot
+            ]
+
+            attachments = [
+                AttachmentDto(
+                    url=a.url,
+                    filename=a.filename,
+                    contentType=a.content_type,
+                )
+                for a in after.attachments
+            ] or None
+
+            dto = ChatMessage(
+                id=str(after.id),
+                channelId=str(channel_id),
+                authorName=after.author.display_name or after.author.name,
+                authorAvatarUrl=str(after.author.display_avatar.url)
+                if after.author.display_avatar
+                else None,
+                timestamp=after.created_at,
+                content=after.content,
+                attachments=attachments,
+                mentions=mentions or None,
+            )
+            await manager.broadcast_text(
+                json.dumps(dto.model_dump()),
+                guild_id,
+                officer_only=is_officer,
+                path="/ws/messages",
+            )
+            break
+
+    @commands.Cog.listener()
+    async def on_message_delete(self, message: discord.Message) -> None:
+        channel_id = message.channel.id
+
+        async for db in get_session():
+            result = await db.execute(
+                select(GuildChannel.kind, GuildChannel.guild_id).where(
+                    GuildChannel.channel_id == channel_id
+                )
+            )
+            row = result.one_or_none()
+            if row is None:
+                return  # channel not registered
+
+            kind, guild_id = row
+            is_officer = kind == "officer_chat"
+
+            msg = await db.get(Message, message.id)
+            if msg is not None:
+                await db.delete(msg)
+                await db.commit()
+
+            await manager.broadcast_text(
+                json.dumps({"deletedId": str(message.id)}),
+                guild_id,
+                officer_only=is_officer,
+                path="/ws/messages",
+            )
+            break
+
 
 async def setup(bot: commands.Bot) -> None:
     await bot.add_cog(Mirror(bot))
