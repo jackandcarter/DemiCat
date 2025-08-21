@@ -10,12 +10,20 @@ public class EmbedDto
     public uint? Color { get; set; }
     public string? AuthorName { get; set; }
     public string? AuthorIconUrl { get; set; }
+    public List<EmbedAuthorDto>? Authors { get; set; }
     public string? Title { get; set; }
     public string? Description { get; set; }
     public string? Url { get; set; }
     public List<EmbedFieldDto>? Fields { get; set; }
     public string? ThumbnailUrl { get; set; }
     public string? ImageUrl { get; set; }
+    public string? ProviderName { get; set; }
+    public string? ProviderUrl { get; set; }
+    public string? FooterText { get; set; }
+    public string? FooterIconUrl { get; set; }
+    public string? VideoUrl { get; set; }
+    public int? VideoWidth { get; set; }
+    public int? VideoHeight { get; set; }
     public List<EmbedButtonDto>? Buttons { get; set; }
     public ulong? ChannelId { get; set; }
     public List<ulong>? Mentions { get; set; }
@@ -36,6 +44,13 @@ public class EmbedButtonDto
     public string? Emoji { get; set; }
     public ButtonStyle? Style { get; set; }
     public int? MaxSignups { get; set; }
+}
+
+public class EmbedAuthorDto
+{
+    public string? Name { get; set; }
+    public string? Url { get; set; }
+    public string? IconUrl { get; set; }
 }
 
 public enum ButtonStyle

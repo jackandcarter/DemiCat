@@ -11,6 +11,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Bindings.ImGui;
 using StbImageSharp;
 using System.Diagnostics;
+using System.Linq;
 
 namespace DemiCatPlugin;
 
@@ -24,6 +25,7 @@ public class EventView : IDisposable
     private ISharedImmediateTexture? _authorIcon;
     private ISharedImmediateTexture? _thumbnail;
     private ISharedImmediateTexture? _image;
+    private ISharedImmediateTexture? _footerIcon;
     private string? _lastResult;
 
     public EventView(EmbedDto dto, Config config, HttpClient httpClient, Func<Task> refresh)
@@ -33,6 +35,7 @@ public class EventView : IDisposable
         _refresh = refresh;
         _dto = dto;
         LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t);
+        LoadTexture(dto.FooterIconUrl, t => _footerIcon = t);
         LoadTexture(dto.ThumbnailUrl, t => _thumbnail = t);
         LoadTexture(dto.ImageUrl, t => _image = t);
     }
@@ -42,6 +45,10 @@ public class EventView : IDisposable
         if (_dto.AuthorIconUrl != dto.AuthorIconUrl)
         {
             LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t);
+        }
+        if (_dto.FooterIconUrl != dto.FooterIconUrl)
+        {
+            LoadTexture(dto.FooterIconUrl, t => _footerIcon = t);
         }
         if (_dto.ThumbnailUrl != dto.ThumbnailUrl)
         {
@@ -73,11 +80,21 @@ public class EventView : IDisposable
             ImGui.SameLine();
         }
 
-        if (_authorIcon != null)
+        if (!string.IsNullOrEmpty(dto.ProviderName))
         {
-            var wrap = _authorIcon.GetWrapOrEmpty();
-            ImGui.Image(wrap.Handle, new Vector2(32, 32));
-            ImGui.SameLine();
+            ImGui.TextUnformatted(dto.ProviderName);
+        }
+
+        if (dto.Authors != null && dto.Authors.Count > 0)
+        {
+            if (_authorIcon != null)
+            {
+                var wrap = _authorIcon.GetWrapOrEmpty();
+                ImGui.Image(wrap.Handle, new Vector2(32, 32));
+                ImGui.SameLine();
+            }
+            var names = string.Join(", ", dto.Authors.Where(a => !string.IsNullOrEmpty(a.Name)).Select(a => a.Name));
+            ImGui.TextUnformatted(names);
         }
 
         if (!string.IsNullOrEmpty(dto.Title))
@@ -163,6 +180,17 @@ public class EventView : IDisposable
         {
             var wrap = _thumbnail.GetWrapOrEmpty();
             ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+        }
+
+        if (!string.IsNullOrEmpty(dto.FooterText))
+        {
+            if (_footerIcon != null)
+            {
+                var wrap = _footerIcon.GetWrapOrEmpty();
+                ImGui.Image(wrap.Handle, new Vector2(16, 16));
+                ImGui.SameLine();
+            }
+            ImGui.TextUnformatted(dto.FooterText);
         }
 
         if (dto.Mentions != null && dto.Mentions.Count > 0)
@@ -306,5 +334,8 @@ public class EventView : IDisposable
 
         (_image as IDisposable)?.Dispose();
         _image = null;
+
+        (_footerIcon as IDisposable)?.Dispose();
+        _footerIcon = null;
     }
 }
