@@ -89,7 +89,6 @@ async def ensure_channel_name(
         )
         .values(name=name)
     )
-    await db.commit()
     return name
 
 
