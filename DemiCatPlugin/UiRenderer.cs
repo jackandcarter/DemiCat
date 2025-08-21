@@ -221,22 +221,49 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 } while (!result.EndOfMessage);
 
                 var json = Encoding.UTF8.GetString(ms.ToArray());
-                var embed = JsonSerializer.Deserialize<EmbedDto>(json);
-                if (embed != null)
+                try
                 {
-                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    using var document = JsonDocument.Parse(json);
+                    if (document.RootElement.TryGetProperty("deletedId", out var delProp))
                     {
-                        var index = _embedDtos.FindIndex(e => e.Id == embed.Id);
-                        if (index >= 0)
+                        var id = delProp.GetString();
+                        if (!string.IsNullOrEmpty(id))
                         {
-                            _embedDtos[index] = embed;
+                            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                            {
+                                var index = _embedDtos.FindIndex(e => e.Id == id);
+                                if (index >= 0)
+                                {
+                                    _embedDtos.RemoveAt(index);
+                                    SetEmbeds(_embedDtos);
+                                }
+                            });
                         }
-                        else
+                    }
+                    else
+                    {
+                        var embed = document.RootElement.Deserialize<EmbedDto>();
+                        if (embed != null)
                         {
-                            _embedDtos.Add(embed);
+                            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                            {
+                                var index = _embedDtos.FindIndex(e => e.Id == embed.Id);
+                                if (index >= 0)
+                                {
+                                    _embedDtos[index] = embed;
+                                }
+                                else
+                                {
+                                    _embedDtos.Add(embed);
+                                }
+                                SetEmbeds(_embedDtos);
+                            });
                         }
-                        SetEmbeds(_embedDtos);
-                    });
+                    }
+                }
+                catch
+                {
+                    // ignored
                 }
             }
         }

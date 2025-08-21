@@ -251,61 +251,153 @@ class Mirror(commands.Cog):
             kind, guild_id = row
             is_officer = kind == "officer_chat"
 
-            msg = await db.get(Message, after.id)
-            if msg is None:
-                return
+            if after.author.bot:
+                emb_row = await db.get(Embed, after.id)
+                if emb_row is None:
+                    return
 
-            attachments_json = None
-            if after.attachments:
-                attachments_json = json.dumps(
-                    [
-                        {
-                            "url": a.url,
-                            "filename": a.filename,
-                            "contentType": a.content_type,
-                        }
-                        for a in after.attachments
+                if not after.embeds:
+                    return
+
+                emb = after.embeds[0]
+                data = emb.to_dict()
+                footer_data = data.get("footer", {})
+                provider_data = data.get("provider", {})
+                video_data = data.get("video", {})
+                author_list: list[dict] = []
+                first_author = data.get("author")
+                if first_author:
+                    author_list.append(first_author)
+                author_list.extend(data.get("authors", []))
+                authors = [
+                    EmbedAuthorDto(
+                        name=a.get("name"),
+                        url=a.get("url"),
+                        iconUrl=a.get("icon_url"),
+                    )
+                    for a in author_list
+                    if a
+                ] or None
+
+                buttons: list[EmbedButtonDto] = []
+                for row_comp in getattr(after, "components", []) or []:
+                    children = getattr(row_comp, "children", None) or getattr(
+                        row_comp, "components", []
+                    )
+                    for comp in children or []:
+                        if getattr(comp, "type", None) == 2:
+                            style = getattr(comp, "style", None)
+                            style_val = style.value if hasattr(style, "value") else style
+                            emoji = getattr(comp, "emoji", None)
+                            emoji_str = str(emoji) if emoji else None
+                            buttons.append(
+                                EmbedButtonDto(
+                                    customId=getattr(comp, "custom_id", None),
+                                    label=getattr(comp, "label", None),
+                                    style=style_val,
+                                    emoji=emoji_str,
+                                )
+                            )
+
+                dto = EmbedDto(
+                    id=str(after.id),
+                    timestamp=emb.timestamp,
+                    color=emb.color.value if emb.color else None,
+                    authorName=first_author.get("name") if first_author else None,
+                    authorIconUrl=first_author.get("icon_url") if first_author else None,
+                    authors=authors,
+                    title=emb.title,
+                    description=emb.description,
+                    url=emb.url,
+                    fields=[
+                        EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
+                        for f in emb.fields
                     ]
+                    or None,
+                    thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
+                    imageUrl=emb.image.url if emb.image else None,
+                    providerName=provider_data.get("name"),
+                    providerUrl=provider_data.get("url"),
+                    footerText=footer_data.get("text"),
+                    footerIconUrl=footer_data.get("icon_url"),
+                    videoUrl=video_data.get("url"),
+                    videoWidth=video_data.get("width"),
+                    videoHeight=video_data.get("height"),
+                    buttons=buttons or None,
+                    channelId=channel_id,
+                    mentions=[m.id for m in after.mentions] or None,
                 )
 
-            msg.content_raw = after.content
-            msg.content_display = after.content
-            msg.attachments_json = attachments_json
-            await db.commit()
-
-            mentions = [
-                Mention(id=str(m.id), name=m.display_name or m.name)
-                for m in after.mentions
-                if not m.bot
-            ]
-
-            attachments = [
-                AttachmentDto(
-                    url=a.url,
-                    filename=a.filename,
-                    contentType=a.content_type,
+                emb_row.payload_json = json.dumps(dto.model_dump(mode="json"))
+                emb_row.buttons_json = (
+                    json.dumps([b.model_dump(mode="json") for b in buttons])
+                    if buttons
+                    else None
                 )
-                for a in after.attachments
-            ] or None
+                await db.commit()
 
-            dto = ChatMessage(
-                id=str(after.id),
-                channelId=str(channel_id),
-                authorName=after.author.display_name or after.author.name,
-                authorAvatarUrl=str(after.author.display_avatar.url)
-                if after.author.display_avatar
-                else None,
-                timestamp=after.created_at,
-                content=after.content,
-                attachments=attachments,
-                mentions=mentions or None,
-            )
-            await manager.broadcast_text(
-                json.dumps(dto.model_dump()),
-                guild_id,
-                officer_only=is_officer,
-                path="/ws/messages",
-            )
+                await manager.broadcast_text(
+                    json.dumps(dto.model_dump(mode="json")),
+                    guild_id,
+                    officer_only=is_officer,
+                    path="/ws/embeds",
+                )
+            else:
+                msg = await db.get(Message, after.id)
+                if msg is None:
+                    return
+
+                attachments_json = None
+                if after.attachments:
+                    attachments_json = json.dumps(
+                        [
+                            {
+                                "url": a.url,
+                                "filename": a.filename,
+                                "contentType": a.content_type,
+                            }
+                            for a in after.attachments
+                        ]
+                    )
+
+                msg.content_raw = after.content
+                msg.content_display = after.content
+                msg.attachments_json = attachments_json
+                await db.commit()
+
+                mentions = [
+                    Mention(id=str(m.id), name=m.display_name or m.name)
+                    for m in after.mentions
+                    if not m.bot
+                ]
+
+                attachments = [
+                    AttachmentDto(
+                        url=a.url,
+                        filename=a.filename,
+                        contentType=a.content_type,
+                    )
+                    for a in after.attachments
+                ] or None
+
+                dto = ChatMessage(
+                    id=str(after.id),
+                    channelId=str(channel_id),
+                    authorName=after.author.display_name or after.author.name,
+                    authorAvatarUrl=str(after.author.display_avatar.url)
+                    if after.author.display_avatar
+                    else None,
+                    timestamp=after.created_at,
+                    content=after.content,
+                    attachments=attachments,
+                    mentions=mentions or None,
+                )
+                await manager.broadcast_text(
+                    json.dumps(dto.model_dump()),
+                    guild_id,
+                    officer_only=is_officer,
+                    path="/ws/messages",
+                )
             break
 
     @commands.Cog.listener()
@@ -325,17 +417,30 @@ class Mirror(commands.Cog):
             kind, guild_id = row
             is_officer = kind == "officer_chat"
 
-            msg = await db.get(Message, message.id)
-            if msg is not None:
-                await db.delete(msg)
-                await db.commit()
+            if message.author.bot:
+                emb_row = await db.get(Embed, message.id)
+                if emb_row is not None:
+                    await db.delete(emb_row)
+                    await db.commit()
 
-            await manager.broadcast_text(
-                json.dumps({"deletedId": str(message.id)}),
-                guild_id,
-                officer_only=is_officer,
-                path="/ws/messages",
-            )
+                await manager.broadcast_text(
+                    json.dumps({"deletedId": str(message.id)}),
+                    guild_id,
+                    officer_only=is_officer,
+                    path="/ws/embeds",
+                )
+            else:
+                msg = await db.get(Message, message.id)
+                if msg is not None:
+                    await db.delete(msg)
+                    await db.commit()
+
+                await manager.broadcast_text(
+                    json.dumps({"deletedId": str(message.id)}),
+                    guild_id,
+                    officer_only=is_officer,
+                    path="/ws/messages",
+                )
             break
 
 
