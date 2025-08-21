@@ -73,15 +73,6 @@ async def get_channels(
             continue
         if new_name != name:
             name = new_name
-            await db.execute(
-                update(GuildChannel)
-                .where(
-                    GuildChannel.guild_id == ctx.guild.id,
-                    GuildChannel.channel_id == channel_id,
-                    GuildChannel.kind == kind,
-                )
-                .values(name=name)
-            )
             updated = True
         by_kind.setdefault(kind, []).append({"id": str(channel_id), "name": name})
     if updated:
@@ -123,15 +114,6 @@ async def refresh_channels(
                 updated = True
             continue
         if new_name != name:
-            await db.execute(
-                update(GuildChannel)
-                .where(
-                    GuildChannel.guild_id == ctx.guild.id,
-                    GuildChannel.channel_id == channel_id,
-                    GuildChannel.kind == kind,
-                )
-                .values(name=new_name)
-            )
             updated = True
     if updated:
         await db.commit()
