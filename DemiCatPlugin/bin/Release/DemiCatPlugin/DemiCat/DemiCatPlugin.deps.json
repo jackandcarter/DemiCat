@@ -1,0 +1,59 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "DemiCatPlugin/1.2.1.1": {
+        "dependencies": {
+          "DalamudPackager": "13.0.0",
+          "DotNet.ReproducibleBuilds": "1.2.25",
+          "StbImageSharp": "2.30.15"
+        },
+        "runtime": {
+          "DemiCatPlugin.dll": {}
+        }
+      },
+      "DalamudPackager/13.0.0": {},
+      "DotNet.ReproducibleBuilds/1.2.25": {},
+      "StbImageSharp/2.30.15": {
+        "runtime": {
+          "lib/netstandard2.0/StbImageSharp.dll": {
+            "assemblyVersion": "2.30.15.0",
+            "fileVersion": "2.30.15.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "DemiCatPlugin/1.2.1.1": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "DalamudPackager/13.0.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Mb3cUDSK/vDPQ8gQIeuCw03EMYrej1B4J44a1AvIJ9C759p9XeqdU9Hg4WgOmlnlPe0G7ILTD32PKSUpkQNa8w==",
+      "path": "dalamudpackager/13.0.0",
+      "hashPath": "dalamudpackager.13.0.0.nupkg.sha512"
+    },
+    "DotNet.ReproducibleBuilds/1.2.25": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-xCXiw7BCxHJ8pF6wPepRUddlh2dlQlbr81gXA72hdk4FLHkKXas7EH/n+fk5UCA/YfMqG1Z6XaPiUjDbUNBUzg==",
+      "path": "dotnet.reproduciblebuilds/1.2.25",
+      "hashPath": "dotnet.reproduciblebuilds.1.2.25.nupkg.sha512"
+    },
+    "StbImageSharp/2.30.15": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-7QqbupVhz2kcFUPTgMw4iHR9rYDHGundzzee19Mwmd1typ2Lnv8EVJcLJxlkeBM2+4ex0NwsMtdbGSJctp1XCQ==",
+      "path": "stbimagesharp/2.30.15",
+      "hashPath": "stbimagesharp.2.30.15.nupkg.sha512"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/bin/Release/StbImageSharp.dll
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/obj/Release/DemiCatPlugin.csproj.AssemblyReference.cache
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/obj/Release/DemiCatPlugin.GeneratedMSBuildEditorConfig.editorconfig
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/obj/Release/DemiCatPlugin.AssemblyInfoInputs.cache
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/obj/Release/DemiCatPlugin.AssemblyInfo.cs
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/obj/Release/DemiCatPlugin.csproj.CoreCompileInputs.cache
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/obj/Release/DemiCatP.8E2616D9.Up2Date
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/bin/Release/DemiCatPlugin.deps.json
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/bin/Release/DemiCatPlugin.dll
+/Users/imac/Desktop/DemiCat-1.2.1.0/DemiCatPlugin/obj/Release/DemiCatPlugin.dll

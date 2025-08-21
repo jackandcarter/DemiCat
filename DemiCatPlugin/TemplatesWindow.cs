@@ -1,0 +1,283 @@
+using System;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Numerics;
+using System.Threading.Tasks;
+using System.Linq;
+using System.Collections.Generic;
+using Dalamud.Bindings.ImGui;
+using DiscordHelper;
+
+namespace DemiCatPlugin;
+
+public class TemplatesWindow
+{
+    private readonly Config _config;
+    private readonly HttpClient _httpClient;
+    private int _selectedIndex = -1;
+    private bool _showPreview;
+    private EventView? _previewEvent;
+    private string? _lastResult;
+    private readonly List<ChannelDto> _channels = new();
+    private bool _channelsLoaded;
+    private bool _channelFetchFailed;
+    private string _channelErrorMessage = string.Empty;
+    private int _channelIndex;
+    private string _channelId = string.Empty;
+
+    public TemplatesWindow(Config config, HttpClient httpClient)
+    {
+        _config = config;
+        _httpClient = httpClient;
+        _channelId = config.EventChannelId;
+    }
+
+    public void Draw()
+    {
+        if (!_channelsLoaded)
+        {
+            _ = FetchChannels();
+        }
+        if (_channels.Count > 0)
+        {
+            var channelNames = _channels.Select(c => c.Name).ToArray();
+            if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
+            {
+                _channelId = _channels[_channelIndex].Id;
+                _config.EventChannelId = _channelId;
+                SaveConfig();
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
+        }
+
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+        ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
+        var filteredTemplates = _config.Templates.Where(t => t.Type == TemplateType.Event).ToList();
+        for (var i = 0; i < filteredTemplates.Count; i++)
+        {
+            var name = filteredTemplates[i].Name;
+            if (ImGui.Selectable(name, _selectedIndex == i))
+            {
+                _selectedIndex = i;
+                _showPreview = false;
+            }
+        }
+        ImGui.EndChild();
+
+        ImGui.SameLine();
+
+        ImGui.BeginChild("TemplateContent", new Vector2(0, 0), false);
+        if (_selectedIndex >= 0 && _selectedIndex < filteredTemplates.Count)
+        {
+            var tmpl = filteredTemplates[_selectedIndex];
+            if (ImGui.Button("Preview"))
+            {
+                _previewEvent?.Dispose();
+                _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask);
+                _showPreview = true;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Post"))
+            {
+                _ = PostTemplate(tmpl);
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted("Select a template");
+        }
+        ImGui.EndChild();
+
+        if (!string.IsNullOrEmpty(_lastResult))
+        {
+            ImGui.TextUnformatted(_lastResult);
+        }
+
+        if (_showPreview)
+        {
+            if (ImGui.Begin("Template Preview", ref _showPreview))
+            {
+                _previewEvent?.Draw();
+            }
+            ImGui.End();
+        }
+    }
+
+    private void SaveConfig()
+    {
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private async Task FetchChannels()
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
+            _channelFetchFailed = true;
+            _channelErrorMessage = "Invalid API URL";
+            _channelsLoaded = true;
+            return;
+        }
+
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _channelFetchFailed = true;
+                _channelErrorMessage = "Failed to load channels";
+                _channelsLoaded = true;
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            ResolveChannelNames(dto.Event);
+            dto.Event.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name));
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channels.Clear();
+                _channels.AddRange(dto.Event);
+                if (!string.IsNullOrEmpty(_channelId))
+                {
+                    _channelIndex = _channels.FindIndex(c => c.Id == _channelId);
+                    if (_channelIndex < 0) _channelIndex = 0;
+                }
+                if (_channels.Count > 0)
+                {
+                    _channelId = _channels[_channelIndex].Id;
+                }
+                _channelsLoaded = true;
+                _channelFetchFailed = false;
+                _channelErrorMessage = string.Empty;
+            });
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
+            _channelFetchFailed = true;
+            _channelErrorMessage = "Failed to load channels";
+            _channelsLoaded = true;
+        }
+    }
+
+    private static void ResolveChannelNames(List<ChannelDto> channels)
+    {
+        foreach (var c in channels)
+        {
+            if (string.IsNullOrWhiteSpace(c.Name))
+            {
+                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}.");
+            }
+        }
+    }
+
+    private class ChannelListDto
+    {
+        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
+    }
+
+    private EmbedDto ToEmbedDto(Template tmpl)
+    {
+        DateTimeOffset? ts = null;
+        if (!string.IsNullOrWhiteSpace(tmpl.Time) && DateTimeOffset.TryParse(tmpl.Time, out var parsed))
+        {
+            ts = parsed;
+        }
+
+        return new EmbedDto
+        {
+            Title = tmpl.Title,
+            Description = tmpl.Description,
+            Url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
+            Timestamp = ts,
+            ImageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
+            ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
+            Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
+            Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
+            Buttons = tmpl.Buttons?.Where(b => b.Include).Select(b => new EmbedButtonDto
+            {
+                Label = b.Label,
+                CustomId = $"rsvp:{b.Tag}",
+                Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                Style = b.Style,
+                MaxSignups = b.MaxSignups
+            }).ToList(),
+            Mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
+        };
+    }
+
+    private async Task PostTemplate(Template tmpl)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId))
+        {
+            if (string.IsNullOrWhiteSpace(_channelId))
+            {
+                _lastResult = "No channel selected";
+            }
+            return;
+        }
+        try
+        {
+            var buttons = tmpl.Buttons?
+                .Where(b => b.Include)
+                .Select(b => new
+                {
+                    label = b.Label,
+                    customId = $"rsvp:{b.Tag}",
+                    emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                    style = (int)b.Style,
+                    maxSignups = b.MaxSignups
+                })
+                .ToList();
+
+            var body = new
+            {
+                channelId = _channelId,
+                title = tmpl.Title,
+                time = string.IsNullOrWhiteSpace(tmpl.Time)
+                    ? DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'")
+                    : tmpl.Time,
+                description = tmpl.Description,
+                url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
+                imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
+                thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
+                color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
+                fields = tmpl.Fields != null && tmpl.Fields.Count > 0
+                    ? tmpl.Fields
+                        .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
+                        .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
+                        .ToList()
+                : null,
+                buttons = buttons != null && buttons.Count > 0 ? buttons : null,
+                mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
+            };
+
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
+            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            await _httpClient.SendAsync(request);
+            _lastResult = "Template posted";
+        }
+        catch
+        {
+            _lastResult = "Failed to post template";
+        }
+    }
+
+}
+

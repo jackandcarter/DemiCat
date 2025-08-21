@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
@@ -11,6 +10,7 @@ using DiscordHelper;
 using Dalamud.Interface.Textures;
 using Dalamud.Bindings.ImGui;
 using StbImageSharp;
+using System.Diagnostics;
 
 namespace DemiCatPlugin;
 
@@ -80,12 +80,31 @@ public class EventView : IDisposable
             ImGui.SameLine();
         }
 
-        var header = dto.Title ?? string.Empty;
+        if (!string.IsNullOrEmpty(dto.Title))
+        {
+            if (!string.IsNullOrEmpty(dto.Url))
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.6f, 1f, 1f));
+                ImGui.TextUnformatted(dto.Title);
+                ImGui.PopStyleColor();
+                if (ImGui.IsItemClicked())
+                {
+                    try { Process.Start(new ProcessStartInfo(dto.Url) { UseShellExecute = true }); } catch { }
+                }
+            }
+            else
+            {
+                ImGui.TextUnformatted(dto.Title);
+            }
+        }
         if (dto.Timestamp.HasValue)
         {
-            header += $" - {dto.Timestamp.Value.LocalDateTime}";
+            if (!string.IsNullOrEmpty(dto.Title))
+            {
+                ImGui.SameLine();
+            }
+            ImGui.TextUnformatted($"- {dto.Timestamp.Value.LocalDateTime}");
         }
-        ImGui.TextUnformatted(header);
 
         if (!string.IsNullOrEmpty(dto.Description))
         {
@@ -94,17 +113,42 @@ public class EventView : IDisposable
 
         if (dto.Fields != null && dto.Fields.Count > 0)
         {
-            if (ImGui.BeginTable($"fields{dto.Id}", 2, ImGuiTableFlags.Borders))
+            var fields = dto.Fields;
+            var index = 0;
+            while (index < fields.Count)
             {
-                foreach (var field in dto.Fields)
+                if (fields[index].Inline == true)
                 {
-                    ImGui.TableNextRow();
-                    ImGui.TableSetColumnIndex(0);
-                    ImGui.TextUnformatted(field.Name);
-                    ImGui.TableSetColumnIndex(1);
-                    ImGui.TextUnformatted(field.Value);
+                    var group = new List<EmbedFieldDto>();
+                    while (index < fields.Count && fields[index].Inline == true)
+                    {
+                        group.Add(fields[index]);
+                        index++;
+                    }
+                    var cols = Math.Min(3, group.Count);
+                    if (ImGui.BeginTable($"ifields{dto.Id}{index}", cols, ImGuiTableFlags.Borders))
+                    {
+                        for (var i = 0; i < group.Count; i++)
+                        {
+                            if (i % cols == 0)
+                            {
+                                ImGui.TableNextRow();
+                            }
+                            ImGui.TableSetColumnIndex(i % cols);
+                            var f = group[i];
+                            ImGui.TextUnformatted(f.Name);
+                            ImGui.TextWrapped(f.Value);
+                        }
+                        ImGui.EndTable();
+                    }
                 }
-                ImGui.EndTable();
+                else
+                {
+                    var f = fields[index];
+                    index++;
+                    ImGui.TextUnformatted(f.Name);
+                    ImGui.TextWrapped(f.Value);
+                }
             }
         }
 
@@ -126,6 +170,8 @@ public class EventView : IDisposable
             ImGui.Text($"Mentions: {string.Join(", ", dto.Mentions)}");
         }
 
+        DrawButtons();
+
         ImGui.Separator();
     }
 
@@ -136,9 +182,22 @@ public class EventView : IDisposable
             foreach (var button in Buttons)
             {
                 var id = button.CustomId ?? button.Label;
-                if (ImGui.Button($"{button.Label}##{id}{_dto.Id}", new Vector2(-1, 0)))
+                var text = string.IsNullOrEmpty(button.Emoji) ? button.Label : $"{button.Emoji} {button.Label}";
+                var styled = button.Style.HasValue;
+                if (styled)
+                {
+                    var color = GetStyleColor(button.Style!.Value);
+                    ImGui.PushStyleColor(ImGuiCol.Button, color);
+                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Lighten(color, 1.1f));
+                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, Lighten(color, 1.2f));
+                }
+                if (ImGui.Button($"{text}##{id}{_dto.Id}", new Vector2(-1, 0)))
                 {
                     _ = SendInteraction(id);
+                }
+                if (styled)
+                {
+                    ImGui.PopStyleColor(3);
                 }
             }
         }
@@ -147,6 +206,27 @@ public class EventView : IDisposable
         {
             ImGui.TextUnformatted(_lastResult);
         }
+    }
+
+    private static Vector4 GetStyleColor(ButtonStyle style)
+    {
+        return style switch
+        {
+            ButtonStyle.Primary => new Vector4(0.345f, 0.396f, 0.949f, 1f),
+            ButtonStyle.Secondary => new Vector4(0.31f, 0.329f, 0.361f, 1f),
+            ButtonStyle.Success => new Vector4(0.341f, 0.949f, 0.529f, 1f),
+            ButtonStyle.Danger => new Vector4(0.929f, 0.258f, 0.27f, 1f),
+            _ => new Vector4(0.345f, 0.396f, 0.949f, 1f),
+        };
+    }
+
+    private static Vector4 Lighten(Vector4 color, float amount)
+    {
+        return new Vector4(
+            MathF.Min(color.X * amount, 1f),
+            MathF.Min(color.Y * amount, 1f),
+            MathF.Min(color.Z * amount, 1f),
+            color.W);
     }
 
     private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)
@@ -164,29 +244,36 @@ public class EventView : IDisposable
                 var bytes = await _httpClient.GetByteArrayAsync(url).ConfigureAwait(false);
                 using var stream = new MemoryStream(bytes);
                 var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                var wrap = PluginServices.TextureProvider.CreateFromRaw(
+                var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
                     RawImageSpecification.Rgba32(image.Width, image.Height),
                     image.Data);
                 var texture = new ForwardingSharedImmediateTexture(wrap);
-                _ = PluginServices.Framework.RunOnTick(() => set(texture));
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
             }
             catch
             {
-                _ = PluginServices.Framework.RunOnTick(() => set(null));
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(null));
             }
         });
     }
 
     public async Task SendInteraction(string customId)
     {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot send interaction: API base URL is not configured.");
+            _lastResult = "Invalid API URL";
+            return;
+        }
+
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.HelperBaseUrl.TrimEnd('/')}/interactions");
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");
             var body = new { MessageId = _dto.Id, ChannelId = _dto.ChannelId, CustomId = customId };
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
-                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _config.AuthToken);
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
             }
             var response = await _httpClient.SendAsync(request);
             _lastResult = response.IsSuccessStatusCode ? "Signup updated" : "Signup failed";

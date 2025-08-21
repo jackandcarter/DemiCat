@@ -1,13 +1,11 @@
-using System.Collections.Generic;
+using System;
 using System.Net.Http;
-using System.Text.Json;
 using System.Numerics;
-using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
 
-public class MainWindow
+public class MainWindow : IDisposable
 {
     private readonly Config _config;
     private readonly UiRenderer _ui;
@@ -15,27 +13,23 @@ public class MainWindow
     private readonly OfficerChatWindow _officer;
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _create;
-    private readonly HttpClient _httpClient = new();
-    private readonly List<string> _channels = new();
-    private bool _channelsLoaded;
-    private int _selectedIndex;
-    private string _channelId;
+    private readonly TemplatesWindow _templates;
+    private readonly HttpClient _httpClient;
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
-    public bool HasChatRole { get; set; }
+    public UiRenderer Ui => _ui;
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient)
     {
         _config = config;
         _ui = ui;
         _chat = chat;
         _officer = officer;
         _settings = settings;
-        _create = new EventCreateWindow(config);
-        _channelId = config.EventChannelId;
-        _ui.ChannelId = _channelId;
-        _create.ChannelId = _channelId;
+        _httpClient = httpClient;
+        _create = new EventCreateWindow(config, httpClient);
+        _templates = new TemplatesWindow(config, httpClient);
     }
 
     public void Draw()
@@ -69,33 +63,6 @@ public class MainWindow
         }
         ImGui.SetCursorPos(cursor);
 
-        ImGui.BeginChild("ChannelList", new Vector2(150, 0), true);
-        if (!_channelsLoaded)
-        {
-            _ = FetchChannels();
-        }
-        if (_channels.Count > 0)
-        {
-            ImGui.SetNextItemWidth(-1);
-            if (ImGui.Combo("Event", ref _selectedIndex, _channels.ToArray(), _channels.Count))
-            {
-                _channelId = _channels[_selectedIndex];
-                _config.EventChannelId = _channelId;
-                SaveConfig();
-                _ui.ChannelId = _channelId;
-                _ = _ui.RefreshEmbeds();
-                _create.ChannelId = _channelId;
-            }
-        }
-        else
-        {
-            ImGui.TextUnformatted("No channels available");
-        }
-        ImGui.EndChild();
-
-        ImGui.SameLine();
-
-        ImGui.BeginChild("MainContent", new Vector2(0, 0), false);
         if (ImGui.BeginTabBar("MainTabs"))
         {
             if (ImGui.BeginTabItem("Events"))
@@ -104,7 +71,19 @@ public class MainWindow
                 ImGui.EndTabItem();
             }
 
-            if (HasChatRole && _chat != null && ImGui.BeginTabItem("Chat"))
+            if (HasOfficerRole && ImGui.BeginTabItem("Create"))
+            {
+                _create.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (HasOfficerRole && ImGui.BeginTabItem("Templates"))
+            {
+                _templates.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (_config.EnableFcChat && _chat != null && ImGui.BeginTabItem("Chat"))
             {
                 _chat.Draw();
                 ImGui.EndTabItem();
@@ -116,61 +95,30 @@ public class MainWindow
                 ImGui.EndTabItem();
             }
 
-            if (HasOfficerRole && ImGui.BeginTabItem("Create"))
-            {
-                _create.ChannelId = _channelId;
-                _create.Draw();
-                ImGui.EndTabItem();
-            }
-
             ImGui.EndTabBar();
         }
-        ImGui.EndChild();
 
         ImGui.End();
         ImGui.PopStyleColor(5);
     }
 
+    public void ResetEventCreateRoles()
+    {
+        _create.ResetRoles();
+    }
+
+    public void ReloadSignupPresets()
+    {
+        SignupPresetService.Reset();
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+    }
+
     private void SaveConfig()
     {
-        PluginServices.PluginInterface.SavePluginConfig(_config);
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
-    private async Task FetchChannels()
+    public void Dispose()
     {
-        _channelsLoaded = true;
-        try
-        {
-            var response = await _httpClient.GetAsync($"{_config.HelperBaseUrl.TrimEnd('/')}/channels");
-            if (!response.IsSuccessStatusCode)
-            {
-                return;
-            }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            _channels.Clear();
-            _channels.AddRange(dto.Event);
-            if (!string.IsNullOrEmpty(_channelId))
-            {
-                _selectedIndex = _channels.IndexOf(_channelId);
-                if (_selectedIndex < 0) _selectedIndex = 0;
-            }
-            if (_channels.Count > 0)
-            {
-                _channelId = _channels[_selectedIndex];
-                _ui.ChannelId = _channelId;
-                _create.ChannelId = _channelId;
-            }
-        }
-        catch
-        {
-            // ignored
-        }
-    }
-
-    private class ChannelListDto
-    {
-        public List<string> Event { get; set; } = new();
-        public List<string> Chat { get; set; } = new();
     }
 }

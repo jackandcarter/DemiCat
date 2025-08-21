@@ -1,22 +1,24 @@
 using System;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Plugin;
 
 namespace DemiCatPlugin;
 
 public class DeveloperWindow
 {
     private readonly Config _config;
-    private string _ip;
-    private int _port;
+    private readonly IDalamudPluginInterface? _pluginInterface;
+    private string _apiBaseUrl;
+    private string _wsPath;
 
     public bool IsOpen;
 
-    public DeveloperWindow(Config config)
+    public DeveloperWindow(Config config, IDalamudPluginInterface? pluginInterface)
     {
         _config = config;
-        var uri = new Uri(config.ServerAddress);
-        _ip = uri.Host;
-        _port = uri.Port;
+        _pluginInterface = pluginInterface;
+        _apiBaseUrl = config.ApiBaseUrl;
+        _wsPath = config.WebSocketPath;
     }
 
     public void Draw()
@@ -32,13 +34,16 @@ public class DeveloperWindow
             return;
         }
 
-        ImGui.InputText("Server IP", ref _ip, 64);
-        ImGui.InputInt("Port", ref _port);
+        ImGui.InputText("API Base URL", ref _apiBaseUrl, 256);
+        ImGui.InputText("WebSocket Path", ref _wsPath, 64);
 
         if (ImGui.Button("Save"))
         {
-            _config.ServerAddress = $"http://{_ip}:{_port}";
-            PluginServices.PluginInterface.SavePluginConfig(_config);
+            _config.ApiBaseUrl = _apiBaseUrl;
+            _config.WebSocketPath = _wsPath;
+
+            if (_pluginInterface != null)
+                _pluginInterface!.SavePluginConfig(_config);
         }
 
         ImGui.End();
