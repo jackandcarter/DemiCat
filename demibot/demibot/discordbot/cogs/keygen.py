@@ -104,6 +104,12 @@ async def key_command(interaction: discord.Interaction) -> None:
             for r in member_roles:
                 role_id, _ = role_map[r.id]
                 db.add(MembershipRole(membership_id=membership.id, role_id=role_id))
+            await db.execute(
+                delete(UserKey).where(
+                    UserKey.user_id == user.id,
+                    UserKey.guild_id == guild.id,
+                )
+            )
 
             db.add(
                 UserKey(
