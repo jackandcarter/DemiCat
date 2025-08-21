@@ -133,69 +133,94 @@ class Mirror(commands.Cog):
                     if "apollo" not in footer and author != "Apollo":
                         continue
                     buttons: list[EmbedButtonDto] = []
-                    for row in getattr(message, "components", []) or []:
-                        children = getattr(row, "children", None) or getattr(
-                            row, "components", []
-                        )
-                        for comp in children or []:
-                            if getattr(comp, "type", None) == 2:
-                                style = getattr(comp, "style", None)
-                                style_val = style.value if hasattr(style, "value") else style
-                                emoji = getattr(comp, "emoji", None)
-                                emoji_str = str(emoji) if emoji else None
-                                buttons.append(
-                                    EmbedButtonDto(
-                                        customId=getattr(comp, "custom_id", None),
-                                        label=getattr(comp, "label", None),
-                                        style=style_val,
-                                        emoji=emoji_str,
+                    try:
+                        for row in getattr(message, "components", []) or []:
+                            children = getattr(row, "children", None) or getattr(
+                                row, "components", []
+                            )
+                            for comp in children or []:
+                                if getattr(comp, "type", None) == 2:
+                                    style = getattr(comp, "style", None)
+                                    style_val = (
+                                        style.value if hasattr(style, "value") else style
                                     )
-                                )
-                    footer_data = data.get("footer", {})
-                    provider_data = data.get("provider", {})
-                    video_data = data.get("video", {})
-                    author_list = []
-                    first_author = data.get("author")
-                    if first_author:
-                        author_list.append(first_author)
-                    author_list.extend(data.get("authors", []))
-                    authors = [
-                        EmbedAuthorDto(
-                            name=a.get("name"),
-                            url=a.get("url"),
-                            iconUrl=a.get("icon_url"),
+                                    emoji = getattr(comp, "emoji", None)
+                                    emoji_str = str(emoji) if emoji else None
+                                    buttons.append(
+                                        EmbedButtonDto(
+                                            customId=getattr(comp, "custom_id", None),
+                                            label=getattr(comp, "label", None),
+                                            style=style_val,
+                                            emoji=emoji_str,
+                                        )
+                                    )
+                    except Exception:
+                        logging.exception(
+                            "Button extraction failed for guild %s channel %s message %s: %s",
+                            getattr(message.guild, "id", None),
+                            channel_id,
+                            message.id,
+                            data,
                         )
-                        for a in author_list
-                        if a
-                    ] or None
-                    dto = EmbedDto(
-                        id=str(message.id),
-                        timestamp=emb.timestamp,
-                        color=emb.color.value if emb.color else None,
-                        authorName=first_author.get("name") if first_author else None,
-                        authorIconUrl=first_author.get("icon_url") if first_author else None,
-                        authors=authors,
-                        title=emb.title,
-                        description=emb.description,
-                        url=emb.url,
-                        fields=[
-                            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
-                            for f in emb.fields
-                        ]
-                        or None,
-                        thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
-                        imageUrl=emb.image.url if emb.image else None,
-                        providerName=provider_data.get("name"),
-                        providerUrl=provider_data.get("url"),
-                        footerText=footer_data.get("text"),
-                        footerIconUrl=footer_data.get("icon_url"),
-                        videoUrl=video_data.get("url"),
-                        videoWidth=video_data.get("width"),
-                        videoHeight=video_data.get("height"),
-                        buttons=buttons or None,
-                        channelId=channel_id,
-                        mentions=[m.id for m in message.mentions] or None,
-                    )
+                        continue
+
+                    try:
+                        footer_data = data.get("footer", {})
+                        provider_data = data.get("provider", {})
+                        video_data = data.get("video", {})
+                        author_list = []
+                        first_author = data.get("author")
+                        if first_author:
+                            author_list.append(first_author)
+                        author_list.extend(data.get("authors", []))
+                        authors = [
+                            EmbedAuthorDto(
+                                name=a.get("name"),
+                                url=a.get("url"),
+                                iconUrl=a.get("icon_url"),
+                            )
+                            for a in author_list
+                            if a
+                        ] or None
+                        dto = EmbedDto(
+                            id=str(message.id),
+                            timestamp=emb.timestamp,
+                            color=emb.color.value if emb.color else None,
+                            authorName=first_author.get("name") if first_author else None,
+                            authorIconUrl=first_author.get("icon_url")
+                            if first_author
+                            else None,
+                            authors=authors,
+                            title=emb.title,
+                            description=emb.description,
+                            url=emb.url,
+                            fields=[
+                                EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
+                                for f in emb.fields
+                            ]
+                            or None,
+                            thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
+                            imageUrl=emb.image.url if emb.image else None,
+                            providerName=provider_data.get("name"),
+                            providerUrl=provider_data.get("url"),
+                            footerText=footer_data.get("text"),
+                            footerIconUrl=footer_data.get("icon_url"),
+                            videoUrl=video_data.get("url"),
+                            videoWidth=video_data.get("width"),
+                            videoHeight=video_data.get("height"),
+                            buttons=buttons or None,
+                            channelId=channel_id,
+                            mentions=[m.id for m in message.mentions] or None,
+                        )
+                    except Exception:
+                        logging.exception(
+                            "Embed parsing failed for guild %s channel %s message %s: %s",
+                            getattr(message.guild, "id", None),
+                            channel_id,
+                            message.id,
+                            data,
+                        )
+                        continue
                     db.add(
                         Embed(
                             discord_message_id=message.id,
@@ -334,72 +359,95 @@ class Mirror(commands.Cog):
 
                 emb = after.embeds[0]
                 data = emb.to_dict()
-                footer_data = data.get("footer", {})
-                provider_data = data.get("provider", {})
-                video_data = data.get("video", {})
-                author_list: list[dict] = []
-                first_author = data.get("author")
-                if first_author:
-                    author_list.append(first_author)
-                author_list.extend(data.get("authors", []))
-                authors = [
-                    EmbedAuthorDto(
-                        name=a.get("name"),
-                        url=a.get("url"),
-                        iconUrl=a.get("icon_url"),
-                    )
-                    for a in author_list
-                    if a
-                ] or None
 
                 buttons: list[EmbedButtonDto] = []
-                for row_comp in getattr(after, "components", []) or []:
-                    children = getattr(row_comp, "children", None) or getattr(
-                        row_comp, "components", []
-                    )
-                    for comp in children or []:
-                        if getattr(comp, "type", None) == 2:
-                            style = getattr(comp, "style", None)
-                            style_val = style.value if hasattr(style, "value") else style
-                            emoji = getattr(comp, "emoji", None)
-                            emoji_str = str(emoji) if emoji else None
-                            buttons.append(
-                                EmbedButtonDto(
-                                    customId=getattr(comp, "custom_id", None),
-                                    label=getattr(comp, "label", None),
-                                    style=style_val,
-                                    emoji=emoji_str,
+                try:
+                    for row_comp in getattr(after, "components", []) or []:
+                        children = getattr(row_comp, "children", None) or getattr(
+                            row_comp, "components", []
+                        )
+                        for comp in children or []:
+                            if getattr(comp, "type", None) == 2:
+                                style = getattr(comp, "style", None)
+                                style_val = (
+                                    style.value if hasattr(style, "value") else style
                                 )
-                            )
+                                emoji = getattr(comp, "emoji", None)
+                                emoji_str = str(emoji) if emoji else None
+                                buttons.append(
+                                    EmbedButtonDto(
+                                        customId=getattr(comp, "custom_id", None),
+                                        label=getattr(comp, "label", None),
+                                        style=style_val,
+                                        emoji=emoji_str,
+                                    )
+                                )
+                except Exception:
+                    logging.exception(
+                        "Button extraction failed for guild %s channel %s message %s: %s",
+                        getattr(after.guild, "id", None),
+                        channel_id,
+                        after.id,
+                        data,
+                    )
+                    return
 
-                dto = EmbedDto(
-                    id=str(after.id),
-                    timestamp=emb.timestamp,
-                    color=emb.color.value if emb.color else None,
-                    authorName=first_author.get("name") if first_author else None,
-                    authorIconUrl=first_author.get("icon_url") if first_author else None,
-                    authors=authors,
-                    title=emb.title,
-                    description=emb.description,
-                    url=emb.url,
-                    fields=[
-                        EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
-                        for f in emb.fields
-                    ]
-                    or None,
-                    thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
-                    imageUrl=emb.image.url if emb.image else None,
-                    providerName=provider_data.get("name"),
-                    providerUrl=provider_data.get("url"),
-                    footerText=footer_data.get("text"),
-                    footerIconUrl=footer_data.get("icon_url"),
-                    videoUrl=video_data.get("url"),
-                    videoWidth=video_data.get("width"),
-                    videoHeight=video_data.get("height"),
-                    buttons=buttons or None,
-                    channelId=channel_id,
-                    mentions=[m.id for m in after.mentions] or None,
-                )
+                try:
+                    footer_data = data.get("footer", {})
+                    provider_data = data.get("provider", {})
+                    video_data = data.get("video", {})
+                    author_list: list[dict] = []
+                    first_author = data.get("author")
+                    if first_author:
+                        author_list.append(first_author)
+                    author_list.extend(data.get("authors", []))
+                    authors = [
+                        EmbedAuthorDto(
+                            name=a.get("name"),
+                            url=a.get("url"),
+                            iconUrl=a.get("icon_url"),
+                        )
+                        for a in author_list
+                        if a
+                    ] or None
+
+                    dto = EmbedDto(
+                        id=str(after.id),
+                        timestamp=emb.timestamp,
+                        color=emb.color.value if emb.color else None,
+                        authorName=first_author.get("name") if first_author else None,
+                        authorIconUrl=first_author.get("icon_url") if first_author else None,
+                        authors=authors,
+                        title=emb.title,
+                        description=emb.description,
+                        url=emb.url,
+                        fields=[
+                            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
+                            for f in emb.fields
+                        ]
+                        or None,
+                        thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
+                        imageUrl=emb.image.url if emb.image else None,
+                        providerName=provider_data.get("name"),
+                        providerUrl=provider_data.get("url"),
+                        footerText=footer_data.get("text"),
+                        footerIconUrl=footer_data.get("icon_url"),
+                        videoUrl=video_data.get("url"),
+                        videoWidth=video_data.get("width"),
+                        videoHeight=video_data.get("height"),
+                        buttons=buttons or None,
+                        channelId=channel_id,
+                        mentions=[m.id for m in after.mentions] or None,
+                    )
+                except Exception:
+                    logging.exception(
+                        "Embed parsing failed for guild %s channel %s message %s: %s",
+                        getattr(after.guild, "id", None),
+                        channel_id,
+                        after.id,
+                        data,
+                    )
+                    return
 
                 emb_row.payload_json = json.dumps(dto.model_dump(mode="json"))
                 emb_row.buttons_json = (
