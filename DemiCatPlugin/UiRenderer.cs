@@ -402,7 +402,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
             ResolveChannelNames(dto.Event);
-            dto.Event.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name));
+            dto.Event.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit));
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
@@ -437,9 +437,10 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     {
         foreach (var c in channels)
         {
-            if (string.IsNullOrWhiteSpace(c.Name))
+            if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
             {
-                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}.");
+                PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
+                continue;
             }
         }
     }
