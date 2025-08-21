@@ -1,6 +1,6 @@
 [
   {
-    "Author": "Demi Dev Studio",
+    "Author": "Demi Dev Unit",
     "Name": "DemiCat",
     "InternalName": "DemiCatPlugin",
     "Punchline": "Discord-linked FC tools and chat.",
@@ -9,9 +9,9 @@
     "ApplicableVersion": "any",
     "DalamudApiLevel": 13,
     "RepoUrl": "https://github.com/jackandcarter/DemiCat",
-    "IconUrl": "https://raw.githubusercontent.com/jackandcarter/DemiCatPlugin/icon.png",
+    "IconUrl": "https://the-demiurge.com/DemiDevUnit/icon.png",
 
-    "DownloadLinkInstall": "https://github.com/jackandcarter/DemiCat/releases/download/Release/latest.zip",
-    "DownloadLinkUpdate":  "https://github.com/jackandcarter/DemiCat/releases/download/Release/latest.zip"
+    "DownloadLinkInstall": "https://github.com/jackandcarter/DemiCat/releases/DemiCat.zip",
+    "DownloadLinkUpdate":  "https://github.com/jackandcarter/DemiCat/releases/DemiCat.zip"
   }
 ]
