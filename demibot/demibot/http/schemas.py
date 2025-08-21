@@ -29,18 +29,32 @@ class EmbedButtonDto(BaseModel):
     style: Optional[ButtonStyle] = None
     maxSignups: Optional[int] = None
 
+
+class EmbedAuthorDto(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    iconUrl: Optional[str] = None
+
 class EmbedDto(BaseModel):
     id: str
     timestamp: Optional[datetime] = None
     color: Optional[int] = None
     authorName: Optional[str] = None
     authorIconUrl: Optional[str] = None
+    authors: List[EmbedAuthorDto] | None = None
     title: Optional[str] = None
     description: Optional[str] = None
     url: Optional[str] = None
     fields: List[EmbedFieldDto] | None = None
     thumbnailUrl: Optional[str] = None
     imageUrl: Optional[str] = None
+    providerName: Optional[str] = None
+    providerUrl: Optional[str] = None
+    footerText: Optional[str] = None
+    footerIconUrl: Optional[str] = None
+    videoUrl: Optional[str] = None
+    videoWidth: Optional[int] = None
+    videoHeight: Optional[int] = None
     buttons: List[EmbedButtonDto] | None = None
     channelId: Optional[int] = None
     mentions: List[int] | None = None

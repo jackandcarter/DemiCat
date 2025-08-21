@@ -13,6 +13,7 @@ from ...http.schemas import (
     EmbedDto,
     EmbedFieldDto,
     EmbedButtonDto,
+    EmbedAuthorDto,
     Mention,
     AttachmentDto,
 )
@@ -77,14 +78,30 @@ class Mirror(commands.Cog):
                                         emoji=emoji_str,
                                     )
                                 )
+                    footer_data = data.get("footer", {})
+                    provider_data = data.get("provider", {})
+                    video_data = data.get("video", {})
+                    author_list = []
+                    first_author = data.get("author")
+                    if first_author:
+                        author_list.append(first_author)
+                    author_list.extend(data.get("authors", []))
+                    authors = [
+                        EmbedAuthorDto(
+                            name=a.get("name"),
+                            url=a.get("url"),
+                            iconUrl=a.get("icon_url"),
+                        )
+                        for a in author_list
+                        if a
+                    ] or None
                     dto = EmbedDto(
                         id=str(message.id),
                         timestamp=emb.timestamp,
                         color=emb.color.value if emb.color else None,
-                        authorName=emb.author.name if emb.author else None,
-                        authorIconUrl=str(emb.author.icon_url)
-                        if emb.author and emb.author.icon_url
-                        else None,
+                        authorName=first_author.get("name") if first_author else None,
+                        authorIconUrl=first_author.get("icon_url") if first_author else None,
+                        authors=authors,
                         title=emb.title,
                         description=emb.description,
                         url=emb.url,
@@ -95,6 +112,13 @@ class Mirror(commands.Cog):
                         or None,
                         thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
                         imageUrl=emb.image.url if emb.image else None,
+                        providerName=provider_data.get("name"),
+                        providerUrl=provider_data.get("url"),
+                        footerText=footer_data.get("text"),
+                        footerIconUrl=footer_data.get("icon_url"),
+                        videoUrl=video_data.get("url"),
+                        videoWidth=video_data.get("width"),
+                        videoHeight=video_data.get("height"),
                         buttons=buttons or None,
                         channelId=channel_id,
                         mentions=[m.id for m in message.mentions] or None,
