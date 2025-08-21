@@ -34,7 +34,7 @@ class Mirror(commands.Cog):
         self._reconcile_lock = asyncio.Lock()
 
     async def cog_load(self) -> None:
-        await self._sync_guild_channels_once()  # wait for initial insert/commit
+        self.bot.loop.create_task(self._sync_guild_channels_once())
         self._sync_task = asyncio.create_task(self._channel_sync_loop())
 
     async def _sync_guild_channels_once(self) -> None:
