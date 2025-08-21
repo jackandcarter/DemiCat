@@ -6,6 +6,7 @@ import logging
 import discord
 from discord.ext import commands
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from ...db.models import Embed, Guild, GuildChannel, Message
 from ...db.session import get_session, init_db
@@ -29,7 +30,11 @@ class Mirror(commands.Cog):
         self.bot = bot
         # Ensure the database engine is available for this cog
         asyncio.create_task(init_db(bot.cfg.database.url))
-        asyncio.create_task(self._sync_guild_channels_once())
+        self._sync_task: asyncio.Task | None = None
+        self._reconcile_lock = asyncio.Lock()
+
+    async def cog_load(self) -> None:
+        await self._sync_guild_channels_once()  # wait for initial insert/commit
         self._sync_task = asyncio.create_task(self._channel_sync_loop())
 
     async def _sync_guild_channels_once(self) -> None:
@@ -41,63 +46,73 @@ class Mirror(commands.Cog):
         if hasattr(self.bot, "wait_until_ready"):
             await self.bot.wait_until_ready()
         while True:
+            await asyncio.sleep(CHANNEL_SYNC_INTERVAL)
             try:
                 await self._reconcile_channels()
             except Exception:
                 logging.exception("Guild channel sync failed")
-            await asyncio.sleep(CHANNEL_SYNC_INTERVAL)
 
     async def _reconcile_channels(self) -> None:
-        async for db in get_session():
-            for guild in self.bot.guilds:
-                result = await db.execute(
-                    select(Guild).where(Guild.discord_guild_id == guild.id)
-                )
-                db_guild = result.scalar_one_or_none()
-                if db_guild is None:
-                    db_guild = Guild(discord_guild_id=guild.id, name=guild.name)
-                    db.add(db_guild)
-                    await db.flush()
-                elif db_guild.name != guild.name:
-                    db_guild.name = guild.name
-
-                existing = {
-                    row.channel_id: row
-                    for row in (
-                        await db.execute(
-                            select(GuildChannel).where(
-                                GuildChannel.guild_id == db_guild.id
-                            )
-                        )
-                    ).scalars()
-                }
-
+        async with self._reconcile_lock:
+            async for db in get_session():
                 try:
-                    channels = await guild.fetch_channels()
-                except Exception:
-                    logging.exception("Failed to fetch channels for guild %s", guild.id)
-                    continue
-
-                for ch in channels:
-                    if not hasattr(ch, "name"):
-                        continue
-                    existing_row = existing.get(ch.id)
-                    if existing_row is None:
-                        db.add(
-                            GuildChannel(
-                                guild_id=db_guild.id,
-                                channel_id=ch.id,
-                                kind="chat",
-                                name=ch.name,
-                            )
+                    for guild in self.bot.guilds:
+                        result = await db.execute(
+                            select(Guild).where(Guild.discord_guild_id == guild.id)
                         )
-                    elif existing_row.name != ch.name:
-                        existing_row.name = ch.name
-            await db.commit()
-            break
+                        db_guild = result.scalar_one_or_none()
+                        if db_guild is None:
+                            db_guild = Guild(
+                                discord_guild_id=guild.id, name=guild.name
+                            )
+                            db.add(db_guild)
+                            await db.flush()
+                        elif db_guild.name != guild.name:
+                            db_guild.name = guild.name
+
+                        existing = {
+                            row.channel_id: row
+                            for row in (
+                                await db.execute(
+                                    select(GuildChannel).where(
+                                        GuildChannel.guild_id == db_guild.id
+                                    )
+                                )
+                            ).scalars()
+                        }
+
+                        try:
+                            channels = await guild.fetch_channels()
+                        except Exception:
+                            logging.exception(
+                                "Failed to fetch channels for guild %s", guild.id
+                            )
+                            continue
+
+                        for ch in channels:
+                            if not hasattr(ch, "name"):
+                                continue
+                            existing_row = existing.get(ch.id)
+                            if existing_row is None:
+                                db.add(
+                                    GuildChannel(
+                                        guild_id=db_guild.id,
+                                        channel_id=ch.id,
+                                        kind="chat",
+                                        name=ch.name,
+                                    )
+                                )
+                            elif existing_row.name != ch.name:
+                                existing_row.name = ch.name
+                    await db.commit()
+                except IntegrityError:
+                    await db.rollback()
+                    logging.exception("Guild channel reconciliation failed")
+                break
 
     def cog_unload(self) -> None:
-        self._sync_task.cancel()
+        if self._sync_task is not None:
+            self._sync_task.cancel()
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
