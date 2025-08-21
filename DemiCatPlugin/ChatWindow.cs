@@ -192,7 +192,7 @@ public class ChatWindow : IDisposable
     public void SetChannels(List<ChannelDto> channels)
     {
         ResolveChannelNames(channels);
-        channels.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name));
+        channels.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit));
         _channels.Clear();
         _channels.AddRange(channels);
         if (!string.IsNullOrEmpty(_channelId))
@@ -211,9 +211,10 @@ public class ChatWindow : IDisposable
     {
         foreach (var c in channels)
         {
-            if (string.IsNullOrWhiteSpace(c.Name))
+            if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
             {
-                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}.");
+                PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
+                continue;
             }
         }
     }
