@@ -189,7 +189,16 @@ public class SettingsWindow : IDisposable
                     _config.AuthToken = newKey;
                     _apiKey = newKey;
                     SaveConfig();
-                    MainWindow?.ReloadSignupPresets();
+                    _ = framework.RunOnTick(() => _syncStatus = "API key validated");
+
+                    try
+                    {
+                        MainWindow?.ReloadSignupPresets();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to reload signup presets after key validation.");
+                    }
 
                     if (_refreshRoles != null)
                     {
@@ -211,20 +220,83 @@ public class SettingsWindow : IDisposable
                         _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
                     }
 
-                    await _startNetworking();
-                    ChannelWatcher?.Start();
-                    ChatWindow?.StartNetworking();
-                    OfficerChatWindow?.StartNetworking();
-                    _ = ChatWindow?.RefreshChannels();
-                    _ = OfficerChatWindow?.RefreshChannels();
-                    _ = ChatWindow?.RefreshMessages();
-                    _ = OfficerChatWindow?.RefreshMessages();
-                    MainWindow?.Ui.ResetChannels();
-                    MainWindow?.ResetEventCreateRoles();
-                    var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
-                    presence?.Reset();
-                    presence?.Reload();
-                    _ = framework.RunOnTick(() => _syncStatus = "API key validated");
+                    try
+                    {
+                        await _startNetworking();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to start networking after key validation.");
+                    }
+
+                    try
+                    {
+                        ChannelWatcher?.Start();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to start ChannelWatcher.");
+                    }
+
+                    try
+                    {
+                        ChatWindow?.StartNetworking();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to start ChatWindow networking.");
+                    }
+
+                    try
+                    {
+                        OfficerChatWindow?.StartNetworking();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to start OfficerChatWindow networking.");
+                    }
+
+                    try
+                    {
+                        _ = ChatWindow?.RefreshChannels();
+                        _ = OfficerChatWindow?.RefreshChannels();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to refresh channels.");
+                    }
+
+                    try
+                    {
+                        _ = ChatWindow?.RefreshMessages();
+                        _ = OfficerChatWindow?.RefreshMessages();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to refresh messages.");
+                    }
+
+                    try
+                    {
+                        MainWindow?.Ui.ResetChannels();
+                        MainWindow?.ResetEventCreateRoles();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to reset UI or event create roles.");
+                    }
+
+                    try
+                    {
+                        var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
+                        presence?.Reset();
+                        presence?.Reload();
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Error(ex, "Failed to reset or reload presence.");
+                    }
+
                     if (MainWindow != null)
                     {
                         _ = framework.RunOnTick(() => MainWindow.IsOpen = true);
