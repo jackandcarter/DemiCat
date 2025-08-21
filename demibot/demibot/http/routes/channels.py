@@ -56,7 +56,9 @@ async def get_channels(
                 kind,
                 ctx.guild.id,
             )
-            by_kind.setdefault(kind, [])
+            by_kind.setdefault(kind, []).append(
+                {"id": str(channel_id), "name": str(channel_id)}
+            )
             if name is not None:
                 await db.execute(
                     update(GuildChannel)

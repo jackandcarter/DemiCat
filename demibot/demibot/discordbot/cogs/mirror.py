@@ -8,7 +8,14 @@ from sqlalchemy import select
 
 from ...db.models import Embed, GuildChannel, Message
 from ...db.session import get_session, init_db
-from ...http.schemas import ChatMessage, EmbedDto, EmbedFieldDto, Mention, AttachmentDto
+from ...http.schemas import (
+    ChatMessage,
+    EmbedDto,
+    EmbedFieldDto,
+    EmbedButtonDto,
+    Mention,
+    AttachmentDto,
+)
 from ...http.ws import manager
 
 
@@ -51,6 +58,25 @@ class Mirror(commands.Cog):
                     author = data.get("author", {}).get("name", "")
                     if "apollo" not in footer and author != "Apollo":
                         continue
+                    buttons: list[EmbedButtonDto] = []
+                    for row in getattr(message, "components", []) or []:
+                        children = getattr(row, "children", None) or getattr(
+                            row, "components", []
+                        )
+                        for comp in children or []:
+                            if getattr(comp, "type", None) == 2:
+                                style = getattr(comp, "style", None)
+                                style_val = style.value if hasattr(style, "value") else style
+                                emoji = getattr(comp, "emoji", None)
+                                emoji_str = str(emoji) if emoji else None
+                                buttons.append(
+                                    EmbedButtonDto(
+                                        customId=getattr(comp, "custom_id", None),
+                                        label=getattr(comp, "label", None),
+                                        style=style_val,
+                                        emoji=emoji_str,
+                                    )
+                                )
                     dto = EmbedDto(
                         id=str(message.id),
                         timestamp=emb.timestamp,
@@ -69,7 +95,7 @@ class Mirror(commands.Cog):
                         or None,
                         thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
                         imageUrl=emb.image.url if emb.image else None,
-                        buttons=None,
+                        buttons=buttons or None,
                         channelId=channel_id,
                         mentions=[m.id for m in message.mentions] or None,
                     )
@@ -78,12 +104,17 @@ class Mirror(commands.Cog):
                             discord_message_id=message.id,
                             channel_id=channel_id,
                             guild_id=guild_id,
-                            payload_json=json.dumps(dto.model_dump()),
+                            payload_json=json.dumps(dto.model_dump(mode="json")),
+                            buttons_json=json.dumps(
+                                [b.model_dump(mode="json") for b in buttons]
+                            )
+                            if buttons
+                            else None,
                             source="apollo",
                         )
                     )
                     await manager.broadcast_text(
-                        json.dumps(dto.model_dump()),
+                        json.dumps(dto.model_dump(mode="json")),
                         guild_id,
                         officer_only=is_officer,
                         path="/ws/embeds",
