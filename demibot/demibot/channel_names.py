@@ -3,12 +3,14 @@ from __future__ import annotations
 import asyncio
 import logging
 
+import aiohttp
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db.models import GuildChannel
 from .db.session import get_session
 from .http.discord_client import discord_client
+from .config import load_config
 
 
 async def ensure_channel_name(
@@ -25,12 +27,47 @@ async def ensure_channel_name(
     resolved name is returned (or ``None`` if it could not be resolved).
     """
 
-    if (current_name and not current_name.isdigit()) or not discord_client:
+    if current_name and not current_name.isdigit():
         return current_name
-    channel = discord_client.get_channel(channel_id)
-    if channel is None:
+
+    # Try to resolve via Discord gateway client if available, otherwise fall
+    # back to a direct REST API call using the configured bot token.
+    if discord_client:
+        channel = discord_client.get_channel(channel_id)
+        if channel is None:
+            try:
+                channel = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
+            except Exception as exc:  # pragma: no cover - network errors
+                logging.warning(
+                    "Failed to fetch channel %s in guild %s: %s",
+                    channel_id,
+                    guild_id,
+                    exc,
+                )
+                return None
+        if channel is None:
+            logging.warning("Channel %s not found in guild %s", channel_id, guild_id)
+            return None
+        name = channel.name
+    else:
+        cfg = load_config()
+        if not cfg.discord_token:
+            logging.warning("Discord token missing; cannot resolve channel %s", channel_id)
+            return None
+        url = f"https://discord.com/api/v10/channels/{channel_id}"
+        headers = {"Authorization": f"Bot {cfg.discord_token}"}
         try:
-            channel = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status != 200:
+                        logging.warning(
+                            "Failed to fetch channel %s in guild %s: HTTP %s",
+                            channel_id,
+                            guild_id,
+                            resp.status,
+                        )
+                        return None
+                    data = await resp.json()
         except Exception as exc:  # pragma: no cover - network errors
             logging.warning(
                 "Failed to fetch channel %s in guild %s: %s",
@@ -39,10 +76,10 @@ async def ensure_channel_name(
                 exc,
             )
             return None
-    if channel is None:
-        logging.warning("Channel %s not found in guild %s", channel_id, guild_id)
-        return None
-    name = channel.name
+        name = data.get("name")
+        if not name:
+            logging.warning("Channel %s returned no name in guild %s", channel_id, guild_id)
+            return None
     await db.execute(
         update(GuildChannel)
         .where(

@@ -1,7 +1,9 @@
 import asyncio
 from pathlib import Path
 import logging
+import types
 
+import pytest
 from sqlalchemy import select
 
 from demibot import channel_names as cn
@@ -58,6 +60,55 @@ def test_fetch_channel_updates_name():
 
     name = asyncio.run(run())
     assert name == "resolved"
+
+
+def test_rest_fallback_updates_name(monkeypatch):
+    _setup_db("test_rest.db")
+
+    cn.discord_client = None
+
+    class DummyResponse:
+        status = 200
+
+        async def json(self):
+            return {"name": "rest"}
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+    class DummySession:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        def get(self, url, headers=None):
+            assert headers and "Authorization" in headers
+            return DummyResponse()
+
+    monkeypatch.setattr(cn, "aiohttp", types.SimpleNamespace(ClientSession=DummySession))
+    monkeypatch.setattr(cn, "load_config", lambda: types.SimpleNamespace(discord_token="t"))
+
+    async def run() -> str | None:
+        async for db in get_session():
+            await cn.ensure_channel_name(db, 1, 100, "event", None)
+            row = (
+                await db.execute(
+                    select(GuildChannel.name).where(
+                        GuildChannel.guild_id == 1,
+                        GuildChannel.channel_id == 100,
+                        GuildChannel.kind == "event",
+                    )
+                )
+            ).scalar_one()
+            return row
+
+    name = asyncio.run(run())
+    assert name == "rest"
 
 
 def test_retry_null_channel_names_logs_failure(caplog):
