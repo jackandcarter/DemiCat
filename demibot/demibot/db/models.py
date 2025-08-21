@@ -140,6 +140,7 @@ class Embed(Base):
     channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     payload_json: Mapped[str] = mapped_column(Text)
+    buttons_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(

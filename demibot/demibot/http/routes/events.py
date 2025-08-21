@@ -153,6 +153,9 @@ async def create_event(
             channel_id=channel_id,
             guild_id=ctx.guild.id,
             payload_json=json.dumps(dto.model_dump(mode="json")),
+            buttons_json=json.dumps([b.model_dump(mode="json") for b in buttons])
+            if buttons
+            else None,
             source="demibot",
         )
     )

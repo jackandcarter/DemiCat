@@ -183,7 +183,7 @@ public class EventView : IDisposable
             {
                 var id = button.CustomId ?? button.Label;
                 var text = string.IsNullOrEmpty(button.Emoji) ? button.Label : $"{button.Emoji} {button.Label}";
-                var styled = button.Style.HasValue;
+                var styled = button.Style.HasValue && button.Style.Value != ButtonStyle.Link;
                 if (styled)
                 {
                     var color = GetStyleColor(button.Style!.Value);
@@ -193,7 +193,14 @@ public class EventView : IDisposable
                 }
                 if (ImGui.Button($"{text}##{id}{_dto.Id}", new Vector2(-1, 0)))
                 {
-                    _ = SendInteraction(id);
+                    if (!string.IsNullOrEmpty(button.Url))
+                    {
+                        try { Process.Start(new ProcessStartInfo(button.Url) { UseShellExecute = true }); } catch { }
+                    }
+                    else if (!string.IsNullOrEmpty(button.CustomId))
+                    {
+                        _ = SendInteraction(button.CustomId);
+                    }
                 }
                 if (styled)
                 {

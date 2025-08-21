@@ -29,6 +29,11 @@ async def get_embeds(
         payload = json.loads(e.payload_json)
         if not payload.get("channelId"):
             payload["channelId"] = e.channel_id
+        if e.buttons_json and not payload.get("buttons"):
+            try:
+                payload["buttons"] = json.loads(e.buttons_json)
+            except Exception:
+                pass
         payload["guildId"] = e.guild_id
         embeds.append(payload)
     return embeds

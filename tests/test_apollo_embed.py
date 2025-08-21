@@ -1,4 +1,3 @@
-import json
 from types import SimpleNamespace
 
 import sys
@@ -56,6 +55,15 @@ class DummyMessage:
         self.content = ""
         self.mentions = []
         self.embeds = [embed]
+        btn = SimpleNamespace(
+            type=2,
+            custom_id="rsvp:yes",
+            label="Yes",
+            style=1,
+            emoji=None,
+        )
+        row = SimpleNamespace(children=[btn])
+        self.components = [row]
 async def _run_test() -> None:
     db_path = Path("test.db")
     if db_path.exists():
@@ -86,11 +94,13 @@ async def _run_test() -> None:
             )
         ).scalar_one()
         assert row.source == "apollo"
+        assert row.buttons_json is not None
         ctx = SimpleNamespace(guild=SimpleNamespace(id=1), roles=["officer"])
         result = await get_embeds(ctx=ctx, db=db)
         assert result and result[0]["id"] == str(msg.id)
         assert result[0]["guildId"] == 1
         assert result[0]["channelId"] == 123
+        assert result[0]["buttons"][0]["customId"] == "rsvp:yes"
         break
 
 
