@@ -1,23 +1,51 @@
-
 from __future__ import annotations
+
+"""FastAPI application factory for DemiBot.
+
+This module creates the HTTP API used by the DemiBot service.  All route
+modules under :mod:`demibot.http.routes` expose an ``APIRouter`` instance named
+``router``.  ``create_app`` dynamically imports each module and registers its
+router with the FastAPI application.  This keeps the application setup
+declarative and automatically includes any new route modules that are added in
+the future.
+"""
+
+from importlib import import_module
+import pkgutil
+
 from fastapi import FastAPI
-from ..config import AppConfig
+
 from .ws import websocket_endpoint
-from .routes import channels, messages, officer_messages, users, embeds, events, interactions, validate_roles
 
-def create_app(cfg: AppConfig) -> FastAPI:
-    app = FastAPI(title="DemiBot API")
+from typing import TYPE_CHECKING
 
-    # Regular routes
-    app.include_router(validate_roles.router)
-    app.include_router(channels.router)
-    app.include_router(messages.router)
-    app.include_router(officer_messages.router)
-    app.include_router(users.router)
-    app.include_router(embeds.router)
-    app.include_router(events.router)
-    app.include_router(interactions.router)
+if TYPE_CHECKING:  # pragma: no cover - imported for type hints only
+    from ..config import AppConfig
 
-    # WebSocket
-    app.add_api_websocket_route(cfg.server.websocket_path, websocket_endpoint)
+
+def create_app(cfg: "AppConfig | None") -> FastAPI:
+    """Create and configure the FastAPI application."""
+
+    app = FastAPI()
+    app.add_api_websocket_route("/ws/messages", websocket_endpoint)
+    app.add_api_websocket_route("/ws/embeds", websocket_endpoint)
+    app.add_api_websocket_route("/ws/officer-messages", websocket_endpoint)
+    app.add_api_websocket_route("/ws/presences", websocket_endpoint)
+    app.add_api_websocket_route("/ws/channels", websocket_endpoint)
+
+    @app.get("/health")
+    async def health() -> dict[str, str]:
+        """Simple health check endpoint."""
+        return {"status": "ok"}
+
+    # Dynamically include routers from all modules in the routes package
+    from . import routes as routes_pkg
+
+    for _, module_name, _ in pkgutil.iter_modules(routes_pkg.__path__):
+        module = import_module(f"{routes_pkg.__name__}.{module_name}")
+        router = getattr(module, "router", None)
+        if router is not None:
+            app.include_router(router)
+
     return app
+
