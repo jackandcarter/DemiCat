@@ -79,9 +79,12 @@ public class OfficerChatWindow : ChatWindow
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
-            _channelFetchFailed = true;
-            _channelErrorMessage = "Invalid API URL";
-            _channelsLoaded = true;
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channelFetchFailed = true;
+                _channelErrorMessage = "Invalid API URL";
+                _channelsLoaded = true;
+            });
             return;
         }
 
@@ -97,9 +100,12 @@ public class OfficerChatWindow : ChatWindow
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _channelFetchFailed = true;
-                _channelErrorMessage = "Failed to load channels";
-                _channelsLoaded = true;
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Failed to load channels";
+                    _channelsLoaded = true;
+                });
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
@@ -115,9 +121,12 @@ public class OfficerChatWindow : ChatWindow
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
-            _channelFetchFailed = true;
-            _channelErrorMessage = "Failed to load channels";
-            _channelsLoaded = true;
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channelFetchFailed = true;
+                _channelErrorMessage = "Failed to load channels";
+                _channelsLoaded = true;
+            });
         }
     }
 
