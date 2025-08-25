@@ -61,6 +61,8 @@ public class ChatWindow : IDisposable
 
     public PresenceSidebar Presence => _presence;
 
+    protected virtual string MessagesPath => "/api/messages";
+
     public ChatWindow(Config config, HttpClient httpClient, PresenceSidebar presence)
     {
         _config = config;
@@ -290,24 +292,50 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages/{_channelId}");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
+            const int PageSize = 50;
+            var all = new List<ChatMessageDto>();
+            string? before = null;
+            while (true)
             {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
+                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{_channelId}?limit={PageSize}";
+                if (before != null)
+                {
+                    url += $"&before={before}";
+                }
+
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                if (!string.IsNullOrEmpty(_config.AuthToken))
+                {
+                    request.Headers.Add("X-Api-Key", _config.AuthToken);
+                }
+
+                var response = await _httpClient.SendAsync(request);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    PluginServices.Instance!.Log.Warning($"Failed to refresh messages. Status: {response.StatusCode}. Response Body: {responseBody}");
+                    break;
+                }
+
+                var stream = await response.Content.ReadAsStreamAsync();
+                var msgs = await JsonSerializer.DeserializeAsync<List<ChatMessageDto>>(stream) ?? new List<ChatMessageDto>();
+                if (msgs.Count == 0)
+                {
+                    break;
+                }
+
+                all.InsertRange(0, msgs);
+                if (msgs.Count < PageSize)
+                {
+                    break;
+                }
+                before = msgs[0].Id;
             }
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to refresh messages. Status: {response.StatusCode}. Response Body: {responseBody}");
-                return;
-            }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var msgs = await JsonSerializer.DeserializeAsync<List<ChatMessageDto>>(stream) ?? new List<ChatMessageDto>();
+
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _messages.Clear();
-                foreach (var m in msgs)
+                foreach (var m in all)
                 {
                     _messages.Add(m);
                     if (!string.IsNullOrEmpty(m.AuthorAvatarUrl))

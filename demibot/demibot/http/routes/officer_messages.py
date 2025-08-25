@@ -12,10 +12,15 @@ router = APIRouter(prefix="/api")
 @router.get("/officer-messages/{channel_id}")
 async def get_officer_messages(
     channel_id: str,
+    limit: int | None = None,
+    before: str | None = None,
+    after: str | None = None,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    return await fetch_messages(channel_id, ctx, db, is_officer=True)
+    return await fetch_messages(
+        channel_id, ctx, db, is_officer=True, limit=limit, before=before, after=after
+    )
 
 
 @router.post("/officer-messages")

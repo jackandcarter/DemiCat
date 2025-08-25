@@ -28,6 +28,8 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
+    protected override string MessagesPath => "/api/officer-messages";
+
     protected override async Task SendMessage()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
