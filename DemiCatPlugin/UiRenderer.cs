@@ -118,7 +118,12 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds");
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds";
+            if (!string.IsNullOrEmpty(_channelId))
+            {
+                url += $"?channel_id={_channelId}";
+            }
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);
@@ -311,7 +316,12 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds");
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds";
+            if (!string.IsNullOrEmpty(_channelId))
+            {
+                url += $"?channel_id={_channelId}";
+            }
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);

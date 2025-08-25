@@ -24,7 +24,7 @@ Endpoints implemented:
 - GET/POST /api/messages, /api/messages/{channelId}
 - GET/POST /api/officer-messages, /api/officer-messages/{channelId}
 - GET /api/users
-- GET /api/embeds
+- GET /api/embeds (optional query: `channel_id`, `limit`)
 - POST /api/events
 - POST /api/interactions
 - WebSocket at /ws/embeds
