@@ -16,13 +16,19 @@ router = APIRouter(prefix="/api")
 async def get_embeds(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
+    channel_id: int | None = None,
+    limit: int | None = None,
 ):
     stmt = select(Embed).where(Embed.guild_id == ctx.guild.id)
+    if channel_id is not None:
+        stmt = stmt.where(Embed.channel_id == channel_id)
     if "officer" not in ctx.roles:
         stmt = stmt.join(
             GuildChannel, GuildChannel.channel_id == Embed.channel_id
         ).where(GuildChannel.kind != "officer_chat")
     stmt = stmt.order_by(Embed.updated_at.desc())
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await db.execute(stmt)
     embeds = []
     for e in result.scalars().all():
