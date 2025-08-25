@@ -488,6 +488,11 @@ public class ChatWindow : IDisposable
                         count += result.Count;
                     }
                     var json = Encoding.UTF8.GetString(buffer, 0, count);
+                    if (json == "ping")
+                    {
+                        await _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")), WebSocketMessageType.Text, true, token);
+                        continue;
+                    }
                     try
                     {
                         using var document = JsonDocument.Parse(json);
