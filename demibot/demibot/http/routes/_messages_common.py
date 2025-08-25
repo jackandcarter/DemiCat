@@ -28,20 +28,28 @@ async def fetch_messages(
     db: AsyncSession,
     *,
     is_officer: bool,
+    limit: int | None = None,
+    before: str | None = None,
+    after: str | None = None,
 ) -> list[dict]:
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
-    stmt = (
-        select(Message)
-        .where(
-            Message.channel_id == int(channel_id),
-            Message.is_officer.is_(is_officer),
-        )
-        .order_by(Message.created_at)
+    stmt = select(Message).where(
+        Message.channel_id == int(channel_id),
+        Message.is_officer.is_(is_officer),
     )
+    if before is not None:
+        stmt = stmt.where(Message.discord_message_id < int(before))
+    if after is not None:
+        stmt = stmt.where(Message.discord_message_id > int(after))
+    stmt = stmt.order_by(Message.created_at.desc())
+    if limit is not None:
+        stmt = stmt.limit(limit)
     result = await db.execute(stmt)
+    rows = list(result.scalars())
+    rows.reverse()
     out: list[ChatMessage] = []
-    for m in result.scalars():
+    for m in rows:
         attachments = None
         if m.attachments_json:
             try:
