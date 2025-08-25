@@ -2,6 +2,7 @@ using System;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Text;
 
 namespace DemiCatPlugin;
 
@@ -47,13 +48,19 @@ public class ChannelWatcher : IDisposable
                 _ws.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
-                var buffer = new byte[1];
+                var buffer = new byte[16];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
                     var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         break;
+                    }
+                    var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    if (message == "ping")
+                    {
+                        await _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")), WebSocketMessageType.Text, true, token);
+                        continue;
                     }
                     _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                     {

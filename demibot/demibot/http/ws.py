@@ -1,27 +1,56 @@
 
 from __future__ import annotations
-from typing import Dict, List, Tuple
+import asyncio
+import time
+from dataclasses import dataclass, field
+from typing import Dict, List
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 
 from ..db.session import get_session
 from .deps import RequestContext, api_key_auth
 
+PING_INTERVAL = 30.0
+PING_TIMEOUT = 60.0
+
+
+@dataclass
+class ConnectionInfo:
+    guild_id: int
+    roles: list[str]
+    path: str
+    last_activity: float = field(default_factory=time.monotonic)
+
+
 class ConnectionManager:
     def __init__(self) -> None:
-        self.connections: Dict[WebSocket, Tuple[int, List[str], str]] = {}
+        self.connections: Dict[WebSocket, ConnectionInfo] = {}
+        self._ping_task: asyncio.Task | None = None
 
     async def connect(self, websocket: WebSocket, ctx: RequestContext) -> None:
         await websocket.accept()
-        self.connections[websocket] = (
-            ctx.guild.id,
-            ctx.roles,
-            websocket.scope.get("path", ""),
+        self.connections[websocket] = ConnectionInfo(
+            ctx.guild.id, ctx.roles, websocket.scope.get("path", "")
         )
+        if self._ping_task is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                self._ping_task = loop.create_task(self._ping_loop())
 
     def disconnect(self, websocket: WebSocket) -> None:
         if websocket in self.connections:
             del self.connections[websocket]
+        if not self.connections and self._ping_task is not None:
+            self._ping_task.cancel()
+            self._ping_task = None
+
+    def touch(self, websocket: WebSocket) -> None:
+        info = self.connections.get(websocket)
+        if info is not None:
+            info.last_activity = time.monotonic()
 
     async def broadcast_text(
         self,
@@ -31,16 +60,16 @@ class ConnectionManager:
         path: str | None = None,
     ) -> None:
         dead: list[WebSocket] = []
-        for ws, (gid, roles, ws_path) in list(self.connections.items()):
-            if gid != guild_id:
+        for ws, info in list(self.connections.items()):
+            if info.guild_id != guild_id:
                 continue
             if officer_only:
-                if "officer" not in roles or ws_path != "/ws/officer-messages":
+                if "officer" not in info.roles or info.path != "/ws/officer-messages":
                     continue
             elif path is not None:
-                if ws_path != path:
+                if info.path != path:
                     continue
-            elif ws_path == "/ws/officer-messages":
+            elif info.path == "/ws/officer-messages":
                 continue
             try:
                 await ws.send_text(message)
@@ -48,6 +77,28 @@ class ConnectionManager:
                 dead.append(ws)
         for ws in dead:
             self.disconnect(ws)
+
+    async def _ping_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(PING_INTERVAL)
+                now = time.monotonic()
+                dead: list[WebSocket] = []
+                for ws, info in list(self.connections.items()):
+                    if now - info.last_activity > PING_TIMEOUT:
+                        try:
+                            await ws.close()
+                        finally:
+                            dead.append(ws)
+                        continue
+                    try:
+                        await ws.send_text("ping")
+                    except Exception:
+                        dead.append(ws)
+                for ws in dead:
+                    self.disconnect(ws)
+        except asyncio.CancelledError:
+            pass
 
 manager = ConnectionManager()
 
@@ -66,6 +117,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     await manager.connect(websocket, ctx)
     try:
         while True:
-            await websocket.receive_text()  # keep alive; plugin ignores inbound anyway
+            await websocket.receive_text()
+            manager.touch(websocket)
     except WebSocketDisconnect:
         manager.disconnect(websocket)
