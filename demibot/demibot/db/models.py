@@ -509,4 +509,6 @@ class IndexCheckpoint(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[AssetKind] = mapped_column(SAEnum(AssetKind), nullable=False)
     last_id: Mapped[int] = mapped_column(Integer, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_generated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
