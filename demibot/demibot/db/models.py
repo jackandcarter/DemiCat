@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Enum as SAEnum,
     ForeignKey,
     Integer,
     String,
@@ -17,6 +19,24 @@ from sqlalchemy.dialects.mysql import BIGINT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base
+
+
+class RequestType(str, Enum):
+    ITEM = "item"
+    RUN = "run"
+    EVENT = "event"
+
+
+class RequestStatus(str, Enum):
+    OPEN = "open"
+    APPROVED = "approved"
+    DENIED = "denied"
+
+
+class Urgency(str, Enum):
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
 
 
 class Guild(Base):
@@ -201,3 +221,99 @@ class EventButton(Base):
     emoji: Mapped[Optional[str]] = mapped_column(String(64))
     style: Mapped[Optional[int]] = mapped_column(Integer)
     max_signups: Mapped[Optional[int]] = mapped_column(Integer)
+
+
+class Request(Base):
+    __tablename__ = "requests"
+    __table_args__ = (
+        Index("ix_requests_type", "type"),
+        Index("ix_requests_status", "status"),
+        Index("ix_requests_urgency", "urgency"),
+        Index("ix_requests_text", "title", "description", mysql_prefix="FULLTEXT"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(255))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    type: Mapped[RequestType] = mapped_column(SAEnum(RequestType))
+    status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus))
+    urgency: Mapped[Urgency] = mapped_column(SAEnum(Urgency))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version}
+
+    items: Mapped[list["RequestItem"]] = relationship(
+        back_populates="request", cascade="all, delete-orphan"
+    )
+    runs: Mapped[list["RequestRun"]] = relationship(
+        back_populates="request", cascade="all, delete-orphan"
+    )
+    events: Mapped[list["RequestEvent"]] = relationship(
+        back_populates="request", cascade="all, delete-orphan"
+    )
+
+
+class RequestItem(Base):
+    __tablename__ = "request_items"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        ForeignKey("requests.id", ondelete="CASCADE"), index=True
+    )
+    item_id: Mapped[int] = mapped_column(BigInteger)
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version}
+
+    request: Mapped[Request] = relationship(back_populates="items")
+
+
+class RequestRun(Base):
+    __tablename__ = "request_runs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        ForeignKey("requests.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version}
+
+    request: Mapped[Request] = relationship(back_populates="runs")
+
+
+class RequestEvent(Base):
+    __tablename__ = "request_events"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    request_id: Mapped[int] = mapped_column(
+        ForeignKey("requests.id", ondelete="CASCADE"), index=True
+    )
+    event_id: Mapped[int] = mapped_column(BigInteger)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version}
+
+    request: Mapped[Request] = relationship(back_populates="events")
