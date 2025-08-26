@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .db.models import GuildChannel
 from .db.session import get_session
 from .http.discord_client import discord_client
+from .http.ws import manager
 from .config import load_config
 
 
@@ -52,7 +53,9 @@ async def ensure_channel_name(
     else:
         cfg = load_config()
         if not cfg.discord_token:
-            logging.warning("Discord token missing; cannot resolve channel %s", channel_id)
+            logging.warning(
+                "Discord token missing; cannot resolve channel %s", channel_id
+            )
             return None
         url = f"https://discord.com/api/v10/channels/{channel_id}"
         headers = {"Authorization": f"Bot {cfg.discord_token}"}
@@ -78,7 +81,9 @@ async def ensure_channel_name(
             return None
         name = data.get("name")
         if not name:
-            logging.warning("Channel %s returned no name in guild %s", channel_id, guild_id)
+            logging.warning(
+                "Channel %s returned no name in guild %s", channel_id, guild_id
+            )
             return None
     await db.execute(
         update(GuildChannel)
@@ -104,13 +109,15 @@ async def resync_channel_names_once() -> None:
                 GuildChannel.name,
             )
         )
-        updated = False
+        updated_guilds: set[int] = set()
         for guild_id, channel_id, kind, name in result.all():
             new_name = await ensure_channel_name(db, guild_id, channel_id, kind, name)
             if new_name is not None and new_name != name:
-                updated = True
-        if updated:
+                updated_guilds.add(guild_id)
+        if updated_guilds:
             await db.commit()
+            for guild_id in updated_guilds:
+                await manager.broadcast_text("update", guild_id, path="/ws/channels")
         break
 
 
@@ -135,15 +142,19 @@ async def retry_null_channel_names(max_attempts: int = 3) -> None:
             if not rows:
                 break
             unresolved = []
-            updated = False
+            updated_guilds: set[int] = set()
             for guild_id, channel_id, kind in rows:
                 name = await ensure_channel_name(db, guild_id, channel_id, kind, None)
                 if name is None:
                     unresolved.append((guild_id, channel_id))
                 else:
-                    updated = True
-            if updated:
+                    updated_guilds.add(guild_id)
+            if updated_guilds:
                 await db.commit()
+                for guild_id in updated_guilds:
+                    await manager.broadcast_text(
+                        "update", guild_id, path="/ws/channels"
+                    )
             if not unresolved:
                 break
         for guild_id, channel_id in unresolved:
