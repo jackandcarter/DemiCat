@@ -9,6 +9,7 @@ using System.Net.Http.Headers;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -69,7 +70,10 @@ public class SyncshellWindow : IDisposable
         foreach (var asset in _assets)
         {
             ImGui.PushID(asset.Id);
-            ImGui.BeginChild("card", new Vector2(0, 70), true);
+            var childHeight = 70f;
+            if (asset.Kind == "BUNDLE" && asset.Items != null)
+                childHeight += ImGui.GetTextLineHeightWithSpacing() * asset.Items.Count;
+            ImGui.BeginChild("card", new Vector2(0, childHeight), true);
             ImGui.TextUnformatted(asset.Name);
             if (!_seenAssetIds.Contains(asset.Id))
             {
@@ -80,6 +84,13 @@ public class SyncshellWindow : IDisposable
             }
             ImGui.TextUnformatted($"{asset.Kind} - {FormatSize(asset.Size)}");
             ImGui.TextUnformatted($"{asset.Uploader} - {FormatRelativeTime(asset.CreatedAt)}");
+            if (asset.Kind == "BUNDLE" && asset.Items != null)
+            {
+                foreach (var item in asset.Items)
+                    ImGui.BulletText($"{item.Name} ({item.Kind})");
+                if (ImGui.Button($"Install bundle ({asset.Items.Count} items)"))
+                    _ = InstallBundle(asset);
+            }
             ImGui.EndChild();
             ImGui.PopID();
         }
@@ -136,10 +147,15 @@ public class SyncshellWindow : IDisposable
             {
                 MergeAssets(assets);
                 _etag = resp.Headers.ETag?.Tag;
-                SaveAssetsCache();
                 foreach (var a in assets)
                     _ = TryAutoApply(a);
             }
+
+            var bundles = await FetchBundles(baseUrl, state.LastPullAt);
+            if (bundles != null)
+                MergeAssets(bundles);
+
+            SaveAssetsCache();
 
             state.LastPullAt = DateTimeOffset.UtcNow;
             _lastPullAt = state.LastPullAt;
@@ -162,6 +178,49 @@ public class SyncshellWindow : IDisposable
         _assets.AddRange(map.Values.OrderByDescending(a => a.CreatedAt));
     }
 
+    private async Task<List<Asset>?> FetchBundles(string baseUrl, DateTimeOffset? since)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            return null;
+
+        var url = $"{baseUrl}/fc/{_config.FcChannelId}/bundles";
+        if (since.HasValue)
+            url += $"?since={Uri.EscapeDataString(since.Value.ToString("O"))}";
+
+        var req = new HttpRequestMessage(HttpMethod.Get, url);
+        if (!string.IsNullOrEmpty(_config.AuthToken))
+            req.Headers.Add("X-Api-Key", _config.AuthToken);
+
+        var resp = await _httpClient.SendAsync(req);
+        if (!resp.IsSuccessStatusCode)
+            return null;
+
+        var json = await resp.Content.ReadAsStringAsync();
+        var bundles = JsonSerializer.Deserialize<BundleResponse>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true
+        });
+        if (bundles?.Items == null)
+            return null;
+
+        var list = new List<Asset>();
+        foreach (var b in bundles.Items)
+        {
+            list.Add(new Asset
+            {
+                Id = b.Id,
+                Name = b.Name,
+                Kind = "BUNDLE",
+                CreatedAt = b.UpdatedAt ?? DateTimeOffset.UtcNow,
+                Size = b.Assets.Sum(a => a.Size),
+                Items = b.Assets,
+                DownloadUrl = string.Empty,
+                Uploader = string.Empty
+            });
+        }
+        return list;
+    }
+
     private async Task TryAutoApply(Asset asset)
     {
         if (_installed.Contains(asset.Id))
@@ -170,15 +229,60 @@ public class SyncshellWindow : IDisposable
         if (!_config.AutoApply.TryGetValue(asset.Kind, out var auto) || !auto)
             return;
 
-        await InstallAsset(asset);
+        _ = await InstallAsset(asset);
     }
 
-    private async Task InstallAsset(Asset asset)
+    private async Task InstallBundle(Asset bundle)
+    {
+        if (bundle.Items == null || bundle.Items.Count == 0)
+            return;
+
+        var ordered = SortByDependencies(bundle.Items);
+        var errors = new List<string>();
+        foreach (var item in ordered)
+        {
+            var (ok, err) = await InstallAsset(item);
+            if (!ok && err != null)
+                errors.Add($"{item.Name}: {err}");
+        }
+
+        if (errors.Count > 0)
+        {
+            PluginServices.Instance?.Log.Error($"Bundle {bundle.Name} install errors: \n{string.Join("\n", errors)}");
+        }
+        else
+        {
+            PluginServices.Instance?.Log.Information($"Bundle {bundle.Name} installed successfully ({ordered.Count} items)");
+        }
+    }
+
+    private static List<Asset> SortByDependencies(IEnumerable<Asset> items)
+    {
+        var map = items.ToDictionary(a => a.Id);
+        var visited = new HashSet<string>();
+        var result = new List<Asset>();
+        void Visit(Asset a)
+        {
+            if (visited.Contains(a.Id))
+                return;
+            visited.Add(a.Id);
+            foreach (var dep in a.Dependencies)
+                if (map.TryGetValue(dep, out var depAsset))
+                    Visit(depAsset);
+            result.Add(a);
+        }
+
+        foreach (var a in items)
+            Visit(a);
+        return result;
+    }
+
+    private async Task<(bool Success, string? Error)> InstallAsset(Asset asset)
     {
         try
         {
             if (!ApiHelpers.ValidateApiBaseUrl(_config))
-                return;
+                return (false, "Invalid API URL");
 
             var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
             var url = asset.DownloadUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
@@ -222,11 +326,13 @@ public class SyncshellWindow : IDisposable
 
             _installed.Add(asset.Id);
             SaveInstalledCache();
+            return (true, null);
         }
         catch (Exception ex)
         {
             PluginServices.Instance?.Log.Error(ex, $"Failed to install asset {asset.Id}");
             await UpdateInstallationStatus(asset.Id, "FAILED");
+            return (false, ex.Message);
         }
     }
 
@@ -442,6 +548,8 @@ public class SyncshellWindow : IDisposable
         public string Uploader { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
         public string DownloadUrl { get; set; } = string.Empty;
+        public List<string> Dependencies { get; set; } = new();
+        public List<Asset>? Items { get; set; }
     }
 
     private class AssetsCache
@@ -453,6 +561,20 @@ public class SyncshellWindow : IDisposable
     private class InstalledCache
     {
         public HashSet<string> Installed { get; set; } = new();
+    }
+
+    private class BundleResponse
+    {
+        public List<Bundle> Items { get; set; } = new();
+    }
+
+    private class Bundle
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public DateTimeOffset? UpdatedAt { get; set; }
+        public List<Asset> Assets { get; set; } = new();
     }
 }
 
