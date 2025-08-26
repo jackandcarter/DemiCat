@@ -48,15 +48,14 @@ public class ChannelWatcher : IDisposable
                 _ws.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
-                var buffer = new byte[16];
+                var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
-                    var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
-                    if (result.MessageType == WebSocketMessageType.Close)
+                    var (message, messageType) = await ReceiveMessageAsync(_ws, buffer, token);
+                    if (messageType == WebSocketMessageType.Close)
                     {
                         break;
                     }
-                    var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
                     if (message == "ping")
                     {
                         await _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")), WebSocketMessageType.Text, true, token);
@@ -81,6 +80,23 @@ public class ChannelWatcher : IDisposable
             }
             try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
         }
+    }
+
+    internal static async Task<(string message, WebSocketMessageType messageType)> ReceiveMessageAsync(WebSocket ws, byte[] buffer, CancellationToken token)
+    {
+        var sb = new StringBuilder();
+        WebSocketReceiveResult result;
+        do
+        {
+            result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+            if (result.MessageType == WebSocketMessageType.Close)
+            {
+                return (string.Empty, WebSocketMessageType.Close);
+            }
+            sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+        } while (!result.EndOfMessage);
+
+        return (sb.ToString(), result.MessageType);
     }
 
     private static async Task SafeRefresh(Func<Task> refresh)
