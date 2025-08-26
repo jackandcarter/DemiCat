@@ -14,6 +14,7 @@ public class MainWindow : IDisposable
     private readonly SettingsWindow _settings;
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
+    private readonly RequestBoardWindow _requestBoard;
     private readonly HttpClient _httpClient;
 
     public bool IsOpen;
@@ -30,6 +31,7 @@ public class MainWindow : IDisposable
         _httpClient = httpClient;
         _create = new EventCreateWindow(config, httpClient);
         _templates = new TemplatesWindow(config, httpClient);
+        _requestBoard = new RequestBoardWindow(config);
     }
 
     public void Draw()
@@ -80,6 +82,12 @@ public class MainWindow : IDisposable
             if (HasOfficerRole && ImGui.BeginTabItem("Templates"))
             {
                 _templates.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Request Board"))
+            {
+                _requestBoard.Draw();
                 ImGui.EndTabItem();
             }
 
