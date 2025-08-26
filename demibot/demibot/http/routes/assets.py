@@ -7,13 +7,13 @@ from datetime import datetime
 from typing import List
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, Response, HTTPException
+from fastapi import APIRouter, Depends, Response, HTTPException, Request
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import get_db
-from ...db.models import Asset, AssetKind
+from ..deps import get_db, api_key_auth, RequestContext
+from ...db.models import Asset, AssetKind, FcUser, IndexCheckpoint
 from ...db.session import get_session
 
 router = APIRouter()
@@ -27,14 +27,25 @@ def _sign_download(asset_id: int, asset_hash: str) -> str:
     return f"/assets/{asset_hash}?asset_id={asset_id}&sig={sig}"
 
 
+async def _update_last_pull(db: AsyncSession, fc_id: int, user_id: int) -> None:
+    res = await db.execute(
+        select(FcUser).where(FcUser.fc_id == fc_id, FcUser.user_id == user_id)
+    )
+    fcu = res.scalar_one_or_none()
+    if fcu is not None:
+        fcu.last_pull_at = datetime.utcnow()
+
+
 @router.get("/api/fc/{fc_id}/assets")
 async def list_assets(
     fc_id: int,
     response: Response,
+    request: Request,
     since: datetime | None = None,
     kinds: str | None = None,
     limit: int | None = None,
     cursor: int | None = None,
+    ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
     """List assets for a free company.
@@ -52,6 +63,16 @@ async def list_assets(
     cursor:
         Only return assets with an ID greater than this value.
     """
+
+    cp_res = await db.execute(select(func.max(IndexCheckpoint.last_generated_at)))
+    last_generated = cp_res.scalar_one_or_none()
+    if last_generated is not None:
+        etag = last_generated.isoformat()
+        if request.headers.get("if-none-match") == etag:
+            await _update_last_pull(db, fc_id, ctx.user.id)
+            await db.commit()
+            return Response(status_code=304, headers={"ETag": etag})
+        response.headers["ETag"] = etag
 
     stmt = select(Asset).where(Asset.fc_id == fc_id, Asset.deleted_at.is_(None))
     if since is not None:
@@ -84,9 +105,8 @@ async def list_assets(
                 "download_url": _sign_download(a.id, a.hash),
             }
         )
-    if items:
-        etag_src = ",".join(str(i["id"]) for i in items)
-        response.headers["ETag"] = hashlib.sha256(etag_src.encode()).hexdigest()
+    await _update_last_pull(db, fc_id, ctx.user.id)
+    await db.commit()
     return {"items": items}
 
 
