@@ -378,6 +378,8 @@ class FcUser(Base):
         primary_key=True,
     )
     joined_at: Mapped[datetime] = mapped_column(DateTime)
+    settings: Mapped[Optional[str]] = mapped_column(Text)
+    consent_sync: Mapped[bool] = mapped_column(Boolean, default=False)
 
     fc: Mapped[Fc] = relationship(back_populates="users")
     user: Mapped[User] = relationship()
