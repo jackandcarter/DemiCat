@@ -22,6 +22,7 @@ public class RequestBoardWindow
         _config = config;
         _httpClient = httpClient;
         _gameData = new GameDataCache(httpClient);
+        _ = RequestStateService.RefreshAll(httpClient, config);
     }
 
     public void Draw()
