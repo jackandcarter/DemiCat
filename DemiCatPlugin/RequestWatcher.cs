@@ -77,22 +77,40 @@ public class RequestWatcher : IDisposable
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("payload", out var payload))
                 return;
-            if (payload.TryGetProperty("title", out var titleEl))
+
+            var id = payload.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+            var title = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "Request" : "Request";
+            var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+            var version = payload.TryGetProperty("version", out var verEl) ? verEl.GetInt32() : 0;
+
+            if (id == null || statusString == null)
+                return;
+
+            var status = statusString switch
             {
-                var title = titleEl.GetString() ?? "Request";
-                PluginServices.Instance?.ToastGui.ShowNormal($"Request created: {title}");
+                "open" => RequestStatus.Open,
+                "claimed" => RequestStatus.Claimed,
+                "in_progress" => RequestStatus.InProgress,
+                "awaiting_confirm" => RequestStatus.AwaitingConfirm,
+                "completed" => RequestStatus.Completed,
+                _ => RequestStatus.Open
+            };
+
+            RequestStateService.Upsert(new RequestState
+            {
+                Id = id,
+                Title = title,
+                Status = status,
+                Version = version
+            });
+
+            if (status == RequestStatus.Claimed)
+            {
+                PluginServices.Instance?.ToastGui.ShowNormal("Request accepted");
             }
-            else if (payload.TryGetProperty("status", out var statusEl))
+            else if (status == RequestStatus.Completed)
             {
-                var status = statusEl.GetString();
-                if (status == "accepted")
-                {
-                    PluginServices.Instance?.ToastGui.ShowNormal("Request accepted");
-                }
-                else if (status == "completed")
-                {
-                    PluginServices.Instance?.ToastGui.ShowNormal("Request completed");
-                }
+                PluginServices.Instance?.ToastGui.ShowNormal("Request completed");
             }
         }
         catch (Exception ex)

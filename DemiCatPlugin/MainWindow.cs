@@ -31,7 +31,7 @@ public class MainWindow : IDisposable
         _httpClient = httpClient;
         _create = new EventCreateWindow(config, httpClient);
         _templates = new TemplatesWindow(config, httpClient);
-        _requestBoard = new RequestBoardWindow(config);
+        _requestBoard = new RequestBoardWindow(config, httpClient);
     }
 
     public void Draw()
