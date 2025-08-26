@@ -118,10 +118,9 @@ public class SettingsWindow : IDisposable
                     }
                 }
 
-                if (ImGui.Button("Clear cache"))
+                if (ImGui.Button("Clear my cached data"))
                 {
-                    _config.Categories.Clear();
-                    SaveConfig();
+                    ClearCachedData();
                 }
 
                 ImGui.SameLine();
@@ -258,6 +257,13 @@ public class SettingsWindow : IDisposable
         }
     }
 
+    private void ClearCachedData()
+    {
+        _config.Categories.Clear();
+        SaveConfig();
+        SyncshellWindow.Instance?.ClearCaches();
+    }
+
     private async Task ForgetMe()
     {
         var framework = PluginServices.Instance?.Framework;
@@ -274,7 +280,7 @@ public class SettingsWindow : IDisposable
             {
                 _config.AuthToken = null;
                 _apiKey = string.Empty;
-                SaveConfig();
+                ClearCachedData();
                 if (framework != null)
                     _ = framework.RunOnTick(() => _syncStatus = "User forgotten");
             }
