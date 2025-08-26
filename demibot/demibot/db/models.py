@@ -378,6 +378,7 @@ class FcUser(Base):
         primary_key=True,
     )
     joined_at: Mapped[datetime] = mapped_column(DateTime)
+    last_pull_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     settings: Mapped[Optional[str]] = mapped_column(Text)
     consent_sync: Mapped[bool] = mapped_column(Boolean, default=False)
 

@@ -20,7 +20,7 @@ _SECRET = os.environ.get("ASSET_SIGNING_SECRET", "devsecret").encode()
 
 def _sign_download(asset_id: int, asset_hash: str) -> str:
     sig = hmac.new(_SECRET, f"{asset_id}:{asset_hash}".encode(), hashlib.sha256).hexdigest()
-    return f"/assets/{asset_id}/download?sig={sig}"
+    return f"/assets/{asset_hash}?asset_id={asset_id}&sig={sig}"
 
 
 @router.get("/fc/{fc_id}/bundles")
