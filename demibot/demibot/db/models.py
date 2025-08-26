@@ -242,6 +242,9 @@ class Request(Base):
     user_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), ForeignKey("users.id"), index=True
     )
+    assignee_id: Mapped[Optional[int]] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[Optional[str]] = mapped_column(Text)
     type: Mapped[RequestType] = mapped_column(SAEnum(RequestType))
@@ -275,6 +278,7 @@ class RequestItem(Base):
     )
     item_id: Mapped[int] = mapped_column(BigInteger)
     quantity: Mapped[int] = mapped_column(Integer, default=1)
+    hq: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
