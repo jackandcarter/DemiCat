@@ -25,6 +25,7 @@ public class Plugin : IDalamudPlugin
     private readonly PresenceSidebar _presenceSidebar;
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
+    private readonly RequestWatcher _requestWatcher;
     private Config _config;
     private readonly HttpClient _httpClient = new();
     private readonly Action _openMainUi;
@@ -54,6 +55,7 @@ public class Plugin : IDalamudPlugin
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceSidebar);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
         _channelWatcher = new ChannelWatcher(_config, _ui, _chatWindow, _officerChatWindow);
+        _requestWatcher = new RequestWatcher(_config);
         _settings.MainWindow = _mainWindow;
         _settings.ChatWindow = _chatWindow;
         _settings.OfficerChatWindow = _officerChatWindow;
@@ -69,6 +71,7 @@ public class Plugin : IDalamudPlugin
         _openConfigUi = () => _settings.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
+        _requestWatcher.Start();
         _services.Log.Info("DemiCat loaded.");
     }
 
@@ -90,6 +93,7 @@ public class Plugin : IDalamudPlugin
         _mainWindow.Dispose();
         _ui.DisposeAsync().GetAwaiter().GetResult();
         _channelWatcher.Dispose();
+        _requestWatcher.Dispose();
         _settings.Dispose();
     }
 
