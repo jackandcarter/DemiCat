@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
+using System.Numerics;
 
 namespace DemiCatPlugin;
 
@@ -12,11 +13,13 @@ public class RequestBoardWindow
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, bool> _conflicts = new();
+    private readonly GameDataCache _gameData;
 
     public RequestBoardWindow(Config config, HttpClient httpClient)
     {
         _config = config;
         _httpClient = httpClient;
+        _gameData = new GameDataCache(httpClient);
     }
 
     public void Draw()
@@ -24,7 +27,49 @@ public class RequestBoardWindow
         foreach (var req in RequestStateService.All)
         {
             ImGui.PushID(req.Id);
-            ImGui.TextUnformatted($"{req.Title} [{req.Status}]");
+            if (req.ItemId.HasValue)
+            {
+                var item = _gameData.GetItem(req.ItemId.Value).GetAwaiter().GetResult();
+                if (item != null)
+                {
+                    var tex = PluginServices.Instance!.TextureProvider.GetFromFile(item.IconPath);
+                    if (tex != null)
+                    {
+                        ImGui.Image(tex.ImGuiHandle, new Vector2(32));
+                        ImGui.SameLine();
+                    }
+                    var text = item.Name;
+                    if (req.Hq) text += " (HQ)";
+                    if (req.Quantity > 1) text += $" x{req.Quantity}";
+                    ImGui.TextUnformatted($"{text} [{req.Status}]");
+                }
+                else
+                {
+                    ImGui.TextUnformatted($"Item {req.ItemId} [{req.Status}]");
+                }
+            }
+            else if (req.DutyId.HasValue)
+            {
+                var duty = _gameData.GetDuty(req.DutyId.Value).GetAwaiter().GetResult();
+                if (duty != null)
+                {
+                    var tex = PluginServices.Instance!.TextureProvider.GetFromFile(duty.IconPath);
+                    if (tex != null)
+                    {
+                        ImGui.Image(tex.ImGuiHandle, new Vector2(32));
+                        ImGui.SameLine();
+                    }
+                    ImGui.TextUnformatted($"{duty.Name} [{req.Status}]");
+                }
+                else
+                {
+                    ImGui.TextUnformatted($"Duty {req.DutyId} [{req.Status}]");
+                }
+            }
+            else
+            {
+                ImGui.TextUnformatted($"{req.Title} [{req.Status}]");
+            }
             ImGui.SameLine();
             if (_conflicts.ContainsKey(req.Id))
             {
@@ -80,12 +125,20 @@ public class RequestBoardWindow
                 var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? req.Title : req.Title;
                 var statusStr = payload.GetProperty("status").GetString() ?? StatusToString(newStatus);
                 var version = payload.TryGetProperty("version", out var vEl) ? vEl.GetInt32() : req.Version + 1;
+                var itemId = payload.TryGetProperty("item_id", out var iEl) ? iEl.GetUInt32() : (uint?)req.ItemId;
+                var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)req.DutyId;
+                var hq = payload.TryGetProperty("hq", out var hEl) ? hEl.GetBoolean() : req.Hq;
+                var quantity = payload.TryGetProperty("quantity", out var qEl) ? qEl.GetInt32() : req.Quantity;
                 RequestStateService.Upsert(new RequestState
                 {
                     Id = id,
                     Title = title,
                     Status = ParseStatus(statusStr),
-                    Version = version
+                    Version = version,
+                    ItemId = itemId,
+                    DutyId = dutyId,
+                    Hq = hq,
+                    Quantity = quantity
                 });
             }
             else if ((int)resp.StatusCode == 409)
@@ -115,12 +168,20 @@ public class RequestBoardWindow
                 var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? "Request" : "Request";
                 var statusStr = payload.TryGetProperty("status", out var sEl) ? sEl.GetString() ?? "open" : "open";
                 var version = payload.TryGetProperty("version", out var vEl) ? vEl.GetInt32() : 0;
+                var itemId = payload.TryGetProperty("item_id", out var iEl) ? iEl.GetUInt32() : (uint?)null;
+                var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)null;
+                var hq = payload.TryGetProperty("hq", out var hEl) && hEl.GetBoolean();
+                var quantity = payload.TryGetProperty("quantity", out var qEl) ? qEl.GetInt32() : 0;
                 RequestStateService.Upsert(new RequestState
                 {
                     Id = id,
                     Title = title,
                     Status = ParseStatus(statusStr),
-                    Version = version
+                    Version = version,
+                    ItemId = itemId,
+                    DutyId = dutyId,
+                    Hq = hq,
+                    Quantity = quantity
                 });
             }
         }

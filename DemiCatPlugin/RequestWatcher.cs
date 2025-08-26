@@ -82,6 +82,10 @@ public class RequestWatcher : IDisposable
             var title = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "Request" : "Request";
             var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
             var version = payload.TryGetProperty("version", out var verEl) ? verEl.GetInt32() : 0;
+            var itemId = payload.TryGetProperty("item_id", out var itemEl) ? itemEl.GetUInt32() : (uint?)null;
+            var dutyId = payload.TryGetProperty("duty_id", out var dutyEl) ? dutyEl.GetUInt32() : (uint?)null;
+            var hq = payload.TryGetProperty("hq", out var hqEl) && hqEl.GetBoolean();
+            var quantity = payload.TryGetProperty("quantity", out var qtyEl) ? qtyEl.GetInt32() : 0;
 
             if (id == null || statusString == null)
                 return;
@@ -101,7 +105,11 @@ public class RequestWatcher : IDisposable
                 Id = id,
                 Title = title,
                 Status = status,
-                Version = version
+                Version = version,
+                ItemId = itemId,
+                DutyId = dutyId,
+                Hq = hq,
+                Quantity = quantity
             });
 
             if (status == RequestStatus.Claimed)
