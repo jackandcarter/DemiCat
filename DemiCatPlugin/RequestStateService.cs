@@ -1,5 +1,8 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Text.Json;
+using System.Threading.Tasks;
 
 namespace DemiCatPlugin;
 
@@ -44,4 +47,67 @@ internal static class RequestStateService
             return RequestsMap.TryGetValue(id, out state!);
         }
     }
+
+    public static async Task RefreshAll(HttpClient httpClient, Config config)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
+        try
+        {
+            var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/requests";
+            var msg = new HttpRequestMessage(HttpMethod.Get, url);
+            if (!string.IsNullOrEmpty(config.AuthToken))
+                msg.Headers.Add("X-Api-Key", config.AuthToken);
+            var resp = await httpClient.SendAsync(msg);
+            if (!resp.IsSuccessStatusCode) return;
+            var stream = await resp.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+            IEnumerable<JsonElement> list;
+            if (doc.RootElement.ValueKind == JsonValueKind.Array)
+                list = doc.RootElement.EnumerateArray();
+            else if (doc.RootElement.TryGetProperty("requests", out var arr) && arr.ValueKind == JsonValueKind.Array)
+                list = arr.EnumerateArray();
+            else
+                return;
+            foreach (var payload in list)
+            {
+                var id = payload.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                var title = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "Request" : "Request";
+                var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+                var version = payload.TryGetProperty("version", out var verEl) ? verEl.GetInt32() : 0;
+                var itemId = payload.TryGetProperty("item_id", out var itemEl) ? itemEl.GetUInt32() : (uint?)null;
+                var dutyId = payload.TryGetProperty("duty_id", out var dutyEl) ? dutyEl.GetUInt32() : (uint?)null;
+                var hq = payload.TryGetProperty("hq", out var hqEl) && hqEl.GetBoolean();
+                var quantity = payload.TryGetProperty("quantity", out var qtyEl) ? qtyEl.GetInt32() : 0;
+                var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)null;
+                if (id == null || statusString == null) continue;
+                Upsert(new RequestState
+                {
+                    Id = id,
+                    Title = title,
+                    Status = ParseStatus(statusString),
+                    Version = version,
+                    ItemId = itemId,
+                    DutyId = dutyId,
+                    Hq = hq,
+                    Quantity = quantity,
+                    AssigneeId = assigneeId
+                });
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+
+    private static RequestStatus ParseStatus(string status) => status switch
+    {
+        "open" => RequestStatus.Open,
+        "claimed" => RequestStatus.Claimed,
+        "in_progress" => RequestStatus.InProgress,
+        "awaiting_confirm" => RequestStatus.AwaitingConfirm,
+        "completed" => RequestStatus.Completed,
+        "cancelled" => RequestStatus.Cancelled,
+        _ => RequestStatus.Open
+    };
 }
