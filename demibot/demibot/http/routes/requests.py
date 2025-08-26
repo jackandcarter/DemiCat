@@ -57,13 +57,7 @@ class RequestDto(BaseModel):
 
 
 def _status(status: RequestStatus) -> str:
-    return {
-        RequestStatus.OPEN: "open",
-        RequestStatus.ACCEPTED: "claimed",
-        RequestStatus.STARTED: "in_progress",
-        RequestStatus.COMPLETED: "awaiting_confirm",
-        RequestStatus.CONFIRMED: "completed",
-    }.get(status, status.value)
+    return status.value
 
 
 def _dto(req: DbRequest) -> dict[str, Any]:
@@ -266,11 +260,11 @@ async def accept_request(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.OPEN, RequestStatus.ACCEPTED, body.version
+        db, ctx.guild.id, request_id, RequestStatus.OPEN, RequestStatus.CLAIMED, body.version
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
-    await _notify(ctx.guild.id, req, "accepted", db, ctx.user)
+    await _notify(ctx.guild.id, req, "claimed", db, ctx.user)
     return delta
 
 
@@ -282,7 +276,7 @@ async def start_request(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.ACCEPTED, RequestStatus.STARTED, body.version
+        db, ctx.guild.id, request_id, RequestStatus.CLAIMED, RequestStatus.IN_PROGRESS, body.version
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
@@ -297,7 +291,7 @@ async def complete_request(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.STARTED, RequestStatus.COMPLETED, body.version
+        db, ctx.guild.id, request_id, RequestStatus.IN_PROGRESS, RequestStatus.AWAITING_CONFIRM, body.version
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
@@ -313,7 +307,7 @@ async def confirm_request(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.COMPLETED, RequestStatus.CONFIRMED, body.version
+        db, ctx.guild.id, request_id, RequestStatus.AWAITING_CONFIRM, RequestStatus.COMPLETED, body.version
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
@@ -331,7 +325,7 @@ async def cancel_request(
         .where(
             DbRequest.id == request_id,
             DbRequest.guild_id == ctx.guild.id,
-            DbRequest.status != RequestStatus.CONFIRMED,
+            DbRequest.status != RequestStatus.COMPLETED,
             DbRequest.status != RequestStatus.CANCELLED,
         )
         .values(status=RequestStatus.CANCELLED)
@@ -340,7 +334,7 @@ async def cancel_request(
         raise HTTPException(status_code=409)
     await db.commit()
     req = await db.get(DbRequest, request_id)
-    await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status})
+    await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status.value})
     return {"ok": True}
 
 

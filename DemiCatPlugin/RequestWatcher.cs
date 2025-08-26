@@ -97,6 +97,7 @@ public class RequestWatcher : IDisposable
                 "in_progress" => RequestStatus.InProgress,
                 "awaiting_confirm" => RequestStatus.AwaitingConfirm,
                 "completed" => RequestStatus.Completed,
+                "cancelled" => RequestStatus.Cancelled,
                 _ => RequestStatus.Open
             };
 
@@ -114,11 +115,15 @@ public class RequestWatcher : IDisposable
 
             if (status == RequestStatus.Claimed)
             {
-                PluginServices.Instance?.ToastGui.ShowNormal("Request accepted");
+                PluginServices.Instance?.ToastGui.ShowNormal("Request claimed");
             }
             else if (status == RequestStatus.Completed)
             {
                 PluginServices.Instance?.ToastGui.ShowNormal("Request completed");
+            }
+            else if (status == RequestStatus.Cancelled)
+            {
+                PluginServices.Instance?.ToastGui.ShowNormal("Request cancelled");
             }
         }
         catch (Exception ex)

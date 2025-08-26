@@ -8,7 +8,8 @@ public enum RequestStatus
     Claimed,
     InProgress,
     AwaitingConfirm,
-    Completed
+    Completed,
+    Cancelled
 }
 
 public class RequestState
