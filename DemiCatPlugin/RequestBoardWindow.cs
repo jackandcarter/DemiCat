@@ -108,59 +108,81 @@ public class RequestBoardWindow
 
     private async Task Update(RequestState req, RequestStatus newStatus)
     {
-        try
+        var action = newStatus switch
         {
-            var action = newStatus switch
+            RequestStatus.Claimed => "accept",
+            RequestStatus.InProgress => "start",
+            RequestStatus.AwaitingConfirm => "complete",
+            RequestStatus.Completed => "confirm",
+            _ => null
+        };
+        if (action == null) return;
+
+        for (var attempt = 0; attempt < 3; attempt++)
+        {
+            try
             {
-                RequestStatus.Claimed => "accept",
-                RequestStatus.InProgress => "start",
-                RequestStatus.AwaitingConfirm => "complete",
-                RequestStatus.Completed => "confirm",
-                _ => null
-            };
-            if (action == null) return;
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests/{req.Id}/{action}";
-            var json = JsonSerializer.Serialize(new { version = req.Version });
-            var msg = new HttpRequestMessage(HttpMethod.Post, url);
-            msg.Headers.Add("X-Api-Key", _config.AuthToken);
-            msg.Content = new StringContent(json, Encoding.UTF8, "application/json");
-            var resp = await _httpClient.SendAsync(msg);
-            if (resp.IsSuccessStatusCode)
-            {
-                var respJson = await resp.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(respJson);
-                var payload = doc.RootElement;
-                var id = payload.GetProperty("id").GetString() ?? req.Id;
-                var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? req.Title : req.Title;
-                var statusStr = payload.GetProperty("status").GetString() ?? StatusToString(newStatus);
-                var version = payload.TryGetProperty("version", out var vEl) ? vEl.GetInt32() : req.Version + 1;
-                var itemId = payload.TryGetProperty("item_id", out var iEl) ? iEl.GetUInt32() : (uint?)req.ItemId;
-                var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)req.DutyId;
-                var hq = payload.TryGetProperty("hq", out var hEl) ? hEl.GetBoolean() : req.Hq;
-                var quantity = payload.TryGetProperty("quantity", out var qEl) ? qEl.GetInt32() : req.Quantity;
-                var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)req.AssigneeId;
-                RequestStateService.Upsert(new RequestState
+                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests/{req.Id}/{action}";
+                var json = JsonSerializer.Serialize(new { version = req.Version });
+                var msg = new HttpRequestMessage(HttpMethod.Post, url);
+                msg.Headers.Add("X-Api-Key", _config.AuthToken);
+                msg.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                var resp = await _httpClient.SendAsync(msg);
+                if (resp.IsSuccessStatusCode)
                 {
-                    Id = id,
-                    Title = title,
-                    Status = ParseStatus(statusStr),
-                    Version = version,
-                    ItemId = itemId,
-                    DutyId = dutyId,
-                    Hq = hq,
-                    Quantity = quantity,
-                    AssigneeId = assigneeId
-                });
+                    var respJson = await resp.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(respJson);
+                    var payload = doc.RootElement;
+                    if (!payload.TryGetProperty("version", out var vEl))
+                    {
+                        _conflicts[req.Id] = true;
+                        return;
+                    }
+                    var version = vEl.GetInt32();
+                    if (version != req.Version + 1)
+                    {
+                        _conflicts[req.Id] = true;
+                        return;
+                    }
+                    var id = payload.GetProperty("id").GetString() ?? req.Id;
+                    var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? req.Title : req.Title;
+                    var statusStr = payload.GetProperty("status").GetString() ?? StatusToString(newStatus);
+                    var itemId = payload.TryGetProperty("item_id", out var iEl) ? iEl.GetUInt32() : (uint?)req.ItemId;
+                    var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)req.DutyId;
+                    var hq = payload.TryGetProperty("hq", out var hEl) ? hEl.GetBoolean() : req.Hq;
+                    var quantity = payload.TryGetProperty("quantity", out var qEl) ? qEl.GetInt32() : req.Quantity;
+                    var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)req.AssigneeId;
+                    RequestStateService.Upsert(new RequestState
+                    {
+                        Id = id,
+                        Title = title,
+                        Status = ParseStatus(statusStr),
+                        Version = version,
+                        ItemId = itemId,
+                        DutyId = dutyId,
+                        Hq = hq,
+                        Quantity = quantity,
+                        AssigneeId = assigneeId
+                    });
+                    return;
+                }
+                if ((int)resp.StatusCode == 409)
+                {
+                    await Refresh(req.Id);
+                    if (RequestStateService.TryGet(req.Id, out var refreshed))
+                    {
+                        req = refreshed;
+                        continue;
+                    }
+                }
             }
-            else if ((int)resp.StatusCode == 409)
+            catch
             {
-                _conflicts[req.Id] = true;
+                // ignore and mark conflict below
             }
+            break;
         }
-        catch
-        {
-            _conflicts[req.Id] = true;
-        }
+        _conflicts[req.Id] = true;
     }
 
     private async Task Refresh(string id)

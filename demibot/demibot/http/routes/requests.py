@@ -38,7 +38,7 @@ class CommentBody(BaseModel):
 
 
 class StatusBody(BaseModel):
-    version: int | None = None
+    version: int
 
 
 # lightweight DTO for plugin consumption
@@ -123,7 +123,9 @@ async def _notify(
     if channel:
         cfg = load_config()
         url = f"http://{cfg.server.host}:{cfg.server.port}/board/requests/{req.id}"
-        embed = discord.Embed(title=req.title, url=url, description=req.description or "")
+        embed = discord.Embed(
+            title=req.title, url=url, description=req.description or ""
+        )
         embed.add_field(name="Status", value=req.status.value, inline=False)
         try:
             await channel.send(embed=embed)
@@ -147,7 +149,9 @@ async def list_requests(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
-    result = await db.execute(select(DbRequest).where(DbRequest.guild_id == ctx.guild.id))
+    result = await db.execute(
+        select(DbRequest).where(DbRequest.guild_id == ctx.guild.id)
+    )
     return [_dto(r) for r in result.scalars()]
 
 
@@ -230,7 +234,7 @@ async def _update_status(
     request_id: int,
     from_status: RequestStatus,
     to_status: RequestStatus,
-    version: int | None,
+    expected_version: int,
     assignee_id: int | None = None,
 ) -> DbRequest:
     stmt = (
@@ -239,13 +243,12 @@ async def _update_status(
             DbRequest.id == request_id,
             DbRequest.guild_id == guild_id,
             DbRequest.status == from_status,
+            DbRequest.version == expected_version,
         )
         .values(status=to_status, version=DbRequest.version + 1)
     )
     if assignee_id is not None:
         stmt = stmt.values(assignee_id=assignee_id)
-    if version is not None:
-        stmt = stmt.where(DbRequest.version == version)
     result = await db.execute(stmt)
     if result.rowcount == 0:
         raise HTTPException(status_code=409)
@@ -288,7 +291,12 @@ async def start_request(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.CLAIMED, RequestStatus.IN_PROGRESS, body.version
+        db,
+        ctx.guild.id,
+        request_id,
+        RequestStatus.CLAIMED,
+        RequestStatus.IN_PROGRESS,
+        body.version,
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
@@ -303,7 +311,12 @@ async def complete_request(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.IN_PROGRESS, RequestStatus.AWAITING_CONFIRM, body.version
+        db,
+        ctx.guild.id,
+        request_id,
+        RequestStatus.IN_PROGRESS,
+        RequestStatus.AWAITING_CONFIRM,
+        body.version,
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
@@ -319,7 +332,12 @@ async def confirm_request(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.AWAITING_CONFIRM, RequestStatus.COMPLETED, body.version
+        db,
+        ctx.guild.id,
+        request_id,
+        RequestStatus.AWAITING_CONFIRM,
+        RequestStatus.COMPLETED,
+        body.version,
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
@@ -346,7 +364,9 @@ async def cancel_request(
         raise HTTPException(status_code=409)
     await db.commit()
     req = await db.get(DbRequest, request_id)
-    await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status.value})
+    await _broadcast(
+        ctx.guild.id, req.id, {"id": str(req.id), "status": req.status.value}
+    )
     return {"ok": True}
 
 
@@ -363,4 +383,3 @@ async def comment_request(
     delta = {"id": str(req.id), "comment": body.text}
     await _broadcast(ctx.guild.id, req.id, delta)
     return {"ok": True}
-
