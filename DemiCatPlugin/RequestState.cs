@@ -19,4 +19,12 @@ public class RequestState
         = RequestStatus.Open;
     public int Version { get; set; }
         = 0;
+    public uint? ItemId { get; set; }
+        = null;
+    public uint? DutyId { get; set; }
+        = null;
+    public bool Hq { get; set; }
+        = false;
+    public int Quantity { get; set; }
+        = 0;
 }
