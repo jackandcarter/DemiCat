@@ -29,6 +29,7 @@ public class ChatWindow : IDisposable
     protected bool _channelsLoaded;
     protected bool _channelFetchFailed;
     protected string _channelErrorMessage = string.Empty;
+    protected bool _channelRefreshAttempted;
     protected string _channelId;
     protected string _input = string.Empty;
     protected bool _useCharacterName;
@@ -193,8 +194,6 @@ public class ChatWindow : IDisposable
 
     public void SetChannels(List<ChannelDto> channels)
     {
-        ResolveChannelNames(channels);
-        channels.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit));
         _channels.Clear();
         _channels.AddRange(channels);
         if (!string.IsNullOrEmpty(_channelId))
@@ -209,16 +208,19 @@ public class ChatWindow : IDisposable
         }
     }
 
-    protected void ResolveChannelNames(List<ChannelDto> channels)
+    protected bool ResolveChannelNames(List<ChannelDto> channels)
     {
+        var invalid = false;
         foreach (var c in channels)
         {
             if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
             {
                 PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
-                continue;
+                c.Name = c.Id;
+                invalid = true;
             }
         }
+        return invalid;
     }
 
     protected string FormatContent(ChatMessageDto msg)
@@ -411,6 +413,7 @@ public class ChatWindow : IDisposable
     public Task RefreshChannels()
     {
         _channelsLoaded = false;
+        _channelRefreshAttempted = false;
         return FetchChannels();
     }
 
@@ -450,6 +453,7 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+            var invalid = ResolveChannelNames(dto.Chat);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Chat);
@@ -457,6 +461,12 @@ public class ChatWindow : IDisposable
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
             });
+            if (invalid && !_channelRefreshAttempted)
+            {
+                _channelRefreshAttempted = true;
+                await RequestChannelRefresh();
+                await FetchChannels();
+            }
         }
         catch (Exception ex)
         {
@@ -467,6 +477,28 @@ public class ChatWindow : IDisposable
                 _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
             });
+        }
+    }
+
+    protected async Task RequestChannelRefresh()
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return;
+        }
+
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            await _httpClient.SendAsync(request);
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error refreshing channels");
         }
     }
 
