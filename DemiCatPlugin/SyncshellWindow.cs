@@ -33,6 +33,7 @@ public class SyncshellWindow : IDisposable
     private string? _etag;
     private bool _loading;
     private bool _needsRefresh = true;
+    private PenumbraConflict? _penumbraConflict;
     private static DateTimeOffset _lastRedraw;
 
     public SyncshellWindow(Config config, HttpClient httpClient)
@@ -67,6 +68,31 @@ public class SyncshellWindow : IDisposable
             return;
         }
 
+        if (_penumbraConflict != null)
+            ImGui.OpenPopup("Penumbra Conflict");
+        var openConflict = true;
+        if (_penumbraConflict != null && ImGui.BeginPopupModal("Penumbra Conflict", ref openConflict, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            ImGui.TextUnformatted($"Mod {_penumbraConflict.ModName} already exists. Use vault version or keep mine?");
+            if (ImGui.Button("Use vault version"))
+            {
+                _penumbraConflict.Tcs.TrySetResult(true);
+                _penumbraConflict = null;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Keep mine"))
+            {
+                _penumbraConflict.Tcs.TrySetResult(false);
+                _penumbraConflict = null;
+            }
+            ImGui.EndPopup();
+        }
+        else if (_penumbraConflict != null && !openConflict)
+        {
+            _penumbraConflict.Tcs.TrySetResult(false);
+            _penumbraConflict = null;
+        }
+
         var saveSeen = false;
         if (_updatesAvailable.Count > 0)
             ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"{_updatesAvailable.Count} update(s) available");
@@ -90,6 +116,27 @@ public class SyncshellWindow : IDisposable
             var update = _updatesAvailable.Contains(asset.Id);
             if (update)
                 ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Update available");
+            if (asset.Dependencies.Count > 0)
+            {
+                var missing = asset.Dependencies
+                    .Where(d => !_installations.TryGetValue(d, out var inst) || inst.Status != "APPLIED")
+                    .ToList();
+                if (missing.Count > 0)
+                {
+                    var names = missing
+                        .Select(d => _assets.FirstOrDefault(a => a.Id == d)?.Name ?? d);
+                    ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), $"Missing dependencies: {string.Join(", ", names)}");
+                    if (ImGui.Button("Install all"))
+                    {
+                        foreach (var depId in missing)
+                        {
+                            var depAsset = _assets.FirstOrDefault(a => a.Id == depId);
+                            if (depAsset != null)
+                                _ = InstallAsset(depAsset);
+                        }
+                    }
+                }
+            }
             if (asset.Kind == "BUNDLE" && asset.Items != null)
             {
                 foreach (var item in asset.Items)
@@ -356,6 +403,23 @@ public class SyncshellWindow : IDisposable
         var success = false;
         if (pi != null)
         {
+            string? dest = null;
+            try
+            {
+                var modsDir = pi.GetIpcSubscriber<string>("Penumbra.GetModsDirectory").InvokeFunc();
+                dest = Path.Combine(modsDir, asset.Name);
+                var proceed = await ResolvePenumbraConflict(asset.Name, dest);
+                if (!proceed)
+                {
+                    await UpdateInstallationStatus(asset.Id, "SKIPPED");
+                    return;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
             try
             {
                 var import = pi.GetIpcSubscriber<string, bool>("Penumbra.ImportModPack");
@@ -365,22 +429,20 @@ public class SyncshellWindow : IDisposable
             {
                 success = false;
             }
-        }
 
-        if (!success && pi != null)
-        {
-            try
+            if (!success && dest != null)
             {
-                var modsDir = pi.GetIpcSubscriber<string>("Penumbra.GetModsDirectory").InvokeFunc();
-                var dest = Path.Combine(modsDir, Path.GetFileNameWithoutExtension(path));
-                Directory.CreateDirectory(dest);
-                ZipFile.ExtractToDirectory(path, dest, true);
-                pi.GetIpcSubscriber<object?>("Penumbra.Reload").InvokeAction(null);
-                success = true;
-            }
-            catch
-            {
-                // ignore
+                try
+                {
+                    Directory.CreateDirectory(dest);
+                    ZipFile.ExtractToDirectory(path, dest, true);
+                    pi.GetIpcSubscriber<object?>("Penumbra.Reload").InvokeAction(null);
+                    success = true;
+                }
+                catch
+                {
+                    // ignore
+                }
             }
         }
 
@@ -405,6 +467,28 @@ public class SyncshellWindow : IDisposable
         {
             await UpdateInstallationStatus(asset.Id, "FAILED");
         }
+    }
+
+    private async Task<bool> ResolvePenumbraConflict(string modName, string dest)
+    {
+        if (!Directory.Exists(dest))
+            return true;
+        if (_config.PenumbraChoices.TryGetValue(modName, out var useVault))
+        {
+            if (!useVault)
+                return false;
+            Directory.Delete(dest, true);
+            return true;
+        }
+        var tcs = new TaskCompletionSource<bool>();
+        _penumbraConflict = new PenumbraConflict { ModName = modName, Tcs = tcs };
+        var result = await tcs.Task;
+        _config.PenumbraChoices[modName] = result;
+        PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+        if (!result)
+            return false;
+        Directory.Delete(dest, true);
+        return true;
     }
 
     private void ApplyIpc(string channel, string payload)
@@ -600,6 +684,12 @@ public class SyncshellWindow : IDisposable
         if (span.TotalMinutes < 60) return $"{span.TotalMinutes:0}m ago";
         if (span.TotalHours < 24) return $"{span.TotalHours:0}h ago";
         return $"{span.TotalDays:0}d ago";
+    }
+
+    private class PenumbraConflict
+    {
+        public string ModName { get; set; } = string.Empty;
+        public TaskCompletionSource<bool> Tcs { get; set; } = new();
     }
 
     private class Asset

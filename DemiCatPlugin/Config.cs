@@ -33,6 +33,9 @@ public class Config : IPluginConfiguration
     [JsonPropertyName("autoApply")]
     public Dictionary<string, bool> AutoApply { get; set; } = new();
 
+    [JsonPropertyName("penumbraChoices")]
+    public Dictionary<string, bool> PenumbraChoices { get; set; } = new();
+
     [JsonPropertyName("categories")]
     public Dictionary<string, CategoryState> Categories { get; set; } = new();
 
