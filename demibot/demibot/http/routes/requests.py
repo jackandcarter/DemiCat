@@ -9,6 +9,7 @@ import discord
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..ws import manager
@@ -36,20 +37,53 @@ class CommentBody(BaseModel):
     text: str
 
 
+class StatusBody(BaseModel):
+    version: int | None = None
+
+
+# lightweight DTO for plugin consumption
 class RequestDto(BaseModel):
     id: str
     title: str
-    description: str | None
-    type: RequestType
-    status: RequestStatus
-    urgency: Urgency
+    description: str | None = None
+    type: RequestType | None = None
+    status: str
+    urgency: Urgency | None = None
+    version: int
+    item_id: int | None = None
+    duty_id: int | None = None
+    hq: bool | None = None
+    quantity: int | None = None
 
-    class Config:
-        from_attributes = True
+
+def _status(status: RequestStatus) -> str:
+    return {
+        RequestStatus.OPEN: "open",
+        RequestStatus.ACCEPTED: "claimed",
+        RequestStatus.STARTED: "in_progress",
+        RequestStatus.COMPLETED: "awaiting_confirm",
+        RequestStatus.CONFIRMED: "completed",
+    }.get(status, status.value)
 
 
 def _dto(req: DbRequest) -> dict[str, Any]:
-    return RequestDto.model_validate(req).model_dump(mode="json")
+    item_id = req.items[0].item_id if req.items else None
+    quantity = req.items[0].quantity if req.items else None
+    duty_id = req.runs[0].run_id if req.runs else None
+    dto = RequestDto(
+        id=str(req.id),
+        title=req.title,
+        description=req.description,
+        type=req.type,
+        status=_status(req.status),
+        urgency=req.urgency,
+        version=req.version,
+        item_id=item_id,
+        duty_id=duty_id,
+        hq=False,
+        quantity=quantity,
+    )
+    return dto.model_dump(mode="json")
 
 
 async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> None:
@@ -199,75 +233,91 @@ async def _update_status(
     request_id: int,
     from_status: RequestStatus,
     to_status: RequestStatus,
+    version: int | None,
 ) -> DbRequest:
-    result = await db.execute(
+    stmt = (
         update(DbRequest)
         .where(
             DbRequest.id == request_id,
             DbRequest.guild_id == guild_id,
             DbRequest.status == from_status,
         )
-        .values(status=to_status)
+        .values(status=to_status, version=DbRequest.version + 1)
     )
+    if version is not None:
+        stmt = stmt.where(DbRequest.version == version)
+    result = await db.execute(stmt)
     if result.rowcount == 0:
         raise HTTPException(status_code=409)
     await db.commit()
-    req = await db.get(DbRequest, request_id)
-    return req
+    result = await db.execute(
+        select(DbRequest)
+        .where(DbRequest.id == request_id)
+        .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
+    )
+    return result.scalars().one()
 
 
 @router.post("/requests/{request_id}/accept")
 async def accept_request(
     request_id: int,
+    body: StatusBody,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, bool]:
+) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.OPEN, RequestStatus.ACCEPTED
+        db, ctx.guild.id, request_id, RequestStatus.OPEN, RequestStatus.ACCEPTED, body.version
     )
-    await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status})
+    delta = _dto(req)
+    await _broadcast(ctx.guild.id, req.id, delta)
     await _notify(ctx.guild.id, req, "accepted", db, ctx.user)
-    return {"ok": True}
+    return delta
 
 
 @router.post("/requests/{request_id}/start")
 async def start_request(
     request_id: int,
+    body: StatusBody,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, bool]:
+) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.ACCEPTED, RequestStatus.STARTED
+        db, ctx.guild.id, request_id, RequestStatus.ACCEPTED, RequestStatus.STARTED, body.version
     )
-    await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status})
-    return {"ok": True}
+    delta = _dto(req)
+    await _broadcast(ctx.guild.id, req.id, delta)
+    return delta
 
 
 @router.post("/requests/{request_id}/complete")
 async def complete_request(
     request_id: int,
+    body: StatusBody,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, bool]:
+) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.STARTED, RequestStatus.COMPLETED
+        db, ctx.guild.id, request_id, RequestStatus.STARTED, RequestStatus.COMPLETED, body.version
     )
-    await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status})
+    delta = _dto(req)
+    await _broadcast(ctx.guild.id, req.id, delta)
     await _notify(ctx.guild.id, req, "completed", db, ctx.user)
-    return {"ok": True}
+    return delta
 
 
 @router.post("/requests/{request_id}/confirm")
 async def confirm_request(
     request_id: int,
+    body: StatusBody,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, bool]:
+) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.COMPLETED, RequestStatus.CONFIRMED
+        db, ctx.guild.id, request_id, RequestStatus.COMPLETED, RequestStatus.CONFIRMED, body.version
     )
-    await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status})
-    return {"ok": True}
+    delta = _dto(req)
+    await _broadcast(ctx.guild.id, req.id, delta)
+    return delta
 
 
 @router.post("/requests/{request_id}/cancel")
