@@ -13,4 +13,7 @@
   <ItemGroup>
     <Compile Include="../DemiCatPlugin/MarkdownFormatter.cs" Link="MarkdownFormatter.cs" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DemiCatPlugin/DemiCatPlugin.csproj" />
+  </ItemGroup>
 </Project>

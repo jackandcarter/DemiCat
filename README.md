@@ -97,6 +97,8 @@ dotnet build
 ```
 The build output `DemiCatPlugin.dll` can be found under `bin/Debug/net9.0/`. Copy it into your Dalamud plugins folder and enable it.
 
+WebSocket communication now streams data in 1 KB chunks and continues reading until the end of each message, allowing the plugin to handle payloads larger than the previous 16-byte limit.
+
 Alternatively, add this repository to Dalamud so it can install and update the plugin automatically:
 
 1. In-game, open **Dalamud Settings → Experimental → Custom Repositories**.
