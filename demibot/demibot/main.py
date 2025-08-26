@@ -19,6 +19,7 @@ from .http.api import create_app
 from .http.discord_client import set_discord_client
 from .repeat_events import recurring_event_poster
 from .channel_names import channel_name_resync
+from .asset_cleanup import purge_deleted_assets
 
 
 async def main_async() -> None:
@@ -62,6 +63,7 @@ async def main_async() -> None:
             bot.start(cfg.discord_token),
             recurring_event_poster(),
             channel_name_resync(),
+            purge_deleted_assets(),
         )
     except Exception:
         logging.exception("Failed to start services")

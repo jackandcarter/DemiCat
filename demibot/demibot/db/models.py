@@ -97,6 +97,8 @@ class User(Base):
     discord_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
     global_name: Mapped[Optional[str]] = mapped_column(String(255))
     discriminator: Mapped[Optional[str]] = mapped_column(String(10))
+    character_name: Mapped[Optional[str]] = mapped_column(String(255))
+    world: Mapped[Optional[str]] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
