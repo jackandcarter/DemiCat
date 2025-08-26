@@ -1,15 +1,18 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Numerics;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Plugin.Ipc;
 
 namespace DemiCatPlugin;
 
@@ -28,6 +31,7 @@ public class SyncshellWindow : IDisposable
     private string? _etag;
     private bool _loading;
     private bool _needsRefresh = true;
+    private static DateTimeOffset _lastRedraw;
 
     public SyncshellWindow(Config config, HttpClient httpClient)
     {
@@ -133,6 +137,8 @@ public class SyncshellWindow : IDisposable
                 MergeAssets(assets);
                 _etag = resp.Headers.ETag?.Tag;
                 SaveAssetsCache();
+                foreach (var a in assets)
+                    _ = TryAutoApply(a);
             }
 
             state.LastPullAt = DateTimeOffset.UtcNow;
@@ -154,6 +160,166 @@ public class SyncshellWindow : IDisposable
             map[asset.Id] = asset;
         _assets.Clear();
         _assets.AddRange(map.Values.OrderByDescending(a => a.CreatedAt));
+    }
+
+    private async Task TryAutoApply(Asset asset)
+    {
+        if (_installed.Contains(asset.Id))
+            return;
+
+        if (!_config.AutoApply.TryGetValue(asset.Kind, out var auto) || !auto)
+            return;
+
+        await InstallAsset(asset);
+    }
+
+    private async Task InstallAsset(Asset asset)
+    {
+        try
+        {
+            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+
+            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
+            var url = asset.DownloadUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                ? asset.DownloadUrl
+                : $"{baseUrl}{asset.DownloadUrl}";
+
+            var tmp = Path.GetTempFileName();
+            await using (var resp = await _httpClient.GetAsync(url))
+            {
+                resp.EnsureSuccessStatusCode();
+                await using var fs = File.Create(tmp);
+                await resp.Content.CopyToAsync(fs);
+            }
+
+            await UpdateInstallationStatus(asset.Id, "DOWNLOADED");
+
+            switch (asset.Kind)
+            {
+                case "PENUMBRA_PACK":
+                    await InstallPenumbraPack(tmp, asset);
+                    break;
+                case "GLAMOURER_DESIGN":
+                    var design = await File.ReadAllTextAsync(tmp);
+                    using (JsonDocument.Parse(design)) { }
+                    ApplyIpc("Glamourer.Design.Apply", design);
+                    await UpdateInstallationStatus(asset.Id, "APPLIED");
+                    break;
+                case "CUSTOMIZE_PROFILE":
+                    var profile = await File.ReadAllTextAsync(tmp);
+                    using (JsonDocument.Parse(profile)) { }
+                    ApplyIpc("Customize.ApplyProfile", profile);
+                    await UpdateInstallationStatus(asset.Id, "APPLIED");
+                    break;
+                case "SIMPLEHEELS_PROFILE":
+                    var heels = await File.ReadAllTextAsync(tmp);
+                    using (JsonDocument.Parse(heels)) { }
+                    ApplyIpc("SimpleHeels.ApplyProfile", heels);
+                    await UpdateInstallationStatus(asset.Id, "APPLIED");
+                    break;
+            }
+
+            _installed.Add(asset.Id);
+            SaveInstalledCache();
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Error(ex, $"Failed to install asset {asset.Id}");
+            await UpdateInstallationStatus(asset.Id, "FAILED");
+        }
+    }
+
+    private async Task InstallPenumbraPack(string path, Asset asset)
+    {
+        var pi = PluginServices.Instance?.PluginInterface;
+        var success = false;
+        if (pi != null)
+        {
+            try
+            {
+                var import = pi.GetIpcSubscriber<string, bool>("Penumbra.ImportModPack");
+                success = import.InvokeFunc(path);
+            }
+            catch
+            {
+                success = false;
+            }
+        }
+
+        if (!success && pi != null)
+        {
+            try
+            {
+                var modsDir = pi.GetIpcSubscriber<string>("Penumbra.GetModsDirectory").InvokeFunc();
+                var dest = Path.Combine(modsDir, Path.GetFileNameWithoutExtension(path));
+                Directory.CreateDirectory(dest);
+                ZipFile.ExtractToDirectory(path, dest, true);
+                pi.GetIpcSubscriber<object?>("Penumbra.Reload").InvokeAction(null);
+                success = true;
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
+        if (success)
+        {
+            await UpdateInstallationStatus(asset.Id, "INSTALLED");
+            if (DateTimeOffset.UtcNow - _lastRedraw > TimeSpan.FromSeconds(5))
+            {
+                try
+                {
+                    pi?.GetIpcSubscriber<object?>("Penumbra.RedrawAll").InvokeAction(null);
+                }
+                catch
+                {
+                    // ignore
+                }
+                _lastRedraw = DateTimeOffset.UtcNow;
+            }
+            await UpdateInstallationStatus(asset.Id, "APPLIED");
+        }
+        else
+        {
+            await UpdateInstallationStatus(asset.Id, "FAILED");
+        }
+    }
+
+    private void ApplyIpc(string channel, string payload)
+    {
+        try
+        {
+            var pi = PluginServices.Instance?.PluginInterface;
+            pi?.GetIpcSubscriber<string>(channel).InvokeAction(payload);
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Error(ex, $"Failed IPC {channel}");
+        }
+    }
+
+    private async Task UpdateInstallationStatus(string assetId, string status)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/installations";
+            var payload = new { assetId, status };
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json")
+            };
+            request.Headers.Add("X-Api-Key", _config.AuthToken);
+            await _httpClient.SendAsync(request);
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Error(ex, "Failed to update installation status");
+        }
     }
 
     private void LoadCaches()
@@ -275,6 +441,7 @@ public class SyncshellWindow : IDisposable
         public long Size { get; set; }
         public string Uploader { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
+        public string DownloadUrl { get; set; } = string.Empty;
     }
 
     private class AssetsCache
