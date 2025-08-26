@@ -29,8 +29,13 @@ class RequestType(str, Enum):
 
 class RequestStatus(str, Enum):
     OPEN = "open"
-    APPROVED = "approved"
-    DENIED = "denied"
+    ACCEPTED = "accepted"
+    STARTED = "started"
+    COMPLETED = "completed"
+    CONFIRMED = "confirmed"
+    CANCELLED = "cancelled"
+    APPROVED = "approved"  # legacy
+    DENIED = "denied"  # legacy
 
 
 class Urgency(str, Enum):

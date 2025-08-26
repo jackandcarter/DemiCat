@@ -8,6 +8,7 @@ from . import (
     interactions,
     validate_roles,
     guild_roles,
+    requests,
 )
 
 __all__ = [
@@ -20,4 +21,5 @@ __all__ = [
     "interactions",
     "validate_roles",
     "guild_roles",
+    "requests",
 ]
