@@ -149,7 +149,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("kind", asset_kind, nullable=False),
         sa.Column("last_id", sa.Integer(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
+        sa.Column("last_generated_at", sa.DateTime(), nullable=False),
     )
     op.create_index(
         "ix_index_checkpoint_kind", "index_checkpoint", ["kind"], unique=True
