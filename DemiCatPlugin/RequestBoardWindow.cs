@@ -14,6 +14,8 @@ public class RequestBoardWindow
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, bool> _conflicts = new();
     private readonly GameDataCache _gameData;
+    private readonly HashSet<string> _itemLoads = new();
+    private readonly HashSet<string> _dutyLoads = new();
 
     public RequestBoardWindow(Config config, HttpClient httpClient)
     {
@@ -29,9 +31,9 @@ public class RequestBoardWindow
             ImGui.PushID(req.Id);
             if (req.ItemId.HasValue)
             {
-                var item = _gameData.GetItem(req.ItemId.Value).GetAwaiter().GetResult();
-                if (item != null)
+                if (req.ItemData != null)
                 {
+                    var item = req.ItemData;
                     var tex = PluginServices.Instance!.TextureProvider.GetFromFile(item.IconPath);
                     if (tex != null)
                     {
@@ -46,13 +48,18 @@ public class RequestBoardWindow
                 else
                 {
                     ImGui.TextUnformatted($"Item {req.ItemId} [{req.Status}]");
+                    if (!_itemLoads.Contains(req.Id))
+                    {
+                        _itemLoads.Add(req.Id);
+                        _ = LoadItem(req);
+                    }
                 }
             }
             else if (req.DutyId.HasValue)
             {
-                var duty = _gameData.GetDuty(req.DutyId.Value).GetAwaiter().GetResult();
-                if (duty != null)
+                if (req.DutyData != null)
                 {
+                    var duty = req.DutyData;
                     var tex = PluginServices.Instance!.TextureProvider.GetFromFile(duty.IconPath);
                     if (tex != null)
                     {
@@ -64,6 +71,11 @@ public class RequestBoardWindow
                 else
                 {
                     ImGui.TextUnformatted($"Duty {req.DutyId} [{req.Status}]");
+                    if (!_dutyLoads.Contains(req.Id))
+                    {
+                        _dutyLoads.Add(req.Id);
+                        _ = LoadDuty(req);
+                    }
                 }
             }
             else
@@ -103,6 +115,34 @@ public class RequestBoardWindow
             }
             ImGui.PopID();
             ImGui.Separator();
+        }
+    }
+
+    private async Task LoadItem(RequestState req)
+    {
+        try
+        {
+            var data = await _gameData.GetItem(req.ItemId!.Value);
+            if (data != null)
+                req.ItemData = data;
+        }
+        finally
+        {
+            _itemLoads.Remove(req.Id);
+        }
+    }
+
+    private async Task LoadDuty(RequestState req)
+    {
+        try
+        {
+            var data = await _gameData.GetDuty(req.DutyId!.Value);
+            if (data != null)
+                req.DutyData = data;
+        }
+        finally
+        {
+            _dutyLoads.Remove(req.Id);
         }
     }
 
