@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import get_db
 from ...db.models import Asset, AssetKind
+from ...db.session import get_session
 
 router = APIRouter()
 
@@ -52,7 +53,7 @@ async def list_assets(
         Only return assets with an ID greater than this value.
     """
 
-    stmt = select(Asset).where(Asset.fc_id == fc_id)
+    stmt = select(Asset).where(Asset.fc_id == fc_id, Asset.deleted_at.is_(None))
     if since is not None:
         stmt = stmt.where(Asset.updated_at >= since)
     if cursor is not None:
@@ -96,6 +97,16 @@ async def download_asset(
     sig: str | None = None,
     asset_id: int | None = None,
 ):
+    if asset_id is not None:
+        async for db in get_session():
+            res = await db.execute(
+                select(Asset.id).where(
+                    Asset.id == asset_id, Asset.deleted_at.is_(None)
+                )
+            )
+            if res.scalar_one_or_none() is None:
+                raise HTTPException(status_code=404)
+            break
     base = Path(os.environ.get("ASSET_STORAGE_PATH", "assets")).resolve()
     file_path = (base / object_key).resolve()
     if not str(file_path).startswith(str(base)) or not file_path.is_file():

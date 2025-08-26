@@ -157,6 +157,7 @@ class Vault(commands.Cog):
         else:
             asset.name = name
             asset.size = size
+            asset.deleted_at = None
         return asset
 
     async def _ensure_bundle(
