@@ -15,6 +15,7 @@ public class MainWindow : IDisposable
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
+    private readonly SyncshellWindow _syncshell;
     private readonly HttpClient _httpClient;
 
     public bool IsOpen;
@@ -32,6 +33,7 @@ public class MainWindow : IDisposable
         _create = new EventCreateWindow(config, httpClient);
         _templates = new TemplatesWindow(config, httpClient);
         _requestBoard = new RequestBoardWindow(config, httpClient);
+        _syncshell = new SyncshellWindow(config, httpClient);
     }
 
     public void Draw()
@@ -88,6 +90,12 @@ public class MainWindow : IDisposable
             if (ImGui.BeginTabItem("Request Board"))
             {
                 _requestBoard.Draw();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("Syncshell"))
+            {
+                _syncshell.Draw();
                 ImGui.EndTabItem();
             }
 
