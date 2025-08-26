@@ -1,4 +1,5 @@
 using Dalamud.Game.ClientState;
+using Dalamud.Game.Gui.Toast;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -26,6 +27,9 @@ internal class PluginServices
 
     [PluginService]
     internal IDataManager DataManager { get; private set; } = null!;
+
+    [PluginService]
+    internal IToastGui ToastGui { get; private set; } = null!;
 
     public PluginServices()
     {

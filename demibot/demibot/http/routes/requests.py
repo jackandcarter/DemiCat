@@ -4,13 +4,17 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+import logging
+import discord
 from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..ws import manager
-from ...db.models import Request as DbRequest, RequestStatus, RequestType, Urgency
+from ..discord_client import discord_client
+from ...db.models import Request as DbRequest, RequestStatus, RequestType, Urgency, User
+from ...config import load_config
 
 router = APIRouter(prefix="/api")
 
@@ -55,6 +59,58 @@ async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> N
     await manager.broadcast_text(payload, guild_id, path="/ws/requests")
 
 
+async def _requests_channel(guild_id: int) -> discord.abc.Messageable | None:
+    if not discord_client:
+        return None
+    guild = discord_client.get_guild(guild_id)
+    if not guild:
+        return None
+    for channel in guild.text_channels:
+        if channel.name == "requests":
+            return channel
+    return None
+
+
+async def _send_dm(discord_id: int, message: str) -> None:
+    if not discord_client:
+        return
+    try:
+        user = await discord_client.fetch_user(discord_id)
+        await user.send(message)
+    except Exception:  # pragma: no cover - network errors
+        logging.warning("Failed to send DM to %s", discord_id)
+
+
+async def _notify(
+    guild_id: int,
+    req: DbRequest,
+    action: str,
+    db: AsyncSession,
+    ctx_user: User,
+) -> None:
+    channel = await _requests_channel(guild_id)
+    if channel:
+        cfg = load_config()
+        url = f"http://{cfg.server.host}:{cfg.server.port}/board/requests/{req.id}"
+        embed = discord.Embed(title=req.title, url=url, description=req.description or "")
+        embed.add_field(name="Status", value=req.status.value, inline=False)
+        try:
+            await channel.send(embed=embed)
+        except Exception:  # pragma: no cover - network errors
+            logging.warning("Failed to post request embed for %s", req.id)
+    requester = await db.get(User, req.user_id)
+    if requester:
+        await _send_dm(
+            requester.discord_user_id,
+            f"Your request '{req.title}' was {action}.",
+        )
+    if ctx_user.id != req.user_id:
+        await _send_dm(
+            ctx_user.discord_user_id,
+            f"You {action} the request '{req.title}'.",
+        )
+
+
 @router.get("/requests")
 async def list_requests(
     ctx: RequestContext = Depends(api_key_auth),
@@ -83,6 +139,7 @@ async def create_request(
     await db.commit()
     await db.refresh(req)
     await _broadcast(ctx.guild.id, req.id, _dto(req))
+    await _notify(ctx.guild.id, req, "created", db, ctx.user)
     return {"id": str(req.id)}
 
 
@@ -169,6 +226,7 @@ async def accept_request(
         db, ctx.guild.id, request_id, RequestStatus.OPEN, RequestStatus.ACCEPTED
     )
     await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status})
+    await _notify(ctx.guild.id, req, "accepted", db, ctx.user)
     return {"ok": True}
 
 
@@ -195,6 +253,7 @@ async def complete_request(
         db, ctx.guild.id, request_id, RequestStatus.STARTED, RequestStatus.COMPLETED
     )
     await _broadcast(ctx.guild.id, req.id, {"id": str(req.id), "status": req.status})
+    await _notify(ctx.guild.id, req, "completed", db, ctx.user)
     return {"ok": True}
 
 
