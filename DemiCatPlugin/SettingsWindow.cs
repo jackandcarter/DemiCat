@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net;
 using System.Text;
@@ -25,6 +26,8 @@ public class SettingsWindow : IDisposable
     private string _apiBaseUrl = string.Empty;
     private string _syncStatus = string.Empty;
     private bool _syncInProgress;
+    private readonly Dictionary<string, bool> _categoryToggles = new();
+    private bool _settingsLoaded;
 
     public bool IsOpen;
 
@@ -51,6 +54,12 @@ public class SettingsWindow : IDisposable
         {
             if (ImGui.Begin("DemiCat Settings", ref IsOpen))
             {
+                if (!_settingsLoaded)
+                {
+                    _settingsLoaded = true;
+                    _ = Task.Run(LoadSettings);
+                }
+
                 if (ImGui.InputText("API Base URL", ref _apiBaseUrl, 256))
                 {
                     _config.ApiBaseUrl = _apiBaseUrl;
@@ -73,6 +82,52 @@ public class SettingsWindow : IDisposable
                     _config.EnableFcChat = enableFc;
                     SaveConfig();
                     if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
+                }
+
+                var syncEnabled = _config.SyncEnabled;
+                if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
+                {
+                    _config.SyncEnabled = syncEnabled;
+                    SaveConfig();
+                    _ = Task.Run(PushSettings);
+                }
+
+                var paused = !_config.Enabled;
+                if (ImGui.Checkbox("Pause", ref paused))
+                {
+                    _config.Enabled = !paused;
+                    SaveConfig();
+                }
+
+                foreach (var kvp in _categoryToggles.ToList())
+                {
+                    var enabled = kvp.Value;
+                    if (ImGui.Checkbox($"{kvp.Key}##cat", ref enabled))
+                    {
+                        _categoryToggles[kvp.Key] = enabled;
+                        _ = Task.Run(PushSettings);
+                    }
+
+                    ImGui.SameLine();
+                    var autoApply = _config.AutoApply.TryGetValue(kvp.Key, out var ap) && ap;
+                    if (ImGui.Checkbox($"Auto-apply##{kvp.Key}", ref autoApply))
+                    {
+                        _config.AutoApply[kvp.Key] = autoApply;
+                        SaveConfig();
+                        _ = Task.Run(PushSettings);
+                    }
+                }
+
+                if (ImGui.Button("Clear cache"))
+                {
+                    _config.Categories.Clear();
+                    SaveConfig();
+                }
+
+                ImGui.SameLine();
+                if (ImGui.Button("Forget me"))
+                {
+                    _ = Task.Run(ForgetMe);
                 }
 
                 ImGui.BeginDisabled(_syncInProgress);
@@ -120,6 +175,116 @@ public class SettingsWindow : IDisposable
         }
 
         _devWindow.Draw();
+    }
+
+    private async Task LoadSettings()
+    {
+        try
+        {
+            if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/settings";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            request.Headers.Add("X-Api-Key", _config.AuthToken);
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+                return;
+
+            var body = await response.Content.ReadAsStringAsync();
+            using var doc = JsonDocument.Parse(body);
+            if (doc.RootElement.TryGetProperty("consent_sync", out var consent))
+            {
+                _config.SyncEnabled = consent.GetBoolean();
+            }
+
+            if (doc.RootElement.TryGetProperty("settings", out var settings) && settings.ValueKind == JsonValueKind.Object)
+            {
+                if (settings.TryGetProperty("autoApply", out var autoApply) && autoApply.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var prop in autoApply.EnumerateObject())
+                    {
+                        _config.AutoApply[prop.Name] = prop.Value.GetBoolean();
+                    }
+                }
+
+                if (settings.TryGetProperty("categories", out var cats) && cats.ValueKind == JsonValueKind.Object)
+                {
+                    foreach (var prop in cats.EnumerateObject())
+                    {
+                        var enabled = prop.Value.ValueKind == JsonValueKind.True
+                            || (prop.Value.TryGetProperty("enabled", out var en) && en.GetBoolean());
+                        _categoryToggles[prop.Name] = enabled;
+                    }
+                }
+            }
+
+            SaveConfig();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to load settings");
+        }
+    }
+
+    private async Task PushSettings()
+    {
+        try
+        {
+            if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/settings";
+            var payload = new
+            {
+                settings = new
+                {
+                    categories = _categoryToggles,
+                    autoApply = _config.AutoApply
+                },
+                consent_sync = _config.SyncEnabled
+            };
+
+            var request = new HttpRequestMessage(HttpMethod.Put, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+            };
+            request.Headers.Add("X-Api-Key", _config.AuthToken);
+            await _httpClient.SendAsync(request);
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to push settings");
+        }
+    }
+
+    private async Task ForgetMe()
+    {
+        var framework = PluginServices.Instance?.Framework;
+        try
+        {
+            if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/forget";
+            var request = new HttpRequestMessage(HttpMethod.Post, url);
+            request.Headers.Add("X-Api-Key", _config.AuthToken);
+            var response = await _httpClient.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                _config.AuthToken = null;
+                _apiKey = string.Empty;
+                SaveConfig();
+                if (framework != null)
+                    _ = framework.RunOnTick(() => _syncStatus = "User forgotten");
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to forget user");
+            if (framework != null)
+                _ = framework.RunOnTick(() => _syncStatus = "Network error");
+        }
     }
 
     private async Task Sync()
