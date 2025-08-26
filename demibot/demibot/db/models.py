@@ -44,6 +44,18 @@ class Urgency(str, Enum):
     HIGH = "high"
 
 
+class AssetKind(str, Enum):
+    APPEARANCE = "appearance"
+    FILE = "file"
+    SCRIPT = "script"
+
+
+class InstallStatus(str, Enum):
+    PENDING = "pending"
+    INSTALLED = "installed"
+    FAILED = "failed"
+
+
 class Guild(Base):
     __tablename__ = "guilds"
 
@@ -88,6 +100,10 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    installations: Mapped[list["UserInstallation"]] = relationship(
+        back_populates="user", cascade="all, delete-orphan"
     )
 
 
@@ -326,3 +342,168 @@ class RequestEvent(Base):
     __mapper_args__ = {"version_id_col": version}
 
     request: Mapped[Request] = relationship(back_populates="events")
+
+
+class Fc(Base):
+    __tablename__ = "fc"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    world: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    assets: Mapped[list["Asset"]] = relationship(
+        back_populates="fc", cascade="all, delete-orphan"
+    )
+    bundles: Mapped[list["AppearanceBundle"]] = relationship(
+        back_populates="fc", cascade="all, delete-orphan"
+    )
+    users: Mapped[list["FcUser"]] = relationship(
+        back_populates="fc", cascade="all, delete-orphan"
+    )
+
+
+class FcUser(Base):
+    __tablename__ = "fc_user"
+
+    fc_id: Mapped[int] = mapped_column(
+        ForeignKey("fc.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    joined_at: Mapped[datetime] = mapped_column(DateTime)
+
+    fc: Mapped[Fc] = relationship(back_populates="users")
+    user: Mapped[User] = relationship()
+
+
+class AssetDependency(Base):
+    __tablename__ = "asset_dependency"
+
+    asset_id: Mapped[int] = mapped_column(
+        ForeignKey("asset.id", ondelete="CASCADE"), primary_key=True
+    )
+    dependency_id: Mapped[int] = mapped_column(
+        ForeignKey("asset.id", ondelete="CASCADE"), primary_key=True
+    )
+
+
+class Asset(Base):
+    __tablename__ = "asset"
+    __table_args__ = (
+        Index("ix_asset_fc_id", "fc_id"),
+        Index("ix_asset_kind", "kind"),
+        Index("ix_asset_hash", "hash", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fc_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("fc.id", ondelete="CASCADE"), nullable=True
+    )
+    kind: Mapped[AssetKind] = mapped_column(SAEnum(AssetKind), nullable=False)
+    name: Mapped[str] = mapped_column(String(255))
+    hash: Mapped[str] = mapped_column(String(64))
+    size: Mapped[Optional[int]] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version}
+
+    fc: Mapped[Optional[Fc]] = relationship(back_populates="assets")
+    bundles: Mapped[list["AppearanceBundle"]] = relationship(
+        "AppearanceBundle", secondary="appearance_bundle_item", back_populates="assets"
+    )
+    installations: Mapped[list["UserInstallation"]] = relationship(
+        back_populates="asset", cascade="all, delete-orphan"
+    )
+
+
+class AppearanceBundle(Base):
+    __tablename__ = "appearance_bundle"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    fc_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey("fc.id", ondelete="CASCADE"), nullable=True
+    )
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+    fc: Mapped[Optional[Fc]] = relationship(back_populates="bundles")
+    items: Mapped[list["AppearanceBundleItem"]] = relationship(
+        back_populates="bundle", cascade="all, delete-orphan"
+    )
+    assets: Mapped[list[Asset]] = relationship(
+        "Asset", secondary="appearance_bundle_item", back_populates="bundles"
+    )
+
+
+class AppearanceBundleItem(Base):
+    __tablename__ = "appearance_bundle_item"
+
+    bundle_id: Mapped[int] = mapped_column(
+        ForeignKey("appearance_bundle.id", ondelete="CASCADE"), primary_key=True
+    )
+    asset_id: Mapped[int] = mapped_column(
+        ForeignKey("asset.id", ondelete="CASCADE"), primary_key=True
+    )
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    bundle: Mapped[AppearanceBundle] = relationship(back_populates="items")
+    asset: Mapped[Asset] = relationship()
+
+
+class UserInstallation(Base):
+    __tablename__ = "user_installation"
+    __table_args__ = (
+        Index("ix_user_installation_user_id", "user_id"),
+        Index("ix_user_installation_asset_id", "asset_id"),
+        Index("ix_user_installation_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    asset_id: Mapped[int] = mapped_column(
+        ForeignKey("asset.id", ondelete="CASCADE"), nullable=False
+    )
+    status: Mapped[InstallStatus] = mapped_column(
+        SAEnum(InstallStatus), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+
+    __mapper_args__ = {"version_id_col": version}
+
+    user: Mapped[User] = relationship(back_populates="installations")
+    asset: Mapped[Asset] = relationship(back_populates="installations")
+
+
+class IndexCheckpoint(Base):
+    __tablename__ = "index_checkpoint"
+    __table_args__ = (
+        Index("ix_index_checkpoint_kind", "kind", unique=True),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    kind: Mapped[AssetKind] = mapped_column(SAEnum(AssetKind), nullable=False)
+    last_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
