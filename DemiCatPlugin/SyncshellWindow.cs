@@ -19,6 +19,8 @@ namespace DemiCatPlugin;
 
 public class SyncshellWindow : IDisposable
 {
+    public static SyncshellWindow? Instance { get; private set; }
+
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly List<Asset> _assets = new();
@@ -54,11 +56,18 @@ public class SyncshellWindow : IDisposable
         _installedFile = Path.Combine(dir, "installed.json");
         LoadCaches();
 
+        Instance = this;
+
         _ = PeriodicRefresh();
     }
 
     public void Draw()
     {
+        if (!_config.SyncEnabled)
+        {
+            return;
+        }
+
         if (!_loading && (_needsRefresh || DateTimeOffset.UtcNow - _lastRefresh > TimeSpan.FromMinutes(5)))
             _ = Refresh();
 
@@ -160,7 +169,7 @@ public class SyncshellWindow : IDisposable
 
     private async Task Refresh()
     {
-        if (_loading)
+        if (!_config.SyncEnabled || _loading)
             return;
 
         try
@@ -344,6 +353,8 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
+            if (!_config.SyncEnabled)
+                return (false, "Sync disabled");
             if (!ApiHelpers.ValidateApiBaseUrl(_config))
                 return (false, "Invalid API URL");
 
@@ -493,6 +504,9 @@ public class SyncshellWindow : IDisposable
 
     private void ApplyIpc(string channel, string payload)
     {
+        if (!_config.SyncEnabled)
+            return;
+
         try
         {
             var pi = PluginServices.Instance?.PluginInterface;
@@ -598,6 +612,28 @@ public class SyncshellWindow : IDisposable
         }
     }
 
+    public void ClearCaches()
+    {
+        try
+        {
+            if (File.Exists(_assetsFile))
+                File.Delete(_assetsFile);
+            if (File.Exists(_installedFile))
+                File.Delete(_installedFile);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        _assets.Clear();
+        _installations.Clear();
+        _updatesAvailable.Clear();
+        _seenAssetIds.Clear();
+        _etag = null;
+        _needsRefresh = true;
+    }
+
     private async Task FetchInstallations()
     {
         try
@@ -650,7 +686,8 @@ public class SyncshellWindow : IDisposable
                 await Task.Delay(TimeSpan.FromMinutes(5), _cts.Token);
                 if (_cts.IsCancellationRequested)
                     break;
-                await Refresh();
+                if (_config.SyncEnabled)
+                    await Refresh();
             }
             catch (TaskCanceledException)
             {
@@ -662,6 +699,8 @@ public class SyncshellWindow : IDisposable
     public void Dispose()
     {
         _cts.Cancel();
+        if (Instance == this)
+            Instance = null;
     }
 
     private static string FormatSize(long size)
