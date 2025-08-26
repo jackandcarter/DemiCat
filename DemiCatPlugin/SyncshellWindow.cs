@@ -22,7 +22,8 @@ public class SyncshellWindow : IDisposable
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly List<Asset> _assets = new();
-    private readonly HashSet<string> _installed = new();
+    private readonly Dictionary<string, Installation> _installations = new();
+    private readonly HashSet<string> _updatesAvailable = new();
     private readonly HashSet<string> _seenAssetIds;
     private readonly string _assetsFile;
     private readonly string _installedFile;
@@ -67,6 +68,8 @@ public class SyncshellWindow : IDisposable
         }
 
         var saveSeen = false;
+        if (_updatesAvailable.Count > 0)
+            ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"{_updatesAvailable.Count} update(s) available");
         foreach (var asset in _assets)
         {
             ImGui.PushID(asset.Id);
@@ -84,12 +87,21 @@ public class SyncshellWindow : IDisposable
             }
             ImGui.TextUnformatted($"{asset.Kind} - {FormatSize(asset.Size)}");
             ImGui.TextUnformatted($"{asset.Uploader} - {FormatRelativeTime(asset.CreatedAt)}");
+            var update = _updatesAvailable.Contains(asset.Id);
+            if (update)
+                ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), "Update available");
             if (asset.Kind == "BUNDLE" && asset.Items != null)
             {
                 foreach (var item in asset.Items)
                     ImGui.BulletText($"{item.Name} ({item.Kind})");
-                if (ImGui.Button($"Install bundle ({asset.Items.Count} items)"))
+                var btn = update ? $"Update bundle ({asset.Items.Count} items)" : $"Install bundle ({asset.Items.Count} items)";
+                if (ImGui.Button(btn))
                     _ = InstallBundle(asset);
+            }
+            else if (update)
+            {
+                if (ImGui.Button("Update"))
+                    _ = InstallAsset(asset);
             }
             ImGui.EndChild();
             ImGui.PopID();
@@ -157,6 +169,9 @@ public class SyncshellWindow : IDisposable
 
             SaveAssetsCache();
 
+            await FetchInstallations();
+            ComputeUpdates();
+
             state.LastPullAt = DateTimeOffset.UtcNow;
             _lastPullAt = state.LastPullAt;
             _lastRefresh = DateTimeOffset.UtcNow;
@@ -212,6 +227,7 @@ public class SyncshellWindow : IDisposable
                 Name = b.Name,
                 Kind = "BUNDLE",
                 CreatedAt = b.UpdatedAt ?? DateTimeOffset.UtcNow,
+                UpdatedAt = b.UpdatedAt ?? DateTimeOffset.UtcNow,
                 Size = b.Assets.Sum(a => a.Size),
                 Items = b.Assets,
                 DownloadUrl = string.Empty,
@@ -223,7 +239,7 @@ public class SyncshellWindow : IDisposable
 
     private async Task TryAutoApply(Asset asset)
     {
-        if (_installed.Contains(asset.Id))
+        if (_installations.ContainsKey(asset.Id))
             return;
 
         if (!_config.AutoApply.TryGetValue(asset.Kind, out var auto) || !auto)
@@ -324,8 +340,6 @@ public class SyncshellWindow : IDisposable
                     break;
             }
 
-            _installed.Add(asset.Id);
-            SaveInstalledCache();
             return (true, null);
         }
         catch (Exception ex)
@@ -421,6 +435,10 @@ public class SyncshellWindow : IDisposable
             };
             request.Headers.Add("X-Api-Key", _config.AuthToken);
             await _httpClient.SendAsync(request);
+
+            _installations[assetId] = new Installation { AssetId = assetId, Status = status, UpdatedAt = DateTimeOffset.UtcNow };
+            SaveInstalledCache();
+            ComputeUpdates();
         }
         catch (Exception ex)
         {
@@ -447,12 +465,12 @@ public class SyncshellWindow : IDisposable
             if (File.Exists(_installedFile))
             {
                 var json = File.ReadAllText(_installedFile);
-                var wrapper = JsonSerializer.Deserialize<InstalledCache>(json);
+                var wrapper = JsonSerializer.Deserialize<InstallationsCache>(json);
                 if (wrapper != null)
                 {
-                    _installed.Clear();
-                    foreach (var id in wrapper.Installed)
-                        _installed.Add(id);
+                    _installations.Clear();
+                    foreach (var inst in wrapper.Installations)
+                        _installations[inst.AssetId] = inst;
                 }
             }
             else
@@ -464,6 +482,8 @@ public class SyncshellWindow : IDisposable
         {
             // ignore
         }
+
+        ComputeUpdates();
     }
 
     private void SaveAssetsCache()
@@ -484,13 +504,56 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
-            var wrapper = new InstalledCache { Installed = _installed };
+            var wrapper = new InstallationsCache { Installations = _installations.Values.ToList() };
             var json = JsonSerializer.Serialize(wrapper);
             File.WriteAllText(_installedFile, json);
         }
         catch
         {
             // ignore
+        }
+    }
+
+    private async Task FetchInstallations()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/installations";
+            var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Add("X-Api-Key", _config.AuthToken);
+            var resp = await _httpClient.SendAsync(req);
+            if (!resp.IsSuccessStatusCode)
+                return;
+
+            var json = await resp.Content.ReadAsStringAsync();
+            var list = JsonSerializer.Deserialize<List<Installation>>(json, new JsonSerializerOptions
+            {
+                PropertyNameCaseInsensitive = true
+            });
+            if (list == null)
+                return;
+
+            _installations.Clear();
+            foreach (var inst in list)
+                _installations[inst.AssetId] = inst;
+            SaveInstalledCache();
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private void ComputeUpdates()
+    {
+        _updatesAvailable.Clear();
+        foreach (var asset in _assets)
+        {
+            if (_installations.TryGetValue(asset.Id, out var inst) && asset.UpdatedAt > inst.UpdatedAt)
+                _updatesAvailable.Add(asset.Id);
         }
     }
 
@@ -547,6 +610,7 @@ public class SyncshellWindow : IDisposable
         public long Size { get; set; }
         public string Uploader { get; set; } = string.Empty;
         public DateTimeOffset CreatedAt { get; set; }
+        public DateTimeOffset UpdatedAt { get; set; }
         public string DownloadUrl { get; set; } = string.Empty;
         public List<string> Dependencies { get; set; } = new();
         public List<Asset>? Items { get; set; }
@@ -558,9 +622,16 @@ public class SyncshellWindow : IDisposable
         public List<Asset> Assets { get; set; } = new();
     }
 
-    private class InstalledCache
+    private class Installation
     {
-        public HashSet<string> Installed { get; set; } = new();
+        public string AssetId { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTimeOffset UpdatedAt { get; set; }
+    }
+
+    private class InstallationsCache
+    {
+        public List<Installation> Installations { get; set; } = new();
     }
 
     private class BundleResponse
