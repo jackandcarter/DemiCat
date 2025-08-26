@@ -417,6 +417,7 @@ class Asset(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
     __mapper_args__ = {"version_id_col": version}

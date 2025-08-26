@@ -5,6 +5,8 @@ import secrets
 import discord
 from discord import app_commands
 from discord.ext import commands
+from datetime import datetime
+
 from sqlalchemy import delete, select
 
 from ...db.models import (
@@ -16,6 +18,9 @@ from ...db.models import (
     Role,
     User,
     UserKey,
+    Asset,
+    IndexCheckpoint,
+    UserInstallation,
 )
 from ...db.session import get_session
 
@@ -73,6 +78,44 @@ async def clear_users(interaction: discord.Interaction) -> None:
         await db.execute(delete(UserKey).where(UserKey.guild_id == guild.id))
         await db.commit()
     await interaction.response.send_message("Cleared user records", ephemeral=True)
+
+
+@demibot.command(name="deleteasset", description="Soft delete an asset")
+@app_commands.describe(asset_id="Asset identifier")
+async def delete_asset_cmd(
+    interaction: discord.Interaction, asset_id: int
+) -> None:
+    async for db in get_session():
+        result = await db.execute(select(Asset).where(Asset.id == asset_id))
+        asset = result.scalar_one_or_none()
+        if asset is None:
+            await interaction.response.send_message(
+                "Asset not found", ephemeral=True
+            )
+            return
+        asset.deleted_at = datetime.utcnow()
+        await db.commit()
+        break
+    await interaction.response.send_message("Asset deleted", ephemeral=True)
+
+
+@demibot.command(
+    name="rebuildindex", description="Reset asset index and optionally forget users"
+)
+@app_commands.describe(forget="Forget user installations")
+async def rebuild_index_cmd(
+    interaction: discord.Interaction, forget: bool = False
+) -> None:
+    async for db in get_session():
+        await db.execute(delete(IndexCheckpoint))
+        if forget:
+            await db.execute(delete(UserInstallation))
+        await db.commit()
+        break
+    msg = "Index rebuilt"
+    if forget:
+        msg += " and user installations cleared"
+    await interaction.response.send_message(msg, ephemeral=True)
 
 
 @demibot.command(name="embed", description="Post key generation embed")
