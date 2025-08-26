@@ -54,6 +54,7 @@ class RequestDto(BaseModel):
     duty_id: int | None = None
     hq: bool | None = None
     quantity: int | None = None
+    assignee_id: int | None = None
 
 
 def _status(status: RequestStatus) -> str:
@@ -63,6 +64,7 @@ def _status(status: RequestStatus) -> str:
 def _dto(req: DbRequest) -> dict[str, Any]:
     item_id = req.items[0].item_id if req.items else None
     quantity = req.items[0].quantity if req.items else None
+    hq = req.items[0].hq if req.items else None
     duty_id = req.runs[0].run_id if req.runs else None
     dto = RequestDto(
         id=str(req.id),
@@ -74,10 +76,11 @@ def _dto(req: DbRequest) -> dict[str, Any]:
         version=req.version,
         item_id=item_id,
         duty_id=duty_id,
-        hq=False,
+        hq=hq,
         quantity=quantity,
+        assignee_id=req.assignee_id,
     )
-    return dto.model_dump(mode="json")
+    return dto.model_dump(mode="json", exclude_none=True)
 
 
 async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> None:
@@ -228,6 +231,7 @@ async def _update_status(
     from_status: RequestStatus,
     to_status: RequestStatus,
     version: int | None,
+    assignee_id: int | None = None,
 ) -> DbRequest:
     stmt = (
         update(DbRequest)
@@ -238,6 +242,8 @@ async def _update_status(
         )
         .values(status=to_status, version=DbRequest.version + 1)
     )
+    if assignee_id is not None:
+        stmt = stmt.values(assignee_id=assignee_id)
     if version is not None:
         stmt = stmt.where(DbRequest.version == version)
     result = await db.execute(stmt)
@@ -260,7 +266,13 @@ async def accept_request(
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
     req = await _update_status(
-        db, ctx.guild.id, request_id, RequestStatus.OPEN, RequestStatus.CLAIMED, body.version
+        db,
+        ctx.guild.id,
+        request_id,
+        RequestStatus.OPEN,
+        RequestStatus.CLAIMED,
+        body.version,
+        ctx.user.id,
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)

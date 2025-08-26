@@ -28,4 +28,6 @@ public class RequestState
         = false;
     public int Quantity { get; set; }
         = 0;
+    public uint? AssigneeId { get; set; }
+        = null;
 }

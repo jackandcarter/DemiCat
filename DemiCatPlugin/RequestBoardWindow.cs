@@ -138,6 +138,7 @@ public class RequestBoardWindow
                 var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)req.DutyId;
                 var hq = payload.TryGetProperty("hq", out var hEl) ? hEl.GetBoolean() : req.Hq;
                 var quantity = payload.TryGetProperty("quantity", out var qEl) ? qEl.GetInt32() : req.Quantity;
+                var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)req.AssigneeId;
                 RequestStateService.Upsert(new RequestState
                 {
                     Id = id,
@@ -147,7 +148,8 @@ public class RequestBoardWindow
                     ItemId = itemId,
                     DutyId = dutyId,
                     Hq = hq,
-                    Quantity = quantity
+                    Quantity = quantity,
+                    AssigneeId = assigneeId
                 });
             }
             else if ((int)resp.StatusCode == 409)
@@ -181,6 +183,7 @@ public class RequestBoardWindow
                 var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)null;
                 var hq = payload.TryGetProperty("hq", out var hEl) && hEl.GetBoolean();
                 var quantity = payload.TryGetProperty("quantity", out var qEl) ? qEl.GetInt32() : 0;
+                var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)null;
                 RequestStateService.Upsert(new RequestState
                 {
                     Id = id,
@@ -190,7 +193,8 @@ public class RequestBoardWindow
                     ItemId = itemId,
                     DutyId = dutyId,
                     Hq = hq,
-                    Quantity = quantity
+                    Quantity = quantity,
+                    AssigneeId = assigneeId
                 });
             }
         }

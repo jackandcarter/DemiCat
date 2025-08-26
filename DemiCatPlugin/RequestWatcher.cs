@@ -86,6 +86,7 @@ public class RequestWatcher : IDisposable
             var dutyId = payload.TryGetProperty("duty_id", out var dutyEl) ? dutyEl.GetUInt32() : (uint?)null;
             var hq = payload.TryGetProperty("hq", out var hqEl) && hqEl.GetBoolean();
             var quantity = payload.TryGetProperty("quantity", out var qtyEl) ? qtyEl.GetInt32() : 0;
+            var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)null;
 
             if (id == null || statusString == null)
                 return;
@@ -110,7 +111,8 @@ public class RequestWatcher : IDisposable
                 ItemId = itemId,
                 DutyId = dutyId,
                 Hq = hq,
-                Quantity = quantity
+                Quantity = quantity,
+                AssigneeId = assigneeId
             });
 
             if (status == RequestStatus.Claimed)
