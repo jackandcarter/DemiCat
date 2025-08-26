@@ -24,6 +24,9 @@ internal class PluginServices
     [PluginService]
     internal IPluginLog Log { get; private set; } = null!;
 
+    [PluginService]
+    internal IDataManager DataManager { get; private set; } = null!;
+
     public PluginServices()
     {
         Instance = this;
