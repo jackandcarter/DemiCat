@@ -1,4 +1,5 @@
 using Dalamud.Configuration;
+using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -26,8 +27,29 @@ public class Config : IPluginConfiguration
     public List<Template> Templates { get; set; } = new();
     public List<SignupPreset> SignupPresets { get; set; } = new();
 
+    [JsonPropertyName("syncEnabled")]
+    public bool SyncEnabled { get; set; } = true;
+
+    [JsonPropertyName("autoApply")]
+    public Dictionary<string, bool> AutoApply { get; set; } = new();
+
+    [JsonPropertyName("categories")]
+    public Dictionary<string, CategoryState> Categories { get; set; } = new();
+
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+
+    public class CategoryState
+    {
+        [JsonPropertyName("lastPullAt")]
+        public DateTimeOffset? LastPullAt { get; set; }
+
+        [JsonPropertyName("seenAssets")]
+        public HashSet<string> SeenAssets { get; set; } = new();
+
+        [JsonExtensionData]
+        public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+    }
 
     public void Migrate()
     {
