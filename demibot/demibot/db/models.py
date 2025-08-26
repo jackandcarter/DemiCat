@@ -29,10 +29,10 @@ class RequestType(str, Enum):
 
 class RequestStatus(str, Enum):
     OPEN = "open"
-    ACCEPTED = "accepted"
-    STARTED = "started"
+    CLAIMED = "claimed"
+    IN_PROGRESS = "in_progress"
+    AWAITING_CONFIRM = "awaiting_confirm"
     COMPLETED = "completed"
-    CONFIRMED = "confirmed"
     CANCELLED = "cancelled"
     APPROVED = "approved"  # legacy
     DENIED = "denied"  # legacy

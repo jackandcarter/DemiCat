@@ -207,6 +207,7 @@ public class RequestBoardWindow
         RequestStatus.InProgress => "in_progress",
         RequestStatus.AwaitingConfirm => "awaiting_confirm",
         RequestStatus.Completed => "completed",
+        RequestStatus.Cancelled => "cancelled",
         _ => "open"
     };
 
@@ -217,6 +218,7 @@ public class RequestBoardWindow
         "in_progress" => RequestStatus.InProgress,
         "awaiting_confirm" => RequestStatus.AwaitingConfirm,
         "completed" => RequestStatus.Completed,
+        "cancelled" => RequestStatus.Cancelled,
         _ => RequestStatus.Open
     };
 }
