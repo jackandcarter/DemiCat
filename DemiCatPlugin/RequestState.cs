@@ -30,4 +30,7 @@ public class RequestState
         = 0;
     public uint? AssigneeId { get; set; }
         = null;
+
+    internal GameDataCache.CachedEntry? ItemData { get; set; } = null;
+    internal GameDataCache.CachedEntry? DutyData { get; set; } = null;
 }

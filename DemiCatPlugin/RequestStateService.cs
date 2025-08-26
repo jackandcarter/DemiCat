@@ -24,7 +24,11 @@ internal static class RequestStateService
             if (RequestsMap.TryGetValue(state.Id, out var existing))
             {
                 if (state.Version > existing.Version)
+                {
+                    state.ItemData ??= existing.ItemData;
+                    state.DutyData ??= existing.DutyData;
                     RequestsMap[state.Id] = state;
+                }
             }
             else
             {
