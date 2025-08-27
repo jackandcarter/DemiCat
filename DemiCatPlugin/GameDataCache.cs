@@ -71,7 +71,7 @@ internal sealed class GameDataCache : IDisposable
                 return new CachedEntry(name, iconFile, DateTime.UtcNow);
             }
             #else
-            var sheet = _dataManager.GetExcelSheet("Item");
+            var sheet = _dataManager.GetExcelSheet<Lumina.Excel.ExcelRow>(name: "Item");
             dynamic row = sheet?.GetRow(id);
             if (row != null)
             {
@@ -118,7 +118,7 @@ internal sealed class GameDataCache : IDisposable
                 return new CachedEntry(name, iconFile, DateTime.UtcNow);
             }
             #else
-            var sheet = _dataManager.GetExcelSheet("ContentFinderCondition");
+            var sheet = _dataManager.GetExcelSheet<Lumina.Excel.ExcelRow>(name: "ContentFinderCondition");
             dynamic row = sheet?.GetRow(id);
             if (row != null)
             {
