@@ -160,9 +160,8 @@ internal sealed class GameDataCache : IDisposable
             {
                 var texture = _textureProvider.GetFromGameIcon(iconId);
                 using var icon = await texture.RentAsync();
-                await using var s = icon.EncodeToStream(Dalamud.ImageFormat.Png);
                 await using var f = File.Create(filePath);
-                await s.CopyToAsync(f);
+                await icon.SavePngAsync(f);
             }
             catch
             {
