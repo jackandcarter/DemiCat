@@ -85,20 +85,20 @@ public class SyncshellWindow : IDisposable
             ImGui.TextUnformatted($"Mod {_penumbraConflict.ModName} already exists. Use vault version or keep mine?");
             if (ImGui.Button("Use vault version"))
             {
-                _penumbraConflict.Tcs.TrySetResult(true);
+                _penumbraConflict?.Tcs.TrySetResult(true);
                 _penumbraConflict = null;
             }
             ImGui.SameLine();
             if (ImGui.Button("Keep mine"))
             {
-                _penumbraConflict.Tcs.TrySetResult(false);
+                _penumbraConflict?.Tcs.TrySetResult(false);
                 _penumbraConflict = null;
             }
             ImGui.EndPopup();
         }
         else if (_penumbraConflict != null && !openConflict)
         {
-            _penumbraConflict.Tcs.TrySetResult(false);
+            _penumbraConflict?.Tcs.TrySetResult(false);
             _penumbraConflict = null;
         }
 
