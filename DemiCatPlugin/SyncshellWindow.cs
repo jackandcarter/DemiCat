@@ -364,12 +364,10 @@ public class SyncshellWindow : IDisposable
                 : $"{baseUrl}{asset.DownloadUrl}";
 
             var tmp = Path.GetTempFileName();
-            await using (var resp = await _httpClient.GetAsync(url))
-            {
-                resp.EnsureSuccessStatusCode();
-                await using var fs = File.Create(tmp);
-                await resp.Content.CopyToAsync(fs);
-            }
+            using var resp = await _httpClient.GetAsync(url);
+            resp.EnsureSuccessStatusCode();
+            await using var fs = File.Create(tmp);
+            await resp.Content.CopyToAsync(fs);
 
             await UpdateInstallationStatus(asset.Id, "DOWNLOADED");
 
