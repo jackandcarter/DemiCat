@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text;
@@ -38,7 +39,8 @@ public class RequestBoardWindow
                     var tex = PluginServices.Instance!.TextureProvider.GetFromFile(item.IconPath);
                     if (tex != null)
                     {
-                        ImGui.Image(tex.ImGuiHandle, new Vector2(32));
+                        var wrap = tex.GetWrapOrDefault();
+                        ImGui.Image(wrap?.ImGuiHandle ?? IntPtr.Zero, new Vector2(32));
                         ImGui.SameLine();
                     }
                     var text = item.Name;
@@ -64,7 +66,8 @@ public class RequestBoardWindow
                     var tex = PluginServices.Instance!.TextureProvider.GetFromFile(duty.IconPath);
                     if (tex != null)
                     {
-                        ImGui.Image(tex.ImGuiHandle, new Vector2(32));
+                        var wrap = tex.GetWrapOrDefault();
+                        ImGui.Image(wrap?.ImGuiHandle ?? IntPtr.Zero, new Vector2(32));
                         ImGui.SameLine();
                     }
                     ImGui.TextUnformatted($"{duty.Name} [{req.Status}]");
