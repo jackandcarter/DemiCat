@@ -1,9 +1,4 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Net.Http;
 using System.Text.Json;
-using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
@@ -141,7 +136,9 @@ internal sealed class GameDataCache : IDisposable
             {
                 var texture = _textureProvider.GetFromGameIcon(iconId);
                 using var icon = await texture.RentAsync();
-                await File.WriteAllBytesAsync(filePath, icon.GetRgbaImageData());
+                await using var s = icon.EncodeToStream(Dalamud.ImageFormat.Png);
+                await using var f = File.Create(filePath);
+                await s.CopyToAsync(f);
             }
             catch
             {
