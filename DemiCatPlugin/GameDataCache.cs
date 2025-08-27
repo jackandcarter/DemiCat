@@ -5,6 +5,8 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
+using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
 
 namespace DemiCatPlugin;
 
@@ -137,7 +139,8 @@ internal sealed class GameDataCache : IDisposable
         {
             try
             {
-                using var icon = _dataManager.GetIcon(iconId);
+                var texture = _textureProvider.GetFromGameIcon(iconId);
+                using var icon = await texture.RentAsync();
                 await File.WriteAllBytesAsync(filePath, icon.GetRgbaImageData());
             }
             catch
