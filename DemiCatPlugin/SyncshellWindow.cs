@@ -445,7 +445,7 @@ public class SyncshellWindow : IDisposable
                 {
                     Directory.CreateDirectory(dest);
                     ZipFile.ExtractToDirectory(path, dest, true);
-                    pi.GetIpcSubscriber<object?>("Penumbra.Reload").InvokeAction(null);
+                    pi.GetIpcSubscriber("Penumbra.Reload").InvokeAction();
                     success = true;
                 }
                 catch
@@ -462,7 +462,7 @@ public class SyncshellWindow : IDisposable
             {
                 try
                 {
-                    pi?.GetIpcSubscriber<object?>("Penumbra.RedrawAll").InvokeAction(null);
+                    pi?.GetIpcSubscriber("Penumbra.RedrawAll").InvokeAction();
                 }
                 catch
                 {
