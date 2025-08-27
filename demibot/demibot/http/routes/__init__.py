@@ -10,6 +10,7 @@ from . import (
     guild_roles,
     requests,
     user_settings,
+    installations,
 )
 
 __all__ = [
@@ -24,4 +25,5 @@ __all__ = [
     "guild_roles",
     "requests",
     "user_settings",
+    "installations",
 ]
