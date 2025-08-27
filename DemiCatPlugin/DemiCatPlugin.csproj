@@ -21,10 +21,14 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Reference Include="Lumina.Excel.GeneratedSheets">
+    <Reference Include="Lumina.Excel.GeneratedSheets" Condition="Exists('$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll')">
       <HintPath>$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll</HintPath>
     </Reference>
   </ItemGroup>
+
+  <PropertyGroup Condition="Exists('$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll')">
+    <DefineConstants>$(DefineConstants);LUMINA_GENERATED_SHEETS</DefineConstants>
+  </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="icon.png" />

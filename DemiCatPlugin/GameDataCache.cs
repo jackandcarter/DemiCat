@@ -66,6 +66,7 @@ internal sealed class GameDataCache : IDisposable
     {
         try
         {
+            #if LUMINA_GENERATED_SHEETS
             var sheet = _dataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.Item>();
             var row = sheet?.GetRow(id);
             if (row != null)
@@ -74,6 +75,17 @@ internal sealed class GameDataCache : IDisposable
                 var iconFile = await GetIconFile(row.Icon, id);
                 return new CachedEntry(name, iconFile, DateTime.UtcNow);
             }
+            #else
+            var sheet = _dataManager.GetExcelSheet("Item");
+            dynamic row = sheet?.GetRow(id);
+            if (row != null)
+            {
+                string name = row.Name?.ToString() ?? $"Item {id}";
+                uint icon = row.Icon;
+                var iconFile = await GetIconFile(icon, id);
+                return new CachedEntry(name, iconFile, DateTime.UtcNow);
+            }
+            #endif
         }
         catch
         {
@@ -101,6 +113,7 @@ internal sealed class GameDataCache : IDisposable
     {
         try
         {
+            #if LUMINA_GENERATED_SHEETS
             var sheet = _dataManager.GetExcelSheet<Lumina.Excel.GeneratedSheets.ContentFinderCondition>();
             var row = sheet?.GetRow(id);
             if (row != null)
@@ -109,6 +122,17 @@ internal sealed class GameDataCache : IDisposable
                 var iconFile = await GetIconFile(row.Icon, id, "duty");
                 return new CachedEntry(name, iconFile, DateTime.UtcNow);
             }
+            #else
+            var sheet = _dataManager.GetExcelSheet("ContentFinderCondition");
+            dynamic row = sheet?.GetRow(id);
+            if (row != null)
+            {
+                string name = row.Name?.ToString() ?? $"Duty {id}";
+                uint icon = row.Icon;
+                var iconFile = await GetIconFile(icon, id, "duty");
+                return new CachedEntry(name, iconFile, DateTime.UtcNow);
+            }
+            #endif
         }
         catch
         {
