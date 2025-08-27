@@ -508,7 +508,7 @@ public class SyncshellWindow : IDisposable
         try
         {
             var pi = PluginServices.Instance?.PluginInterface;
-            pi?.GetIpcSubscriber<string>(channel).InvokeAction(payload);
+            pi?.GetIpcSubscriber<string, object?>(channel).InvokeAction(payload);
         }
         catch (Exception ex)
         {
