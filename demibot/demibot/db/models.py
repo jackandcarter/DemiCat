@@ -51,9 +51,12 @@ class AssetKind(str, Enum):
 
 
 class InstallStatus(str, Enum):
-    PENDING = "pending"
-    INSTALLED = "installed"
-    FAILED = "failed"
+    """Status of an asset installation on a user's client."""
+
+    DOWNLOADED = "DOWNLOADED"
+    INSTALLED = "INSTALLED"
+    APPLIED = "APPLIED"
+    FAILED = "FAILED"
 
 
 class Guild(Base):
