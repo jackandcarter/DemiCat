@@ -72,7 +72,7 @@ internal sealed class GameDataCache : IDisposable
             }
             #else
             var sheet = _dataManager.GetExcelSheet<Lumina.Excel.ExcelRow>(name: "Item");
-            dynamic row = sheet?.GetRow(id);
+            dynamic? row = sheet?.GetRow(id);
             if (row != null)
             {
                 string name = row.Name?.ToString() ?? $"Item {id}";
@@ -119,7 +119,7 @@ internal sealed class GameDataCache : IDisposable
             }
             #else
             var sheet = _dataManager.GetExcelSheet<Lumina.Excel.ExcelRow>(name: "ContentFinderCondition");
-            dynamic row = sheet?.GetRow(id);
+            dynamic? row = sheet?.GetRow(id);
             if (row != null)
             {
                 string name = row.Name?.ToString() ?? $"Duty {id}";
