@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
+import logging
 
 from ..db.session import get_session
 from .deps import RequestContext, api_key_auth
@@ -115,6 +116,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             return
         break
     await manager.connect(websocket, ctx)
+    logging.info(
+        "WS %s guild=%s user=%s",
+        websocket.scope.get("path", ""),
+        ctx.guild.discord_guild_id,
+        ctx.user.discord_user_id,
+    )
     try:
         while True:
             await websocket.receive_text()
