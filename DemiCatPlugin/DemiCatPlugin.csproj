@@ -21,6 +21,12 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="Lumina.Excel.GeneratedSheets">
+      <HintPath>$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+  <ItemGroup>
     <EmbeddedResource Include="icon.png" />
   </ItemGroup>
   <PropertyGroup>
