@@ -32,6 +32,8 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private int _selectedIndex;
     private bool _channelRefreshAttempted;
     private readonly SemaphoreSlim _connectGate = new(1, 1);
+    private DateTime _lastSync;
+    private int _failureCount;
 
     public UiRenderer(Config config, HttpClient httpClient)
     {
@@ -94,13 +96,18 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task PollLoop(CancellationToken token)
     {
-        var interval = TimeSpan.FromSeconds(_config.PollIntervalSeconds);
-        using var timer = new PeriodicTimer(interval);
+        var baseInterval = TimeSpan.FromSeconds(_config.PollIntervalSeconds);
+        var delay = baseInterval;
         try
         {
-            while (await timer.WaitForNextTickAsync(token))
+            while (!token.IsCancellationRequested)
             {
-                await PollEmbeds();
+                await Task.Delay(delay, token);
+                var success = await PollEmbeds();
+                delay = success
+                    ? baseInterval
+                    : TimeSpan.FromSeconds(
+                        Math.Min(baseInterval.TotalSeconds * Math.Pow(2, _failureCount), 300));
                 if (_webSocket == null || _webSocket.State != WebSocketState.Open)
                 {
                     _ = ConnectWebSocket();
@@ -113,9 +120,9 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
     }
 
-    private async Task PollEmbeds()
+    private async Task<bool> PollEmbeds()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return false;
 
         try
         {
@@ -132,7 +139,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
-                return;
+                _failureCount++;
+                PluginServices.Instance?.Log.Warning(
+                    $"Sync failed ({_failureCount}) status={response.StatusCode}");
+                PluginServices.Instance?.ToastGui.ShowError($"Sync failed ({_failureCount})");
+                return false;
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream) ?? new List<EmbedDto>();
@@ -142,10 +153,17 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _embedDtos.AddRange(embeds);
                 SetEmbeds(_embedDtos);
             });
+            _failureCount = 0;
+            _lastSync = DateTime.UtcNow;
+            PluginServices.Instance?.Log.Info($"Sync at {_lastSync:O}");
+            return true;
         }
-        catch
+        catch (Exception ex)
         {
-            // ignored
+            _failureCount++;
+            PluginServices.Instance?.Log.Warning(ex, $"Sync exception ({_failureCount})");
+            PluginServices.Instance?.ToastGui.ShowError($"Sync failed ({_failureCount})");
+            return false;
         }
     }
 

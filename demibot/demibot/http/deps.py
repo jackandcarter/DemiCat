@@ -62,4 +62,11 @@ async def api_key_auth(
             roles.append("officer")
         if r.is_chat:
             roles.append("chat")
+    logging.info(
+        "API %s %s guild=%s user=%s",
+        request.method if request else "?",
+        request.url.path if request else "?",
+        guild.discord_guild_id,
+        user.discord_user_id,
+    )
     return RequestContext(user=user, guild=guild, key=key, roles=roles)
