@@ -8,6 +8,26 @@ DemiCat/
 └── DemiCatPlugin/   # Dalamud plugin that renders the embeds in FFXIV
 ```
 
+## Features
+
+### Plugin Tabs
+
+- **Events** – Browse and RSVP to Apollo events from within FFXIV.
+- **Create** – Draft new events without leaving the game.
+- **Templates** – Save and reuse preset event layouts.
+- **Request Board** – Track signup requests and interest.
+- **Syncshell** – Cross-world chat integration powered by Discord (see `DemiCatPlugin/SyncshellWindow.cs`).
+- **Chat** – Mirror Discord conversations directly in game.
+- **Officer** – Administrative tools for event staff and moderators.
+
+### DemiBot Services
+
+- Vault ingestion and archival (`demibot/demibot/discordbot/cogs/vault.py`).
+- Asset and bundle APIs (`demibot/demibot/http/routes/assets.py`, `demibot/demibot/http/routes/bundles.py`).
+- Delta tokens for incremental sync (`demibot/demibot/http/routes/delta_token.py`).
+- User settings endpoints (`demibot/demibot/http/routes/user_settings.py`).
+- Privacy and data controls (`demibot/demibot/http/routes/users.py`).
+
 ## Prerequisites
 
 - [.NET SDK 9+](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
