@@ -37,7 +37,7 @@ public class RequestBoardWindow
                 {
                     var item = req.ItemData;
                     var tex = PluginServices.Instance!.TextureProvider.GetFromFile(item.IconPath);
-                    if (tex != null)
+                    if (tex != null && tex.TryGetWrap(out _, out _))
                     {
                         var wrap = tex.GetWrapOrDefault();
                         ImGui.Image(wrap?.ImGuiHandle ?? IntPtr.Zero, new Vector2(32));
@@ -64,7 +64,7 @@ public class RequestBoardWindow
                 {
                     var duty = req.DutyData;
                     var tex = PluginServices.Instance!.TextureProvider.GetFromFile(duty.IconPath);
-                    if (tex != null)
+                    if (tex != null && tex.TryGetWrap(out _, out _))
                     {
                         var wrap = tex.GetWrapOrDefault();
                         ImGui.Image(wrap?.ImGuiHandle ?? IntPtr.Zero, new Vector2(32));
