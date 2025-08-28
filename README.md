@@ -1,12 +1,5 @@
 # DemiCat Monorepo
 Please see the v1.2.2.1 branch for the latest info and stable build release.
-DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts directly into the game.
-
-```
-DemiCat/
-├── demibot/         # Python Discord bot and REST interface
-└── DemiCatPlugin/   # Dalamud plugin that renders the embeds in FFXIV
-```
 
 ## Prerequisites
 
@@ -28,73 +21,7 @@ update this file by running the service with the reconfigure flag:
 python -m demibot.main --reconfigure
 ```
 
-The configuration file includes the database connection details, the Discord
-bot token and server options such as the WebSocket path (default
-`/ws/embeds`).
 
-> **Security note:** `~/.config/demibot/config.json` contains the Discord token
-> and database credentials. Treat this file as a secret and set restrictive
-> permissions so only your user can read it (e.g. `chmod 600
-> ~/.config/demibot/config.json`).
-
-## Setup
-
-Run the helper script to bootstrap both the Python and .NET parts of the
-project. It verifies Python 3.11+ and the .NET 9 SDK are installed (using
-`uv` or `brew` when available), creates a virtual environment, installs
-dependencies from `demibot/pyproject.toml`, and builds the Dalamud plugin in
-Release mode.
-
-```bash
-bash scripts/setup_env.sh [--unit-tests] [--integration-tests]
-```
-
-### 1. Install dependencies and initialize the database
-```bash
-cd demibot
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .
-alembic -c demibot/db/migrations/env.py upgrade head
-```
-Re-run the migration command after pulling updates to apply any schema changes.
-
-### 2. Configure and start the bot
-```bash
-python -m demibot.main --reconfigure
-```
-The first run will prompt for required settings and write them to
-`~/.config/demibot/config.json` before starting the Discord bot and HTTP API.
-
-With the bot online, run `/demibot embed` in your Discord server to post a key
-generation message. Members can click the button to receive their API key in an
-ephemeral reply. Each user should generate their own key with this command for
-plugin authentication.
-
-### 3. Configure the Dalamud plugin
-Update `DemiCatPlugin/DemiCatPlugin.json` with the usual plugin metadata. In-game,
-open the plugin configuration and set the `ApiBaseUrl` if needed (default
-`http://localhost:5050`).
-
-Use the API key obtained from `/demibot embed` and enter it in the plugin
-**Settings** window under **API Key**. Press **Sync** to validate the key and
-link the plugin with the bot.
-
-### 4. Insert API keys
-Insert API keys into the `api_keys` table to authorize HTTP requests:
-
-```sql
-INSERT INTO api_keys (api_key, user_id, is_admin) VALUES ('your-api-key', 'discord-user-id', 1);
-```
-Use the value from `api_key` as the `X-Api-Key` header when calling the REST API.
-
-## Building and Running
-
-### Dalamud plugin
-```bash
-cd DemiCatPlugin
-dotnet build
-```
 The build output `DemiCatPlugin.dll` can be found under `bin/Debug/net9.0/`. Copy it into your Dalamud plugins folder and enable it.
 
 Alternatively, add this repository to Dalamud so it can install and update the plugin automatically:
@@ -103,10 +30,6 @@ Alternatively, add this repository to Dalamud so it can install and update the p
 2. Add `https://github.com/jackandcarter/DemiCat/raw/main/repo.json` (GitHub redirects automatically). Do **not** use `blob` links or the repository root.
 3. Enable the **DemiCat** plugin from the available plugin list.
 
-The plugin icon is hosted at `https://cdn.discordapp.com/attachments/1337791050294755380/1337854067560550422/Demi_Bot_Logo.png`.
-Update `IconUrl` in `DemiCatPlugin/DemiCatPlugin.json` and the matching entry in `repo.json` if this image changes.
-When releasing, bump `AssemblyVersion` and `FileVersion` in `DemiCatPlugin/DemiCatPlugin.csproj`,
-and keep `DemiCatPlugin/DemiCatPlugin.json` and `repo.json` in sync with the new version number.
 
 ## Usage
 
