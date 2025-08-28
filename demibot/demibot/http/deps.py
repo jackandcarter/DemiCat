@@ -56,12 +56,12 @@ async def api_key_auth(
         .where(Membership.guild_id == guild.id, Membership.user_id == user.id)
     )
     roles_result = await db.execute(roles_stmt)
-    roles: list[str] = []
+    roles: set[str] = set()
     for r in roles_result.scalars():
         if r.is_officer:
-            roles.append("officer")
+            roles.add("officer")
         if r.is_chat:
-            roles.append("chat")
+            roles.add("chat")
     logging.info(
         "API %s %s guild=%s user=%s",
         request.method if request else "?",
@@ -69,4 +69,4 @@ async def api_key_auth(
         guild.discord_guild_id,
         user.discord_user_id,
     )
-    return RequestContext(user=user, guild=guild, key=key, roles=roles)
+    return RequestContext(user=user, guild=guild, key=key, roles=list(roles))
