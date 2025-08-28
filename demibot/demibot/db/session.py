@@ -38,6 +38,8 @@ def _sync_url(url: str) -> str:
         driver = driver.replace("+asyncpg", "+psycopg2")
     elif driver.endswith("+asyncmy"):
         driver = driver.replace("+asyncmy", "+pymysql")
+    elif driver.endswith("+aiomysql"):
+        driver = driver.replace("+aiomysql", "+pymysql")
     return str(sa_url.set(drivername=driver))
 
 
