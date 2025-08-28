@@ -10,7 +10,7 @@ from demibot.db.session import get_session, init_db
 
 
 async def _refresh() -> None:
-    cfg = ensure_config()
+    cfg = await ensure_config()
     await init_db(cfg.database.url)
     async for db in get_session():
         result = await db.execute(

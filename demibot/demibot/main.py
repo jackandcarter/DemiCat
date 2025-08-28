@@ -33,7 +33,7 @@ async def main_async() -> None:
 
     logging.basicConfig(level=logging.DEBUG)
     log_config.setup_logging()
-    cfg = ensure_config(force_reconfigure=args.reconfigure)
+    cfg = await ensure_config(force_reconfigure=args.reconfigure)
 
     db_url = cfg.database.url
     masked_url = re.sub(r":[^:@/]+@", ":***@", db_url)
