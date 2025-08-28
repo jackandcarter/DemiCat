@@ -27,6 +27,7 @@ async def get_db() -> AsyncSession:
 async def api_key_auth(
     request: Request = None,
     x_api_key: str | None = Header(None, alias="X-Api-Key"),
+    x_discord_id: int | None = Header(None, alias="X-Discord-Id"),
     db: AsyncSession = Depends(get_db),
 ) -> RequestContext:
     if not x_api_key:
@@ -49,6 +50,14 @@ async def api_key_auth(
     if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user, guild, key = row
+    if x_discord_id is not None:
+        override = await db.scalar(
+            select(User).where(User.discord_user_id == x_discord_id)
+        )
+        if not override:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
+        user = override
+
     roles_stmt = (
         select(Role)
         .join(MembershipRole, MembershipRole.role_id == Role.id)

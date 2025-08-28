@@ -29,7 +29,10 @@ async def _create_request(
         "type": rtype,
         "urgency": urgency,
     }
-    headers = {"X-Api-Key": interaction.client.cfg.security.api_key}
+    headers = {
+        "X-Api-Key": interaction.client.cfg.security.api_key,
+        "X-Discord-Id": str(interaction.user.id),
+    }
     async with aiohttp.ClientSession() as session:
         async with session.post(f"{base_url}/api/requests", json=body, headers=headers) as resp:
             if resp.status != 200:
