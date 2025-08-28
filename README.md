@@ -1,5 +1,5 @@
 # DemiCat Monorepo
-
+Please see the v1.2.2.1 branch for the latest info and stable build release.
 DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts directly into the game.
 
 ```
