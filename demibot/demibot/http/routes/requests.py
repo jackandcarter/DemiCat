@@ -269,6 +269,9 @@ async def accept_request(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    req = await db.get(DbRequest, request_id)
+    if not req or req.guild_id != ctx.guild.id:
+        raise HTTPException(status_code=404)
     req = await _update_status(
         db,
         ctx.guild.id,
@@ -291,6 +294,11 @@ async def start_request(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    req = await db.get(DbRequest, request_id)
+    if not req or req.guild_id != ctx.guild.id:
+        raise HTTPException(status_code=404)
+    if req.assignee_id != ctx.user.id:
+        raise HTTPException(status_code=403)
     req = await _update_status(
         db,
         ctx.guild.id,
@@ -311,6 +319,11 @@ async def complete_request(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    req = await db.get(DbRequest, request_id)
+    if not req or req.guild_id != ctx.guild.id:
+        raise HTTPException(status_code=404)
+    if req.assignee_id != ctx.user.id:
+        raise HTTPException(status_code=403)
     req = await _update_status(
         db,
         ctx.guild.id,
@@ -332,6 +345,11 @@ async def confirm_request(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
+    req = await db.get(DbRequest, request_id)
+    if not req or req.guild_id != ctx.guild.id:
+        raise HTTPException(status_code=404)
+    if req.user_id != ctx.user.id and "officer" not in ctx.roles:
+        raise HTTPException(status_code=403)
     req = await _update_status(
         db,
         ctx.guild.id,
@@ -351,6 +369,11 @@ async def cancel_request(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, bool]:
+    req = await db.get(DbRequest, request_id)
+    if not req or req.guild_id != ctx.guild.id:
+        raise HTTPException(status_code=404)
+    if req.user_id != ctx.user.id and "officer" not in ctx.roles:
+        raise HTTPException(status_code=403)
     result = await db.execute(
         update(DbRequest)
         .where(
