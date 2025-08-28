@@ -221,9 +221,10 @@ async def delete_request(
     req = await db.get(DbRequest, request_id)
     if not req or req.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404)
+    version = req.version
     await db.delete(req)
     await db.commit()
-    delta = {"id": str(request_id), "deleted": True}
+    delta = {"id": str(request_id), "deleted": True, "version": version}
     await _broadcast(ctx.guild.id, request_id, delta)
     return {"ok": True}
 
@@ -365,7 +366,9 @@ async def cancel_request(
     await db.commit()
     req = await db.get(DbRequest, request_id)
     await _broadcast(
-        ctx.guild.id, req.id, {"id": str(req.id), "status": req.status.value}
+        ctx.guild.id,
+        req.id,
+        {"id": str(req.id), "status": req.status.value, "version": req.version},
     )
     return {"ok": True}
 
