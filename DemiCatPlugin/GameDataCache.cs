@@ -2,6 +2,7 @@ using System.Text.Json;
 using Dalamud.Plugin.Services;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
+using TerraFX.Interop.Windows;
 
 namespace DemiCatPlugin;
 
@@ -9,6 +10,7 @@ internal sealed class GameDataCache : IDisposable
 {
     private readonly IDataManager _dataManager;
     private readonly ITextureProvider _textureProvider;
+    private readonly ITextureReadbackProvider _textureReadback;
     private readonly HttpClient _httpClient;
     private readonly string _cacheDir;
     private readonly Dictionary<uint, CachedEntry> _items = new();
@@ -20,6 +22,7 @@ internal sealed class GameDataCache : IDisposable
     {
         _dataManager = PluginServices.Instance!.DataManager;
         _textureProvider = PluginServices.Instance!.TextureProvider;
+        _textureReadback = PluginServices.Instance!.TextureReadbackProvider;
         _httpClient = httpClient;
         _cacheDir = Path.Combine(PluginServices.Instance!.PluginInterface.GetPluginConfigDirectory(), "cached-gamedata");
         Directory.CreateDirectory(_cacheDir);
@@ -70,16 +73,6 @@ internal sealed class GameDataCache : IDisposable
                 var iconFile = await GetIconFile(row.Icon, id);
                 return new CachedEntry(name, iconFile, DateTime.UtcNow);
             }
-            #else
-            var sheet = _dataManager.GetExcelSheet<Lumina.Excel.ExcelRow>(name: "Item");
-            dynamic? row = sheet?.GetRow(id);
-            if (row != null)
-            {
-                string name = row.Name?.ToString() ?? $"Item {id}";
-                uint icon = row.Icon;
-                var iconFile = await GetIconFile(icon, id);
-                return new CachedEntry(name, iconFile, DateTime.UtcNow);
-            }
             #endif
         }
         catch
@@ -117,16 +110,6 @@ internal sealed class GameDataCache : IDisposable
                 var iconFile = await GetIconFile(row.Icon, id, "duty");
                 return new CachedEntry(name, iconFile, DateTime.UtcNow);
             }
-            #else
-            var sheet = _dataManager.GetExcelSheet<Lumina.Excel.ExcelRow>(name: "ContentFinderCondition");
-            dynamic? row = sheet?.GetRow(id);
-            if (row != null)
-            {
-                string name = row.Name?.ToString() ?? $"Duty {id}";
-                uint icon = row.Icon;
-                var iconFile = await GetIconFile(icon, id, "duty");
-                return new CachedEntry(name, iconFile, DateTime.UtcNow);
-            }
             #endif
         }
         catch
@@ -160,9 +143,7 @@ internal sealed class GameDataCache : IDisposable
             {
                 var texture = _textureProvider.GetFromGameIcon(iconId);
                 using var icon = await texture.RentAsync();
-                await using var stream = icon.EncodeToStream(Dalamud.ImageFormat.Png);
-                await using var file = File.Create(filePath);
-                await stream.CopyToAsync(file);
+                await _textureReadback.SaveToFileAsync(icon, GUID.GUID_ContainerFormatPng, filePath);
             }
             catch
             {

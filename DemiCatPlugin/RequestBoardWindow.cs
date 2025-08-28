@@ -40,7 +40,7 @@ public class RequestBoardWindow
                     if (tex != null && tex.TryGetWrap(out _, out _))
                     {
                         var wrap = tex.GetWrapOrDefault();
-                        ImGui.Image(wrap?.ImGuiHandle ?? IntPtr.Zero, new Vector2(32));
+                        ImGui.Image(wrap?.Handle ?? ImTextureID.Null, new Vector2(32));
                         ImGui.SameLine();
                     }
                     var text = item.Name;
@@ -67,7 +67,7 @@ public class RequestBoardWindow
                     if (tex != null && tex.TryGetWrap(out _, out _))
                     {
                         var wrap = tex.GetWrapOrDefault();
-                        ImGui.Image(wrap?.ImGuiHandle ?? IntPtr.Zero, new Vector2(32));
+                        ImGui.Image(wrap?.Handle ?? ImTextureID.Null, new Vector2(32));
                         ImGui.SameLine();
                     }
                     ImGui.TextUnformatted($"{duty.Name} [{req.Status}]");
