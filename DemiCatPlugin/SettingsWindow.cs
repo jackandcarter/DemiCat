@@ -403,7 +403,10 @@ public class SettingsWindow : IDisposable
 
                     try
                     {
-                        ChannelWatcher?.Start();
+                        if (ChannelWatcher != null)
+                        {
+                            await ChannelWatcher.Start();
+                        }
                     }
                     catch (Exception ex)
                     {

@@ -24,9 +24,13 @@ public class ChannelWatcher : IDisposable
         _officerChatWindow = officerChatWindow;
     }
 
-    public void Start()
+    public async Task Start()
     {
         _cts?.Cancel();
+        if (_task != null)
+        {
+            try { await _task; } catch { }
+        }
         _ws?.Dispose();
         _cts = new CancellationTokenSource();
         _task = Run(_cts.Token);
@@ -69,9 +73,9 @@ public class ChannelWatcher : IDisposable
                     });
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore errors and retry
+                PluginServices.Instance!.Log.Error(ex, "Channel watcher loop failed");
             }
             finally
             {
