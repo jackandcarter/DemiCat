@@ -20,6 +20,9 @@ internal class PluginServices
     internal ITextureProvider TextureProvider { get; private set; } = null!;
 
     [PluginService]
+    internal ITextureReadbackProvider TextureReadbackProvider { get; private set; } = null!;
+
+    [PluginService]
     internal IFramework Framework { get; private set; } = null!;
 
     [PluginService]
