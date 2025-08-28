@@ -177,8 +177,34 @@ def test_cancel_requires_requester(db_setup):
             db.add(req)
             await db.commit()
             ctx = RequestContext(user=other, guild=guild, key=SimpleNamespace(), roles=[])
+            body = request_routes.StatusBody(version=req.version)
             with pytest.raises(HTTPException) as exc:
-                await request_routes.cancel_request(req.id, ctx=ctx, db=db)
+                await request_routes.cancel_request(req.id, body, ctx=ctx, db=db)
             return exc.value.status_code
     code = asyncio.run(run())
     assert code == 403
+
+
+def test_cancel_returns_dto(db_setup):
+    async def run():
+        async for db in get_session():
+            guild = await db.get(Guild, 1)
+            requester = await db.get(User, 1)
+            req = DbRequest(
+                id=5,
+                guild_id=guild.id,
+                user_id=requester.id,
+                title="Test",
+                type=RequestType.ITEM,
+                status=RequestStatus.OPEN,
+                urgency=Urgency.LOW,
+            )
+            db.add(req)
+            await db.commit()
+            ctx = RequestContext(user=requester, guild=guild, key=SimpleNamespace(), roles=[])
+            old_version = req.version
+            body = request_routes.StatusBody(version=old_version)
+            dto = await request_routes.cancel_request(req.id, body, ctx=ctx, db=db)
+            assert dto["status"] == RequestStatus.CANCELLED.value
+            assert dto["version"] == old_version + 1
+    asyncio.run(run())
