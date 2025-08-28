@@ -79,6 +79,13 @@ public class RequestWatcher : IDisposable
                 return;
 
             var id = payload.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+            var deleted = payload.TryGetProperty("deleted", out var delEl) && delEl.GetBoolean();
+            if (deleted)
+            {
+                if (id != null) RequestStateService.Remove(id);
+                return;
+            }
+
             var title = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "Request" : "Request";
             var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
             var version = payload.TryGetProperty("version", out var verEl) ? verEl.GetInt32() : 0;

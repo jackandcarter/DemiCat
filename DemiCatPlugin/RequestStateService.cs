@@ -40,6 +40,14 @@ internal static class RequestStateService
         }
     }
 
+    public static void Remove(string id)
+    {
+        lock (LockObj)
+        {
+            RequestsMap.Remove(id);
+        }
+    }
+
     public static bool TryGet(string id, out RequestState state)
     {
         lock (LockObj)
