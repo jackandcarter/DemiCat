@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import time
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 import logging
@@ -13,6 +13,7 @@ from .deps import RequestContext, api_key_auth
 
 PING_INTERVAL = 30.0
 PING_TIMEOUT = 60.0
+SEND_TIMEOUT = 5.0
 
 
 @dataclass
@@ -60,7 +61,8 @@ class ConnectionManager:
         officer_only: bool = False,
         path: str | None = None,
     ) -> None:
-        dead: list[WebSocket] = []
+        targets: list[WebSocket] = []
+        coros: list[asyncio.Future] = []
         for ws, info in list(self.connections.items()):
             if info.guild_id != guild_id:
                 continue
@@ -72,12 +74,12 @@ class ConnectionManager:
                     continue
             elif info.path == "/ws/officer-messages":
                 continue
-            try:
-                await ws.send_text(message)
-            except Exception:
-                dead.append(ws)
-        for ws in dead:
-            self.disconnect(ws)
+            targets.append(ws)
+            coros.append(asyncio.wait_for(ws.send_text(message), SEND_TIMEOUT))
+        results = await asyncio.gather(*coros, return_exceptions=True)
+        for ws, result in zip(targets, results):
+            if isinstance(result, Exception):
+                self.disconnect(ws)
 
     async def _ping_loop(self) -> None:
         try:
