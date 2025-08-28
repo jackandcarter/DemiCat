@@ -183,7 +183,7 @@ public class SettingsWindow : IDisposable
             if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/settings";
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/settings";
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             request.Headers.Add("X-Api-Key", _config.AuthToken);
             var response = await _httpClient.SendAsync(request);
@@ -233,7 +233,7 @@ public class SettingsWindow : IDisposable
             if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/settings";
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/settings";
             var payload = new
             {
                 settings = new
@@ -272,7 +272,7 @@ public class SettingsWindow : IDisposable
             if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/forget";
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/forget";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             request.Headers.Add("X-Api-Key", _config.AuthToken);
             var response = await _httpClient.SendAsync(request);
