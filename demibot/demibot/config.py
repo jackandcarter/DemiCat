@@ -12,7 +12,6 @@ permissions ``0o600`` to restrict access.
 
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-import asyncio
 import json
 import logging
 import getpass
@@ -105,7 +104,7 @@ def save_config(cfg: AppConfig) -> None:
         logging.warning("Unable to set permissions on %s: %s", CFG_PATH, exc)
 
 
-def ensure_config(force_reconfigure: bool = False) -> AppConfig:
+async def ensure_config(force_reconfigure: bool = False) -> AppConfig:
     """Load configuration, prompting the user for any missing values.
 
     Parameters
@@ -150,15 +149,12 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
         if pwd:
             profile.password = pwd
 
-    def _check_database() -> bool:
+    async def _check_database() -> bool:
         try:
-            async def _test() -> None:
-                engine = create_async_engine(cfg.database.url, echo=False, future=True)
-                async with engine.connect() as conn:
-                    await conn.execute(text("SELECT 1"))
-                await engine.dispose()
-
-            asyncio.run(_test())
+            engine = create_async_engine(cfg.database.url, echo=False, future=True)
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            await engine.dispose()
             return True
         except Exception as exc:  # pragma: no cover - interactive prompt
             print(f"Database connection failed: {exc}")
@@ -181,7 +177,7 @@ def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             if not profile.user or not profile.password:
                 print("Username and password are required.")
                 continue
-            if _check_database():
+            if await _check_database():
                 break
         cfg.discord_token = (
             input(f"Enter Discord bot token [{cfg.discord_token}]: ").strip()
