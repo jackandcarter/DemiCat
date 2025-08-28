@@ -150,7 +150,9 @@ async def list_requests(
     db: AsyncSession = Depends(get_db),
 ) -> list[dict[str, Any]]:
     result = await db.execute(
-        select(DbRequest).where(DbRequest.guild_id == ctx.guild.id)
+        select(DbRequest)
+        .where(DbRequest.guild_id == ctx.guild.id)
+        .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
     )
     return [_dto(r) for r in result.scalars()]
 
