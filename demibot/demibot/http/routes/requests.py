@@ -366,34 +366,28 @@ async def confirm_request(
 @router.post("/requests/{request_id}/cancel")
 async def cancel_request(
     request_id: int,
+    body: StatusBody,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
-) -> dict[str, bool]:
+) -> dict[str, Any]:
     req = await db.get(DbRequest, request_id)
     if not req or req.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404)
     if req.user_id != ctx.user.id and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
-    result = await db.execute(
-        update(DbRequest)
-        .where(
-            DbRequest.id == request_id,
-            DbRequest.guild_id == ctx.guild.id,
-            DbRequest.status != RequestStatus.COMPLETED,
-            DbRequest.status != RequestStatus.CANCELLED,
-        )
-        .values(status=RequestStatus.CANCELLED)
-    )
-    if result.rowcount == 0:
+    if req.status in (RequestStatus.COMPLETED, RequestStatus.CANCELLED):
         raise HTTPException(status_code=409)
-    await db.commit()
-    req = await db.get(DbRequest, request_id)
-    await _broadcast(
+    req = await _update_status(
+        db,
         ctx.guild.id,
-        req.id,
-        {"id": str(req.id), "status": req.status.value, "version": req.version},
+        request_id,
+        req.status,
+        RequestStatus.CANCELLED,
+        body.version,
     )
-    return {"ok": True}
+    delta = _dto(req)
+    await _broadcast(ctx.guild.id, req.id, delta)
+    return delta
 
 
 @router.post("/requests/{request_id}/comment")
