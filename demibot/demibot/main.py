@@ -50,7 +50,7 @@ async def main_async() -> None:
         cfg.server.port,
     )
     try:
-        app = create_app(cfg)
+        app = create_app()
         bot = create_bot(cfg)
         set_discord_client(bot)
         config = uvicorn.Config(

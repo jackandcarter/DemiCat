@@ -17,13 +17,7 @@ from fastapi import FastAPI
 
 from .ws import websocket_endpoint
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:  # pragma: no cover - imported for type hints only
-    from ..config import AppConfig
-
-
-def create_app(cfg: "AppConfig | None") -> FastAPI:
+def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
 
     app = FastAPI()
