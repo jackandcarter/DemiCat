@@ -21,6 +21,9 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Reference Include="Lumina.Excel">
+      <HintPath>$(DalamudLibPath)/Lumina.Excel.dll</HintPath>
+    </Reference>
     <Reference Include="Lumina.Excel.GeneratedSheets" Condition="Exists('$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll')">
       <HintPath>$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll</HintPath>
     </Reference>
