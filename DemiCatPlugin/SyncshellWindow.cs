@@ -183,7 +183,7 @@ public class SyncshellWindow : IDisposable
             }
 
             var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
-            var url = $"{baseUrl}/fc/{_config.FcChannelId}/assets";
+            var url = $"{baseUrl}/api/fc/{_config.FcChannelId}/assets";
             if (state.LastPullAt.HasValue)
                 url += $"?since={Uri.EscapeDataString(state.LastPullAt.Value.ToString("O"))}";
 
@@ -254,7 +254,7 @@ public class SyncshellWindow : IDisposable
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
             return null;
 
-        var url = $"{baseUrl}/fc/{_config.FcChannelId}/bundles";
+        var url = $"{baseUrl}/api/fc/{_config.FcChannelId}/bundles";
         if (since.HasValue)
             url += $"?since={Uri.EscapeDataString(since.Value.ToString("O"))}";
 
@@ -523,7 +523,7 @@ public class SyncshellWindow : IDisposable
             if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/installations";
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/installations";
             var payload = new { assetId, status };
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
@@ -639,7 +639,7 @@ public class SyncshellWindow : IDisposable
             if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/users/me/installations";
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/installations";
             var req = new HttpRequestMessage(HttpMethod.Get, url);
             req.Headers.Add("X-Api-Key", _config.AuthToken);
             var resp = await _httpClient.SendAsync(req);
