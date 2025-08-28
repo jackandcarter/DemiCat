@@ -1,7 +1,7 @@
 # DemiCat Monorepo
 Please see the v1.2.2.1 branch for the latest info and stable build release.
 
-## Prerequisites
+## Developer Prerequisites
 
 - [.NET SDK 9+](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
 - [Python 3.11+](https://www.python.org/)
