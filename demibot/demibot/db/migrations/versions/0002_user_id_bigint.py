@@ -11,57 +11,86 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.alter_column("users", "id", existing_type=sa.Integer(), type_=sa.BigInteger())
+    op.alter_column(
+        "users",
+        "id",
+        existing_type=sa.Integer(),
+        type_=sa.BigInteger(),
+        existing_nullable=False,
+        nullable=False,
+    )
     op.alter_column(
         "user_keys",
         "user_id",
         existing_type=sa.Integer(),
         type_=sa.BigInteger(),
+        existing_nullable=False,
+        nullable=False,
     )
     op.alter_column(
         "memberships",
         "user_id",
         existing_type=sa.Integer(),
         type_=sa.BigInteger(),
+        existing_nullable=False,
+        nullable=False,
     )
     op.alter_column(
         "messages",
         "author_id",
         existing_type=sa.Integer(),
         type_=sa.BigInteger(),
+        existing_nullable=False,
+        nullable=False,
     )
     op.alter_column(
         "attendance",
         "user_id",
         existing_type=sa.Integer(),
         type_=sa.BigInteger(),
+        existing_nullable=False,
+        nullable=False,
     )
 
 
 def downgrade() -> None:
-    op.alter_column("users", "id", existing_type=sa.BigInteger(), type_=sa.Integer())
+    op.alter_column(
+        "users",
+        "id",
+        existing_type=sa.BigInteger(),
+        type_=sa.Integer(),
+        existing_nullable=False,
+        nullable=False,
+    )
     op.alter_column(
         "user_keys",
         "user_id",
         existing_type=sa.BigInteger(),
         type_=sa.Integer(),
+        existing_nullable=False,
+        nullable=False,
     )
     op.alter_column(
         "memberships",
         "user_id",
         existing_type=sa.BigInteger(),
         type_=sa.Integer(),
+        existing_nullable=False,
+        nullable=False,
     )
     op.alter_column(
         "messages",
         "author_id",
         existing_type=sa.BigInteger(),
         type_=sa.Integer(),
+        existing_nullable=False,
+        nullable=False,
     )
     op.alter_column(
         "attendance",
         "user_id",
         existing_type=sa.BigInteger(),
         type_=sa.Integer(),
+        existing_nullable=False,
+        nullable=False,
     )
-
