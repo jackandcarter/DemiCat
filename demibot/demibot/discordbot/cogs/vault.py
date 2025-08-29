@@ -24,7 +24,7 @@ from ...db.models import (
     User,
     IndexCheckpoint,
 )
-from ...db.session import get_session, init_db
+from ...db.session import get_session
 
 WHITELIST = {
     ".zip",
@@ -52,7 +52,6 @@ class Vault(commands.Cog):
         self.vault_channels: dict[int, int] = {}
 
     async def cog_load(self) -> None:  # pragma: no cover - startup behaviour
-        await init_db(self.bot.cfg.database.url)
         self.bot.loop.create_task(self._ensure_vault_channels())
 
     async def _ensure_vault_channels(self) -> None:  # pragma: no cover - startup

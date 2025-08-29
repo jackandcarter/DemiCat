@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from ...db.models import Embed, Guild, GuildChannel, Message
-from ...db.session import get_session, init_db
+from ...db.session import get_session
 from ...http.schemas import (
     ChatMessage,
     EmbedDto,
@@ -32,7 +32,6 @@ class Mirror(commands.Cog):
         self._reconcile_lock = asyncio.Lock()
 
     async def cog_load(self) -> None:
-        await init_db(self.bot.cfg.database.url)
         self.bot.loop.create_task(self._sync_guild_channels_once())
         self._sync_task = asyncio.create_task(self._channel_sync_loop())
 
