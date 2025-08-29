@@ -100,7 +100,9 @@ class GuildChannel(Base):
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
+    id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), primary_key=True, autoincrement=True
+    )
     discord_user_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), unique=True, index=True
     )
