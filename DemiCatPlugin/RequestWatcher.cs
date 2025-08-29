@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
@@ -10,13 +11,15 @@ namespace DemiCatPlugin;
 public class RequestWatcher : IDisposable
 {
     private readonly Config _config;
+    private readonly HttpClient _httpClient;
     private ClientWebSocket? _ws;
     private Task? _task;
     private CancellationTokenSource? _cts;
 
-    public RequestWatcher(Config config)
+    public RequestWatcher(Config config, HttpClient httpClient)
     {
         _config = config;
+        _httpClient = httpClient;
     }
 
     public void Start()
@@ -29,11 +32,13 @@ public class RequestWatcher : IDisposable
 
     private async Task Run(CancellationToken token)
     {
+        var delay = TimeSpan.FromSeconds(5);
         while (!token.IsCancellationRequested)
         {
             if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(_config.AuthToken) || !_config.Enabled)
             {
-                try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
+                try { await Task.Delay(delay, token); } catch { }
+                delay = TimeSpan.FromSeconds(5);
                 continue;
             }
             try
@@ -43,6 +48,7 @@ public class RequestWatcher : IDisposable
                 _ws.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
+                delay = TimeSpan.FromSeconds(5);
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
@@ -51,22 +57,37 @@ public class RequestWatcher : IDisposable
                         break;
                     if (message == "ping")
                     {
-                        await _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")), WebSocketMessageType.Text, true, token);
+                        await _ws.SendAsync(
+                            new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")),
+                            WebSocketMessageType.Text,
+                            true,
+                            token
+                        );
                         continue;
                     }
                     HandleMessage(message);
                 }
+                if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
+                {
+                    PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
+                }
             }
-            catch
+            catch (Exception ex)
             {
-                // ignore errors and retry
+                if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message.Contains("403"))
+                {
+                    PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
+                }
+                PluginServices.Instance?.Log.Error(ex, "Request watcher loop failed");
             }
             finally
             {
                 _ws?.Dispose();
                 _ws = null;
             }
-            try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
+            try { await RequestStateService.RefreshAll(_httpClient, _config); } catch { }
+            try { await Task.Delay(delay, token); } catch { }
+            delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
         }
     }
 

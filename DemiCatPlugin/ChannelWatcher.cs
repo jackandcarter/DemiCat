@@ -38,11 +38,13 @@ public class ChannelWatcher : IDisposable
 
     private async Task Run(CancellationToken token)
     {
+        var delay = TimeSpan.FromSeconds(5);
         while (!token.IsCancellationRequested)
         {
             if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(_config.AuthToken) || !_config.Enabled)
             {
-                try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
+                try { await Task.Delay(delay, token); } catch { }
+                delay = TimeSpan.FromSeconds(5);
                 continue;
             }
             try
@@ -52,6 +54,7 @@ public class ChannelWatcher : IDisposable
                 _ws.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
+                delay = TimeSpan.FromSeconds(5);
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
@@ -62,7 +65,12 @@ public class ChannelWatcher : IDisposable
                     }
                     if (message == "ping")
                     {
-                        await _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")), WebSocketMessageType.Text, true, token);
+                        await _ws.SendAsync(
+                            new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")),
+                            WebSocketMessageType.Text,
+                            true,
+                            token
+                        );
                         continue;
                     }
                     _ = PluginServices.Instance!.Framework.RunOnTick(() =>
@@ -72,9 +80,17 @@ public class ChannelWatcher : IDisposable
                         _ = SafeRefresh(_officerChatWindow.RefreshChannels);
                     });
                 }
+                if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
+                {
+                    PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
+                }
             }
             catch (Exception ex)
             {
+                if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message.Contains("403"))
+                {
+                    PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
+                }
                 PluginServices.Instance!.Log.Error(ex, "Channel watcher loop failed");
             }
             finally
@@ -82,7 +98,14 @@ public class ChannelWatcher : IDisposable
                 _ws?.Dispose();
                 _ws = null;
             }
-            try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _ = SafeRefresh(_ui.RefreshChannels);
+                _ = SafeRefresh(_chatWindow.RefreshChannels);
+                _ = SafeRefresh(_officerChatWindow.RefreshChannels);
+            });
+            try { await Task.Delay(delay, token); } catch { }
+            delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
         }
     }
 

@@ -106,21 +106,43 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
-    token = websocket.headers.get("X-Api-Key") or websocket.query_params.get("token")
+    path = websocket.scope.get("path", "")
+    header_token = websocket.headers.get("X-Api-Key")
+    if header_token:
+        logging.debug("WS %s received X-Api-Key header", path)
+    else:
+        logging.debug("WS %s missing X-Api-Key header", path)
+    token = header_token or websocket.query_params.get("token")
     if not token:
-        await websocket.close(code=1008)
+        logging.warning("WS %s closing with 1008: missing token", path)
+        await websocket.close(code=1008, reason="missing token")
         return
+
+    ctx: RequestContext | None = None
     async for db in get_session():
         try:
             ctx = await api_key_auth(x_api_key=token, db=db)
-        except HTTPException:
-            await websocket.close(code=1008)
+        except HTTPException as exc:
+            logging.warning(
+                "WS %s auth failed (%s): %s",
+                path,
+                exc.status_code,
+                exc.detail,
+            )
+            await websocket.close(code=1008, reason="auth failed")
             return
         break
+
+    if ctx is None:
+        logging.error("WS %s api_key_auth returned no context", path)
+        await websocket.close(code=1008, reason="no context")
+        return
+
+    logging.debug("WS %s authenticated, invoking manager.connect", path)
     await manager.connect(websocket, ctx)
     logging.info(
         "WS %s guild=%s user=%s",
-        websocket.scope.get("path", ""),
+        path,
         ctx.guild.discord_guild_id,
         ctx.user.discord_user_id,
     )

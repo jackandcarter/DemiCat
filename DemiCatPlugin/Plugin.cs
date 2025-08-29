@@ -55,7 +55,7 @@ public class Plugin : IDalamudPlugin
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceSidebar);
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
         _channelWatcher = new ChannelWatcher(_config, _ui, _chatWindow, _officerChatWindow);
-        _requestWatcher = new RequestWatcher(_config);
+        _requestWatcher = new RequestWatcher(_config, _httpClient);
         _settings.MainWindow = _mainWindow;
         _settings.ChatWindow = _chatWindow;
         _settings.OfficerChatWindow = _officerChatWindow;
