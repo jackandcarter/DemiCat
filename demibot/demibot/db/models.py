@@ -471,10 +471,15 @@ class AppearanceBundle(Base):
 
     fc: Mapped[Optional[Fc]] = relationship(back_populates="bundles")
     items: Mapped[list["AppearanceBundleItem"]] = relationship(
-        back_populates="bundle", cascade="all, delete-orphan"
+        back_populates="bundle",
+        cascade="all, delete-orphan",
+        overlaps="assets,bundles",
     )
     assets: Mapped[list[Asset]] = relationship(
-        "Asset", secondary="appearance_bundle_item", back_populates="bundles"
+        "Asset",
+        secondary="appearance_bundle_item",
+        back_populates="bundles",
+        overlaps="items,bundle,bundles",
     )
 
 
@@ -489,8 +494,13 @@ class AppearanceBundleItem(Base):
     )
     quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
 
-    bundle: Mapped[AppearanceBundle] = relationship(back_populates="items")
-    asset: Mapped[Asset] = relationship()
+    bundle: Mapped[AppearanceBundle] = relationship(
+        back_populates="items",
+        overlaps="assets,bundles",
+    )
+    asset: Mapped[Asset] = relationship(
+        overlaps="assets,bundles",
+    )
 
 
 class UserInstallation(Base):
