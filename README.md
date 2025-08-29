@@ -77,7 +77,7 @@ source .venv/bin/activate
 pip install -e .
 alembic -c demibot/db/migrations/env.py upgrade head
 ```
-Re-run the migration command after pulling updates to apply any schema changes.
+Re-run the migration command after pulling updates to apply any schema changes. See MIGRATIONS.md for naming guidelines.
 
 ### 2. Configure and start the bot
 ```bash

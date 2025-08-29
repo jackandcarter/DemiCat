@@ -9,6 +9,9 @@ from alembic import context
 from demibot.db.base import Base  # noqa: F401
 from demibot.db import models  # noqa: F401
 
+# Alembic version table expanded to 128 characters
+# to allow descriptive revision identifiers.
+
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
