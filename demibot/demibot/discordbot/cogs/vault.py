@@ -263,7 +263,7 @@ class Vault(commands.Cog):
     async def _ensure_bundle(
         self, db: AsyncSession, asset: Asset, data: bytes
     ) -> None:
-        info = self._parse_bundle_manifest(data)
+        info, deps = self._parse_bundle_manifest(data)
         name = info.get("name") if isinstance(info, dict) else asset.name
         bundle = AppearanceBundle(name=name, fc_id=asset.fc_id)
         db.add(bundle)
@@ -271,17 +271,50 @@ class Vault(commands.Cog):
         db.add(
             AppearanceBundleItem(bundle_id=bundle.id, asset_id=asset.id, quantity=1)
         )
+        for dep_hash in deps:
+            res = await db.execute(select(Asset.id).where(Asset.hash == dep_hash))
+            dep_id = res.scalar_one_or_none()
+            if dep_id is None:
+                continue
+            existing = await db.execute(
+                select(AssetDependency).where(
+                    AssetDependency.asset_id == asset.id,
+                    AssetDependency.dependency_id == dep_id,
+                )
+            )
+            if existing.scalar_one_or_none() is None:
+                db.add(AssetDependency(asset_id=asset.id, dependency_id=dep_id))
 
-    def _parse_bundle_manifest(self, data: bytes) -> dict:
+    def _parse_bundle_manifest(self, data: bytes) -> tuple[dict, list[str]]:
+        info: dict = {}
+        deps: list[str] = []
         try:
             with ZipFile(io.BytesIO(data)) as zf:
                 for name in zf.namelist():
                     if name.endswith("manifest.json") or name.endswith("bundle.json"):
                         with zf.open(name) as f:
-                            return json.load(f)
+                            info = json.load(f)
+                        break
         except Exception:
-            return {}
-        return {}
+            return info, deps
+        if isinstance(info, dict):
+            if isinstance(info.get("dependencies"), list):
+                deps.extend(
+                    str(x) for x in info["dependencies"] if isinstance(x, str)
+                )
+            assets = info.get("assets") or info.get("items") or []
+            if isinstance(assets, list):
+                for item in assets:
+                    if (
+                        isinstance(item, dict)
+                        and isinstance(item.get("dependencies"), list)
+                    ):
+                        deps.extend(
+                            str(x)
+                            for x in item["dependencies"]
+                            if isinstance(x, str)
+                        )
+        return info, deps
 
     async def _update_checkpoint(
         self, db: AsyncSession, kind: AssetKind, asset_id: int
