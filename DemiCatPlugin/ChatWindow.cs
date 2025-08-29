@@ -94,7 +94,7 @@ public class ChatWindow : IDisposable
         ImGui.EndChild();
         ImGui.SameLine();
 
-        ImGui.BeginChild("##chatArea", new Vector2(0, 0), false);
+        ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
 
         if (_channels.Count > 0)
         {
@@ -118,7 +118,7 @@ public class ChatWindow : IDisposable
             SaveConfig();
         }
 
-        ImGui.BeginChild("##chatScroll", new Vector2(0, -30), true);
+        ImGui.BeginChild("##chatScroll", new Vector2(-1, -30), true);
         foreach (var msg in _messages)
         {
             ImGui.BeginGroup();

@@ -71,7 +71,7 @@ public class TemplatesWindow
 
         ImGui.SameLine();
 
-        ImGui.BeginChild("TemplateContent", new Vector2(0, 0), false);
+        ImGui.BeginChild("TemplateContent", ImGui.GetContentRegionAvail(), false);
         if (_selectedIndex >= 0 && _selectedIndex < filteredTemplates.Count)
         {
             var tmpl = filteredTemplates[_selectedIndex];

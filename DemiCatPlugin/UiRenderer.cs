@@ -395,7 +395,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 .ToList();
         }
 
-        ImGui.BeginChild("##eventScroll", new Vector2(0, 0), true);
+        ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), true);
         foreach (var view in embeds)
         {
             view.Draw();
