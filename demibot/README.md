@@ -37,6 +37,7 @@ Run database migrations:
 ```bash
 alembic -c demibot/db/migrations/env.py upgrade head
 ```
+Re-run the migration command after pulling updates to apply any schema changes.
 
 Run the API server (and Discord bot if configured) with:
 
