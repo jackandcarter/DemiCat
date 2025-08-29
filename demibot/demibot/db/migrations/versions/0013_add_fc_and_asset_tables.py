@@ -18,7 +18,9 @@ branch_labels = None
 depends_on = None
 
 asset_kind = sa.Enum("appearance", "file", "script", name="asset_kind")
-install_status = sa.Enum("pending", "installed", "failed", name="install_status")
+install_status = sa.Enum(
+    "DOWNLOADED", "INSTALLED", "APPLIED", "FAILED", name="install_status"
+)
 
 
 def upgrade() -> None:
