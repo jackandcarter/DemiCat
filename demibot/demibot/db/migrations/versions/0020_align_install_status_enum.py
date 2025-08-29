@@ -17,25 +17,20 @@ depends_on = None
 
 
 def upgrade() -> None:
-    # Allow both old and new enum values temporarily
+    """Upgrade install status values to new enum."""
+
+    # First convert the enum to a plain string column so values can be updated
     op.alter_column(
         "user_installation",
         "status",
-        existing_type=mysql.ENUM("pending", "installed", "failed", name="install_status"),
-        type_=mysql.ENUM(
-            "pending",
-            "installed",
-            "failed",
-            "DOWNLOADED",
-            "INSTALLED",
-            "APPLIED",
-            "FAILED",
-            name="install_status",
+        existing_type=mysql.ENUM(
+            "pending", "installed", "failed", name="install_status"
         ),
-        nullable=False,
+        type_=sa.String(length=20),
+        existing_nullable=False,
     )
 
-    # Migrate existing data to new values
+    # Map legacy values to the new uppercase forms
     op.execute(
         "UPDATE user_installation SET status='DOWNLOADED' WHERE status='pending'"
     )
@@ -46,20 +41,11 @@ def upgrade() -> None:
         "UPDATE user_installation SET status='FAILED' WHERE status='failed'"
     )
 
-    # Drop old enum values
+    # Finally convert the column back to an enum with only the new values
     op.alter_column(
         "user_installation",
         "status",
-        existing_type=mysql.ENUM(
-            "pending",
-            "installed",
-            "failed",
-            "DOWNLOADED",
-            "INSTALLED",
-            "APPLIED",
-            "FAILED",
-            name="install_status",
-        ),
+        existing_type=sa.String(length=20),
         type_=mysql.ENUM(
             "DOWNLOADED", "INSTALLED", "APPLIED", "FAILED", name="install_status"
         ),
@@ -68,27 +54,20 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Re-introduce old enum values to allow data migration
+    """Revert install status enum to legacy values."""
+
+    # Convert enum to string so values can be mapped back
     op.alter_column(
         "user_installation",
         "status",
         existing_type=mysql.ENUM(
             "DOWNLOADED", "INSTALLED", "APPLIED", "FAILED", name="install_status"
         ),
-        type_=mysql.ENUM(
-            "pending",
-            "installed",
-            "failed",
-            "DOWNLOADED",
-            "INSTALLED",
-            "APPLIED",
-            "FAILED",
-            name="install_status",
-        ),
-        nullable=False,
+        type_=sa.String(length=20),
+        existing_nullable=False,
     )
 
-    # Map data back to legacy values
+    # Map current values to the legacy lowercase variants
     op.execute(
         "UPDATE user_installation SET status='pending' WHERE status='DOWNLOADED'"
     )
@@ -99,20 +78,13 @@ def downgrade() -> None:
         "UPDATE user_installation SET status='failed' WHERE status='FAILED'"
     )
 
-    # Restore old enum definition
+    # Restore the original enum type
     op.alter_column(
         "user_installation",
         "status",
-        existing_type=mysql.ENUM(
-            "pending",
-            "installed",
-            "failed",
-            "DOWNLOADED",
-            "INSTALLED",
-            "APPLIED",
-            "FAILED",
-            name="install_status",
+        existing_type=sa.String(length=20),
+        type_=mysql.ENUM(
+            "pending", "installed", "failed", name="install_status"
         ),
-        type_=mysql.ENUM("pending", "installed", "failed", name="install_status"),
         nullable=False,
     )
