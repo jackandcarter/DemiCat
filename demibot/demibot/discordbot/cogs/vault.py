@@ -19,6 +19,8 @@ from ...db.models import (
     AppearanceBundleItem,
     Asset,
     AssetKind,
+    Fc,
+    Guild,
     IndexCheckpoint,
 )
 from ...db.session import get_session, init_db
@@ -97,6 +99,10 @@ class Vault(commands.Cog):
         if not message.attachments:
             return
 
+        async for db in get_session():
+            fc_id = await self._get_fc_id(db, message.guild)
+            break
+
         errors: list[str] = []
         for attachment in message.attachments:
             ext = Path(attachment.filename).suffix.lower()
@@ -118,7 +124,7 @@ class Vault(commands.Cog):
                 continue
             async for db in get_session():
                 asset = await self._upsert_asset(
-                    db, kind, attachment.filename, sha, size
+                    db, fc_id, kind, attachment.filename, sha, size
                 )
                 if kind is AssetKind.APPEARANCE:
                     await self._ensure_bundle(db, asset, data)
@@ -145,13 +151,29 @@ class Vault(commands.Cog):
                 pass
         return AssetKind.FILE
 
+    async def _get_fc_id(self, db: AsyncSession, guild: discord.Guild) -> int | None:
+        res = await db.execute(
+            select(Fc.id)
+            .join(Guild, Guild.id == Fc.id)
+            .where(Guild.discord_guild_id == guild.id)
+        )
+        return res.scalar_one_or_none()
+
     async def _upsert_asset(
-        self, db: AsyncSession, kind: AssetKind, name: str, sha: str, size: int
+        self,
+        db: AsyncSession,
+        fc_id: int | None,
+        kind: AssetKind,
+        name: str,
+        sha: str,
+        size: int,
     ) -> Asset:
         result = await db.execute(select(Asset).where(Asset.hash == sha))
         asset = result.scalar_one_or_none()
         if asset is None:
-            asset = Asset(kind=kind, name=name, hash=sha, size=size)
+            asset = Asset(
+                fc_id=fc_id, kind=kind, name=name, hash=sha, size=size
+            )
             db.add(asset)
             await db.flush()
         else:
@@ -165,7 +187,7 @@ class Vault(commands.Cog):
     ) -> None:
         info = self._parse_bundle_manifest(data)
         name = info.get("name") if isinstance(info, dict) else asset.name
-        bundle = AppearanceBundle(name=name)
+        bundle = AppearanceBundle(name=name, fc_id=asset.fc_id)
         db.add(bundle)
         await db.flush()
         db.add(
