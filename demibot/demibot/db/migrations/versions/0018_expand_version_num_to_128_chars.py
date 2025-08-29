@@ -20,6 +20,8 @@ def upgrade() -> None:
         "version_num",
         existing_type=sa.String(length=64),
         type_=sa.String(length=128),
+        existing_nullable=False,
+        nullable=False,
     )
 
 
@@ -29,4 +31,6 @@ def downgrade() -> None:
         "version_num",
         existing_type=sa.String(length=128),
         type_=sa.String(length=64),
+        existing_nullable=False,
+        nullable=False,
     )
