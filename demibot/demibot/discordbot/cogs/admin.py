@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import secrets
 
 import discord
@@ -24,6 +25,8 @@ from ...db.models import (
 )
 from ...db.session import get_session
 
+
+logger = logging.getLogger(__name__)
 
 demibot = app_commands.Group(name="demibot", description="Server administration")
 
@@ -241,6 +244,7 @@ async def key_embed(interaction: discord.Interaction) -> None:
                     )
                     await db.commit()
             except Exception:
+                logger.exception("Sync key generation failed")
                 await button_inter.response.send_message(
                     "Failed to generate key", ephemeral=True
                 )
