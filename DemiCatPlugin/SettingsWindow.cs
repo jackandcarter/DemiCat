@@ -35,6 +35,7 @@ public class SettingsWindow : IDisposable
     public ChatWindow? ChatWindow { get; set; }
     public OfficerChatWindow? OfficerChatWindow { get; set; }
     public ChannelWatcher? ChannelWatcher { get; set; }
+    public RequestWatcher? RequestWatcher { get; set; }
 
     public SettingsWindow(Config config, HttpClient httpClient, Func<Task<bool>> refreshRoles, Func<Task> startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
@@ -407,6 +408,7 @@ public class SettingsWindow : IDisposable
                         {
                             await ChannelWatcher.Start();
                         }
+                        RequestWatcher?.Start();
                     }
                     catch (Exception ex)
                     {
@@ -517,6 +519,11 @@ public class SettingsWindow : IDisposable
         }
 
         _ = services.Framework.RunOnTick(() => services.PluginInterface.SavePluginConfig(_config));
+        if (ChannelWatcher != null)
+        {
+            _ = ChannelWatcher.Start();
+        }
+        RequestWatcher?.Start();
     }
 
     public void Dispose()

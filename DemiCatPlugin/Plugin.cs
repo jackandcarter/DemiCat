@@ -60,6 +60,7 @@ public class Plugin : IDalamudPlugin
         _settings.ChatWindow = _chatWindow;
         _settings.OfficerChatWindow = _officerChatWindow;
         _settings.ChannelWatcher = _channelWatcher;
+        _settings.RequestWatcher = _requestWatcher;
 
         _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
 
@@ -72,6 +73,7 @@ public class Plugin : IDalamudPlugin
         _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
         _requestWatcher.Start();
+        _ = _channelWatcher.Start();
         _services.Log.Info("DemiCat loaded.");
     }
 
