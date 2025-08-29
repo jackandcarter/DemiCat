@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import io
 import json
@@ -46,7 +45,6 @@ INSTRUCTIONS = (
 class Vault(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        asyncio.create_task(init_db(bot.cfg.database.url))
         self.storage_path = Path(
             os.environ.get("ASSET_STORAGE_PATH", "assets")
         ).resolve()
@@ -54,6 +52,7 @@ class Vault(commands.Cog):
         self.vault_channels: dict[int, int] = {}
 
     async def cog_load(self) -> None:  # pragma: no cover - startup behaviour
+        await init_db(self.bot.cfg.database.url)
         self.bot.loop.create_task(self._ensure_vault_channels())
 
     async def _ensure_vault_channels(self) -> None:  # pragma: no cover - startup
