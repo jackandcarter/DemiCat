@@ -207,15 +207,15 @@ public class SyncshellWindow : IDisposable
                 return;
 
             var json = await resp.Content.ReadAsStringAsync();
-            var assets = JsonSerializer.Deserialize<List<Asset>>(json, new JsonSerializerOptions
+            var assetsResp = JsonSerializer.Deserialize<AssetResponse>(json, new JsonSerializerOptions
             {
                 PropertyNameCaseInsensitive = true
             });
-            if (assets != null)
+            if (assetsResp?.Items != null)
             {
-                MergeAssets(assets);
+                MergeAssets(assetsResp.Items);
                 _etag = resp.Headers.ETag?.Tag;
-                foreach (var a in assets)
+                foreach (var a in assetsResp.Items)
                     _ = TryAutoApply(a);
             }
 
@@ -731,47 +731,75 @@ public class SyncshellWindow : IDisposable
 
     private class Asset
     {
+        [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
+        [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
+        [JsonPropertyName("kind")]
         public string Kind { get; set; } = string.Empty;
+        [JsonPropertyName("size")]
         public long Size { get; set; }
+        [JsonPropertyName("uploader")]
         public string Uploader { get; set; } = string.Empty;
+        [JsonPropertyName("created_at")]
         public DateTimeOffset CreatedAt { get; set; }
+        [JsonPropertyName("updated_at")]
         public DateTimeOffset UpdatedAt { get; set; }
+        [JsonPropertyName("download_url")]
         public string DownloadUrl { get; set; } = string.Empty;
+        [JsonPropertyName("dependencies")]
         public List<string> Dependencies { get; set; } = new();
+        [JsonPropertyName("items")]
         public List<Asset>? Items { get; set; }
+    }
+
+    private class AssetResponse
+    {
+        [JsonPropertyName("items")]
+        public List<Asset> Items { get; set; } = new();
     }
 
     private class AssetsCache
     {
+        [JsonPropertyName("etag")]
         public string? Etag { get; set; }
+        [JsonPropertyName("assets")]
         public List<Asset> Assets { get; set; } = new();
     }
 
     private class Installation
     {
+        [JsonPropertyName("asset_id")]
         public string AssetId { get; set; } = string.Empty;
+        [JsonPropertyName("status")]
         public string Status { get; set; } = string.Empty;
+        [JsonPropertyName("updated_at")]
         public DateTimeOffset UpdatedAt { get; set; }
     }
 
     private class InstallationsCache
     {
+        [JsonPropertyName("installations")]
         public List<Installation> Installations { get; set; } = new();
     }
 
     private class BundleResponse
     {
+        [JsonPropertyName("items")]
         public List<Bundle> Items { get; set; } = new();
     }
 
     private class Bundle
     {
+        [JsonPropertyName("id")]
         public string Id { get; set; } = string.Empty;
+        [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
+        [JsonPropertyName("description")]
         public string? Description { get; set; }
+        [JsonPropertyName("updated_at")]
         public DateTimeOffset? UpdatedAt { get; set; }
+        [JsonPropertyName("assets")]
         public List<Asset> Assets { get; set; } = new();
     }
 }

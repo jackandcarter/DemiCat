@@ -15,6 +15,7 @@ from demibot.db.models import (
     Fc,
     FcUser,
     Asset,
+    AssetDependency,
     AssetKind,
     IndexCheckpoint,
     AppearanceBundle,
@@ -43,9 +44,18 @@ def _get_last_pull(user_id=1, fc_id=1):
 
 
 def test_assets_etag_and_last_pull():
-    user = User(id=1, discord_user_id=1)
+    user = User(id=1, discord_user_id=1, global_name="Alice")
     fc = Fc(id=1, name="FC", world="World")
     fcu = FcUser(fc_id=1, user_id=1, joined_at=datetime.utcnow())
+    dep_asset = Asset(
+        id=2,
+        fc_id=1,
+        kind=AssetKind.FILE,
+        name="dep",
+        hash="h2",
+        size=1,
+        uploader_id=1,
+    )
     asset = Asset(
         id=1,
         fc_id=1,
@@ -53,7 +63,10 @@ def test_assets_etag_and_last_pull():
         name="file",
         hash="h1",
         size=1,
+        uploader_id=1,
+        created_at=datetime(2024, 1, 1),
     )
+    dep_rel = AssetDependency(asset_id=1, dependency_id=2)
     cp_time = datetime(2024, 1, 1)
     cp = IndexCheckpoint(
         id=1, kind=AssetKind.FILE, last_id=1, last_generated_at=cp_time
@@ -62,7 +75,7 @@ def test_assets_etag_and_last_pull():
     async def _setup():
         await init_db("sqlite+aiosqlite://")
         async for db in get_session():
-            db.add_all([user, fc, fcu, asset, cp])
+            db.add_all([user, fc, fcu, dep_asset, asset, dep_rel, cp])
             await db.commit()
             break
 
@@ -75,6 +88,11 @@ def test_assets_etag_and_last_pull():
 
     resp = client.get("/api/fc/1/assets")
     assert resp.status_code == 200
+    data = resp.json()["items"]
+    item = next(i for i in data if i["id"] == "1")
+    assert item["uploader"] == "Alice"
+    assert item["dependencies"] == ["2"]
+    assert item["created_at"] is not None
     etag = resp.headers["ETag"]
     assert etag == cp_time.isoformat()
     lp1 = _get_last_pull()

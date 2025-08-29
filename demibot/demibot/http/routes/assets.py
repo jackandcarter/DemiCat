@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, Response, HTTPException, Request
 from fastapi.responses import FileResponse
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from ..deps import get_db, api_key_auth, RequestContext
 from ...db.models import Asset, AssetKind, FcUser, IndexCheckpoint
@@ -74,7 +75,11 @@ async def list_assets(
             return Response(status_code=304, headers={"ETag": etag})
         response.headers["ETag"] = etag
 
-    stmt = select(Asset).where(Asset.fc_id == fc_id, Asset.deleted_at.is_(None))
+    stmt = (
+        select(Asset)
+        .options(selectinload(Asset.uploader), selectinload(Asset.dependencies))
+        .where(Asset.fc_id == fc_id, Asset.deleted_at.is_(None))
+    )
     if since is not None:
         stmt = stmt.where(Asset.updated_at >= since)
     if cursor is not None:
@@ -96,12 +101,19 @@ async def list_assets(
     for a in assets:
         items.append(
             {
-                "id": a.id,
+                "id": str(a.id),
                 "kind": a.kind.value,
                 "name": a.name,
                 "hash": a.hash,
                 "size": a.size,
+                "created_at": a.created_at.isoformat() if a.created_at else None,
                 "updated_at": a.updated_at.isoformat() if a.updated_at else None,
+                "uploader": (
+                    a.uploader.global_name
+                    if a.uploader and a.uploader.global_name
+                    else (str(a.uploader.discord_user_id) if a.uploader else None)
+                ),
+                "dependencies": [str(d.id) for d in a.dependencies],
                 "download_url": _sign_download(a.id, a.hash),
             }
         )
