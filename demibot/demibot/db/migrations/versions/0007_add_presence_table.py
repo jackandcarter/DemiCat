@@ -1,5 +1,6 @@
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import mysql
 
 # revision identifiers, used by Alembic.
 revision = "0007_add_presence_table"
@@ -11,8 +12,8 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "presences",
-        sa.Column("guild_id", sa.BigInteger(), nullable=False),
-        sa.Column("user_id", sa.BigInteger(), nullable=False),
+        sa.Column("guild_id", mysql.BIGINT(unsigned=True), nullable=False),
+        sa.Column("user_id", mysql.BIGINT(unsigned=True), nullable=False),
         sa.Column("status", sa.String(length=16), nullable=False),
         sa.Column("updated_at", sa.DateTime(), nullable=False),
         sa.PrimaryKeyConstraint("guild_id", "user_id"),
