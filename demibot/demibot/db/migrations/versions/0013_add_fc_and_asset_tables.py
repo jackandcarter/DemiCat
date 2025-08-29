@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import mysql
 
 # revision identifiers, used by Alembic.
 revision = "0013_add_fc_and_asset_tables"
@@ -44,7 +45,7 @@ def upgrade() -> None:
         ),
         sa.Column(
             "user_id",
-            sa.Integer(),
+            mysql.BIGINT(unsigned=True),
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             primary_key=True,
         ),
@@ -125,7 +126,7 @@ def upgrade() -> None:
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column(
             "user_id",
-            sa.Integer(),
+            mysql.BIGINT(unsigned=True),
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
