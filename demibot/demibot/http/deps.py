@@ -50,27 +50,35 @@ async def api_key_auth(
     if not row:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
     user, guild, key = row
+
+    async def get_roles(user_id: int) -> set[str]:
+        roles_stmt = (
+            select(Role)
+            .join(MembershipRole, MembershipRole.role_id == Role.id)
+            .join(Membership, MembershipRole.membership_id == Membership.id)
+            .where(Membership.guild_id == guild.id, Membership.user_id == user_id)
+        )
+        roles_result = await db.execute(roles_stmt)
+        roles: set[str] = set()
+        for r in roles_result.scalars():
+            if r.is_officer:
+                roles.add("officer")
+            if r.is_chat:
+                roles.add("chat")
+        return roles
+
+    roles = await get_roles(user.id)
+
     if x_discord_id is not None:
+        if "officer" not in roles:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN)
         override = await db.scalar(
             select(User).where(User.discord_user_id == x_discord_id)
         )
         if not override:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED)
         user = override
-
-    roles_stmt = (
-        select(Role)
-        .join(MembershipRole, MembershipRole.role_id == Role.id)
-        .join(Membership, MembershipRole.membership_id == Membership.id)
-        .where(Membership.guild_id == guild.id, Membership.user_id == user.id)
-    )
-    roles_result = await db.execute(roles_stmt)
-    roles: set[str] = set()
-    for r in roles_result.scalars():
-        if r.is_officer:
-            roles.add("officer")
-        if r.is_chat:
-            roles.add("chat")
+        roles = await get_roles(user.id)
     logging.info(
         "API %s %s guild=%s user=%s",
         request.method if request else "?",
