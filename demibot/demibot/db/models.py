@@ -63,7 +63,9 @@ class Guild(Base):
     __tablename__ = "guilds"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    discord_guild_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    discord_guild_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), unique=True, index=True
+    )
     name: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -78,8 +80,10 @@ class GuildConfig(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
-    officer_visible_channel_id: Mapped[Optional[int]] = mapped_column(BigInteger)
-    officer_role_id: Mapped[Optional[int]] = mapped_column(BigInteger)
+    officer_visible_channel_id: Mapped[Optional[int]] = mapped_column(
+        BIGINT(unsigned=True)
+    )
+    officer_role_id: Mapped[Optional[int]] = mapped_column(BIGINT(unsigned=True))
 
     guild: Mapped[Guild] = relationship(back_populates="config")
 
@@ -88,7 +92,7 @@ class GuildChannel(Base):
     __tablename__ = "guild_channels"
 
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), primary_key=True)
-    channel_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     kind: Mapped[str] = mapped_column(String(24), primary_key=True)
     name: Mapped[Optional[str]] = mapped_column(String(255))
 
@@ -97,7 +101,9 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
-    discord_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True)
+    discord_user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), unique=True, index=True
+    )
     global_name: Mapped[Optional[str]] = mapped_column(String(255))
     discriminator: Mapped[Optional[str]] = mapped_column(String(10))
     character_name: Mapped[Optional[str]] = mapped_column(String(255))
@@ -141,7 +147,7 @@ class Role(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
-    discord_role_id: Mapped[int] = mapped_column(BigInteger, unique=True)
+    discord_role_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), unique=True)
     name: Mapped[str] = mapped_column(String(255))
     is_officer: Mapped[bool] = mapped_column(Boolean, default=False)
     is_chat: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -162,8 +168,10 @@ class Message(Base):
         Index("ix_messages_channel_id_created_at", "channel_id", "created_at"),
     )
 
-    discord_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    discord_message_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), primary_key=True
+    )
+    channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     author_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), ForeignKey("users.id")
@@ -181,9 +189,9 @@ class Embed(Base):
     __tablename__ = "embeds"
 
     discord_message_id: Mapped[int] = mapped_column(
-        BigInteger, primary_key=True, index=True
+        BIGINT(unsigned=True), primary_key=True, index=True
     )
-    channel_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     payload_json: Mapped[str] = mapped_column(Text)
     buttons_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -197,7 +205,7 @@ class Embed(Base):
 class Attendance(Base):
     __tablename__ = "attendance"
 
-    discord_message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    discord_message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     user_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
     )
@@ -210,8 +218,8 @@ class Presence(Base):
         Index("ix_presences_guild_id_status", "guild_id", "status"),
     )
 
-    guild_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    user_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    guild_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
+    user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     status: Mapped[str] = mapped_column(String(16))
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
@@ -221,9 +229,9 @@ class Presence(Base):
 class RecurringEvent(Base):
     __tablename__ = "recurring_events"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
-    channel_id: Mapped[int] = mapped_column(BigInteger)
+    channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True))
     repeat: Mapped[str] = mapped_column(String(16))
     next_post_at: Mapped[datetime] = mapped_column(DateTime)
     payload_json: Mapped[str] = mapped_column(Text)
@@ -241,7 +249,7 @@ class SignupPreset(Base):
 class EventButton(Base):
     __tablename__ = "event_buttons"
 
-    message_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     tag: Mapped[str] = mapped_column(String(50), primary_key=True)
     label: Mapped[str] = mapped_column(String(255))
     emoji: Mapped[Optional[str]] = mapped_column(String(64))
