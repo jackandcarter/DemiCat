@@ -28,12 +28,11 @@ CHANNEL_SYNC_INTERVAL = 3600
 class Mirror(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        # Ensure the database engine is available for this cog
-        asyncio.create_task(init_db(bot.cfg.database.url))
         self._sync_task: asyncio.Task | None = None
         self._reconcile_lock = asyncio.Lock()
 
     async def cog_load(self) -> None:
+        await init_db(self.bot.cfg.database.url)
         self.bot.loop.create_task(self._sync_guild_channels_once())
         self._sync_task = asyncio.create_task(self._channel_sync_loop())
 
