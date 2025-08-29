@@ -111,7 +111,7 @@ public class SyncshellWindow : IDisposable
             var childHeight = 70f;
             if (asset.Kind == "BUNDLE" && asset.Items != null)
                 childHeight += ImGui.GetTextLineHeightWithSpacing() * asset.Items.Count;
-            ImGui.BeginChild("card", new Vector2(0, childHeight), true);
+            ImGui.BeginChild("card", new Vector2(-1, childHeight), true);
             ImGui.TextUnformatted(asset.Name);
             if (!_seenAssetIds.Contains(asset.Id))
             {
