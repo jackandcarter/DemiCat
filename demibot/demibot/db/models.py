@@ -432,6 +432,9 @@ class Asset(Base):
     )
     deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    uploader_id: Mapped[Optional[int]] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
 
     __mapper_args__ = {"version_id_col": version}
 
@@ -441,6 +444,14 @@ class Asset(Base):
     )
     installations: Mapped[list["UserInstallation"]] = relationship(
         back_populates="asset", cascade="all, delete-orphan"
+    )
+    uploader: Mapped[Optional[User]] = relationship()
+    dependencies: Mapped[list["Asset"]] = relationship(
+        "Asset",
+        secondary=lambda: AssetDependency.__table__,
+        primaryjoin=lambda: Asset.id == AssetDependency.asset_id,
+        secondaryjoin=lambda: Asset.id == AssetDependency.dependency_id,
+        backref="dependents",
     )
 
 

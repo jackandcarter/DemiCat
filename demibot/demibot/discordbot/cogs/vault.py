@@ -11,16 +11,18 @@ from zipfile import ZipFile, BadZipFile
 
 import discord
 from discord.ext import commands
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import (
     AppearanceBundle,
     AppearanceBundleItem,
     Asset,
+    AssetDependency,
     AssetKind,
     Fc,
     Guild,
+    User,
     IndexCheckpoint,
 )
 from ...db.session import get_session, init_db
@@ -101,6 +103,8 @@ class Vault(commands.Cog):
 
         async for db in get_session():
             fc_id = await self._get_fc_id(db, message.guild)
+            uploader_id = await self._ensure_user(db, message.author)
+            await db.commit()
             break
 
         errors: list[str] = []
@@ -117,6 +121,7 @@ class Vault(commands.Cog):
             sha = hashlib.sha256(data).hexdigest()
             size = len(data)
             kind = self._determine_kind(ext, data)
+            deps = self._parse_dependencies(ext, data)
             try:
                 (self.storage_path / sha).write_bytes(data)
             except Exception:
@@ -124,7 +129,15 @@ class Vault(commands.Cog):
                 continue
             async for db in get_session():
                 asset = await self._upsert_asset(
-                    db, fc_id, kind, attachment.filename, sha, size
+                    db,
+                    fc_id,
+                    kind,
+                    attachment.filename,
+                    sha,
+                    size,
+                    uploader_id,
+                    message.created_at,
+                    deps,
                 )
                 if kind is AssetKind.APPEARANCE:
                     await self._ensure_bundle(db, asset, data)
@@ -159,6 +172,21 @@ class Vault(commands.Cog):
         )
         return res.scalar_one_or_none()
 
+    async def _ensure_user(self, db: AsyncSession, member: discord.Member) -> int:
+        res = await db.execute(
+            select(User).where(User.discord_user_id == member.id)
+        )
+        user = res.scalar_one_or_none()
+        if user is None:
+            user = User(
+                discord_user_id=member.id,
+                global_name=member.global_name,
+                discriminator=member.discriminator,
+            )
+            db.add(user)
+            await db.flush()
+        return user.id
+
     async def _upsert_asset(
         self,
         db: AsyncSession,
@@ -167,12 +195,21 @@ class Vault(commands.Cog):
         name: str,
         sha: str,
         size: int,
+        uploader_id: int,
+        created_at: datetime,
+        dependencies: list[str],
     ) -> Asset:
         result = await db.execute(select(Asset).where(Asset.hash == sha))
         asset = result.scalar_one_or_none()
         if asset is None:
             asset = Asset(
-                fc_id=fc_id, kind=kind, name=name, hash=sha, size=size
+                fc_id=fc_id,
+                kind=kind,
+                name=name,
+                hash=sha,
+                size=size,
+                uploader_id=uploader_id,
+                created_at=created_at,
             )
             db.add(asset)
             await db.flush()
@@ -180,7 +217,48 @@ class Vault(commands.Cog):
             asset.name = name
             asset.size = size
             asset.deleted_at = None
+        await db.execute(
+            delete(AssetDependency).where(AssetDependency.asset_id == asset.id)
+        )
+        for dep_hash in dependencies:
+            res = await db.execute(select(Asset.id).where(Asset.hash == dep_hash))
+            dep_id = res.scalar_one_or_none()
+            if dep_id is not None:
+                db.add(AssetDependency(asset_id=asset.id, dependency_id=dep_id))
         return asset
+
+    def _parse_dependencies(self, ext: str, data: bytes) -> list[str]:
+        deps: list[str] = []
+        if ext == ".json":
+            try:
+                obj = json.loads(data.decode())
+                if isinstance(obj, dict) and isinstance(obj.get("dependencies"), list):
+                    deps = [str(x) for x in obj["dependencies"] if isinstance(x, str)]
+            except Exception:
+                pass
+        elif ext == ".zip":
+            try:
+                with ZipFile(io.BytesIO(data)) as zf:
+                    for name in zf.namelist():
+                        if name.endswith(".json"):
+                            with zf.open(name) as f:
+                                try:
+                                    obj = json.load(f)
+                                    if (
+                                        isinstance(obj, dict)
+                                        and isinstance(obj.get("dependencies"), list)
+                                    ):
+                                        deps = [
+                                            str(x)
+                                            for x in obj["dependencies"]
+                                            if isinstance(x, str)
+                                        ]
+                                        break
+                                except Exception:
+                                    continue
+            except BadZipFile:
+                pass
+        return deps
 
     async def _ensure_bundle(
         self, db: AsyncSession, asset: Asset, data: bytes
