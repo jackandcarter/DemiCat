@@ -200,3 +200,7 @@ class Vault(commands.Cog):
         else:
             cp.last_id = asset_id
             cp.last_generated_at = now
+
+
+async def setup(bot: commands.Bot) -> None:
+    await bot.add_cog(Vault(bot))
