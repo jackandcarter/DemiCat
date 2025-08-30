@@ -168,6 +168,29 @@ class MembershipRole(Base):
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"), primary_key=True)
 
 
+class SyncshellPairing(Base):
+    __tablename__ = "syncshell_pairings"
+
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
+    )
+    token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SyncshellManifest(Base):
+    __tablename__ = "syncshell_manifests"
+
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
+    )
+    manifest_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
