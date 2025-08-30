@@ -125,7 +125,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     ctx: RequestContext | None = None
     async for db in get_session():
         try:
-            ctx = await api_key_auth(x_api_key=token, db=db)
+            ctx = await api_key_auth(
+                x_api_key=token,
+                x_discord_id=None,
+                db=db,
+            )
         except HTTPException as exc:
             logging.warning(
                 "WS %s auth failed (%s): %s",

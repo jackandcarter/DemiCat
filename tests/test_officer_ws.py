@@ -83,7 +83,8 @@ def test_officer_path_requires_role(monkeypatch):
         async def fake_get_session():
             yield None
 
-        async def fake_api_key_auth(x_api_key, db):
+        async def fake_api_key_auth(x_api_key, x_discord_id, db):
+            assert x_discord_id is None
             return ctx
 
         connected = False
