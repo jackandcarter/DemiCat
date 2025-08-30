@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import io
 
 import discord
-from fastapi import HTTPException
+from fastapi import HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +21,7 @@ class PostBody(BaseModel):
     channelId: str
     content: str
     useCharacterName: bool | None = False
+    messageReference: dict | None = None
 
 
 async def fetch_messages(
@@ -120,18 +122,56 @@ async def save_message(
     db: AsyncSession,
     *,
     is_officer: bool,
+    files: list[UploadFile] | None = None,
 ) -> dict:
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
     channel_id = int(body.channelId)
     discord_msg_id: int | None = None
+    attachments: list[AttachmentDto] | None = None
+    channel = None
     if discord_client:
         channel = discord_client.get_channel(channel_id)
-        if isinstance(channel, discord.abc.Messageable):
-            sent = await channel.send(body.content)
+    if channel and isinstance(channel, discord.abc.Messageable):
+        discord_files = None
+        if files:
+            discord_files = []
+            for f in files:
+                data = await f.read()
+                discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
+        try:
+            sent = await channel.send(
+                body.content,
+                files=discord_files,
+                reference=discord.MessageReference(
+                    message_id=int(body.messageReference.get("messageId"))
+                )
+                if body.messageReference
+                else None,
+            )
             discord_msg_id = sent.id
+            if sent.attachments:
+                attachments = [
+                    AttachmentDto(
+                        url=a.url,
+                        filename=a.filename,
+                        contentType=a.content_type,
+                    )
+                    for a in sent.attachments
+                ]
+        except Exception:
+            discord_msg_id = None
     if discord_msg_id is None:
         discord_msg_id = int(datetime.utcnow().timestamp() * 1000)
+        if files:
+            attachments = [
+                AttachmentDto(
+                    url=f"attachment://{f.filename}",
+                    filename=f.filename,
+                    contentType=f.content_type,
+                )
+                for f in files
+            ]
     author = MessageAuthor(
         id=str(ctx.user.id),
         name=ctx.user.global_name or ("Officer" if is_officer else "Player"),
@@ -148,6 +188,12 @@ async def save_message(
         content_display=body.content,
         content=body.content,
         author_json=author.model_dump_json(),
+        attachments_json=(
+            json.dumps([a.model_dump() for a in attachments]) if attachments else None
+        ),
+        reference_json=json.dumps(body.messageReference)
+        if body.messageReference
+        else None,
         is_officer=is_officer,
     )
     db.add(msg)
@@ -160,6 +206,8 @@ async def save_message(
         authorAvatarUrl=msg.author_avatar_url,
         timestamp=msg.created_at,
         content=msg.content or msg.content_display,
+        attachments=attachments,
+        reference=body.messageReference,
         author=author,
         editedTimestamp=msg.edited_timestamp,
     )
@@ -170,3 +218,82 @@ async def save_message(
         path="/ws/officer-messages" if is_officer else "/ws/messages",
     )
     return {"ok": True, "id": str(discord_msg_id)}
+
+
+async def edit_message(
+    channel_id: str,
+    message_id: str,
+    content: str,
+    ctx: RequestContext,
+    db: AsyncSession,
+    *,
+    is_officer: bool,
+) -> dict:
+    if is_officer and "officer" not in ctx.roles:
+        raise HTTPException(status_code=403)
+    msg = await db.get(Message, int(message_id))
+    if not msg or msg.channel_id != int(channel_id) or msg.is_officer != is_officer:
+        raise HTTPException(status_code=404)
+    if msg.author_id != ctx.user.id:
+        raise HTTPException(status_code=403)
+    msg.content_raw = msg.content_display = msg.content = content
+    msg.edited_timestamp = datetime.utcnow()
+    await db.commit()
+    if discord_client:
+        channel = discord_client.get_channel(int(channel_id))
+        if channel and isinstance(channel, discord.abc.Messageable):
+            try:
+                discord_msg = await channel.fetch_message(int(message_id))
+                await discord_msg.edit(content=content)
+            except Exception:
+                pass
+    dto = ChatMessage(
+        id=str(message_id),
+        channelId=str(channel_id),
+        authorName=msg.author_name,
+        authorAvatarUrl=msg.author_avatar_url,
+        timestamp=msg.created_at,
+        content=content,
+        editedTimestamp=msg.edited_timestamp,
+    )
+    await manager.broadcast_text(
+        dto.model_dump_json(),
+        ctx.guild.id,
+        officer_only=is_officer,
+        path="/ws/officer-messages" if is_officer else "/ws/messages",
+    )
+    return {"ok": True}
+
+
+async def delete_message(
+    channel_id: str,
+    message_id: str,
+    ctx: RequestContext,
+    db: AsyncSession,
+    *,
+    is_officer: bool,
+) -> dict:
+    if is_officer and "officer" not in ctx.roles:
+        raise HTTPException(status_code=403)
+    msg = await db.get(Message, int(message_id))
+    if not msg or msg.channel_id != int(channel_id) or msg.is_officer != is_officer:
+        raise HTTPException(status_code=404)
+    if msg.author_id != ctx.user.id:
+        raise HTTPException(status_code=403)
+    await db.delete(msg)
+    await db.commit()
+    if discord_client:
+        channel = discord_client.get_channel(int(channel_id))
+        if channel and isinstance(channel, discord.abc.Messageable):
+            try:
+                discord_msg = await channel.fetch_message(int(message_id))
+                await discord_msg.delete()
+            except Exception:
+                pass
+    await manager.broadcast_text(
+        json.dumps({"id": str(message_id), "channelId": str(channel_id), "deleted": True}),
+        ctx.guild.id,
+        officer_only=is_officer,
+        path="/ws/officer-messages" if is_officer else "/ws/messages",
+    )
+    return {"ok": True}
