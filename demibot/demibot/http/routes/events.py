@@ -12,10 +12,11 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto
+from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto, AttachmentDto
 from ..ws import manager
 from ..discord_client import discord_client
 from ...db.models import Embed, EventButton, GuildChannel, RecurringEvent
+from models.event import Event
 
 router = APIRouter(prefix="/api")
 
@@ -40,6 +41,8 @@ class CreateEventBody(BaseModel):
     attendance: List[str] | None = None
     mentions: List[str] | None = None
     repeat: Optional[str] = None
+    embeds: List[dict] | None = None
+    attachments: List[AttachmentDto] | None = None
 
 
 @router.post("/events")
@@ -76,8 +79,16 @@ async def create_event(
 
     mention_ids = [int(m) for m in body.mentions or []]
 
+    stored_embeds = body.embeds
+    stored_attachments = (
+        [a.model_dump(mode="json") for a in body.attachments]
+        if body.attachments
+        else None
+    )
+
     discord_msg_id: int | None = None
     channel_id = int(body.channelId)
+    sent: discord.Message | None = None
     if discord_client:
         channel = discord_client.get_channel(channel_id)
         if isinstance(channel, discord.abc.Messageable):
@@ -124,6 +135,17 @@ async def create_event(
             content = " ".join(f"<@&{m}>" for m in mention_ids) or None
             sent = await channel.send(content=content, embed=emb, view=view)
             discord_msg_id = sent.id
+            if stored_embeds is None and sent.embeds:
+                stored_embeds = [e.to_dict() for e in sent.embeds]
+            if stored_attachments is None and sent.attachments:
+                stored_attachments = [
+                    {
+                        "url": a.url,
+                        "filename": a.filename,
+                        "contentType": a.content_type,
+                    }
+                    for a in sent.attachments
+                ]
 
     if discord_msg_id is not None:
         eid = str(discord_msg_id)
@@ -157,6 +179,15 @@ async def create_event(
             if buttons
             else None,
             source="demibot",
+        )
+    )
+    db.add(
+        Event(
+            discord_message_id=int(eid),
+            channel_id=channel_id,
+            guild_id=ctx.guild.id,
+            embeds=stored_embeds,
+            attachments=stored_attachments,
         )
     )
     for b in buttons:
@@ -204,6 +235,27 @@ async def create_event(
         path="/ws/embeds",
     )
     return {"ok": True, "id": eid}
+
+
+@router.get("/events")
+async def list_events(
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> List[dict[str, Any]]:
+    result = await db.execute(
+        select(Event).where(Event.guild_id == ctx.guild.id)
+    )
+    rows: List[dict[str, Any]] = []
+    for ev in result.scalars():
+        rows.append(
+            {
+                "id": str(ev.discord_message_id),
+                "channelId": str(ev.channel_id),
+                "embeds": ev.embeds,
+                "attachments": ev.attachments,
+            }
+        )
+    return rows
 
 
 class RepeatPatchBody(BaseModel):
