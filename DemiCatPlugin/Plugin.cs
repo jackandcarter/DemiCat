@@ -159,7 +159,17 @@ public class Plugin : IDalamudPlugin
                 dto.Roles.RemoveAll(r => r == "chat");
                 _config.Roles = dto.Roles;
                 _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
-                _config.EnableFcChat = hasChat;
+
+                if (!hasChat)
+                {
+                    _config.EnableFcChat = false;
+                    _config.EnableFcChatUserSet = false;
+                }
+                else if (!_config.EnableFcChatUserSet)
+                {
+                    _config.EnableFcChat = true;
+                }
+
                 _chatWindow.ChannelsLoaded = false;
                 _services.PluginInterface.SavePluginConfig(_config);
             });

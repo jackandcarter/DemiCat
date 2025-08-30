@@ -81,6 +81,7 @@ public class SettingsWindow : IDisposable
                 if (ImGui.Checkbox("Enable FC Chat", ref enableFc))
                 {
                     _config.EnableFcChat = enableFc;
+                    _config.EnableFcChatUserSet = true;
                     SaveConfig();
                     if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
                 }

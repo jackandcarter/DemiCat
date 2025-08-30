@@ -22,6 +22,7 @@ public class Config : IPluginConfiguration
     public string FcChannelName { get; set; } = string.Empty;
     public string OfficerChannelId { get; set; } = string.Empty;
     public bool EnableFcChat { get; set; } = true;
+    public bool EnableFcChatUserSet { get; set; } = false;
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
     public List<Template> Templates { get; set; } = new();
