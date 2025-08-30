@@ -83,13 +83,13 @@ public class MainWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
-            if (HasOfficerRole && ImGui.BeginTabItem("Create"))
+            if (ImGui.BeginTabItem("Create"))
             {
                 _create.Draw();
                 ImGui.EndTabItem();
             }
 
-            if (HasOfficerRole && ImGui.BeginTabItem("Templates"))
+            if (ImGui.BeginTabItem("Templates"))
             {
                 _templates.Draw();
                 ImGui.EndTabItem();
