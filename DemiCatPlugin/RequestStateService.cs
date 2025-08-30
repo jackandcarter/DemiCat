@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -87,6 +88,11 @@ internal static class RequestStateService
                 var hq = payload.TryGetProperty("hq", out var hqEl) && hqEl.GetBoolean();
                 var quantity = payload.TryGetProperty("quantity", out var qtyEl) ? qtyEl.GetInt32() : 0;
                 var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)null;
+                var description = payload.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? string.Empty : string.Empty;
+                var createdBy = payload.TryGetProperty("created_by", out var cbEl) ? cbEl.GetString() ?? string.Empty : string.Empty;
+                DateTime createdAt = DateTime.MinValue;
+                if (payload.TryGetProperty("created", out var cEl))
+                    cEl.TryGetDateTime(out createdAt);
                 if (id == null || statusString == null) continue;
                 Upsert(new RequestState
                 {
@@ -98,7 +104,10 @@ internal static class RequestStateService
                     DutyId = dutyId,
                     Hq = hq,
                     Quantity = quantity,
-                    AssigneeId = assigneeId
+                    AssigneeId = assigneeId,
+                    Description = description,
+                    CreatedBy = createdBy,
+                    CreatedAt = createdAt
                 });
             }
         }
