@@ -36,6 +36,16 @@ async def main_async() -> None:
     log_config.setup_logging()
     cfg = await ensure_config(force_reconfigure=args.reconfigure)
 
+    profile = cfg.database.active()
+    logging.info(
+        "Active DB profile: host=%s port=%s user=%s database=%s use_remote=%s password=***",
+        profile.host,
+        profile.port,
+        profile.user,
+        profile.database,
+        cfg.database.use_remote,
+    )
+
     db_url = cfg.database.url
     masked_url = re.sub(r":[^:@/]+@", ":***@", db_url)
     logging.info("Initialising database at %s", masked_url)

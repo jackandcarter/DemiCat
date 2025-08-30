@@ -3,11 +3,15 @@ from __future__ import annotations
 from typing import AsyncGenerator
 
 import asyncio
+import logging
+import os
+import re
 from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -21,6 +25,7 @@ from .base import Base
 _engine: AsyncEngine | None = None
 _Session: async_sessionmaker[AsyncSession] | None = None
 _init_lock = asyncio.Lock()
+_DEBUG_SQL = os.getenv("DEMIBOT_DEBUG_SQLALCHEMY", "").lower() in {"1", "true", "yes"}
 
 
 def _sync_url(url: str) -> str:
@@ -57,11 +62,14 @@ async def init_db(url: str) -> AsyncEngine:
 
         sa_url = make_url(url)
         sync_url = _sync_url(url)
+        masked_async = re.sub(r":[^:@/]+@", ":***@", str(sa_url))
+        masked_sync = re.sub(r":[^:@/]+@", ":***@", sync_url)
+        logging.debug("init_db async_url=%s sync_url=%s", masked_async, masked_sync)
 
         if sa_url.get_backend_name() == "sqlite":
             # SQLite lacks many ALTER TABLE capabilities used in migrations.
             # For test environments we create tables directly from metadata.
-            _engine = create_async_engine(url, echo=False, future=True)
+            _engine = create_async_engine(url, echo=_DEBUG_SQL, future=True)
             _Session = async_sessionmaker(_engine, expire_on_commit=False)
             async with _engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
@@ -73,9 +81,19 @@ async def init_db(url: str) -> AsyncEngine:
             "script_location", str(Path(__file__).resolve().parent / "migrations")
         )
         config.set_main_option("sqlalchemy.url", sync_url)
-        await asyncio.to_thread(command.upgrade, config, "head")
+        try:
+            await asyncio.to_thread(command.upgrade, config, "head")
+        except OperationalError as exc:  # pragma: no cover - requires real DB
+            logging.error(
+                "Migration failed for %s:%s as %s: %s",
+                sa_url.host,
+                sa_url.port,
+                sa_url.username,
+                exc,
+            )
+            raise
 
-        _engine = create_async_engine(url, echo=False, future=True)
+        _engine = create_async_engine(url, echo=_DEBUG_SQL, future=True)
         _Session = async_sessionmaker(_engine, expire_on_commit=False)
         return _engine
 
