@@ -53,7 +53,7 @@ public class Plugin : IDalamudPlugin
         _presenceSidebar = new PresenceSidebar(_config, _httpClient);
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceSidebar);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceSidebar);
-        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
+        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _presenceSidebar, _httpClient);
         _channelWatcher = new ChannelWatcher(_config, _ui, _chatWindow, _officerChatWindow);
         _requestWatcher = new RequestWatcher(_config, _httpClient);
         _settings.MainWindow = _mainWindow;

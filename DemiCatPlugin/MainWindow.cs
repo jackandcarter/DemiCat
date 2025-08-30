@@ -12,6 +12,7 @@ public class MainWindow : IDisposable
     private readonly ChatWindow? _chat;
     private readonly OfficerChatWindow _officer;
     private readonly SettingsWindow _settings;
+    private readonly PresenceSidebar _presenceSidebar;
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
@@ -22,13 +23,14 @@ public class MainWindow : IDisposable
     public bool HasOfficerRole { get; set; }
     public UiRenderer Ui => _ui;
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, PresenceSidebar presenceSidebar, HttpClient httpClient)
     {
         _config = config;
         _ui = ui;
         _chat = chat;
         _officer = officer;
         _settings = settings;
+        _presenceSidebar = presenceSidebar;
         _httpClient = httpClient;
         _create = new EventCreateWindow(config, httpClient);
         _templates = new TemplatesWindow(config, httpClient);
@@ -71,7 +73,13 @@ public class MainWindow : IDisposable
         {
             if (ImGui.BeginTabItem("Events"))
             {
+                ImGui.BeginChild("##presence", new Vector2(150, 0), true);
+                _presenceSidebar.Draw();
+                ImGui.EndChild();
+                ImGui.SameLine();
+                ImGui.BeginChild("##eventsArea", ImGui.GetContentRegionAvail(), false);
                 _ui.Draw();
+                ImGui.EndChild();
                 ImGui.EndTabItem();
             }
 
