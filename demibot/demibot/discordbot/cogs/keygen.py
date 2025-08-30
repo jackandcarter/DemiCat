@@ -5,7 +5,7 @@ import secrets
 import discord
 from discord import app_commands
 from discord.ext import commands
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from ...db.models import (
     Guild,
@@ -94,6 +94,16 @@ async def key_command(interaction: discord.Interaction) -> None:
                     db.add(new_role)
                     await db.flush()
                     role_map[r.id] = (new_role.id, is_officer)
+                else:
+                    role_id, is_officer = mapped
+                    if officer_role_id == r.id and not is_officer:
+                        await db.execute(
+                            update(Role)
+                            .where(Role.id == role_id)
+                            .values(is_officer=True)
+                        )
+                        await db.flush()
+                        role_map[r.id] = (role_id, True)
 
             await db.execute(
                 delete(MembershipRole).where(
