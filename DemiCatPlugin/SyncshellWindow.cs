@@ -38,6 +38,12 @@ public class SyncshellWindow : IDisposable
     private PenumbraConflict? _penumbraConflict;
     private static DateTimeOffset _lastRedraw;
 
+    private bool _autoSyncAllUsers;
+    private bool _manualSyncAllUsers;
+    private bool _manualSyncCustom;
+    private float _fileSizeLimitMb = 100f;
+    private bool _syncPaused;
+
     public SyncshellWindow(Config config, HttpClient httpClient)
     {
         _config = config;
@@ -106,6 +112,31 @@ public class SyncshellWindow : IDisposable
             _penumbraConflict?.Tcs.TrySetResult(false);
             _penumbraConflict = null;
         }
+
+        ImGui.BeginChild("sync-settings", new Vector2(-1, 170), true);
+        ImGui.TextUnformatted("Sync Settings");
+        ImGui.Checkbox("Auto Sync to all Connected Users", ref _autoSyncAllUsers);
+        ImGui.Checkbox("Manual Sync (All Users)", ref _manualSyncAllUsers);
+        ImGui.Checkbox("Manual Sync (Custom)", ref _manualSyncCustom);
+        ImGui.SliderFloat("File-size limit (MB)", ref _fileSizeLimitMb, 100f, 5120f, "%.0f MB");
+        if (ImGui.Button("Resync All"))
+        {
+            // TODO: implement resync logic
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Clear Cache"))
+        {
+            // TODO: implement cache clearing logic
+        }
+        ImGui.SameLine();
+        var pauseLabel = _syncPaused ? "Resume Sync" : "Pause Sync";
+        if (ImGui.Button(pauseLabel))
+        {
+            _syncPaused = !_syncPaused;
+            // TODO: implement pause/resume logic
+        }
+        ImGui.EndChild();
+        ImGui.Separator();
 
         var saveSeen = false;
         if (_updatesAvailable.Count > 0)
