@@ -65,6 +65,11 @@ public class SyncshellWindow : IDisposable
     {
         if (!_config.SyncEnabled)
         {
+            const string message = "SyncShell is under development";
+            var size = ImGui.CalcTextSize(message);
+            var avail = ImGui.GetContentRegionAvail();
+            ImGui.SetCursorPos(new Vector2((avail.X - size.X) / 2, (avail.Y - size.Y) / 2));
+            ImGui.TextUnformatted(message);
             return;
         }
 

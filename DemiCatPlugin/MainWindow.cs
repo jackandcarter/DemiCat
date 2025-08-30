@@ -93,7 +93,7 @@ public class MainWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Syncshell"))
+            if (_config.SyncEnabled && ImGui.BeginTabItem("Syncshell"))
             {
                 _syncshell.Draw();
                 ImGui.EndTabItem();
@@ -112,6 +112,11 @@ public class MainWindow : IDisposable
             }
 
             ImGui.EndTabBar();
+        }
+
+        if (!_config.SyncEnabled)
+        {
+            ImGui.TextUnformatted("Feature in development");
         }
 
         ImGui.End();

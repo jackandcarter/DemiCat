@@ -28,7 +28,7 @@ public class Config : IPluginConfiguration
     public List<SignupPreset> SignupPresets { get; set; } = new();
 
     [JsonPropertyName("syncEnabled")]
-    public bool SyncEnabled { get; set; } = true;
+    public bool SyncEnabled { get; set; } = false;
 
     [JsonPropertyName("autoApply")]
     public Dictionary<string, bool> AutoApply { get; set; } = new();
