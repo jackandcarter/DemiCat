@@ -18,6 +18,7 @@ from ...http.schemas import (
     EmbedAuthorDto,
     Mention,
     AttachmentDto,
+    MessageAuthor,
 )
 from ...http.ws import manager
 
@@ -287,25 +288,6 @@ class Mirror(commands.Cog):
                     ]
                 )
 
-            db.add(
-                Message(
-                    discord_message_id=message.id,
-                    channel_id=channel_id,
-                    guild_id=guild_id,
-                    author_id=message.author.id,
-                    author_name=message.author.display_name
-                    or message.author.name,
-                    author_avatar_url=str(message.author.display_avatar.url)
-                    if message.author.display_avatar
-                    else None,
-                    content_raw=message.content,
-                    content_display=message.content,
-                    attachments_json=attachments_json,
-                    is_officer=is_officer,
-                )
-            )
-            await db.commit()
-
             mentions = [
                 Mention(
                     id=str(m.id),
@@ -314,6 +296,63 @@ class Mirror(commands.Cog):
                 for m in message.mentions
                 if not m.bot
             ]
+            mentions_json = (
+                json.dumps([m.model_dump() for m in mentions]) if mentions else None
+            )
+
+            author = MessageAuthor(
+                id=str(message.author.id),
+                name=message.author.display_name or message.author.name,
+                avatarUrl=str(message.author.display_avatar.url)
+                if message.author.display_avatar
+                else None,
+            )
+
+            embeds_json = (
+                json.dumps([e.to_dict() for e in message.embeds])
+                if message.embeds
+                else None
+            )
+            reference_json = None
+            if message.reference:
+                reference_json = json.dumps(
+                    {
+                        "messageId": message.reference.message_id,
+                        "channelId": message.reference.channel_id,
+                        "guildId": message.reference.guild_id,
+                    }
+                )
+            components_json = None
+            if getattr(message, "components", None):
+                try:
+                    components_json = json.dumps(
+                        [c.to_dict() for c in message.components]
+                    )
+                except Exception:
+                    components_json = None
+
+            db.add(
+                Message(
+                    discord_message_id=message.id,
+                    channel_id=channel_id,
+                    guild_id=guild_id,
+                    author_id=message.author.id,
+                    author_name=author.name,
+                    author_avatar_url=author.avatarUrl,
+                    content_raw=message.content,
+                    content_display=message.content,
+                    content=message.content,
+                    attachments_json=attachments_json,
+                    mentions_json=mentions_json,
+                    author_json=author.model_dump_json(),
+                    embeds_json=embeds_json,
+                    reference_json=reference_json,
+                    components_json=components_json,
+                    edited_timestamp=message.edited_at,
+                    is_officer=is_officer,
+                )
+            )
+            await db.commit()
 
             attachments = [
                 AttachmentDto(
@@ -326,14 +365,17 @@ class Mirror(commands.Cog):
             dto = ChatMessage(
                 id=str(message.id),
                 channelId=str(channel_id),
-                authorName=message.author.display_name or message.author.name,
-                authorAvatarUrl=str(message.author.display_avatar.url)
-                if message.author.display_avatar
-                else None,
+                authorName=author.name,
+                authorAvatarUrl=author.avatarUrl,
                 timestamp=message.created_at,
                 content=message.content,
                 attachments=attachments,
                 mentions=mentions or None,
+                author=author,
+                embeds=json.loads(embeds_json) if embeds_json else None,
+                reference=json.loads(reference_json) if reference_json else None,
+                components=json.loads(components_json) if components_json else None,
+                editedTimestamp=message.edited_at,
             )
             await manager.broadcast_text(
                 json.dumps(dto.model_dump()),
@@ -494,16 +536,59 @@ class Mirror(commands.Cog):
                         ]
                     )
 
-                msg.content_raw = after.content
-                msg.content_display = after.content
-                msg.attachments_json = attachments_json
-                await db.commit()
-
                 mentions = [
                     Mention(id=str(m.id), name=m.display_name or m.name)
                     for m in after.mentions
                     if not m.bot
                 ]
+                mentions_json = (
+                    json.dumps([m.model_dump() for m in mentions]) if mentions else None
+                )
+
+                author = MessageAuthor(
+                    id=str(after.author.id),
+                    name=after.author.display_name or after.author.name,
+                    avatarUrl=str(after.author.display_avatar.url)
+                    if after.author.display_avatar
+                    else None,
+                )
+
+                embeds_json = (
+                    json.dumps([e.to_dict() for e in after.embeds])
+                    if after.embeds
+                    else None
+                )
+                reference_json = None
+                if after.reference:
+                    reference_json = json.dumps(
+                        {
+                            "messageId": after.reference.message_id,
+                            "channelId": after.reference.channel_id,
+                            "guildId": after.reference.guild_id,
+                        }
+                    )
+                components_json = None
+                if getattr(after, "components", None):
+                    try:
+                        components_json = json.dumps(
+                            [c.to_dict() for c in after.components]
+                        )
+                    except Exception:
+                        components_json = None
+
+                msg.content_raw = after.content
+                msg.content_display = after.content
+                msg.content = after.content
+                msg.attachments_json = attachments_json
+                msg.mentions_json = mentions_json
+                msg.author_name = author.name
+                msg.author_avatar_url = author.avatarUrl
+                msg.author_json = author.model_dump_json()
+                msg.embeds_json = embeds_json
+                msg.reference_json = reference_json
+                msg.components_json = components_json
+                msg.edited_timestamp = after.edited_at
+                await db.commit()
 
                 attachments = [
                     AttachmentDto(
@@ -517,14 +602,17 @@ class Mirror(commands.Cog):
                 dto = ChatMessage(
                     id=str(after.id),
                     channelId=str(channel_id),
-                    authorName=after.author.display_name or after.author.name,
-                    authorAvatarUrl=str(after.author.display_avatar.url)
-                    if after.author.display_avatar
-                    else None,
+                    authorName=author.name,
+                    authorAvatarUrl=author.avatarUrl,
                     timestamp=after.created_at,
                     content=after.content,
                     attachments=attachments,
                     mentions=mentions or None,
+                    author=author,
+                    embeds=json.loads(embeds_json) if embeds_json else None,
+                    reference=json.loads(reference_json) if reference_json else None,
+                    components=json.loads(components_json) if components_json else None,
+                    editedTimestamp=after.edited_at,
                 )
                 await manager.broadcast_text(
                     json.dumps(dto.model_dump()),
