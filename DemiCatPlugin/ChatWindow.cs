@@ -23,7 +23,7 @@ public class ChatWindow : IDisposable
 {
     protected readonly Config _config;
     protected readonly HttpClient _httpClient;
-    protected readonly List<ChatMessageDto> _messages = new();
+    protected readonly List<DiscordMessageDto> _messages = new();
     protected readonly List<ChannelDto> _channels = new();
     protected int _selectedIndex;
     protected bool _channelsLoaded;
@@ -122,9 +122,9 @@ public class ChatWindow : IDisposable
         foreach (var msg in _messages)
         {
             ImGui.BeginGroup();
-            if (!string.IsNullOrEmpty(msg.AuthorAvatarUrl) && msg.AvatarTexture == null)
+            if (!string.IsNullOrEmpty(msg.Author.AvatarUrl) && msg.AvatarTexture == null)
             {
-                LoadTexture(msg.AuthorAvatarUrl, t => msg.AvatarTexture = t);
+                LoadTexture(msg.Author.AvatarUrl, t => msg.AvatarTexture = t);
             }
             if (msg.AvatarTexture != null)
             {
@@ -138,9 +138,23 @@ public class ChatWindow : IDisposable
             ImGui.SameLine();
 
             ImGui.BeginGroup();
-            ImGui.TextUnformatted(msg.AuthorName);
+            ImGui.TextUnformatted(msg.Author.Name);
             ImGui.SameLine();
             ImGui.TextUnformatted(msg.Timestamp.ToLocalTime().ToString());
+
+            if (msg.Reference?.MessageId != null)
+            {
+                var refMsg = _messages.Find(m => m.Id == msg.Reference.MessageId);
+                if (refMsg != null)
+                {
+                    var preview = refMsg.Content;
+                    if (preview.Length > 50) preview = preview.Substring(0, 50) + "...";
+                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.7f, 0.7f, 0.7f, 1f));
+                    ImGui.TextUnformatted($"> {refMsg.Author.Name}: {preview}");
+                    ImGui.PopStyleColor();
+                }
+            }
+
             ImGui.TextWrapped(FormatContent(msg));
             if (msg.Attachments != null)
             {
@@ -223,7 +237,7 @@ public class ChatWindow : IDisposable
         return invalid;
     }
 
-    protected string FormatContent(ChatMessageDto msg)
+    protected string FormatContent(DiscordMessageDto msg)
     {
         var text = msg.Content;
         if (msg.Mentions != null)
@@ -295,7 +309,7 @@ public class ChatWindow : IDisposable
         try
         {
             const int PageSize = 50;
-            var all = new List<ChatMessageDto>();
+            var all = new List<DiscordMessageDto>();
             string? before = null;
             while (true)
             {
@@ -320,7 +334,7 @@ public class ChatWindow : IDisposable
                 }
 
                 var stream = await response.Content.ReadAsStreamAsync();
-                var msgs = await JsonSerializer.DeserializeAsync<List<ChatMessageDto>>(stream) ?? new List<ChatMessageDto>();
+                var msgs = await JsonSerializer.DeserializeAsync<List<DiscordMessageDto>>(stream) ?? new List<DiscordMessageDto>();
                 if (msgs.Count == 0)
                 {
                     break;
@@ -340,9 +354,9 @@ public class ChatWindow : IDisposable
                 foreach (var m in all)
                 {
                     _messages.Add(m);
-                    if (!string.IsNullOrEmpty(m.AuthorAvatarUrl))
+                    if (!string.IsNullOrEmpty(m.Author.AvatarUrl))
                     {
-                        LoadTexture(m.AuthorAvatarUrl, t => m.AvatarTexture = t);
+                        LoadTexture(m.Author.AvatarUrl, t => m.AvatarTexture = t);
                     }
                     if (m.Attachments != null)
                     {
@@ -363,7 +377,7 @@ public class ChatWindow : IDisposable
         }
     }
 
-    private void DisposeMessageTextures(ChatMessageDto msg)
+    private void DisposeMessageTextures(DiscordMessageDto msg)
     {
         if (msg.AvatarTexture?.GetWrapOrEmpty() is IDisposable wrap)
         {
@@ -574,7 +588,7 @@ public class ChatWindow : IDisposable
                         }
                         else
                         {
-                            var msg = document.RootElement.Deserialize<ChatMessageDto>();
+                            var msg = document.RootElement.Deserialize<DiscordMessageDto>();
                             if (msg != null)
                             {
                                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
@@ -591,9 +605,9 @@ public class ChatWindow : IDisposable
                                         {
                                             _messages.Add(msg);
                                         }
-                                        if (!string.IsNullOrEmpty(msg.AuthorAvatarUrl))
+                                        if (!string.IsNullOrEmpty(msg.Author.AvatarUrl))
                                         {
-                                            LoadTexture(msg.AuthorAvatarUrl, t => msg.AvatarTexture = t);
+                                            LoadTexture(msg.Author.AvatarUrl, t => msg.AvatarTexture = t);
                                         }
                                         if (msg.Attachments != null)
                                         {
@@ -712,33 +726,6 @@ public class ChatWindow : IDisposable
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => set(null));
             }
         });
-    }
-
-    protected class ChatMessageDto
-    {
-        public string Id { get; set; } = string.Empty;
-        public string ChannelId { get; set; } = string.Empty;
-        public string AuthorName { get; set; } = string.Empty;
-        public string? AuthorAvatarUrl { get; set; }
-        public DateTime Timestamp { get; set; }
-        public string Content { get; set; } = string.Empty;
-        public List<AttachmentDto>? Attachments { get; set; }
-        public List<MentionDto>? Mentions { get; set; }
-        [JsonIgnore] public ISharedImmediateTexture? AvatarTexture { get; set; }
-    }
-
-    protected class MentionDto
-    {
-        public string Id { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-    }
-
-    protected class AttachmentDto
-    {
-        public string Url { get; set; } = string.Empty;
-        public string? Filename { get; set; }
-        public string? ContentType { get; set; }
-        [JsonIgnore] public ISharedImmediateTexture? Texture { get; set; }
     }
 
     protected class ChannelListDto
