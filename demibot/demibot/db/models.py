@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     Index,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects.mysql import BIGINT
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -90,6 +91,9 @@ class GuildConfig(Base):
 
 class GuildChannel(Base):
     __tablename__ = "guild_channels"
+    __table_args__ = (
+        UniqueConstraint("guild_id", "channel_id", name="uq_guild_channels_guild_channel"),
+    )
 
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), primary_key=True)
     channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
