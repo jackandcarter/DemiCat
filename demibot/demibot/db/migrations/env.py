@@ -45,7 +45,7 @@ env_url = (os.getenv("DEMIBOT_DATABASE_URL")
 
 # Fallback sensible default for local dev
 if not env_url:
-    env_url = "mysql+pymysql://demibot:Admin@127.0.0.1:3306/demibot?charset=utf8mb4"
+    env_url = "mysql+pymysql://demibot:Admin@127.0.0.1:3306/demibot"
 
 norm_url = _normalize_sqlalchemy_url(env_url)
 config.set_main_option("sqlalchemy.url", norm_url)

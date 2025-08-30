@@ -36,8 +36,8 @@ class DBProfile:
     host: str = "127.0.0.1"
     port: int = 3306
     database: str = "demibot"
-    user: str = ""
-    password: str = ""
+    user: str = "demibot"
+    password: str = "Admin"
 
 
 @dataclass

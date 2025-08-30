@@ -21,7 +21,7 @@ async def _create_request(
 ) -> None:
     host = interaction.client.cfg.server.host
     if host == "0.0.0.0":
-        host = "localhost"
+        host = "127.0.0.1"
     base_url = f"http://{host}:{interaction.client.cfg.server.port}"
     body = {
         "title": title,
