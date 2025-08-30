@@ -15,6 +15,10 @@ PING_INTERVAL = 30.0
 PING_TIMEOUT = 60.0
 SEND_TIMEOUT = 5.0
 
+# Mapping of websocket paths to roles required to access them.
+# Additional entries can be added as new protected paths are introduced.
+PROTECTED_PATH_ROLES: dict[str, str] = {"/ws/officer-messages": "officer"}
+
 
 @dataclass
 class ConnectionInfo:
@@ -136,6 +140,14 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     if ctx is None:
         logging.error("WS %s api_key_auth returned no context", path)
         await websocket.close(code=1008, reason="no context")
+        return
+
+    required_role = PROTECTED_PATH_ROLES.get(path)
+    if required_role and required_role not in ctx.roles:
+        logging.warning(
+            "WS %s closing with 1008: missing role %s", path, required_role
+        )
+        await websocket.close(code=1008, reason="unauthorized")
         return
 
     logging.debug("WS %s authenticated, invoking manager.connect", path)
