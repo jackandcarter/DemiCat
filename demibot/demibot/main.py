@@ -9,6 +9,7 @@ import re
 import sys
 
 import uvicorn
+import discord
 
 from demibot import log_config
 
@@ -51,7 +52,12 @@ async def main_async() -> None:
     )
     try:
         app = create_app()
-        bot = create_bot(cfg)
+        intents = discord.Intents.default()
+        intents.message_content = True
+        intents.reactions = True
+        intents.members = True
+        intents.presences = True
+        bot = create_bot(cfg, intents=intents)
         set_discord_client(bot)
         config = uvicorn.Config(
             app, host=cfg.server.host, port=cfg.server.port, log_level="info"
