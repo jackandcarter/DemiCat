@@ -20,7 +20,8 @@ public class SyncShellClient : IDalamudPlugin
     [PluginService] private ClientState ClientState { get; set; } = null!;
 
     private readonly HttpClient _http = new();
-    private readonly ClientWebSocket _ws = new();
+    private ClientWebSocket _ws = new();
+    private string? _token;
     private IpcSubscriber<string[]>? _enabledMods;
 
     public SyncShellClient()
@@ -64,15 +65,26 @@ public class SyncShellClient : IDalamudPlugin
         var bytes = Encoding.UTF8.GetBytes(payload);
         try
         {
-            if (_ws.State != WebSocketState.Open)
-            {
-                await _ws.ConnectAsync(new Uri("ws://localhost:5050/ws/syncshell"), CancellationToken.None);
-            }
+            if (!await EnsureConnectionAsync())
+                return;
             await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
         }
         catch
         {
-            // ignore socket errors
+            // retry once with a fresh token
+            try
+            {
+                _token = null;
+                _ws.Dispose();
+                _ws = new ClientWebSocket();
+                if (!await EnsureConnectionAsync())
+                    return;
+                await _ws.SendAsync(bytes, WebSocketMessageType.Text, true, CancellationToken.None);
+            }
+            catch
+            {
+                // ignore socket errors
+            }
         }
     }
 
@@ -82,4 +94,40 @@ public class SyncShellClient : IDalamudPlugin
         _ws.Dispose();
         _http.Dispose();
     }
+
+    private async Task<bool> EnsureConnectionAsync()
+    {
+        if (_ws.State == WebSocketState.Open)
+            return true;
+
+        if (!await RefreshTokenAsync())
+            return false;
+
+        _ws.Options.SetRequestHeader("X-Api-Key", _token);
+        await _ws.ConnectAsync(new Uri("ws://localhost:5050/ws/syncshell"), CancellationToken.None);
+        return true;
+    }
+
+    private async Task<bool> RefreshTokenAsync()
+    {
+        if (!string.IsNullOrEmpty(_token))
+            return true;
+
+        try
+        {
+            var resp = await _http.PostAsync("http://localhost:5050/api/syncshell/pair", null);
+            if (!resp.IsSuccessStatusCode)
+                return false;
+            var json = await resp.Content.ReadAsStringAsync();
+            var parsed = JsonSerializer.Deserialize<PairResponse>(json);
+            _token = parsed?.token;
+            return !string.IsNullOrEmpty(_token);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private record PairResponse(string token);
 }
