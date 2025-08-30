@@ -34,6 +34,10 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private DateTime _lastSync;
     private int _failureCount;
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
 
     public UiRenderer(Config config, HttpClient httpClient)
     {
@@ -146,7 +150,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 return false;
             }
             var stream = await response.Content.ReadAsStreamAsync();
-            var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream) ?? new List<EmbedDto>();
+            var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream, JsonOpts) ?? new List<EmbedDto>();
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _embedDtos.Clear();
@@ -266,7 +270,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                     }
                     else
                     {
-                        var embed = document.RootElement.Deserialize<EmbedDto>();
+                        var embed = document.RootElement.Deserialize<EmbedDto>(JsonOpts);
                         if (embed != null)
                         {
                             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
@@ -351,7 +355,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
-            var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream) ?? new List<EmbedDto>();
+            var embeds = await JsonSerializer.DeserializeAsync<List<EmbedDto>>(stream, JsonOpts) ?? new List<EmbedDto>();
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _embedDtos.Clear();

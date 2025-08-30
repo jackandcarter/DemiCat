@@ -38,6 +38,10 @@ public class ChatWindow : IDisposable
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
     private const int TextureCacheCapacity = 100;
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
@@ -147,7 +151,9 @@ public class ChatWindow : IDisposable
                 var refMsg = _messages.Find(m => m.Id == msg.Reference.MessageId);
                 if (refMsg != null)
                 {
-                    var preview = refMsg.Content;
+
+                    var preview = refMsg.Content ?? string.Empty;
+
                     if (preview.Length > 50) preview = preview.Substring(0, 50) + "...";
                     ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.7f, 0.7f, 0.7f, 1f));
                     ImGui.TextUnformatted($"> {refMsg.Author.Name}: {preview}");
@@ -334,7 +340,9 @@ public class ChatWindow : IDisposable
                 }
 
                 var stream = await response.Content.ReadAsStreamAsync();
-                var msgs = await JsonSerializer.DeserializeAsync<List<DiscordMessageDto>>(stream) ?? new List<DiscordMessageDto>();
+
+                var msgs = await JsonSerializer.DeserializeAsync<List<DiscordMessageDto>>(stream, JsonOpts) ?? new List<DiscordMessageDto>();
+
                 if (msgs.Count == 0)
                 {
                     break;
@@ -588,7 +596,9 @@ public class ChatWindow : IDisposable
                         }
                         else
                         {
-                            var msg = document.RootElement.Deserialize<DiscordMessageDto>();
+
+                            var msg = document.RootElement.Deserialize<DiscordMessageDto>(JsonOpts);
+
                             if (msg != null)
                             {
                                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
