@@ -7,7 +7,7 @@ from typing import List, Optional, Any
 import discord
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,27 +169,45 @@ async def create_event(
         channelId=int(body.channelId) if body.channelId.isdigit() else None,
         mentions=mention_ids or None,
     )
-    db.add(
-        Embed(
-            discord_message_id=int(eid),
-            channel_id=channel_id,
-            guild_id=ctx.guild.id,
-            payload_json=json.dumps(dto.model_dump(mode="json")),
-            buttons_json=json.dumps([b.model_dump(mode="json") for b in buttons])
+    existing = await db.get(Embed, int(eid))
+    if existing:
+        existing.channel_id = channel_id
+        existing.guild_id = ctx.guild.id
+        existing.payload_json = json.dumps(dto.model_dump(mode="json"))
+        existing.buttons_json = (
+            json.dumps([b.model_dump(mode="json") for b in buttons])
             if buttons
-            else None,
-            source="demibot",
+            else None
         )
-    )
-    db.add(
-        Event(
-            discord_message_id=int(eid),
-            channel_id=channel_id,
-            guild_id=ctx.guild.id,
-            embeds=stored_embeds,
-            attachments=stored_attachments,
+        await db.execute(
+            delete(EventButton).where(EventButton.message_id == int(eid))
         )
-    )
+        await db.execute(
+            delete(RecurringEvent).where(RecurringEvent.id == int(eid))
+        )
+    else:
+        db.add(
+            Embed(
+                discord_message_id=int(eid),
+                channel_id=channel_id,
+                guild_id=ctx.guild.id,
+                payload_json=json.dumps(dto.model_dump(mode="json")),
+                buttons_json=json.dumps([b.model_dump(mode="json") for b in buttons])
+                if buttons
+                else None,
+                source="demibot",
+            )
+        )
+        db.add(
+            Event(
+                discord_message_id=int(eid),
+                channel_id=channel_id,
+                guild_id=ctx.guild.id,
+                embeds=stored_embeds,
+                attachments=stored_attachments,
+            )
+        )
+
     for b in buttons:
         cid = b.customId
         if cid and cid.startswith("rsvp:"):
@@ -225,6 +243,7 @@ async def create_event(
             select(GuildChannel.kind).where(
                 GuildChannel.guild_id == ctx.guild.id,
                 GuildChannel.channel_id == channel_id,
+                GuildChannel.kind == "officer_chat",
             )
         )
     ).scalar_one_or_none()
