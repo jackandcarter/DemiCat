@@ -2,61 +2,112 @@ from __future__ import annotations
 
 import os
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config, pool
+
 from alembic import context
+from sqlalchemy import engine_from_config, pool
+from sqlalchemy.engine import make_url
 
 # Import metadata so autogenerate works
 from demibot.db.base import Base  # noqa: F401
-from demibot.db import models  # noqa: F401
-
-# Alembic version table expanded to 128 characters
-# to allow descriptive revision identifiers.
+from demibot.db import models  # noqa: F401  # keeps model metadata registered
 
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
+# ---------------------------
+# Alembic base configuration
+# ---------------------------
 config = context.config
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+# Configure logging if present
 if config.config_file_name is not None and config.get_section("loggers"):
     fileConfig(config.config_file_name)
 
 
+# ---------------------------
+# Helpers
+# ---------------------------
 def _normalize_sqlalchemy_url(url: str) -> str:
     """
-    Ensure migrations use a synchronous driver and TCP.
-    - Convert mysql+aiomysql -> mysql+pymysql
-    - Replace @localhost -> @127.0.0.1 (avoid socket auth differences)
+    Normalize the SQLAlchemy URL for Alembic:
+      - Force synchronous driver (mysql+pymysql)
+      - Force TCP host (127.0.0.1) instead of localhost
+      - Strip accidental whitespace/newlines
     """
     if not url:
         return url
+    url = url.strip()
+
+    # Convert async driver to sync driver for Alembic
     if url.startswith("mysql+aiomysql://"):
-        url = "mysql+pymysql://" + url.split("mysql+aiomysql://", 1)[1]
-    # Only replace a host token after '@' to avoid touching passwords
+        url = "mysql+pymysql://" + url[len("mysql+aiomysql://"):]
+    if url.startswith("mysql+asyncmy://"):
+        url = "mysql+pymysql://" + url[len("mysql+asyncmy://"):]
+    # Ensure driver prefix is present (optional safety)
+    if url.startswith("mysql://"):
+        url = "mysql+pymysql://" + url[len("mysql://"):]
+
+    # Replace host token after '@' only (avoid touching password)
+    # We’ll do a minimal, safe replace of '@localhost' with '@127.0.0.1'
     url = url.replace("@localhost", "@127.0.0.1")
+
     return url
 
 
-# Prefer DATABASE_URL/DEMIBOT_DATABASE_URL over alembic.ini
-env_url = (os.getenv("DEMIBOT_DATABASE_URL")
-           or os.getenv("DATABASE_URL")
-           or config.get_main_option("sqlalchemy.url"))
+def _debug_print_url_sources(final_url: str) -> None:
+    """Print loud diagnostics about where the URL came from and what it is."""
+    env_demibot = os.getenv("DEMIBOT_DATABASE_URL")
+    env_generic = os.getenv("DATABASE_URL")
+    env_forced = os.getenv("DEMIBOT_FORCED_URL")
 
-# Fallback sensible default for local dev
-if not env_url:
-    env_url = "mysql+pymysql://demibot:Admin@127.0.0.1:3306/demibot"
+    print("=== ALEMBIC DEBUG: URL SOURCES ===")
+    print("DEMIBOT_FORCED_URL:", repr(env_forced))
+    print("DEMIBOT_DATABASE_URL:", repr(env_demibot))
+    print("DATABASE_URL:", repr(env_generic))
+    print("alembic.ini sqlalchemy.url (raw):", repr(config.get_main_option("sqlalchemy.url")))
+    print("=> Using (normalized) URL:", make_url(final_url).render_as_string(hide_password=False))
+    print("URL components:",
+          {
+              "username": make_url(final_url).username,
+              "password": make_url(final_url).password,
+              "host": make_url(final_url).host,
+              "port": make_url(final_url).port,
+              "database": make_url(final_url).database,
+              "drivername": make_url(final_url).drivername,
+          })
+    print("=== END ALEMBIC DEBUG ===")
 
-norm_url = _normalize_sqlalchemy_url(env_url)
+
+# ---------------------------
+# URL selection (with override)
+# ---------------------------
+# Order of precedence (highest first):
+#   1) DEMIBOT_FORCED_URL (explicit override for debugging / CI)
+#   2) DEMIBOT_DATABASE_URL
+#   3) DATABASE_URL
+#   4) alembic.ini sqlalchemy.url
+#   5) sensible local default
+forced_url = os.getenv("DEMIBOT_FORCED_URL")
+if forced_url:
+    chosen = forced_url
+else:
+    chosen = (
+        os.getenv("DEMIBOT_DATABASE_URL")
+        or os.getenv("DATABASE_URL")
+        or config.get_main_option("sqlalchemy.url")
+        or "mysql+pymysql://demibot:Admin@127.0.0.1:3306/demibot"
+    )
+
+norm_url = _normalize_sqlalchemy_url(chosen)
 config.set_main_option("sqlalchemy.url", norm_url)
 
-# Optional: print once so it's obvious which DSN Alembic is using
-print("ALEMBIC sqlalchemy.url =", norm_url)
-
+# Very explicit print so we can SEE the real value Alembic is using (password visible on purpose)
+_debug_print_url_sources(norm_url)
 
 target_metadata = Base.metadata
 
 
+# ---------------------------
+# Migration runners
+# ---------------------------
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
     url = config.get_main_option("sqlalchemy.url")
@@ -73,13 +124,12 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode."""
+    """Run migrations in 'online' mode'."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        # pre_ping helps recycle stale connections
-        pool_pre_ping=True,
+        pool_pre_ping=True,  # recycle stale connections
     )
 
     with connectable.connect() as connection:
