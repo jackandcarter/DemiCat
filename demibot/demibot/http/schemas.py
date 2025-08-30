@@ -72,6 +72,12 @@ class AttachmentDto(BaseModel):
     contentType: Optional[str] = None
 
 
+class MessageAuthor(BaseModel):
+    id: str
+    name: str
+    avatarUrl: Optional[str] = None
+
+
 class ChatMessage(BaseModel):
     id: str
     channelId: str
@@ -81,6 +87,11 @@ class ChatMessage(BaseModel):
     content: str
     attachments: List[AttachmentDto] | None = None
     mentions: List[Mention] | None = None
+    author: MessageAuthor | None = None
+    embeds: List[dict] | None = None
+    reference: dict | None = None
+    components: List[dict] | None = None
+    editedTimestamp: Optional[datetime] = None
 
 # ---- Presence ----
 
