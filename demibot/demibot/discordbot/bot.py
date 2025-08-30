@@ -13,8 +13,15 @@ logger = logging.getLogger(__name__)
 
 
 class DemiBot(commands.Bot):
-    def __init__(self, cfg: AppConfig) -> None:
-        intents = discord.Intents.all()
+    def __init__(
+        self, cfg: AppConfig, intents: discord.Intents | None = None
+    ) -> None:
+        if intents is None:
+            intents = discord.Intents.default()
+            intents.message_content = True
+            intents.reactions = True
+            intents.members = True
+            intents.presences = True
         super().__init__(command_prefix="!", intents=intents)
         self.cfg = cfg
 
@@ -53,5 +60,5 @@ class DemiBot(commands.Bot):
         except Exception:
             logger.exception("Failed to sync application commands")
 
-def create_bot(cfg: AppConfig) -> DemiBot:
-    return DemiBot(cfg)
+def create_bot(cfg: AppConfig, intents: discord.Intents | None = None) -> DemiBot:
+    return DemiBot(cfg, intents=intents)
