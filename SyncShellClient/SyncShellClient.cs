@@ -40,7 +40,7 @@ public class SyncShellClient : IDalamudPlugin
     {
         try
         {
-            await _http.GetAsync("http://localhost:5050/api/presences");
+            await _http.GetAsync("http://127.0.0.1:5050/api/presences");
         }
         catch
         {
@@ -104,7 +104,7 @@ public class SyncShellClient : IDalamudPlugin
             return false;
 
         _ws.Options.SetRequestHeader("X-Api-Key", _token);
-        await _ws.ConnectAsync(new Uri("ws://localhost:5050/ws/syncshell"), CancellationToken.None);
+        await _ws.ConnectAsync(new Uri("ws://127.0.0.1:5050/ws/syncshell"), CancellationToken.None);
         return true;
     }
 
@@ -115,7 +115,7 @@ public class SyncShellClient : IDalamudPlugin
 
         try
         {
-            var resp = await _http.PostAsync("http://localhost:5050/api/syncshell/pair", null);
+            var resp = await _http.PostAsync("http://127.0.0.1:5050/api/syncshell/pair", null);
             if (!resp.IsSuccessStatusCode)
                 return false;
             var json = await resp.Content.ReadAsStringAsync();
