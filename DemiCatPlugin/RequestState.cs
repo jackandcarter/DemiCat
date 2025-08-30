@@ -31,6 +31,10 @@ public class RequestState
     public uint? AssigneeId { get; set; }
         = null;
 
+    public string Description { get; set; } = string.Empty;
+    public string CreatedBy { get; set; } = string.Empty;
+    public DateTime CreatedAt { get; set; } = DateTime.MinValue;
+
     internal GameDataCache.CachedEntry? ItemData { get; set; } = null;
     internal GameDataCache.CachedEntry? DutyData { get; set; } = null;
 }
