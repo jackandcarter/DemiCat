@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 def test_password_with_special_chars() -> None:
     """Engine parses credentials with special characters."""
     password = "p@ss/w:rd?123"
-    url = f"mysql+aiomysql://user:{quote_plus(password)}@localhost/test"
+    url = f"mysql+aiomysql://user:{quote_plus(password)}@127.0.0.1/test"
 
     engine = create_async_engine(url)
     assert engine.url.password == password
@@ -30,5 +30,5 @@ def test_sync_url_converts_aiomysql() -> None:
 
     from demibot.db.session import _sync_url
 
-    url = "mysql+aiomysql://user:pass@localhost/test"
-    assert _sync_url(url) == "mysql+pymysql://user:***@localhost/test"
+    url = "mysql+aiomysql://user:pass@127.0.0.1/test"
+    assert _sync_url(url) == "mysql+pymysql://user:***@127.0.0.1/test"

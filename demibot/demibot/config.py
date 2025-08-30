@@ -33,7 +33,7 @@ class ServerConfig:
 class DBProfile:
     """Connection information for a single database profile."""
 
-    host: str = "localhost"
+    host: str = "127.0.0.1"
     port: int = 3306
     database: str = "demibot"
     user: str = ""
