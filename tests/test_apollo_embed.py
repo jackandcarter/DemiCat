@@ -96,7 +96,7 @@ async def _run_test() -> None:
         assert row.source == "apollo"
         assert row.buttons_json is not None
         ctx = SimpleNamespace(guild=SimpleNamespace(id=1), roles=["officer"])
-        result = await get_embeds(ctx=ctx, db=db)
+        result = await get_embeds(ctx=ctx, db=db, source="apollo", channel_id=123)
         assert result and result[0]["id"] == str(msg.id)
         assert result[0]["guildId"] == 1
         assert result[0]["channelId"] == 123
