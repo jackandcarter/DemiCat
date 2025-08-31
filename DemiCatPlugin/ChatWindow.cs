@@ -38,6 +38,8 @@ public class ChatWindow : IDisposable
     protected readonly List<string> _attachments = new();
     protected string _newAttachmentPath = string.Empty;
     protected string? _replyToId;
+    protected readonly Dictionary<string, string> _reactionInputs = new();
+    private static readonly string[] DefaultReactions = new[] { "👍", "👎", "❤️" };
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
@@ -209,6 +211,48 @@ public class ChatWindow : IDisposable
                     }
                 }
             }
+            ImGui.Spacing();
+            if (msg.Reactions != null)
+            {
+                foreach (var reaction in msg.Reactions)
+                {
+                    if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
+                    {
+                        _ = React(msg.Id, reaction.Emoji, reaction.Me);
+                    }
+                    ImGui.SameLine();
+                }
+            }
+            if (!_reactionInputs.ContainsKey(msg.Id))
+            {
+                _reactionInputs[msg.Id] = string.Empty;
+            }
+            if (ImGui.SmallButton($"+##react{msg.Id}"))
+            {
+                ImGui.OpenPopup($"reactPicker{msg.Id}");
+            }
+            if (ImGui.BeginPopup($"reactPicker{msg.Id}"))
+            {
+                ImGui.TextUnformatted("Pick an emoji:");
+                foreach (var emoji in DefaultReactions)
+                {
+                    if (ImGui.Button($"{emoji}##pick{msg.Id}{emoji}"))
+                    {
+                        _ = React(msg.Id, emoji, false);
+                        ImGui.CloseCurrentPopup();
+                    }
+                    ImGui.SameLine();
+                }
+                ImGui.NewLine();
+                ImGui.InputText("Emoji", ref _reactionInputs[msg.Id], 16);
+                if (ImGui.Button("Add") && !string.IsNullOrWhiteSpace(_reactionInputs[msg.Id]))
+                {
+                    _ = React(msg.Id, _reactionInputs[msg.Id], false);
+                    _reactionInputs[msg.Id] = string.Empty;
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.EndPopup();
+            }
             ImGui.EndGroup();
 
             if (ImGui.BeginPopupContextItem())
@@ -356,6 +400,44 @@ public class ChatWindow : IDisposable
         {
             PluginServices.Instance!.Log.Error(ex, "Error sending message");
             _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
+        }
+    }
+
+    protected virtual async Task React(string messageId, string emoji, bool remove)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot react: API base URL is not configured.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(emoji))
+        {
+            return;
+        }
+
+        try
+        {
+            var method = remove ? HttpMethod.Delete : HttpMethod.Put;
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{_channelId}/messages/{messageId}/reactions/{Uri.EscapeDataString(emoji)}";
+            var request = new HttpRequestMessage(method, url);
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                await RefreshMessages();
+            }
+            else
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to react. Status: {response.StatusCode}. Response Body: {responseBody}");
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error reacting to message");
         }
     }
 
