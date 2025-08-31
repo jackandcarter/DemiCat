@@ -10,16 +10,18 @@ public class ChannelWatcher : IDisposable
 {
     private readonly Config _config;
     private readonly UiRenderer _ui;
+    private readonly EventCreateWindow _eventCreateWindow;
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
     private ClientWebSocket? _ws;
     private Task? _task;
     private CancellationTokenSource? _cts;
 
-    public ChannelWatcher(Config config, UiRenderer ui, ChatWindow chatWindow, OfficerChatWindow officerChatWindow)
+    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow)
     {
         _config = config;
         _ui = ui;
+        _eventCreateWindow = eventCreateWindow;
         _chatWindow = chatWindow;
         _officerChatWindow = officerChatWindow;
     }
@@ -78,6 +80,7 @@ public class ChannelWatcher : IDisposable
                         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                         {
                             _ = SafeRefresh(_ui.RefreshChannels);
+                            _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
                             if (_config.EnableFcChat)
                                 _ = SafeRefresh(_chatWindow.RefreshChannels);
                             _ = SafeRefresh(_officerChatWindow.RefreshChannels);
@@ -105,6 +108,7 @@ public class ChannelWatcher : IDisposable
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _ = SafeRefresh(_ui.RefreshChannels);
+                _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
                 if (_config.EnableFcChat)
                     _ = SafeRefresh(_chatWindow.RefreshChannels);
                 _ = SafeRefresh(_officerChatWindow.RefreshChannels);
