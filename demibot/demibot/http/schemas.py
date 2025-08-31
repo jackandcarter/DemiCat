@@ -76,6 +76,7 @@ class MessageAuthor(BaseModel):
     id: str
     name: str
     avatarUrl: Optional[str] = None
+    useCharacterName: bool | None = False
 
 
 class ChatMessage(BaseModel):
@@ -92,6 +93,7 @@ class ChatMessage(BaseModel):
     reference: dict | None = None
     components: List[dict] | None = None
     editedTimestamp: Optional[datetime] = None
+    useCharacterName: bool | None = False
 
 # ---- Presence ----
 
