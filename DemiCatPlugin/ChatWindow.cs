@@ -799,6 +799,7 @@ public class ChatWindow : IDisposable
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 // Refresh presence information in case updates were missed while offline.
+                _presence?.Reload();
                 _ = _presence?.Refresh();
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
 
