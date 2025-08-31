@@ -273,19 +273,23 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                         var embed = document.RootElement.Deserialize<EmbedDto>(JsonOpts);
                         if (embed != null)
                         {
-                            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                            if (string.IsNullOrEmpty(_channelId) ||
+                                embed.ChannelId?.ToString() == _channelId)
                             {
-                                var index = _embedDtos.FindIndex(e => e.Id == embed.Id);
-                                if (index >= 0)
+                                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                                 {
-                                    _embedDtos[index] = embed;
-                                }
-                                else
-                                {
-                                    _embedDtos.Add(embed);
-                                }
-                                SetEmbeds(_embedDtos);
-                            });
+                                    var index = _embedDtos.FindIndex(e => e.Id == embed.Id);
+                                    if (index >= 0)
+                                    {
+                                        _embedDtos[index] = embed;
+                                    }
+                                    else
+                                    {
+                                        _embedDtos.Add(embed);
+                                    }
+                                    SetEmbeds(_embedDtos);
+                                });
+                            }
                         }
                     }
                 }
@@ -383,6 +387,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _channelId = _channels[_selectedIndex].Id;
                 _config.EventChannelId = _channelId;
                 SaveConfig();
+                _ = FetchChannels();
                 _ = RefreshEmbeds();
             }
         }
