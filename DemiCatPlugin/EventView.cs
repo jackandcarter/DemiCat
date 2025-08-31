@@ -205,7 +205,7 @@ public class EventView : IDisposable
 
     public void DrawButtons()
     {
-        if (Buttons != null)
+        if (Buttons != null && Buttons.Count > 0)
         {
             foreach (var button in Buttons)
             {
@@ -236,11 +236,46 @@ public class EventView : IDisposable
                 }
             }
         }
+        else if (IsApolloEvent(_dto))
+        {
+            if (ImGui.Button($"Yes##rsvpYes{_dto.Id}", new Vector2(-1, 0)))
+            {
+                _ = SendInteraction("rsvp:yes");
+            }
+            if (ImGui.Button($"Maybe##rsvpMaybe{_dto.Id}", new Vector2(-1, 0)))
+            {
+                _ = SendInteraction("rsvp:maybe");
+            }
+            if (ImGui.Button($"No##rsvpNo{_dto.Id}", new Vector2(-1, 0)))
+            {
+                _ = SendInteraction("rsvp:no");
+            }
+        }
 
         if (!string.IsNullOrEmpty(_lastResult))
         {
             ImGui.TextUnformatted(_lastResult);
         }
+    }
+
+    private static bool IsApolloEvent(EmbedDto dto)
+    {
+        if (!string.IsNullOrEmpty(dto.FooterText) &&
+            dto.FooterText.Contains("apollo", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (!string.IsNullOrEmpty(dto.ProviderName) &&
+            dto.ProviderName.Contains("apollo", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        if (!string.IsNullOrEmpty(dto.AuthorName) &&
+            dto.AuthorName.Contains("apollo", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+        return false;
     }
 
     private static Vector4 GetStyleColor(ButtonStyle style)
