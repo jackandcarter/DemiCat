@@ -655,6 +655,11 @@ public class EventCreateWindow
         public bool Inline;
     }
 
+    private class ChannelListDto
+    {
+        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
+    }
+
     private class RepeatSchedule
     {
         public string Id { get; set; } = string.Empty;
