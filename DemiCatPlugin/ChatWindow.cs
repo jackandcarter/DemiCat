@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.WebSockets;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -586,6 +587,11 @@ public class ChatWindow : IDisposable
                 {
                     var responseBody = await response.Content.ReadAsStringAsync();
                     PluginServices.Instance!.Log.Warning($"Failed to refresh messages. Status: {response.StatusCode}. Response Body: {responseBody}");
+                    if (response.StatusCode == HttpStatusCode.Forbidden)
+                    {
+                        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                            _statusMessage = "Forbidden – check API key/roles");
+                    }
                     break;
                 }
 
@@ -722,7 +728,9 @@ public class ChatWindow : IDisposable
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _channelFetchFailed = true;
-                    _channelErrorMessage = "Failed to load channels";
+                    _channelErrorMessage = response.StatusCode == HttpStatusCode.Forbidden
+                        ? "Forbidden – check API key/roles"
+                        : "Failed to load channels";
                     _channelsLoaded = true;
                 });
                 return;
@@ -797,6 +805,7 @@ public class ChatWindow : IDisposable
                 continue;
             }
 
+            var forbidden = false;
             try
             {
                 _ws?.Dispose();
@@ -899,8 +908,11 @@ public class ChatWindow : IDisposable
             catch (Exception ex)
             {
                 PluginServices.Instance!.Log.Error(ex, "WebSocket connection error");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = $"Connection failed: {ex.Message}");
+                forbidden = ex is HttpRequestException hre && hre.StatusCode == HttpStatusCode.Forbidden
+                    || (ex as WebSocketException)?.Message.Contains("403") == true
+                    || (ex.InnerException as HttpRequestException)?.StatusCode == HttpStatusCode.Forbidden;
+                var msg = forbidden ? "Forbidden – check API key/roles" : $"Connection failed: {ex.Message}";
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = msg);
             }
             finally
             {
@@ -910,9 +922,16 @@ public class ChatWindow : IDisposable
 
             try
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = "Reconnecting...");
-                await Task.Delay(TimeSpan.FromSeconds(5), token);
+                if (!forbidden)
+                {
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                        _statusMessage = "Reconnecting...");
+                    await Task.Delay(TimeSpan.FromSeconds(5), token);
+                }
+                else
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(30), token);
+                }
             }
             catch
             {
@@ -932,6 +951,10 @@ public class ChatWindow : IDisposable
         else if (builder.Scheme == "http")
         {
             builder.Scheme = "ws";
+        }
+        if (!string.IsNullOrEmpty(_config.AuthToken))
+        {
+            builder.Query = $"token={Uri.EscapeDataString(_config.AuthToken)}";
         }
         return builder.Uri;
     }
