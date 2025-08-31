@@ -577,28 +577,46 @@ class ConfigWizard(discord.ui.View):
                         GuildChannel.kind.in_(["event", "fc_chat", "officer_chat"]),
                     )
                 )
+                channel_name_map = {
+                    int(opt.value): opt.label for opt in self.channel_options
+                }
                 for cid in self.event_channel_ids:
+                    name = channel_name_map.get(cid)
+                    if name is None:
+                        ch = self.guild.get_channel(cid)
+                        name = ch.name if ch else None
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
                             kind="event",
+                            name=name,
                         )
                     )
                 for cid in self.fc_chat_channel_ids:
+                    name = channel_name_map.get(cid)
+                    if name is None:
+                        ch = self.guild.get_channel(cid)
+                        name = ch.name if ch else None
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
                             kind="fc_chat",
+                            name=name,
                         )
                     )
                 for cid in self.officer_chat_channel_ids:
+                    name = channel_name_map.get(cid)
+                    if name is None:
+                        ch = self.guild.get_channel(cid)
+                        name = ch.name if ch else None
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
                             kind="officer_chat",
+                            name=name,
                         )
                     )
                 await db.commit()
