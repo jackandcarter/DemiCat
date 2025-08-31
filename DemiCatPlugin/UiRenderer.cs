@@ -138,10 +138,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return;
             var stream = await response.Content.ReadAsStreamAsync();
@@ -212,10 +209,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 url += $"?channel_id={_channelId}";
             }
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -266,10 +260,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             try
             {
                 _webSocket = new ClientWebSocket();
-                if (!string.IsNullOrEmpty(_config.AuthToken))
-                {
-                    _webSocket.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
-                }
+                ApiHelpers.AddAuthHeader(_webSocket, _config);
                 var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
                 var wsUrl = new Uri(($"{baseUrl}/ws/embeds")
                     .Replace("http://", "ws://")
@@ -428,10 +419,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 url += $"?channel_id={_channelId}";
             }
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -532,10 +520,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -598,10 +583,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             await _httpClient.SendAsync(request);
         }
         catch (Exception ex)

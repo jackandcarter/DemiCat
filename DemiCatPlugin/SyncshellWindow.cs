@@ -224,8 +224,7 @@ public class SyncshellWindow : IDisposable
                 url += $"?since={Uri.EscapeDataString(state.LastPullAt.Value.ToString("O"))}";
 
             var req = new HttpRequestMessage(HttpMethod.Get, url);
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-                req.Headers.Add("X-Api-Key", _config.AuthToken);
+            ApiHelpers.AddAuthHeader(req, _config);
             if (!string.IsNullOrEmpty(_etag))
                 req.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(_etag));
 
@@ -295,8 +294,7 @@ public class SyncshellWindow : IDisposable
             url += $"?since={Uri.EscapeDataString(since.Value.ToString("O"))}";
 
         var req = new HttpRequestMessage(HttpMethod.Get, url);
-        if (!string.IsNullOrEmpty(_config.AuthToken))
-            req.Headers.Add("X-Api-Key", _config.AuthToken);
+        ApiHelpers.AddAuthHeader(req, _config);
 
         var resp = await _httpClient.SendAsync(req);
         if (!resp.IsSuccessStatusCode)
@@ -565,7 +563,7 @@ public class SyncshellWindow : IDisposable
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json")
             };
-            request.Headers.Add("X-Api-Key", _config.AuthToken);
+            ApiHelpers.AddAuthHeader(request, _config);
             await _httpClient.SendAsync(request);
 
             _installations[assetId] = new Installation { AssetId = assetId, Status = status, UpdatedAt = DateTimeOffset.UtcNow };
@@ -677,7 +675,7 @@ public class SyncshellWindow : IDisposable
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/installations";
             var req = new HttpRequestMessage(HttpMethod.Get, url);
-            req.Headers.Add("X-Api-Key", _config.AuthToken);
+            ApiHelpers.AddAuthHeader(req, _config);
             var resp = await _httpClient.SendAsync(req);
             if (!resp.IsSuccessStatusCode)
                 return;

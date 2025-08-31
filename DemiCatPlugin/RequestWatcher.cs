@@ -45,7 +45,7 @@ public class RequestWatcher : IDisposable
             {
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
-                _ws.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
+                ApiHelpers.AddAuthHeader(_ws, _config);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 delay = TimeSpan.FromSeconds(5);

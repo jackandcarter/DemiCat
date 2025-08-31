@@ -41,10 +41,7 @@ internal static class RoleCache
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{config.ApiBaseUrl.TrimEnd('/')}/api/guild-roles");
-            if (!string.IsNullOrEmpty(config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, config);
             var response = await httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {

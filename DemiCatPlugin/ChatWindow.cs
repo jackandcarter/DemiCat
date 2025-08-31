@@ -381,10 +381,7 @@ public class ChatWindow : IDisposable
             try
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis");
-                if (!string.IsNullOrEmpty(_config.AuthToken))
-                {
-                    request.Headers.Add("X-Api-Key", _config.AuthToken);
-                }
+                ApiHelpers.AddAuthHeader(request, _config);
                 var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -489,10 +486,7 @@ public class ChatWindow : IDisposable
             var body = new { channelId = _channelId, content = _input, useCharacterName = _useCharacterName };
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -546,10 +540,7 @@ public class ChatWindow : IDisposable
             var method = remove ? HttpMethod.Delete : HttpMethod.Put;
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{_channelId}/messages/{messageId}/reactions/{Uri.EscapeDataString(emoji)}";
             var request = new HttpRequestMessage(method, url);
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -605,10 +596,7 @@ public class ChatWindow : IDisposable
                 }
 
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
-                if (!string.IsNullOrEmpty(_config.AuthToken))
-                {
-                    request.Headers.Add("X-Api-Key", _config.AuthToken);
-                }
+                ApiHelpers.AddAuthHeader(request, _config);
 
                 var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode)
@@ -743,10 +731,7 @@ public class ChatWindow : IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -809,10 +794,7 @@ public class ChatWindow : IDisposable
             {
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
-                if (!string.IsNullOrEmpty(_config.AuthToken))
-                {
-                    _ws.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
-                }
+                ApiHelpers.AddAuthHeader(_ws, _config);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 // Refresh presence information in case updates were missed while offline.

@@ -200,7 +200,7 @@ public class SettingsWindow : IDisposable
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/settings";
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            request.Headers.Add("X-Api-Key", _config.AuthToken);
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
                 return;
@@ -263,7 +263,7 @@ public class SettingsWindow : IDisposable
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
             };
-            request.Headers.Add("X-Api-Key", _config.AuthToken);
+            ApiHelpers.AddAuthHeader(request, _config);
             await _httpClient.SendAsync(request);
         }
         catch (Exception ex)
@@ -289,7 +289,7 @@ public class SettingsWindow : IDisposable
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/forget";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            request.Headers.Add("X-Api-Key", _config.AuthToken);
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -356,10 +356,7 @@ public class SettingsWindow : IDisposable
                 {
                     Content = new StringContent(JsonSerializer.Serialize(new { key }), Encoding.UTF8, "application/json")
                 };
-                if (!string.IsNullOrEmpty(key))
-                {
-                    request.Headers.Add("X-Api-Key", key);
-                }
+                ApiHelpers.AddAuthHeader(request, key);
 
                 _log.Info($"Sync URL: {url}");
                 _log.Info($"Headers: {string.Join(", ", request.Headers.Select(h => $"{h.Key}: {string.Join(";", h.Value)}"))}");
