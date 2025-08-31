@@ -173,6 +173,10 @@ public class Plugin : IDalamudPlugin
                 }
 
                 _chatWindow.ChannelsLoaded = false;
+                if (!_config.EnableFcChat)
+                {
+                    _chatWindow.StopNetworking();
+                }
                 _services.PluginInterface.SavePluginConfig(_config);
             });
             await RoleCache.Refresh(_httpClient, _config);
