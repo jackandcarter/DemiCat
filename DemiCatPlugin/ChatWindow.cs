@@ -173,6 +173,13 @@ public class ChatWindow : IDisposable
             }
 
             ImGui.TextWrapped(FormatContent(msg));
+            if (msg.Embeds != null)
+            {
+                foreach (var embed in msg.Embeds)
+                {
+                    EmbedRenderer.Draw(embed, LoadTexture);
+                }
+            }
             if (msg.Attachments != null)
             {
                 foreach (var att in msg.Attachments)
@@ -465,6 +472,7 @@ public class ChatWindow : IDisposable
         {
             DisposeMessageTextures(m);
         }
+        EmbedRenderer.ClearCache();
     }
 
     public void Dispose()
