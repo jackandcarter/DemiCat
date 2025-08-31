@@ -111,6 +111,7 @@ async def fetch_messages(
                 reference=reference,
                 components=components,
                 editedTimestamp=m.edited_timestamp,
+                useCharacterName=getattr(author, "useCharacterName", False),
             )
         )
     return [o.model_dump() for o in out]
@@ -139,9 +140,13 @@ async def save_message(
             for f in files:
                 data = await f.read()
                 discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
+        # Build the identity prefix used when relaying to Discord
+        prefix = ctx.user.global_name or ("Officer" if is_officer else "Player")
+        if body.useCharacterName and ctx.user.character_name:
+            prefix = f"{ctx.user.character_name} ({prefix})"
         try:
             sent = await channel.send(
-                body.content,
+                f"{prefix}: {body.content}",
                 files=discord_files,
                 reference=discord.MessageReference(
                     message_id=int(body.messageReference.get("messageId"))
@@ -172,10 +177,14 @@ async def save_message(
                 )
                 for f in files
             ]
+    display_name = ctx.user.global_name or ("Officer" if is_officer else "Player")
+    if body.useCharacterName and ctx.user.character_name:
+        display_name = f"{ctx.user.character_name} ({display_name})"
     author = MessageAuthor(
         id=str(ctx.user.id),
-        name=ctx.user.global_name or ("Officer" if is_officer else "Player"),
+        name=display_name,
         avatarUrl=None,
+        useCharacterName=body.useCharacterName,
     )
     attachments_json = (
         json.dumps([a.model_dump() for a in attachments]) if attachments else None
@@ -211,6 +220,7 @@ async def save_message(
         reference=body.messageReference,
         author=author,
         editedTimestamp=msg.edited_timestamp,
+        useCharacterName=body.useCharacterName,
     )
     await manager.broadcast_text(
         dto.model_dump_json(),
@@ -248,6 +258,12 @@ async def edit_message(
                 await discord_msg.edit(content=content)
             except Exception:
                 pass
+    author = None
+    if msg.author_json:
+        try:
+            author = MessageAuthor(**json.loads(msg.author_json))
+        except Exception:
+            author = None
     dto = ChatMessage(
         id=str(message_id),
         channelId=str(channel_id),
@@ -256,6 +272,8 @@ async def edit_message(
         timestamp=msg.created_at,
         content=content,
         editedTimestamp=msg.edited_timestamp,
+        author=author,
+        useCharacterName=getattr(author, "useCharacterName", False),
     )
     await manager.broadcast_text(
         dto.model_dump_json(),
