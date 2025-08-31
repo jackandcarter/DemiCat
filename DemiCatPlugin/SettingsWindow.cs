@@ -83,7 +83,18 @@ public class SettingsWindow : IDisposable
                     _config.EnableFcChat = enableFc;
                     _config.EnableFcChatUserSet = true;
                     SaveConfig();
-                    if (ChatWindow != null) ChatWindow.ChannelsLoaded = false;
+                    if (ChatWindow != null)
+                    {
+                        ChatWindow.ChannelsLoaded = false;
+                        if (enableFc)
+                        {
+                            ChatWindow.StartNetworking();
+                        }
+                        else
+                        {
+                            ChatWindow.StopNetworking();
+                        }
+                    }
                 }
 
                 var syncEnabled = _config.SyncEnabled;

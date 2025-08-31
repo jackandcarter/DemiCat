@@ -76,7 +76,8 @@ public class ChannelWatcher : IDisposable
                     _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                     {
                         _ = SafeRefresh(_ui.RefreshChannels);
-                        _ = SafeRefresh(_chatWindow.RefreshChannels);
+                        if (_config.EnableFcChat)
+                            _ = SafeRefresh(_chatWindow.RefreshChannels);
                         _ = SafeRefresh(_officerChatWindow.RefreshChannels);
                     });
                 }
@@ -101,7 +102,8 @@ public class ChannelWatcher : IDisposable
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _ = SafeRefresh(_ui.RefreshChannels);
-                _ = SafeRefresh(_chatWindow.RefreshChannels);
+                if (_config.EnableFcChat)
+                    _ = SafeRefresh(_chatWindow.RefreshChannels);
                 _ = SafeRefresh(_officerChatWindow.RefreshChannels);
             });
             try { await Task.Delay(delay, token); } catch { }

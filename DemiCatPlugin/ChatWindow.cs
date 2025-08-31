@@ -86,6 +86,13 @@ public class ChatWindow : IDisposable
         _wsTask = RunWebSocket(_wsCts.Token);
     }
 
+    public void StopNetworking()
+    {
+        _wsCts?.Cancel();
+        _ws?.Dispose();
+        _ws = null;
+    }
+
     public virtual void Draw()
     {
         if (!_channelsLoaded)
@@ -293,7 +300,7 @@ public class ChatWindow : IDisposable
 
     public async Task RefreshMessages()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(_channelId))
+        if (!_config.EnableFcChat || !ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(_channelId))
         {
             return;
         }
@@ -408,8 +415,7 @@ public class ChatWindow : IDisposable
 
     public void Dispose()
     {
-        _wsCts?.Cancel();
-        _ws?.Dispose();
+        StopNetworking();
         ClearTextureCache();
     }
 
@@ -427,6 +433,10 @@ public class ChatWindow : IDisposable
 
     protected virtual async Task FetchChannels()
     {
+        if (!_config.EnableFcChat)
+        {
+            return;
+        }
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
