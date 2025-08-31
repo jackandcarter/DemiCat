@@ -517,6 +517,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
         catch (Exception ex)
         {
+            PluginServices.Instance!.Log.Error(ex, "Error refreshing channel names");
+        }
+    }
+
+    private class ChannelListDto
     {
         [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
     }
