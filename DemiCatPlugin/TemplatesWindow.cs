@@ -26,6 +26,7 @@ public class TemplatesWindow
     private string _channelErrorMessage = string.Empty;
     private int _channelIndex;
     private string _channelId = string.Empty;
+    private bool _channelRefreshAttempted;
 
     public TemplatesWindow(Config config, HttpClient httpClient)
     {
@@ -113,6 +114,13 @@ public class TemplatesWindow
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
+    public Task RefreshChannels()
+    {
+        _channelsLoaded = false;
+        _channelRefreshAttempted = false;
+        return FetchChannels();
+    }
+
     private async Task FetchChannels()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
@@ -149,25 +157,20 @@ public class TemplatesWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            ResolveChannelNames(dto.Event);
-            dto.Event.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit));
+            var invalid = ResolveChannelNames(dto.Event);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                _channels.Clear();
-                _channels.AddRange(dto.Event);
-                if (!string.IsNullOrEmpty(_channelId))
-                {
-                    _channelIndex = _channels.FindIndex(c => c.Id == _channelId);
-                    if (_channelIndex < 0) _channelIndex = 0;
-                }
-                if (_channels.Count > 0)
-                {
-                    _channelId = _channels[_channelIndex].Id;
-                }
+                SetChannels(dto.Event);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
             });
+            if (invalid && !_channelRefreshAttempted)
+            {
+                _channelRefreshAttempted = true;
+                await RequestChannelRefresh();
+                await FetchChannels();
+            }
         }
         catch (Exception ex)
         {
@@ -181,16 +184,56 @@ public class TemplatesWindow
         }
     }
 
-    private static void ResolveChannelNames(List<ChannelDto> channels)
+    private async Task RequestChannelRefresh()
     {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return;
+        }
+
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            await _httpClient.SendAsync(request);
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error requesting channel refresh");
+        }
+    }
+
+    private void SetChannels(List<ChannelDto> channels)
+    {
+        _channels.Clear();
+        _channels.AddRange(channels);
+        if (!string.IsNullOrEmpty(_channelId))
+        {
+            _channelIndex = _channels.FindIndex(c => c.Id == _channelId);
+            if (_channelIndex < 0) _channelIndex = 0;
+        }
+        if (_channels.Count > 0)
+        {
+            _channelId = _channels[_channelIndex].Id;
+        }
+    }
+
+    private static bool ResolveChannelNames(List<ChannelDto> channels)
+    {
+        var invalid = false;
         foreach (var c in channels)
         {
             if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
             {
                 PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
-                continue;
+                c.Name = c.Id;
+                invalid = true;
             }
         }
+        return invalid;
     }
 
     private class ChannelListDto
