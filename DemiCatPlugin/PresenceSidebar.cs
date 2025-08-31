@@ -147,6 +147,8 @@ public class PresenceSidebar : IDisposable
                 }
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
+                _loaded = false;
+                _ = Refresh();
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
