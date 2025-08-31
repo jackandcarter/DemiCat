@@ -579,7 +579,7 @@ public class EventCreateWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            var unresolved = ResolveChannelNames(dto.Event);
+            var unresolved = ChannelNameResolver.Resolve(dto.Event);
             if (unresolved && !refreshed)
             {
                 try
@@ -626,26 +626,6 @@ public class EventCreateWindow
                 _channelsLoaded = true;
             });
         }
-    }
-
-    private static bool ResolveChannelNames(List<ChannelDto> channels)
-    {
-        var unresolved = false;
-        foreach (var c in channels)
-        {
-            if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
-            {
-                PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
-                c.Name = c.Id;
-                unresolved = true;
-            }
-        }
-        return unresolved;
-    }
-
-    private class ChannelListDto
-    {
-        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
     }
 
     private void SavePreset()

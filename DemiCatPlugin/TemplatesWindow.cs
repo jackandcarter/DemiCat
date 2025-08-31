@@ -157,7 +157,7 @@ public class TemplatesWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            var invalid = ResolveChannelNames(dto.Event);
+            var invalid = ChannelNameResolver.Resolve(dto.Event);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Event);
@@ -221,19 +221,6 @@ public class TemplatesWindow
         }
     }
 
-    private static bool ResolveChannelNames(List<ChannelDto> channels)
-    {
-        var invalid = false;
-        foreach (var c in channels)
-        {
-            if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
-            {
-                PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
-                c.Name = c.Id;
-                invalid = true;
-            }
-        }
-        return invalid;
     }
 
     private class ChannelListDto
