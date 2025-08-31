@@ -12,7 +12,7 @@ public class MainWindow : IDisposable
     private readonly ChatWindow? _chat;
     private readonly OfficerChatWindow _officer;
     private readonly SettingsWindow _settings;
-    private readonly PresenceSidebar _presenceSidebar;
+    private readonly PresenceSidebar? _presenceSidebar;
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
@@ -24,7 +24,7 @@ public class MainWindow : IDisposable
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, PresenceSidebar presenceSidebar, HttpClient httpClient)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, PresenceSidebar? presenceSidebar, HttpClient httpClient)
     {
         _config = config;
         _ui = ui;
@@ -74,11 +74,9 @@ public class MainWindow : IDisposable
         {
             if (ImGui.BeginTabItem("Events"))
             {
-                if (_config.EnableFcChat)
+                if (_config.EnableFcChat && _presenceSidebar != null)
                 {
-                    ImGui.BeginChild("##presence", new Vector2(150, 0), true);
                     _presenceSidebar.Draw();
-                    ImGui.EndChild();
                     ImGui.SameLine();
                 }
                 ImGui.BeginChild("##eventsArea", ImGui.GetContentRegionAvail(), false);
@@ -113,10 +111,11 @@ public class MainWindow : IDisposable
 
             if (_config.EnableFcChat && _chat != null && ImGui.BeginTabItem("Chat"))
             {
-                ImGui.BeginChild("##presence", new Vector2(150, 0), true);
-                _presenceSidebar.Draw();
-                ImGui.EndChild();
-                ImGui.SameLine();
+                if (_presenceSidebar != null)
+                {
+                    _presenceSidebar.Draw();
+                    ImGui.SameLine();
+                }
                 ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
                 _chat.Draw();
                 ImGui.EndChild();
@@ -125,11 +124,9 @@ public class MainWindow : IDisposable
 
             if (HasOfficerRole && ImGui.BeginTabItem("Officer"))
             {
-                if (_config.EnableFcChat)
+                if (_config.EnableFcChat && _presenceSidebar != null)
                 {
-                    ImGui.BeginChild("##presence", new Vector2(150, 0), true);
                     _presenceSidebar.Draw();
-                    ImGui.EndChild();
                     ImGui.SameLine();
                 }
                 ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
