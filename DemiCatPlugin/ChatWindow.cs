@@ -110,13 +110,6 @@ public class ChatWindow : IDisposable
             _ = FetchChannels();
         }
 
-        ImGui.BeginChild("##presence", new Vector2(150, 0), true);
-        _presence.Draw();
-        ImGui.EndChild();
-        ImGui.SameLine();
-
-        ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
-
         if (_channels.Count > 0)
         {
             var channelNames = _channels.Select(c => c.Name).ToArray();
@@ -345,8 +338,6 @@ public class ChatWindow : IDisposable
         {
             ImGui.TextUnformatted(_statusMessage);
         }
-
-        ImGui.EndChild();
     }
 
     public void SetChannels(List<ChannelDto> channels)
