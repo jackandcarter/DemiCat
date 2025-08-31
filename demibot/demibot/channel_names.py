@@ -23,12 +23,21 @@ async def ensure_channel_name(
 ) -> str | None:
     """Ensure the channel's name is stored in the database.
 
-    If ``current_name`` is falsy or composed solely of digits, the Discord API
-    is queried for the channel's name and the database is updated.  The
-    resolved name is returned (or ``None`` if it could not be resolved).
+    If ``current_name`` is provided and not composed solely of digits, it is stored
+    in the database. Otherwise, the Discord API is queried for the channel's name
+    and the database is updated. The resolved name is returned (or ``None`` if it could not be resolved).
     """
 
     if current_name and not current_name.isdigit():
+        await db.execute(
+            update(GuildChannel)
+            .where(
+                GuildChannel.guild_id == guild_id,
+                GuildChannel.channel_id == channel_id,
+                GuildChannel.kind == kind,
+            )
+            .values(name=current_name)
+        )
         return current_name
 
     # Try to resolve via Discord gateway client if available, otherwise fall

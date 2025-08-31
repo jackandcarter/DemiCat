@@ -581,10 +581,8 @@ class ConfigWizard(discord.ui.View):
                     int(opt.value): opt.label for opt in self.channel_options
                 }
                 for cid in self.event_channel_ids:
-                    name = channel_name_map.get(cid)
-                    if name is None:
-                        ch = self.guild.get_channel(cid)
-                        name = ch.name if ch else None
+                    ch = self.guild.get_channel(cid)
+                    name = ch.name if ch else channel_name_map.get(cid)
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
@@ -594,10 +592,8 @@ class ConfigWizard(discord.ui.View):
                         )
                     )
                 for cid in self.fc_chat_channel_ids:
-                    name = channel_name_map.get(cid)
-                    if name is None:
-                        ch = self.guild.get_channel(cid)
-                        name = ch.name if ch else None
+                    ch = self.guild.get_channel(cid)
+                    name = ch.name if ch else channel_name_map.get(cid)
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
@@ -607,10 +603,8 @@ class ConfigWizard(discord.ui.View):
                         )
                     )
                 for cid in self.officer_chat_channel_ids:
-                    name = channel_name_map.get(cid)
-                    if name is None:
-                        ch = self.guild.get_channel(cid)
-                        name = ch.name if ch else None
+                    ch = self.guild.get_channel(cid)
+                    name = ch.name if ch else channel_name_map.get(cid)
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
