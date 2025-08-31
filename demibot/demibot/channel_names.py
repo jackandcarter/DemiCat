@@ -94,6 +94,8 @@ async def ensure_channel_name(
         )
         .values(name=name)
     )
+    if name != current_name:
+        await manager.broadcast_text("update", guild_id, path="/ws/channels")
     return name
 
 
