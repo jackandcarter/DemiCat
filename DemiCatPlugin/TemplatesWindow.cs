@@ -221,8 +221,6 @@ public class TemplatesWindow
         }
     }
 
-    }
-
     private class ChannelListDto
     {
         [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
