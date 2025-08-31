@@ -34,7 +34,7 @@ public class ChatWindow : IDisposable
     protected string _input = string.Empty;
     protected bool _useCharacterName;
     protected string _statusMessage = string.Empty;
-    protected readonly PresenceSidebar _presence;
+    protected readonly PresenceSidebar? _presence;
     protected readonly List<string> _attachments = new();
     protected string _newAttachmentPath = string.Empty;
     protected string? _replyToId;
@@ -72,16 +72,19 @@ public class ChatWindow : IDisposable
         set => _channelsLoaded = value;
     }
 
-    public PresenceSidebar Presence => _presence;
+    public PresenceSidebar? Presence => _presence;
 
     protected virtual string MessagesPath => "/api/messages";
 
-    public ChatWindow(Config config, HttpClient httpClient, PresenceSidebar presence)
+    public ChatWindow(Config config, HttpClient httpClient, PresenceSidebar? presence)
     {
         _config = config;
         _httpClient = httpClient;
         _presence = presence;
-        _presence.TextureLoader = LoadTexture;
+        if (_presence != null)
+        {
+            _presence.TextureLoader = LoadTexture;
+        }
         _emojiPicker = new EmojiPicker(config, httpClient) { TextureLoader = LoadTexture };
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
@@ -89,6 +92,10 @@ public class ChatWindow : IDisposable
 
     public void StartNetworking()
     {
+        if (!_config.EnableFcChat)
+        {
+            return;
+        }
         _wsCts?.Cancel();
         _ws?.Dispose();
         _ws = null;
@@ -778,7 +785,7 @@ public class ChatWindow : IDisposable
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 // Refresh presence information in case updates were missed while offline.
-                _ = _presence.Refresh();
+                _ = _presence?.Refresh();
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
 
                 var buffer = new byte[8192];

@@ -51,6 +51,8 @@ public class PresenceSidebar : IDisposable
 
     public void Draw()
     {
+        ImGui.BeginChild("##presence", new Vector2(150, 0), true);
+
         if (_wsTask == null)
         {
             _wsCts = new CancellationTokenSource();
@@ -80,6 +82,8 @@ public class PresenceSidebar : IDisposable
         {
             DrawPresence(p);
         }
+
+        ImGui.EndChild();
     }
 
     private void DrawPresence(PresenceDto p)

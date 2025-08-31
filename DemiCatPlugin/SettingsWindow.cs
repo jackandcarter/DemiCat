@@ -89,10 +89,12 @@ public class SettingsWindow : IDisposable
                         if (enableFc)
                         {
                             ChatWindow.StartNetworking();
+                            ChatWindow.Presence?.Reset();
                         }
                         else
                         {
                             ChatWindow.StopNetworking();
+                            ChatWindow.Presence?.Dispose();
                         }
                     }
                 }
