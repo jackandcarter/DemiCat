@@ -40,6 +40,8 @@ async def get_channels(
             GuildChannel.guild_id == ctx.guild.id
         )
     )
+    # Include human-friendly channel names so the plugin can display readable
+    # labels in dropdowns.
     by_kind: dict[str, list[dict[str, str]]] = {
         "event": [],
         "fc_chat": [],

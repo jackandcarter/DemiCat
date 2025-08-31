@@ -578,36 +578,33 @@ class ConfigWizard(discord.ui.View):
                     )
                 )
                 channel_name_lookup = {
-                    int(opt.value): opt.label for opt in self.channel_options
+                    ch.id: ch.name for ch in self.guild.text_channels
                 }
                 for cid in self.event_channel_ids:
-                    channel = self.guild.get_channel(cid)
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
                             kind="event",
-                            name=channel.name if channel else channel_name_lookup.get(cid),
+                            name=channel_name_lookup.get(cid),
                         )
                     )
                 for cid in self.fc_chat_channel_ids:
-                    channel = self.guild.get_channel(cid)
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
                             kind="fc_chat",
-                            name=channel.name if channel else channel_name_lookup.get(cid),
+                            name=channel_name_lookup.get(cid),
                         )
                     )
                 for cid in self.officer_chat_channel_ids:
-                    channel = self.guild.get_channel(cid)
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
                             kind="officer_chat",
-                            name=channel.name if channel else channel_name_lookup.get(cid),
+                            name=channel_name_lookup.get(cid),
                         )
                     )
                 await db.commit()
