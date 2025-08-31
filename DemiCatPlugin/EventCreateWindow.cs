@@ -543,7 +543,7 @@ public class EventCreateWindow
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
-    private async Task FetchChannels()
+    private async Task FetchChannels(bool refreshed = false)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
@@ -579,8 +579,25 @@ public class EventCreateWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            ResolveChannelNames(dto.Event);
-            dto.Event.RemoveAll(c => string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit));
+            var unresolved = ResolveChannelNames(dto.Event);
+            if (unresolved && !refreshed)
+            {
+                try
+                {
+                    var refreshReq = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
+                    if (!string.IsNullOrEmpty(_config.AuthToken))
+                    {
+                        refreshReq.Headers.Add("X-Api-Key", _config.AuthToken);
+                    }
+                    await _httpClient.SendAsync(refreshReq);
+                }
+                catch
+                {
+                    // ignored
+                }
+                await FetchChannels(true);
+                return;
+            }
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
@@ -611,16 +628,19 @@ public class EventCreateWindow
         }
     }
 
-    private static void ResolveChannelNames(List<ChannelDto> channels)
+    private static bool ResolveChannelNames(List<ChannelDto> channels)
     {
+        var unresolved = false;
         foreach (var c in channels)
         {
             if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
             {
                 PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
-                continue;
+                c.Name = c.Id;
+                unresolved = true;
             }
         }
+        return unresolved;
     }
 
     private class ChannelListDto
