@@ -221,10 +221,36 @@ public class ChatWindow : IDisposable
             {
                 foreach (var reaction in msg.Reactions)
                 {
-                    if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
+                    ImGui.BeginGroup();
+                    var handled = false;
+                    if (!string.IsNullOrEmpty(reaction.EmojiId))
                     {
-                        _ = React(msg.Id, reaction.Emoji, reaction.Me);
+                        if (reaction.Texture == null)
+                        {
+                            var ext = reaction.IsAnimated ? "gif" : "png";
+                            var url = $"https://cdn.discordapp.com/emojis/{reaction.EmojiId}.{ext}";
+                            LoadTexture(url, t => reaction.Texture = t);
+                        }
+                        if (reaction.Texture != null)
+                        {
+                            var wrap = reaction.Texture.GetWrapOrEmpty();
+                            if (ImGui.ImageButton(wrap.Handle, new Vector2(20, 20)))
+                            {
+                                _ = React(msg.Id, reaction.Emoji, reaction.Me);
+                            }
+                            ImGui.SameLine();
+                            ImGui.TextUnformatted(reaction.Count.ToString());
+                            handled = true;
+                        }
                     }
+                    if (!handled)
+                    {
+                        if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
+                        {
+                            _ = React(msg.Id, reaction.Emoji, reaction.Me);
+                        }
+                    }
+                    ImGui.EndGroup();
                     ImGui.SameLine();
                 }
             }

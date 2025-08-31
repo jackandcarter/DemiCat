@@ -53,8 +53,12 @@ public class MessageReferenceDto
 public class ReactionDto
 {
     public string Emoji { get; set; } = string.Empty;
+    public string? EmojiId { get; set; }
+    public bool IsAnimated { get; set; }
     public int Count { get; set; }
     public bool Me { get; set; }
+    [JsonIgnore]
+    public ISharedImmediateTexture? Texture { get; set; }
 }
 
 public class ButtonComponentDto
