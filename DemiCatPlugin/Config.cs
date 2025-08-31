@@ -25,6 +25,7 @@ public class Config : IPluginConfiguration
     public bool EnableFcChatUserSet { get; set; } = false;
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
+    public List<RoleDto> GuildRoles { get; set; } = new();
     public List<Template> Templates { get; set; } = new();
     public List<SignupPreset> SignupPresets { get; set; } = new();
 

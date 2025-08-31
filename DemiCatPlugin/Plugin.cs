@@ -64,6 +64,8 @@ public class Plugin : IDalamudPlugin
 
         _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
 
+        _ = RoleCache.EnsureLoaded(_httpClient, _config);
+
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
@@ -173,6 +175,7 @@ public class Plugin : IDalamudPlugin
                 _chatWindow.ChannelsLoaded = false;
                 _services.PluginInterface.SavePluginConfig(_config);
             });
+            await RoleCache.Refresh(_httpClient, _config);
             return true;
         }
         catch (Exception ex)

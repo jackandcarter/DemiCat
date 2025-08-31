@@ -33,6 +33,8 @@ public class FcChatWindow : ChatWindow
             _ = RefreshUsers();
         }
 
+        _ = RoleCache.EnsureLoaded(_httpClient, _config);
+
         ImGui.BeginChild("##fcChat", new Vector2(-150, 0), false);
         base.Draw();
         ImGui.EndChild();
@@ -67,6 +69,17 @@ public class FcChatWindow : ChatWindow
                 _input += $"@{user.Name} ";
             }
         }
+        if (RoleCache.Roles.Count > 0)
+        {
+            ImGui.Separator();
+            foreach (var role in RoleCache.Roles)
+            {
+                if (ImGui.Selectable($"@{role.Name}"))
+                {
+                    _input += $"@{role.Name} ";
+                }
+            }
+        }
         ImGui.EndChild();
 
         if (_config.ChatChannelId != originalChatChannel || _config.FcChannelId != _channelId)
@@ -98,6 +111,10 @@ public class FcChatWindow : ChatWindow
         foreach (var u in _users)
         {
             content = Regex.Replace(content, $"@{Regex.Escape(u.Name)}\\b", $"<@{u.Id}>");
+        }
+        foreach (var r in RoleCache.Roles)
+        {
+            content = Regex.Replace(content, $"@{Regex.Escape(r.Name)}\\b", $"<@&{r.Id}>");
         }
 
         try
