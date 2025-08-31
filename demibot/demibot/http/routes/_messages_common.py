@@ -17,6 +17,10 @@ from ...db.models import Message
 from ..discord_client import discord_client
 
 
+# Cache webhook URLs per channel to avoid recreation
+_channel_webhooks: dict[int, str] = {}
+
+
 class PostBody(BaseModel):
     channelId: str
     content: str
@@ -134,38 +138,48 @@ async def save_message(
     if discord_client:
         channel = discord_client.get_channel(channel_id)
     if channel and isinstance(channel, discord.abc.Messageable):
-        discord_files = None
-        if files:
-            discord_files = []
-            for f in files:
-                data = await f.read()
-                discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
-        # Build the identity prefix used when relaying to Discord
-        prefix = ctx.user.global_name or ("Officer" if is_officer else "Player")
-        if body.useCharacterName and ctx.user.character_name:
-            prefix = f"{ctx.user.character_name} ({prefix})"
+        webhook_url = _channel_webhooks.get(channel_id)
+        webhook = None
         try:
-            sent = await channel.send(
-                f"{prefix}: {body.content}",
-                files=discord_files,
-                reference=discord.MessageReference(
-                    message_id=int(body.messageReference.get("messageId"))
-                )
-                if body.messageReference
-                else None,
-            )
-            discord_msg_id = sent.id
-            if sent.attachments:
-                attachments = [
-                    AttachmentDto(
-                        url=a.url,
-                        filename=a.filename,
-                        contentType=a.content_type,
-                    )
-                    for a in sent.attachments
-                ]
+            if webhook_url:
+                webhook = discord.Webhook.from_url(webhook_url, client=discord_client)
+            else:
+                created = await channel.create_webhook(name="DemiCat Relay")
+                webhook_url = created.url
+                _channel_webhooks[channel_id] = webhook_url
+                webhook = created
         except Exception:
-            discord_msg_id = None
+            webhook = None
+        if webhook:
+            discord_files = None
+            if files:
+                discord_files = []
+                for f in files:
+                    data = await f.read()
+                    discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
+            username_base = ctx.user.global_name or ("Officer" if is_officer else "Player")
+            username = f"{username_base}@FFXIV FC"
+            if body.useCharacterName and ctx.user.character_name:
+                username = f"{username_base} / {ctx.user.character_name}@FFXIV FC"
+            try:
+                sent = await webhook.send(
+                    body.content,
+                    username=username,
+                    files=discord_files,
+                    wait=True,
+                )
+                discord_msg_id = sent.id
+                if sent.attachments:
+                    attachments = [
+                        AttachmentDto(
+                            url=a.url,
+                            filename=a.filename,
+                            contentType=a.content_type,
+                        )
+                        for a in sent.attachments
+                    ]
+            except Exception:
+                discord_msg_id = None
     if discord_msg_id is None:
         discord_msg_id = int(datetime.utcnow().timestamp() * 1000)
         if files:

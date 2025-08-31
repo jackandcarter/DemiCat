@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Net;
@@ -53,6 +54,7 @@ public class ChatWindow : IDisposable
     private const int TextureCacheCapacity = 100;
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingMessages = new();
 
     private class TextureCacheEntry
     {
@@ -487,12 +489,24 @@ public class ChatWindow : IDisposable
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
+                string? id = null;
+                try
+                {
+                    var bodyText = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(bodyText);
+                    if (doc.RootElement.TryGetProperty("id", out var idProp))
+                        id = idProp.GetString();
+                }
+                catch
+                {
+                    // ignore parse errors
+                }
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _input = string.Empty;
                     _statusMessage = string.Empty;
                 });
-                await RefreshMessages();
+                await WaitForEchoAndRefresh(id);
             }
             else
             {
@@ -544,6 +558,23 @@ public class ChatWindow : IDisposable
         {
             PluginServices.Instance!.Log.Error(ex, "Error reacting to message");
         }
+    }
+
+    protected async Task WaitForEchoAndRefresh(string? id)
+    {
+        if (!string.IsNullOrEmpty(id))
+        {
+            if (_messages.Any(m => m.Id == id))
+            {
+                await RefreshMessages();
+                return;
+            }
+            var tcs = new TaskCompletionSource<bool>();
+            _pendingMessages[id] = tcs;
+            await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
+            _pendingMessages.TryRemove(id, out _);
+        }
+        await RefreshMessages();
     }
 
     public virtual async Task RefreshMessages()
@@ -827,6 +858,10 @@ public class ChatWindow : IDisposable
 
                             if (msg != null)
                             {
+                                if (_pendingMessages.TryRemove(msg.Id, out var tcs))
+                                {
+                                    tcs.TrySetResult(true);
+                                }
                                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                                 {
                                     if (msg.ChannelId == _channelId)
