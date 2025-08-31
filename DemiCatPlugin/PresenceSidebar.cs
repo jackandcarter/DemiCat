@@ -22,6 +22,8 @@ public class PresenceSidebar : IDisposable
     private bool _loaded;
     private string _statusMessage = string.Empty;
 
+    public IReadOnlyList<PresenceDto> Presences => _presences;
+
     public PresenceSidebar(Config config, HttpClient httpClient)
     {
         _config = config;
