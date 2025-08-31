@@ -30,7 +30,6 @@ public class ChatWindow : IDisposable
     protected bool _channelsLoaded;
     protected bool _channelFetchFailed;
     protected string _channelErrorMessage = string.Empty;
-    protected bool _channelRefreshAttempted;
     protected string _channelId;
     protected string _input = string.Empty;
     protected bool _useCharacterName;
@@ -695,11 +694,10 @@ public class ChatWindow : IDisposable
     public Task RefreshChannels()
     {
         _channelsLoaded = false;
-        _channelRefreshAttempted = false;
         return FetchChannels();
     }
 
-    protected virtual async Task FetchChannels()
+    protected virtual async Task FetchChannels(bool refreshed = false)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
@@ -737,7 +735,7 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            var invalid = ChannelNameResolver.Resolve(dto.Chat);
+            if (await ChannelNameResolver.Resolve(dto.Chat, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Chat);
@@ -745,12 +743,6 @@ public class ChatWindow : IDisposable
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
             });
-            if (invalid && !_channelRefreshAttempted)
-            {
-                _channelRefreshAttempted = true;
-                await RequestChannelRefresh();
-                await FetchChannels();
-            }
         }
         catch (Exception ex)
         {
@@ -761,28 +753,6 @@ public class ChatWindow : IDisposable
                 _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
             });
-        }
-    }
-
-    protected async Task RequestChannelRefresh()
-    {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            return;
-        }
-
-        try
-        {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
-            await _httpClient.SendAsync(request);
-        }
-        catch (Exception ex)
-        {
-            PluginServices.Instance!.Log.Error(ex, "Error refreshing channels");
         }
     }
 

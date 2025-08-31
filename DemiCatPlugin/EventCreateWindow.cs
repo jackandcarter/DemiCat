@@ -546,25 +546,7 @@ public class EventCreateWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            var unresolved = ChannelNameResolver.Resolve(dto.Event);
-            if (unresolved && !refreshed)
-            {
-                try
-                {
-                    var refreshReq = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
-                    if (!string.IsNullOrEmpty(_config.AuthToken))
-                    {
-                        refreshReq.Headers.Add("X-Api-Key", _config.AuthToken);
-                    }
-                    await _httpClient.SendAsync(refreshReq);
-                }
-                catch
-                {
-                    // ignored
-                }
-                await FetchChannels(true);
-                return;
-            }
+            if (await ChannelNameResolver.Resolve(dto.Event, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
