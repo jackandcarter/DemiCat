@@ -131,10 +131,7 @@ public class PresenceSidebar : IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -178,10 +175,7 @@ public class PresenceSidebar : IDisposable
             {
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
-                if (!string.IsNullOrEmpty(_config.AuthToken))
-                {
-                    _ws.Options.SetRequestHeader("X-Api-Key", _config.AuthToken);
-                }
+                ApiHelpers.AddAuthHeader(_ws, _config);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 _loaded = false;

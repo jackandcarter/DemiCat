@@ -112,10 +112,7 @@ public class Plugin : IDalamudPlugin
         {
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/roles";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             log.Info($"Requesting roles from {url}");
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
@@ -130,10 +127,7 @@ public class Plugin : IDalamudPlugin
 
             var channelUrl = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels";
             var channelRequest = new HttpRequestMessage(HttpMethod.Get, channelUrl);
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                channelRequest.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(channelRequest, _config);
             List<ChannelDto> chatChannels = new();
             try
             {

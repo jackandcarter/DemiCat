@@ -64,8 +64,7 @@ internal static class RequestStateService
         {
             var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/requests";
             var msg = new HttpRequestMessage(HttpMethod.Get, url);
-            if (!string.IsNullOrEmpty(config.AuthToken))
-                msg.Headers.Add("X-Api-Key", config.AuthToken);
+            ApiHelpers.AddAuthHeader(msg, config);
             var resp = await httpClient.SendAsync(msg);
             if (!resp.IsSuccessStatusCode) return;
             var stream = await resp.Content.ReadAsStreamAsync();

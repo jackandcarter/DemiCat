@@ -33,10 +33,7 @@ internal static class SignupPresetService
         try
         {
             var req = new HttpRequestMessage(HttpMethod.Get, $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets");
-            if (!string.IsNullOrEmpty(config.AuthToken))
-            {
-                req.Headers.Add("X-Api-Key", config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(req, config);
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
             {
@@ -58,10 +55,7 @@ internal static class SignupPresetService
         try
         {
             var req = new HttpRequestMessage(HttpMethod.Post, $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets");
-            if (!string.IsNullOrEmpty(config.AuthToken))
-            {
-                req.Headers.Add("X-Api-Key", config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(req, config);
             req.Content = new StringContent(JsonSerializer.Serialize(preset), Encoding.UTF8, "application/json");
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
@@ -81,10 +75,7 @@ internal static class SignupPresetService
         try
         {
             var req = new HttpRequestMessage(HttpMethod.Delete, $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets/{id}");
-            if (!string.IsNullOrEmpty(config.AuthToken))
-            {
-                req.Headers.Add("X-Api-Key", config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(req, config);
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
             {

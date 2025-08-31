@@ -164,10 +164,7 @@ public class FcChatWindow : ChatWindow
             {
                 Content = form
             };
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -202,10 +199,7 @@ public class FcChatWindow : ChatWindow
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {

@@ -341,10 +341,7 @@ public class EventView : IDisposable
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");
             var body = new { MessageId = _dto.Id, ChannelId = _dto.ChannelId, CustomId = customId };
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
+            ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             _lastResult = response.IsSuccessStatusCode ? "Signup updated" : "Signup failed";
             if (response.IsSuccessStatusCode)
