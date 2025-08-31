@@ -84,6 +84,15 @@ public class PresenceSidebar : IDisposable
 
     private void DrawPresence(PresenceDto p)
     {
+        // Status indicator
+        var color = p.Status == "online"
+            ? new Vector4(0f, 1f, 0f, 1f)
+            : new Vector4(0.5f, 0.5f, 0.5f, 1f);
+        ImGui.PushStyleColor(ImGuiCol.Text, color);
+        ImGui.TextUnformatted("●");
+        ImGui.PopStyleColor();
+        ImGui.SameLine();
+
         if (TextureLoader != null && !string.IsNullOrEmpty(p.AvatarUrl) && p.AvatarTexture == null)
         {
             TextureLoader(p.AvatarUrl, t => p.AvatarTexture = t);
@@ -107,7 +116,7 @@ public class PresenceSidebar : IDisposable
         _ws?.Dispose();
     }
 
-    private async Task Refresh()
+    public async Task Refresh()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
