@@ -40,6 +40,9 @@ public class ChatWindow : IDisposable
     protected string? _replyToId;
     private static readonly string[] DefaultReactions = new[] { "👍", "👎", "❤️" };
     private readonly EmojiPicker _emojiPicker;
+    private readonly Dictionary<string, EmojiPicker.EmojiDto> _emojiCatalog = new();
+    private bool _emojiCatalogLoaded;
+    private bool _emojiFetchInProgress;
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
@@ -176,7 +179,7 @@ public class ChatWindow : IDisposable
                 }
             }
 
-            ImGui.TextWrapped(FormatContent(msg));
+            FormatContent(msg);
             if (msg.Embeds != null)
             {
                 foreach (var embed in msg.Embeds)
@@ -336,10 +339,57 @@ public class ChatWindow : IDisposable
         }
     }
 
-
-    protected string FormatContent(DiscordMessageDto msg)
+    private void EnsureEmojiCatalog()
     {
-        var text = msg.Content;
+        if (_emojiCatalogLoaded || _emojiFetchInProgress)
+            return;
+        _emojiFetchInProgress = true;
+        _ = Task.Run(async () =>
+        {
+            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                _emojiCatalogLoaded = true;
+                _emojiFetchInProgress = false;
+                return;
+            }
+            try
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis");
+                if (!string.IsNullOrEmpty(_config.AuthToken))
+                {
+                    request.Headers.Add("X-Api-Key", _config.AuthToken);
+                }
+                var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _emojiFetchInProgress = false;
+                    return;
+                }
+                var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                var list = await JsonSerializer.DeserializeAsync<List<EmojiPicker.EmojiDto>>(stream).ConfigureAwait(false) ?? new List<EmojiPicker.EmojiDto>();
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _emojiCatalog.Clear();
+                    foreach (var e in list)
+                    {
+                        _emojiCatalog[e.Name] = e;
+                    }
+                    _emojiCatalogLoaded = true;
+                    _emojiFetchInProgress = false;
+                });
+            }
+            catch
+            {
+                _emojiFetchInProgress = false;
+            }
+        });
+    }
+
+
+    protected void FormatContent(DiscordMessageDto msg)
+    {
+        EnsureEmojiCatalog();
+        var text = msg.Content ?? string.Empty;
         if (msg.Mentions != null)
         {
             foreach (var m in msg.Mentions)
@@ -350,7 +400,49 @@ public class ChatWindow : IDisposable
         text = Regex.Replace(text, "<a?:([a-zA-Z0-9_]+):\\d+>", ":$1:");
 
         text = MarkdownFormatter.Format(text);
-        return text;
+
+        var parts = Regex.Split(text, "(:[a-zA-Z0-9_]+:)");
+        ImGui.PushTextWrapPos();
+        var first = true;
+        foreach (var part in parts)
+        {
+            if (string.IsNullOrEmpty(part)) continue;
+            if (!first)
+            {
+                ImGui.SameLine(0, 0);
+            }
+            var match = Regex.Match(part, "^:([a-zA-Z0-9_]+):$");
+            if (match.Success)
+            {
+                var name = match.Groups[1].Value;
+                if (_emojiCatalog.TryGetValue(name, out var emoji))
+                {
+                    if (emoji.Texture == null)
+                    {
+                        LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
+                    }
+                    if (emoji.Texture != null)
+                    {
+                        var wrap = emoji.Texture.GetWrapOrEmpty();
+                        ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                    }
+                    else
+                    {
+                        ImGui.TextUnformatted($":{name}:");
+                    }
+                }
+                else
+                {
+                    ImGui.TextUnformatted($":{name}:");
+                }
+            }
+            else
+            {
+                ImGui.TextUnformatted(part);
+            }
+            first = false;
+        }
+        ImGui.PopTextWrapPos();
     }
 
     protected virtual async Task SendMessage()
@@ -549,6 +641,10 @@ public class ChatWindow : IDisposable
         foreach (var m in _messages)
         {
             DisposeMessageTextures(m);
+        }
+        foreach (var e in _emojiCatalog.Values)
+        {
+            e.Texture = null;
         }
         EmbedRenderer.ClearCache();
     }
