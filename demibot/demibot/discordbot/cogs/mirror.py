@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import discord
 from discord.ext import commands
 from sqlalchemy import select
@@ -21,6 +22,27 @@ from ...http.schemas import (
     MessageAuthor,
 )
 from ...http.ws import manager
+
+
+class ApolloHelper:
+    """Utility helpers for Apollo embed detection."""
+
+    APOLLO_APPLICATION_ID = int(os.getenv("APOLLO_APPLICATION_ID", "0"))
+
+    @staticmethod
+    def IsApolloMessage(message: discord.Message) -> bool:  # noqa: N802
+        """Return True if the message appears to be from Apollo."""
+
+        app_id = getattr(message, "application_id", None)
+        if ApolloHelper.APOLLO_APPLICATION_ID and app_id == ApolloHelper.APOLLO_APPLICATION_ID:
+            return True
+        for emb in getattr(message, "embeds", []) or []:
+            data = emb.to_dict()
+            footer = (data.get("footer", {}) or {}).get("text", "")
+            author = (data.get("author", {}) or {}).get("name", "")
+            if "apollo" in footer.lower() or author == "Apollo":
+                return True
+        return False
 
 
 CHANNEL_SYNC_INTERVAL = 3600
@@ -124,8 +146,7 @@ class Mirror(commands.Cog):
 
         channel_id = message.channel.id
 
-        # Ignore messages from bots (including ourselves) unless they are Apollo
-        if message.author.bot:
+        if ApolloHelper.IsApolloMessage(message):
             async for db in get_session():
                 result = await db.execute(
                     select(GuildChannel.kind, GuildChannel.guild_id).where(
@@ -142,10 +163,6 @@ class Mirror(commands.Cog):
                 stored = False
                 for emb in message.embeds:
                     data = emb.to_dict()
-                    footer = data.get("footer", {}).get("text", "").lower()
-                    author = data.get("author", {}).get("name", "")
-                    if "apollo" not in footer and author != "Apollo":
-                        continue
                     buttons: list[EmbedButtonDto] = []
                     try:
                         for row in getattr(message, "components", []) or []:
@@ -259,6 +276,9 @@ class Mirror(commands.Cog):
                 if stored:
                     await db.commit()
                 break
+            return
+
+        if message.author.bot:
             return
 
         async for db in get_session():

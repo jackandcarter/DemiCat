@@ -17,11 +17,14 @@ async def get_embeds(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
     channel_id: int | None = None,
+    source: str | None = None,
     limit: int | None = None,
 ):
     stmt = select(Embed).where(Embed.guild_id == ctx.guild.id)
     if channel_id is not None:
         stmt = stmt.where(Embed.channel_id == channel_id)
+    if source is not None:
+        stmt = stmt.where(Embed.source == source)
     if "officer" not in ctx.roles:
         stmt = stmt.join(
             GuildChannel, GuildChannel.channel_id == Embed.channel_id
