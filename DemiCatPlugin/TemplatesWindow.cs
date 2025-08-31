@@ -26,7 +26,6 @@ public class TemplatesWindow
     private string _channelErrorMessage = string.Empty;
     private int _channelIndex;
     private string _channelId = string.Empty;
-    private bool _channelRefreshAttempted;
 
     public TemplatesWindow(Config config, HttpClient httpClient)
     {
@@ -117,11 +116,10 @@ public class TemplatesWindow
     public Task RefreshChannels()
     {
         _channelsLoaded = false;
-        _channelRefreshAttempted = false;
         return FetchChannels();
     }
 
-    private async Task FetchChannels()
+    private async Task FetchChannels(bool refreshed = false)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
@@ -157,7 +155,7 @@ public class TemplatesWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            var invalid = ChannelNameResolver.Resolve(dto.Event);
+            if (await ChannelNameResolver.Resolve(dto.Event, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Event);
@@ -165,12 +163,6 @@ public class TemplatesWindow
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
             });
-            if (invalid && !_channelRefreshAttempted)
-            {
-                _channelRefreshAttempted = true;
-                await RequestChannelRefresh();
-                await FetchChannels();
-            }
         }
         catch (Exception ex)
         {
@@ -181,28 +173,6 @@ public class TemplatesWindow
                 _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
             });
-        }
-    }
-
-    private async Task RequestChannelRefresh()
-    {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            return;
-        }
-
-        try
-        {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
-            if (!string.IsNullOrEmpty(_config.AuthToken))
-            {
-                request.Headers.Add("X-Api-Key", _config.AuthToken);
-            }
-            await _httpClient.SendAsync(request);
-        }
-        catch (Exception ex)
-        {
-            PluginServices.Instance!.Log.Error(ex, "Error requesting channel refresh");
         }
     }
 
