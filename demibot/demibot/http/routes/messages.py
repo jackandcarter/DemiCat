@@ -15,6 +15,7 @@ from ._messages_common import (
     delete_message as delete_message_common,
 )
 from ..discord_client import discord_client
+from ...db.models import Message
 
 router = APIRouter(prefix="/api")
 
@@ -73,9 +74,18 @@ async def add_reaction(
     message_id: str,
     emoji: str,
     ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
 ):
     if not discord_client:
         raise HTTPException(status_code=503, detail="Discord client unavailable")
+    row = await db.get(Message, int(message_id))
+    if not row or row.channel_id != int(channel_id):
+        raise HTTPException(status_code=404)
+    if row.is_officer:
+        if "officer" not in ctx.roles:
+            raise HTTPException(status_code=403)
+    elif "chat" not in ctx.roles:
+        raise HTTPException(status_code=403)
     channel = discord_client.get_channel(int(channel_id))
     if not channel or not isinstance(channel, discord.abc.Messageable):
         raise HTTPException(status_code=404)
@@ -93,9 +103,18 @@ async def remove_reaction(
     message_id: str,
     emoji: str,
     ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
 ):
     if not discord_client:
         raise HTTPException(status_code=503, detail="Discord client unavailable")
+    row = await db.get(Message, int(message_id))
+    if not row or row.channel_id != int(channel_id):
+        raise HTTPException(status_code=404)
+    if row.is_officer:
+        if "officer" not in ctx.roles:
+            raise HTTPException(status_code=403)
+    elif "chat" not in ctx.roles:
+        raise HTTPException(status_code=403)
     channel = discord_client.get_channel(int(channel_id))
     if not channel or not isinstance(channel, discord.abc.Messageable):
         raise HTTPException(status_code=404)
