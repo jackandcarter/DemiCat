@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -36,6 +37,13 @@ public class FcChatWindow : ChatWindow
         ImGui.BeginChild("##userList", new Vector2(150, -30), true);
         foreach (var user in _users)
         {
+            var color = user.Status == "online"
+                ? new Vector4(0f, 1f, 0f, 1f)
+                : new Vector4(0.5f, 0.5f, 0.5f, 1f);
+            ImGui.PushStyleColor(ImGuiCol.Text, color);
+            ImGui.TextUnformatted("●");
+            ImGui.PopStyleColor();
+            ImGui.SameLine();
             if (ImGui.Selectable(user.Name))
             {
                 _input += $"@{user.Name} ";
@@ -114,10 +122,21 @@ public class FcChatWindow : ChatWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var users = await JsonSerializer.DeserializeAsync<List<UserDto>>(stream) ?? new List<UserDto>();
+            var merged = users.Select(u =>
+            {
+                var presence = _presence.Presences.FirstOrDefault(p => p.Id == u.Id);
+                return new UserDto
+                {
+                    Id = u.Id,
+                    Name = u.Name,
+                    Status = presence?.Status ?? "offline"
+                };
+            }).ToList();
+
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _users.Clear();
-                _users.AddRange(users);
+                _users.AddRange(merged);
                 _lastUserFetch = DateTime.UtcNow;
             });
         }
@@ -131,6 +150,7 @@ public class FcChatWindow : ChatWindow
     {
         public string Id { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
     }
 }
 
