@@ -38,8 +38,8 @@ public class ChatWindow : IDisposable
     protected readonly List<string> _attachments = new();
     protected string _newAttachmentPath = string.Empty;
     protected string? _replyToId;
-    protected readonly Dictionary<string, string> _reactionInputs = new();
     private static readonly string[] DefaultReactions = new[] { "👍", "👎", "❤️" };
+    private readonly EmojiPicker _emojiPicker;
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
@@ -79,6 +79,7 @@ public class ChatWindow : IDisposable
         _httpClient = httpClient;
         _presence = presence;
         _presence.TextureLoader = LoadTexture;
+        _emojiPicker = new EmojiPicker(config, httpClient) { TextureLoader = LoadTexture };
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
     }
@@ -224,10 +225,6 @@ public class ChatWindow : IDisposable
                     ImGui.SameLine();
                 }
             }
-            if (!_reactionInputs.ContainsKey(msg.Id))
-            {
-                _reactionInputs[msg.Id] = string.Empty;
-            }
             if (ImGui.SmallButton($"+##react{msg.Id}"))
             {
                 ImGui.OpenPopup($"reactPicker{msg.Id}");
@@ -245,13 +242,11 @@ public class ChatWindow : IDisposable
                     ImGui.SameLine();
                 }
                 ImGui.NewLine();
-                ImGui.InputText("Emoji", ref _reactionInputs[msg.Id], 16);
-                if (ImGui.Button("Add") && !string.IsNullOrWhiteSpace(_reactionInputs[msg.Id]))
+                _emojiPicker.Draw(selection =>
                 {
-                    _ = React(msg.Id, _reactionInputs[msg.Id], false);
-                    _reactionInputs[msg.Id] = string.Empty;
+                    _ = React(msg.Id, selection, false);
                     ImGui.CloseCurrentPopup();
-                }
+                });
                 ImGui.EndPopup();
             }
             ImGui.EndGroup();
