@@ -50,12 +50,16 @@ async def get_users(
                     avatar = str(user_obj.display_avatar.url)
             if avatar is not None:
                 avatars[u.discord_user_id] = avatar
-    return [
-        {
-            "id": str(u.discord_user_id),
-            "name": u.global_name or str(u.discord_user_id),
-            "status": s or cache.get(u.discord_user_id, "offline"),
-            "avatar_url": avatars.get(u.discord_user_id),
-        }
-        for u, s in rows
-    ]
+    users: list[dict[str, str | None]] = []
+    for u, s in rows:
+        status = s or cache.get(u.discord_user_id)
+        status = "online" if status == "online" else "offline"
+        users.append(
+            {
+                "id": str(u.discord_user_id),
+                "name": u.global_name or str(u.discord_user_id),
+                "status": status,
+                "avatar_url": avatars.get(u.discord_user_id),
+            }
+        )
+    return users

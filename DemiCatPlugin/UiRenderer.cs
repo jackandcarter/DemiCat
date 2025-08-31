@@ -10,6 +10,7 @@ using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
+using System.Text.RegularExpressions;
 using DiscordHelper;
 using Dalamud.Bindings.ImGui;
 
@@ -38,6 +39,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     {
         PropertyNameCaseInsensitive = true
     };
+
+    private readonly Dictionary<string, PresenceDto> _presences = new();
+    private bool _presenceLoaded;
+    private bool _presenceLoadAttempted;
+    private static readonly Regex MentionRegex = new("<@!?([0-9]+)>", RegexOptions.Compiled);
 
     public UiRenderer(Config config, HttpClient httpClient)
     {
@@ -124,6 +130,76 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
     }
 
+    private async Task LoadPresences()
+    {
+        if (_presenceLoadAttempted) return;
+        _presenceLoadAttempted = true;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
+            if (!string.IsNullOrEmpty(_config.AuthToken))
+            {
+                request.Headers.Add("X-Api-Key", _config.AuthToken);
+            }
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode) return;
+            var stream = await response.Content.ReadAsStreamAsync();
+            var list = await JsonSerializer.DeserializeAsync<List<PresenceDto>>(stream, JsonOpts) ?? new List<PresenceDto>();
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _presences.Clear();
+                foreach (var p in list)
+                {
+                    _presences[p.Id] = p;
+                }
+                _presenceLoaded = true;
+                AnnotateEmbedsWithPresence();
+            });
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private void AnnotateEmbedDtos()
+    {
+        if (_presences.Count == 0) return;
+        foreach (var dto in _embedDtos)
+        {
+            if (dto.Fields == null) continue;
+            foreach (var f in dto.Fields)
+            {
+                f.Value = MentionRegex.Replace(f.Value, match =>
+                {
+                    var id = match.Groups[1].Value;
+                    if (_presences.TryGetValue(id, out var p))
+                    {
+                        return $"{p.Name} ({p.Status})";
+                    }
+                    return match.Value;
+                });
+            }
+        }
+    }
+
+    private void AnnotateEmbedsWithPresence()
+    {
+        if (_presences.Count == 0) return;
+        lock (_embedLock)
+        {
+            AnnotateEmbedDtos();
+            foreach (var dto in _embedDtos)
+            {
+                if (_embeds.TryGetValue(dto.Id, out var view))
+                {
+                    view.Update(dto);
+                }
+            }
+        }
+    }
+
     private async Task<bool> PollEmbeds()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config)) return false;
@@ -155,6 +231,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             {
                 _embedDtos.Clear();
                 _embedDtos.AddRange(embeds);
+                AnnotateEmbedDtos();
                 SetEmbeds(_embedDtos);
             });
             _failureCount = 0;
@@ -263,6 +340,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                                 if (index >= 0)
                                 {
                                     _embedDtos.RemoveAt(index);
+                                    AnnotateEmbedDtos();
                                     SetEmbeds(_embedDtos);
                                 }
                             });
@@ -287,6 +365,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                                     {
                                         _embedDtos.Add(embed);
                                     }
+                                    AnnotateEmbedDtos();
                                     SetEmbeds(_embedDtos);
                                 });
                             }
@@ -364,6 +443,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             {
                 _embedDtos.Clear();
                 _embedDtos.AddRange(embeds);
+                AnnotateEmbedDtos();
                 SetEmbeds(_embedDtos);
             });
         }
@@ -375,6 +455,10 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public void Draw()
     {
+        if (!_presenceLoaded)
+        {
+            _ = LoadPresences();
+        }
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
