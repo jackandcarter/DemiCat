@@ -111,8 +111,9 @@ public class OfficerChatWindow : ChatWindow
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<OfficerChannelListDto>(stream) ?? new OfficerChannelListDto();
-            var invalid = ChannelNameResolver.Resolve(dto.Officer);
+            var dto = await JsonSerializer.DeserializeAsync<OfficerChannelListDto>(stream) ?? new();
+            if (await ChannelNameResolver.Resolve(dto.Officer, _httpClient, _config, refreshed, () => FetchChannels(true)))
+                return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Officer);
@@ -120,12 +121,6 @@ public class OfficerChatWindow : ChatWindow
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
             });
-            if (invalid && !_channelRefreshAttempted)
-            {
-                _channelRefreshAttempted = true;
-                await RequestChannelRefresh();
-                await FetchChannels(true);
-            }
         }
         catch (Exception ex)
         {
