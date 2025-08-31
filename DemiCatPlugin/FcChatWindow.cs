@@ -103,13 +103,13 @@ public class FcChatWindow : ChatWindow
         return base.RefreshMessages();
     }
 
-    protected override Task FetchChannels()
+    protected override Task FetchChannels(bool refreshed = false)
     {
         if (!_config.EnableFcChat)
         {
             return Task.CompletedTask;
         }
-        return base.FetchChannels();
+        return base.FetchChannels(refreshed);
     }
 
     protected override async Task SendMessage()

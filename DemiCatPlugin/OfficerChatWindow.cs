@@ -76,7 +76,7 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
-    protected override async Task FetchChannels()
+    protected override async Task FetchChannels(bool refreshed = false)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
@@ -124,7 +124,7 @@ public class OfficerChatWindow : ChatWindow
             {
                 _channelRefreshAttempted = true;
                 await RequestChannelRefresh();
-                await FetchChannels();
+                await FetchChannels(true);
             }
         }
         catch (Exception ex)
