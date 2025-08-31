@@ -280,7 +280,7 @@ public class ChatWindow : IDisposable
             }
             ImGui.EndGroup();
 
-            if (ImGui.BeginPopupContextItem())
+            if (ImGui.BeginPopupContextItem("messageContext"))
             {
                 if (ImGui.MenuItem("Reply"))
                 {
