@@ -91,9 +91,18 @@ async def add_reaction(
         raise HTTPException(status_code=404)
     try:
         msg = await channel.fetch_message(int(message_id))
+    except discord.NotFound:
+        raise HTTPException(status_code=404)
+    except discord.Forbidden:
+        raise HTTPException(status_code=403)
+
+    try:
         await msg.add_reaction(emoji)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    except discord.NotFound:
+        raise HTTPException(status_code=404)
+    except discord.Forbidden:
+        raise HTTPException(status_code=403)
+
     return {"ok": True}
 
 

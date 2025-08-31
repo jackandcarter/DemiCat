@@ -396,6 +396,7 @@ public class ChatWindow : IDisposable
                     foreach (var e in list)
                     {
                         _emojiCatalog[e.Name] = e;
+                        LoadTexture(e.ImageUrl, t => e.Texture = t);
                     }
                     _emojiCatalogLoaded = true;
                     _emojiFetchInProgress = false;
