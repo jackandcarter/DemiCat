@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 
@@ -13,9 +12,9 @@ internal static class ChannelNameResolver
         var unresolved = false;
         foreach (var c in channels)
         {
-            if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
+            if (string.IsNullOrWhiteSpace(c.Name))
             {
-                PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
+                PluginServices.Instance!.Log.Warning($"Channel name missing for {c.Id}.");
                 c.Name = c.Id;
                 unresolved = true;
             }

@@ -31,7 +31,6 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private bool _channelFetchFailed;
     private string _channelErrorMessage = string.Empty;
     private int _selectedIndex;
-    private bool _channelRefreshAttempted;
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private DateTime _lastSync;
     private int _failureCount;
@@ -489,7 +488,6 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     {
         _channelsLoaded = false;
         _channels.Clear();
-        _channelRefreshAttempted = false;
     }
 
     public Task RefreshChannels()
@@ -503,7 +501,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
-    private async Task FetchChannels()
+    private async Task FetchChannels(bool refreshed = false)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
@@ -536,7 +534,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            var invalid = ChannelNameResolver.Resolve(dto.Event);
+            if (await ChannelNameResolver.Resolve(dto.Event, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
@@ -554,12 +552,6 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
             });
-            if (invalid && !_channelRefreshAttempted)
-            {
-                _channelRefreshAttempted = true;
-                await RefreshChannelNames();
-                await FetchChannels();
-            }
         }
         catch (Exception ex)
         {
@@ -570,25 +562,6 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
             });
-        }
-    }
-
-    private async Task RefreshChannelNames()
-    {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            return;
-        }
-
-        try
-        {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
-            ApiHelpers.AddAuthHeader(request, _config);
-            await _httpClient.SendAsync(request);
-        }
-        catch (Exception ex)
-        {
-            PluginServices.Instance!.Log.Error(ex, "Error refreshing channel names");
         }
     }
 
