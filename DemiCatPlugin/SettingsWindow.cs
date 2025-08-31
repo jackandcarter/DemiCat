@@ -429,7 +429,10 @@ public class SettingsWindow : IDisposable
 
                     try
                     {
-                        ChatWindow?.StartNetworking();
+                        if (_config.EnableFcChat)
+                        {
+                            ChatWindow?.StartNetworking();
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -447,7 +450,10 @@ public class SettingsWindow : IDisposable
 
                     try
                     {
-                        _ = ChatWindow?.RefreshChannels();
+                        if (_config.EnableFcChat)
+                        {
+                            _ = ChatWindow?.RefreshChannels();
+                        }
                         _ = OfficerChatWindow?.RefreshChannels();
                     }
                     catch (Exception ex)
@@ -457,7 +463,10 @@ public class SettingsWindow : IDisposable
 
                     try
                     {
-                        _ = ChatWindow?.RefreshMessages();
+                        if (_config.EnableFcChat)
+                        {
+                            _ = ChatWindow?.RefreshMessages();
+                        }
                         _ = OfficerChatWindow?.RefreshMessages();
                     }
                     catch (Exception ex)

@@ -94,6 +94,24 @@ public class FcChatWindow : ChatWindow
         }
     }
 
+    public override Task RefreshMessages()
+    {
+        if (!_config.EnableFcChat)
+        {
+            return Task.CompletedTask;
+        }
+        return base.RefreshMessages();
+    }
+
+    protected override Task FetchChannels()
+    {
+        if (!_config.EnableFcChat)
+        {
+            return Task.CompletedTask;
+        }
+        return base.FetchChannels();
+    }
+
     protected override async Task SendMessage()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
