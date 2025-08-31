@@ -35,6 +35,9 @@ public class ChatWindow : IDisposable
     protected bool _useCharacterName;
     protected string _statusMessage = string.Empty;
     protected readonly PresenceSidebar _presence;
+    protected readonly List<string> _attachments = new();
+    protected string _newAttachmentPath = string.Empty;
+    protected string? _replyToId;
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
@@ -132,6 +135,7 @@ public class ChatWindow : IDisposable
         ImGui.BeginChild("##chatScroll", new Vector2(-1, -30), true);
         foreach (var msg in _messages)
         {
+            ImGui.PushID(msg.Id);
             ImGui.BeginGroup();
             if (!string.IsNullOrEmpty(msg.Author.AvatarUrl) && msg.AvatarTexture == null)
             {
@@ -200,9 +204,59 @@ public class ChatWindow : IDisposable
             }
             ImGui.EndGroup();
 
+            if (ImGui.BeginPopupContextItem())
+            {
+                if (ImGui.MenuItem("Reply"))
+                {
+                    _replyToId = msg.Id;
+                }
+                ImGui.EndPopup();
+            }
+
+            ImGui.PopID();
             ImGui.EndGroup();
         }
         ImGui.EndChild();
+
+        if (_replyToId != null)
+        {
+            var refMsg = _messages.Find(m => m.Id == _replyToId);
+            if (refMsg != null)
+            {
+                var preview = refMsg.Content ?? string.Empty;
+                if (preview.Length > 50) preview = preview.Substring(0, 50) + "...";
+                ImGui.TextUnformatted($"Replying to {refMsg.Author.Name}: {preview}");
+                ImGui.SameLine();
+                if (ImGui.SmallButton("Cancel Reply"))
+                {
+                    _replyToId = null;
+                }
+            }
+        }
+
+        if (ImGui.Button("Attach"))
+        {
+            ImGui.OpenPopup("attachFile");
+        }
+        if (ImGui.BeginPopup("attachFile"))
+        {
+            ImGui.InputText("Path", ref _newAttachmentPath, 260);
+            if (ImGui.Button("Add") && File.Exists(_newAttachmentPath))
+            {
+                _attachments.Add(_newAttachmentPath);
+                _newAttachmentPath = string.Empty;
+            }
+            ImGui.EndPopup();
+        }
+        foreach (var att in _attachments.ToArray())
+        {
+            ImGui.TextUnformatted(Path.GetFileName(att));
+            ImGui.SameLine();
+            if (ImGui.SmallButton($"X##{att}"))
+            {
+                _attachments.Remove(att);
+            }
+        }
 
         var send = ImGui.InputText("##chatInput", ref _input, 512, ImGuiInputTextFlags.EnterReturnsTrue);
         ImGui.SameLine();

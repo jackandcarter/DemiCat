@@ -52,11 +52,17 @@ async def post_message_with_attachments(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    ref = None
+    if message_reference:
+        try:
+            ref = json.loads(message_reference)
+        except Exception:
+            raise HTTPException(status_code=400, detail="invalid message_reference")
     body = PostBody(
         channelId=channel_id,
         content=content,
         useCharacterName=useCharacterName,
-        messageReference=json.loads(message_reference) if message_reference else None,
+        messageReference=ref,
     )
     return await save_message(body, ctx, db, is_officer=False, files=files)
 

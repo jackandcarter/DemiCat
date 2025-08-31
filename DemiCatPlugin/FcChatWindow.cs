@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text;
+using System.IO;
 using System.Text.RegularExpressions;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -84,9 +87,33 @@ public class FcChatWindow : ChatWindow
 
         try
         {
-            var body = new { channelId = _channelId, content, useCharacterName = _useCharacterName };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages");
-            request.Content = new StringContent(JsonSerializer.Serialize(body), System.Text.Encoding.UTF8, "application/json");
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{_channelId}/messages";
+            var form = new MultipartFormDataContent();
+            form.Add(new StringContent(content), "content");
+            form.Add(new StringContent(_useCharacterName ? "true" : "false"), "useCharacterName");
+            if (!string.IsNullOrEmpty(_replyToId))
+            {
+                var refJson = JsonSerializer.Serialize(new { messageId = _replyToId });
+                form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
+            }
+            foreach (var path in _attachments)
+            {
+                try
+                {
+                    var bytes = await File.ReadAllBytesAsync(path);
+                    var contentPart = new ByteArrayContent(bytes);
+                    contentPart.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                    form.Add(contentPart, "files", Path.GetFileName(path));
+                }
+                catch
+                {
+                    // ignore individual file errors
+                }
+            }
+            var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = form
+            };
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);
@@ -95,6 +122,8 @@ public class FcChatWindow : ChatWindow
             if (response.IsSuccessStatusCode)
             {
                 _input = string.Empty;
+                _attachments.Clear();
+                _replyToId = null;
                 await RefreshMessages();
             }
         }

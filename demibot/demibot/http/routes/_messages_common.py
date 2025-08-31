@@ -177,6 +177,9 @@ async def save_message(
         name=ctx.user.global_name or ("Officer" if is_officer else "Player"),
         avatarUrl=None,
     )
+    attachments_json = (
+        json.dumps([a.model_dump() for a in attachments]) if attachments else None
+    )
     msg = Message(
         discord_message_id=discord_msg_id,
         channel_id=channel_id,
@@ -188,9 +191,7 @@ async def save_message(
         content_display=body.content,
         content=body.content,
         author_json=author.model_dump_json(),
-        attachments_json=(
-            json.dumps([a.model_dump() for a in attachments]) if attachments else None
-        ),
+        attachments_json=attachments_json,
         reference_json=json.dumps(body.messageReference)
         if body.messageReference
         else None,
