@@ -8,6 +8,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
+using System.Numerics;
 
 namespace DemiCatPlugin;
 
@@ -23,6 +25,7 @@ public class PresenceSidebar : IDisposable
     private string _statusMessage = string.Empty;
 
     public IReadOnlyList<PresenceDto> Presences => _presences;
+    public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
 
     public PresenceSidebar(Config config, HttpClient httpClient)
     {
@@ -69,14 +72,33 @@ public class PresenceSidebar : IDisposable
         ImGui.TextUnformatted($"Online - {online.Count}");
         foreach (var p in online)
         {
-            ImGui.TextUnformatted(p.Name);
+            DrawPresence(p);
         }
         ImGui.Spacing();
         ImGui.TextUnformatted($"Offline - {offline.Count}");
         foreach (var p in offline)
         {
-            ImGui.TextUnformatted(p.Name);
+            DrawPresence(p);
         }
+    }
+
+    private void DrawPresence(PresenceDto p)
+    {
+        if (TextureLoader != null && !string.IsNullOrEmpty(p.AvatarUrl) && p.AvatarTexture == null)
+        {
+            TextureLoader(p.AvatarUrl, t => p.AvatarTexture = t);
+        }
+        if (p.AvatarTexture != null)
+        {
+            var wrap = p.AvatarTexture.GetWrapOrEmpty();
+            ImGui.Image(wrap.Handle, new Vector2(24, 24));
+        }
+        else
+        {
+            ImGui.Dummy(new Vector2(24, 24));
+        }
+        ImGui.SameLine();
+        ImGui.TextUnformatted(p.Name);
     }
 
     public void Dispose()
@@ -95,7 +117,7 @@ public class PresenceSidebar : IDisposable
         }
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/presences");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
             if (!string.IsNullOrEmpty(_config.AuthToken))
             {
                 request.Headers.Add("X-Api-Key", _config.AuthToken);
@@ -177,6 +199,9 @@ public class PresenceSidebar : IDisposable
                             var idx = _presences.FindIndex(p => p.Id == dto.Id);
                             if (idx >= 0)
                             {
+                                var existing = _presences[idx];
+                                dto.AvatarUrl ??= existing.AvatarUrl;
+                                dto.AvatarTexture = existing.AvatarTexture;
                                 _presences[idx] = dto;
                             }
                             else
