@@ -52,8 +52,10 @@ async def get_users(
                 avatars[u.discord_user_id] = avatar
     users: list[dict[str, str | None]] = []
     for u, s in rows:
+        # Default to the cached presence if the database value is missing.
         status = s or cache.get(u.discord_user_id)
-        status = "online" if status == "online" else "offline"
+        # Anything that is not explicitly offline counts as online.
+        status = "offline" if status in (None, "offline") else "online"
         users.append(
             {
                 "id": str(u.discord_user_id),
