@@ -78,6 +78,7 @@ public class ChatWindow : IDisposable
         _config = config;
         _httpClient = httpClient;
         _presence = presence;
+        _presence.TextureLoader = LoadTexture;
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
     }
@@ -820,7 +821,7 @@ public class ChatWindow : IDisposable
         return builder.Uri;
     }
 
-    private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)
+    protected void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)
     {
         if (string.IsNullOrEmpty(url))
         {

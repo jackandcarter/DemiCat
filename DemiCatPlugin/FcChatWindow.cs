@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text;
 using System.IO;
 using System.Text.RegularExpressions;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
 
 namespace DemiCatPlugin;
 
@@ -45,6 +47,20 @@ public class FcChatWindow : ChatWindow
             ImGui.PushStyleColor(ImGuiCol.Text, color);
             ImGui.TextUnformatted("●");
             ImGui.PopStyleColor();
+            ImGui.SameLine();
+            if (!string.IsNullOrEmpty(user.AvatarUrl) && user.AvatarTexture == null)
+            {
+                LoadTexture(user.AvatarUrl, t => user.AvatarTexture = t);
+            }
+            if (user.AvatarTexture != null)
+            {
+                var wrap = user.AvatarTexture.GetWrapOrEmpty();
+                ImGui.Image(wrap.Handle, new Vector2(24, 24));
+            }
+            else
+            {
+                ImGui.Dummy(new Vector2(24, 24));
+            }
             ImGui.SameLine();
             if (ImGui.Selectable(user.Name))
             {
@@ -166,9 +182,11 @@ public class FcChatWindow : ChatWindow
 
     private class UserDto
     {
-        public string Id { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public string Status { get; set; } = string.Empty;
+        [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
+        [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
+        [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
+        [JsonPropertyName("avatar_url")] public string? AvatarUrl { get; set; }
+        [JsonIgnore] public ISharedImmediateTexture? AvatarTexture { get; set; }
     }
 }
 
