@@ -9,6 +9,7 @@ from sqlalchemy import select
 from demibot import channel_names as cn
 from demibot.db.models import Guild, GuildChannel
 from demibot.db.session import init_db, get_session
+import demibot.db.session as db_session
 
 
 def _setup_db(path: str) -> None:
@@ -16,6 +17,8 @@ def _setup_db(path: str) -> None:
     if db_path.exists():
         db_path.unlink()
     url = f"sqlite+aiosqlite:///{db_path}"
+    db_session._engine = None
+    db_session._Session = None
     asyncio.run(init_db(url))
 
     async def populate() -> None:
@@ -29,7 +32,7 @@ def _setup_db(path: str) -> None:
     asyncio.run(populate())
 
 
-def test_fetch_channel_updates_name():
+def test_fetch_channel_updates_name(monkeypatch):
     _setup_db("test1.db")
 
     class DummyChannel:
@@ -43,6 +46,11 @@ def test_fetch_channel_updates_name():
             return DummyChannel()
 
     cn.discord_client = DummyClient()
+
+    async def dummy_broadcast(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(cn.manager, "broadcast_text", dummy_broadcast)
 
     async def run() -> str | None:
         async for db in get_session():
@@ -92,6 +100,11 @@ def test_rest_fallback_updates_name(monkeypatch):
 
     monkeypatch.setattr(cn, "aiohttp", types.SimpleNamespace(ClientSession=DummySession))
     monkeypatch.setattr(cn, "load_config", lambda: types.SimpleNamespace(discord_token="t"))
+
+    async def dummy_broadcast(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(cn.manager, "broadcast_text", dummy_broadcast)
 
     async def run() -> str | None:
         async for db in get_session():

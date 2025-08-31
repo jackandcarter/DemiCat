@@ -73,13 +73,16 @@ public class ChannelWatcher : IDisposable
                         );
                         continue;
                     }
-                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    if (message == "update")
                     {
-                        _ = SafeRefresh(_ui.RefreshChannels);
-                        if (_config.EnableFcChat)
-                            _ = SafeRefresh(_chatWindow.RefreshChannels);
-                        _ = SafeRefresh(_officerChatWindow.RefreshChannels);
-                    });
+                        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                        {
+                            _ = SafeRefresh(_ui.RefreshChannels);
+                            if (_config.EnableFcChat)
+                                _ = SafeRefresh(_chatWindow.RefreshChannels);
+                            _ = SafeRefresh(_officerChatWindow.RefreshChannels);
+                        });
+                    }
                 }
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
