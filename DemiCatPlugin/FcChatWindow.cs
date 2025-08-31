@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -151,21 +150,11 @@ public class FcChatWindow : ChatWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var users = await JsonSerializer.DeserializeAsync<List<UserDto>>(stream) ?? new List<UserDto>();
-            var merged = users.Select(u =>
-            {
-                var presence = _presence.Presences.FirstOrDefault(p => p.Id == u.Id);
-                return new UserDto
-                {
-                    Id = u.Id,
-                    Name = u.Name,
-                    Status = presence?.Status ?? "offline"
-                };
-            }).ToList();
 
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _users.Clear();
-                _users.AddRange(merged);
+                _users.AddRange(users);
                 _lastUserFetch = DateTime.UtcNow;
             });
         }
