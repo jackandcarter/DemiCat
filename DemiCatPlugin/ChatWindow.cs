@@ -228,20 +228,6 @@ public class ChatWindow : IDisposable
         }
     }
 
-    protected bool ResolveChannelNames(List<ChannelDto> channels)
-    {
-        var invalid = false;
-        foreach (var c in channels)
-        {
-            if (string.IsNullOrWhiteSpace(c.Name) || c.Name == c.Id || c.Name.All(char.IsDigit))
-            {
-                PluginServices.Instance!.Log.Warning($"Channel name missing or invalid for {c.Id}.");
-                c.Name = c.Id;
-                invalid = true;
-            }
-        }
-        return invalid;
-    }
 
     protected string FormatContent(DiscordMessageDto msg)
     {
@@ -475,7 +461,7 @@ public class ChatWindow : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            var invalid = ResolveChannelNames(dto.Chat);
+            var invalid = ChannelNameResolver.Resolve(dto.Chat);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Chat);

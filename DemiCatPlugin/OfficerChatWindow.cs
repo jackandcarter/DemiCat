@@ -112,7 +112,7 @@ public class OfficerChatWindow : ChatWindow
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<OfficerChannelListDto>(stream) ?? new OfficerChannelListDto();
-            var invalid = ResolveChannelNames(dto.Officer);
+            var invalid = ChannelNameResolver.Resolve(dto.Officer);
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(dto.Officer);
