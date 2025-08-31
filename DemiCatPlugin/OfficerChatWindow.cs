@@ -55,12 +55,24 @@ public class OfficerChatWindow : ChatWindow
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
+                string? id = null;
+                try
+                {
+                    var bodyText = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(bodyText);
+                    if (doc.RootElement.TryGetProperty("id", out var idProp))
+                        id = idProp.GetString();
+                }
+                catch
+                {
+                    // ignore parse errors
+                }
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _input = string.Empty;
                     _statusMessage = string.Empty;
                 });
-                await RefreshMessages();
+                await WaitForEchoAndRefresh(id);
             }
             else
             {

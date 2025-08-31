@@ -171,10 +171,22 @@ public class FcChatWindow : ChatWindow
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
+                string? id = null;
+                try
+                {
+                    var bodyText = await response.Content.ReadAsStringAsync();
+                    using var doc = JsonDocument.Parse(bodyText);
+                    if (doc.RootElement.TryGetProperty("id", out var idProp))
+                        id = idProp.GetString();
+                }
+                catch
+                {
+                    // ignore parse errors
+                }
                 _input = string.Empty;
                 _attachments.Clear();
                 _replyToId = null;
-                await RefreshMessages();
+                await WaitForEchoAndRefresh(id);
             }
         }
         catch
