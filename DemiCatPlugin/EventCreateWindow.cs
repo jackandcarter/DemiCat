@@ -502,6 +502,14 @@ public class EventCreateWindow
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
+    public Task RefreshChannels()
+    {
+        _channelsLoaded = false;
+        _channelFetchFailed = false;
+        _channelErrorMessage = string.Empty;
+        return FetchChannels();
+    }
+
     private async Task FetchChannels(bool refreshed = false)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))

@@ -22,6 +22,7 @@ public class MainWindow : IDisposable
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
     public UiRenderer Ui => _ui;
+    public EventCreateWindow EventCreateWindow => _create;
 
     public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, PresenceSidebar presenceSidebar, HttpClient httpClient)
     {
