@@ -186,7 +186,7 @@ public class ChatWindow : IDisposable
             {
                 foreach (var embed in msg.Embeds)
                 {
-                    EmbedRenderer.Draw(embed, LoadTexture);
+                    EmbedRenderer.Draw(embed, LoadTexture, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
                 }
             }
             if (msg.Attachments != null)
@@ -217,6 +217,19 @@ public class ChatWindow : IDisposable
                         ImGui.PopStyleColor();
                     }
                 }
+            }
+            if (msg.Components != null && msg.Components.Count > 0)
+            {
+                var buttons = msg.Components.Select(c => new EmbedButtonDto
+                {
+                    Label = c.Label,
+                    CustomId = c.CustomId,
+                    Url = c.Url,
+                    Emoji = c.Emoji,
+                    Style = c.Style
+                }).ToList();
+                var pseudo = new EmbedDto { Id = msg.Id + "_components", Buttons = buttons };
+                EmbedRenderer.Draw(pseudo, LoadTexture, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
             }
             ImGui.Spacing();
             if (msg.Reactions != null)
@@ -556,6 +569,38 @@ public class ChatWindow : IDisposable
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error reacting to message");
+        }
+    }
+
+    protected virtual async Task Interact(string messageId, string channelId, string customId)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot interact: API base URL is not configured.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(customId))
+        {
+            return;
+        }
+
+        try
+        {
+            long? cid = long.TryParse(channelId, out var parsed) ? parsed : null;
+            var body = new { MessageId = messageId, ChannelId = cid, CustomId = customId };
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");
+            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            ApiHelpers.AddAuthHeader(request, _config);
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to send interaction. Status: {response.StatusCode}. Response Body: {responseBody}");
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error sending interaction");
         }
     }
 

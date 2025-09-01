@@ -12,7 +12,7 @@ public static class EmbedRenderer
 {
     private static readonly Dictionary<string, ISharedImmediateTexture?> ThumbnailCache = new();
 
-    public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture)
+    public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, Action<string>? onButtonClick = null)
     {
         if (!string.IsNullOrEmpty(dto.Title))
         {
@@ -99,6 +99,10 @@ public static class EmbedRenderer
                     if (!string.IsNullOrEmpty(button.Url))
                     {
                         try { Process.Start(new ProcessStartInfo(button.Url) { UseShellExecute = true }); } catch { }
+                    }
+                    else if (!string.IsNullOrEmpty(button.CustomId))
+                    {
+                        onButtonClick?.Invoke(button.CustomId);
                     }
                 }
                 if (styled)
