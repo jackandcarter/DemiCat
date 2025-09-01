@@ -23,6 +23,7 @@ from .schemas import (
     EmbedFieldDto,
     Mention,
     MessageAuthor,
+    MessageReferenceDto,
     ReactionDto,
 )
 
@@ -229,11 +230,10 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
 
     reference = None
     if message.reference:
-        reference = {
-            "messageId": message.reference.message_id,
-            "channelId": message.reference.channel_id,
-            "guildId": message.reference.guild_id,
-        }
+        reference = MessageReferenceDto(
+            messageId=str(message.reference.message_id),
+            channelId=str(message.reference.channel_id),
+        )
 
     components = None
     if getattr(message, "components", None):

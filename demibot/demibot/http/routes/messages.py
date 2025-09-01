@@ -6,7 +6,7 @@ import json
 import discord
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ..schemas import ChatMessage
+from ..schemas import ChatMessage, MessageReferenceDto
 from ._messages_common import (
     PostBody,
     fetch_messages,
@@ -56,7 +56,7 @@ async def post_message_with_attachments(
     ref = None
     if message_reference:
         try:
-            ref = json.loads(message_reference)
+            ref = MessageReferenceDto(**json.loads(message_reference))
         except Exception:
             raise HTTPException(status_code=400, detail="invalid message_reference")
     body = PostBody(

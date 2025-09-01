@@ -95,6 +95,11 @@ class ReactionDto(BaseModel):
     me: bool
 
 
+class MessageReferenceDto(BaseModel):
+    messageId: str
+    channelId: str
+
+
 class ChatMessage(BaseModel):
     id: str
     channelId: str
@@ -106,7 +111,7 @@ class ChatMessage(BaseModel):
     mentions: List[Mention] | None = None
     author: MessageAuthor | None = None
     embeds: List[EmbedDto] | None = None
-    reference: dict | None = None
+    reference: MessageReferenceDto | None = None
     components: List[ButtonComponentDto] | None = None
     reactions: List[ReactionDto] | None = None
     editedTimestamp: Optional[datetime] = None
