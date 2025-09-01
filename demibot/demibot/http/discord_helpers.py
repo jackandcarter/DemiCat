@@ -8,8 +8,9 @@ objects can be consistently serialized into the pydantic models consumed by the
 plugin.
 """
 
-from typing import List
+from typing import Dict, List, Tuple
 
+import json
 import logging
 import discord
 
@@ -197,8 +198,10 @@ def extract_embed_buttons(message: discord.Message) -> List[EmbedButtonDto]:
     return buttons
 
 
-def message_to_chat_message(message: discord.Message) -> ChatMessage:
-    """Convert a :class:`discord.Message` into a :class:`ChatMessage` DTO."""
+def serialize_message(
+    message: discord.Message,
+) -> Tuple[ChatMessage, Dict[str, str | None]]:
+    """Serialize a Discord message into DTO and DB JSON fragments."""
 
     attachments = [attachment_to_dto(a) for a in message.attachments] or None
     mentions = [
@@ -212,12 +215,13 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
         name=message.author.display_name or message.author.name,
         avatarUrl=(
             str(message.author.display_avatar.url)
-            if message.author.display_avatar
+            if getattr(message.author, "display_avatar", None)
             else None
         ),
     )
 
     embeds = None
+    embeds_json = None
     if message.embeds:
         buttons = extract_embed_buttons(message)
         embeds_list: list[EmbedDto] = []
@@ -227,24 +231,34 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
             except Exception:
                 continue
         embeds = embeds_list or None
+        if embeds:
+            embeds_json = json.dumps([e.model_dump(mode="json") for e in embeds])
 
     reference = None
+    reference_json = None
     if message.reference:
         reference = MessageReferenceDto(
             messageId=str(message.reference.message_id),
             channelId=str(message.reference.channel_id),
         )
+        reference_json = reference.model_dump_json()
 
     components = None
+    components_json = None
     if getattr(message, "components", None):
         try:
             components = components_to_dtos(message)
         except Exception:
             components = None
+        if components:
+            components_json = json.dumps([c.model_dump() for c in components])
 
     reactions = [reaction_to_dto(r) for r in getattr(message, "reactions", [])] or None
+    reactions_json = None
+    if reactions:
+        reactions_json = json.dumps([r.model_dump() for r in reactions])
 
-    return ChatMessage(
+    dto = ChatMessage(
         id=str(message.id),
         channelId=str(message.channel.id),
         authorName=author.name,
@@ -260,4 +274,27 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
         reactions=reactions,
         editedTimestamp=message.edited_at,
     )
+
+    fragments: Dict[str, str | None] = {
+        "attachments_json": json.dumps([a.model_dump() for a in attachments])
+        if attachments
+        else None,
+        "mentions_json": json.dumps([m.model_dump() for m in mentions])
+        if mentions
+        else None,
+        "author_json": author.model_dump_json(),
+        "embeds_json": embeds_json,
+        "reference_json": reference_json,
+        "components_json": components_json,
+        "reactions_json": reactions_json,
+    }
+
+    return dto, fragments
+
+
+def message_to_chat_message(message: discord.Message) -> ChatMessage:
+    """Convert a :class:`discord.Message` into a :class:`ChatMessage` DTO."""
+
+    dto, _ = serialize_message(message)
+    return dto
 
