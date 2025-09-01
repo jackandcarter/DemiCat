@@ -11,7 +11,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext
-from ..schemas import ChatMessage, AttachmentDto, MessageAuthor, Mention
+from ..schemas import (
+    ChatMessage,
+    AttachmentDto,
+    MessageAuthor,
+    Mention,
+    EmbedDto,
+    MessageReferenceDto,
+    ButtonComponentDto,
+    ReactionDto,
+)
 from ..ws import manager
 from ...db.models import Message
 from ..discord_client import discord_client
@@ -68,7 +77,10 @@ async def fetch_messages(
         if m.mentions_json:
             try:
                 data = json.loads(m.mentions_json)
-                mentions = [Mention(**a) for a in data]
+                mentions = [
+                    Mention(**a) if "kind" in a else Mention(kind="user", **a)
+                    for a in data
+                ]
             except Exception:
                 mentions = None
 
@@ -82,23 +94,32 @@ async def fetch_messages(
         embeds = None
         if m.embeds_json:
             try:
-                embeds = json.loads(m.embeds_json)
+                embeds = [EmbedDto(**e) for e in json.loads(m.embeds_json)]
             except Exception:
                 embeds = None
 
         reference = None
         if m.reference_json:
             try:
-                reference = json.loads(m.reference_json)
+                reference = MessageReferenceDto(**json.loads(m.reference_json))
             except Exception:
                 reference = None
 
         components = None
         if m.components_json:
             try:
-                components = json.loads(m.components_json)
+                components = [
+                    ButtonComponentDto(**c) for c in json.loads(m.components_json)
+                ]
             except Exception:
                 components = None
+
+        reactions = None
+        if m.reactions_json:
+            try:
+                reactions = [ReactionDto(**r) for r in json.loads(m.reactions_json)]
+            except Exception:
+                reactions = None
 
         out.append(
             ChatMessage(
@@ -114,6 +135,7 @@ async def fetch_messages(
                 embeds=embeds,
                 reference=reference,
                 components=components,
+                reactions=reactions,
                 editedTimestamp=m.edited_timestamp,
                 useCharacterName=getattr(author, "useCharacterName", False),
             )
@@ -215,14 +237,19 @@ async def save_message(
         content=body.content,
         author_json=author.model_dump_json(),
         attachments_json=attachments_json,
-        reference_json=json.dumps(body.messageReference)
-        if body.messageReference
-        else None,
+        reference_json=(
+            json.dumps(body.messageReference) if body.messageReference else None
+        ),
         is_officer=is_officer,
     )
     db.add(msg)
     await db.commit()
     await db.refresh(msg)
+    reference_dto = (
+        MessageReferenceDto(**body.messageReference)
+        if body.messageReference
+        else None
+    )
     dto = ChatMessage(
         id=str(discord_msg_id),
         channelId=str(channel_id),
@@ -231,7 +258,7 @@ async def save_message(
         timestamp=msg.created_at,
         content=msg.content or msg.content_display,
         attachments=attachments,
-        reference=body.messageReference,
+        reference=reference_dto,
         author=author,
         editedTimestamp=msg.edited_timestamp,
         useCharacterName=body.useCharacterName,

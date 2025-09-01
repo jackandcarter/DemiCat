@@ -9,6 +9,7 @@ class Presence:
     id: int
     name: str
     status: str
+    avatar_url: str | None = None
 
 
 _presences: Dict[int, Dict[int, Presence]] = {}
