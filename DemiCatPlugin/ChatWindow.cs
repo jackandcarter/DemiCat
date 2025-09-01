@@ -713,6 +713,7 @@ public class ChatWindow : IDisposable
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to send interaction. Status: {response.StatusCode}. Response Body: {responseBody}");
             }
+
         }
         catch (Exception ex)
         {
