@@ -56,11 +56,32 @@ def test_presence_broadcast_filtered_by_path():
 
 def test_list_presences_returns_data():
     async def _run():
-        set_presence(1, StorePresence(id=10, name="Alice", status="online"))
-        set_presence(1, StorePresence(id=20, name="Bob", status="offline"))
+        set_presence(
+            1,
+            StorePresence(
+                id=10,
+                name="Alice",
+                status="online",
+                avatar_url="https://example.com/a.png",
+            ),
+        )
+        set_presence(
+            1,
+            StorePresence(
+                id=20,
+                name="Bob",
+                status="offline",
+                avatar_url="https://example.com/b.png",
+            ),
+        )
         ctx = StubContext(1)
         res = await list_presences(ctx=ctx)
-        assert {(p["id"], p["status"]) for p in res} == {("10", "online"), ("20", "offline")}
+        assert {
+            (p["id"], p["status"], p["avatar_url"]) for p in res
+        } == {
+            ("10", "online", "https://example.com/a.png"),
+            ("20", "offline", "https://example.com/b.png"),
+        }
 
     asyncio.run(_run())
 
@@ -77,6 +98,8 @@ def test_list_presences_reads_from_db():
             await db.commit()
         ctx = StubContext(1)
         res = await list_presences(ctx=ctx)
-        assert {(p["id"], p["status"]) for p in res} == {("10", "online"), ("20", "offline")}
+        assert {
+            (p["id"], p["status"], p["avatar_url"]) for p in res
+        } == {("10", "online", None), ("20", "offline", None)}
 
     asyncio.run(_run())

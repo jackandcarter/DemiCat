@@ -9,6 +9,7 @@ class Presence:
     id: int
     name: str
     status: str
+    avatar_url: str | None = None
 
 
 _presences: Dict[int, Dict[int, Presence]] = {}
@@ -16,6 +17,9 @@ _presences: Dict[int, Dict[int, Presence]] = {}
 
 def set_presence(guild_id: int, presence: Presence) -> None:
     guild = _presences.setdefault(guild_id, {})
+    existing = guild.get(presence.id)
+    if existing and presence.avatar_url is None:
+        presence.avatar_url = existing.avatar_url
     guild[presence.id] = presence
 
 

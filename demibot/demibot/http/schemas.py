@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from enum import IntEnum
 
@@ -120,3 +120,4 @@ class PresenceDto(BaseModel):
     id: str
     name: str
     status: str
+    avatarUrl: str | None = Field(default=None, alias="avatar_url")
