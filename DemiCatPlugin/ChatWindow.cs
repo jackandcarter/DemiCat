@@ -983,18 +983,31 @@ public class ChatWindow : IDisposable
                 var buffer = new byte[8192];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
-                    var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    using var ms = new MemoryStream();
+                    WebSocketReceiveResult result;
+                    do
+                    {
+                        result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            break;
+                        }
+
+                        ms.Write(buffer, 0, result.Count);
+
+                        if (result.Count == buffer.Length)
+                        {
+                            Array.Resize(ref buffer, buffer.Length * 2);
+                        }
+
+                    } while (!result.EndOfMessage);
+
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         break;
                     }
-                    var count = result.Count;
-                    while (!result.EndOfMessage)
-                    {
-                        result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer, count, buffer.Length - count), token);
-                        count += result.Count;
-                    }
-                    var json = Encoding.UTF8.GetString(buffer, 0, count);
+
+                    var json = Encoding.UTF8.GetString(ms.ToArray());
                     if (json == "ping")
                     {
                         await _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")), WebSocketMessageType.Text, true, token);
