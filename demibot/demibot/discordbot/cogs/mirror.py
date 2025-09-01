@@ -12,15 +12,12 @@ from sqlalchemy.exc import IntegrityError
 from ...db.models import Embed, Guild, GuildChannel, Message
 from ...db.session import get_session
 from ...http.schemas import (
-    ChatMessage,
-    EmbedDto,
-    EmbedFieldDto,
     EmbedButtonDto,
-    EmbedAuthorDto,
     Mention,
     AttachmentDto,
     MessageAuthor,
 )
+from ...http.discord_helpers import embed_to_dto, message_to_chat_message
 from ...http.ws import manager
 
 
@@ -196,53 +193,7 @@ class Mirror(commands.Cog):
                         continue
 
                     try:
-                        footer_data = data.get("footer", {})
-                        provider_data = data.get("provider", {})
-                        video_data = data.get("video", {})
-                        author_list = []
-                        first_author = data.get("author")
-                        if first_author:
-                            author_list.append(first_author)
-                        author_list.extend(data.get("authors", []))
-                        authors = [
-                            EmbedAuthorDto(
-                                name=a.get("name"),
-                                url=a.get("url"),
-                                iconUrl=a.get("icon_url"),
-                            )
-                            for a in author_list
-                            if a
-                        ] or None
-                        dto = EmbedDto(
-                            id=str(message.id),
-                            timestamp=emb.timestamp,
-                            color=emb.color.value if emb.color else None,
-                            authorName=first_author.get("name") if first_author else None,
-                            authorIconUrl=first_author.get("icon_url")
-                            if first_author
-                            else None,
-                            authors=authors,
-                            title=emb.title,
-                            description=emb.description,
-                            url=emb.url,
-                            fields=[
-                                EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
-                                for f in emb.fields
-                            ]
-                            or None,
-                            thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
-                            imageUrl=emb.image.url if emb.image else None,
-                            providerName=provider_data.get("name"),
-                            providerUrl=provider_data.get("url"),
-                            footerText=footer_data.get("text"),
-                            footerIconUrl=footer_data.get("icon_url"),
-                            videoUrl=video_data.get("url"),
-                            videoWidth=video_data.get("width"),
-                            videoHeight=video_data.get("height"),
-                            buttons=buttons or None,
-                            channelId=channel_id,
-                            mentions=[m.id for m in message.mentions] or None,
-                        )
+                        dto = embed_to_dto(message, emb, buttons)
                     except Exception:
                         logging.exception(
                             "Embed parsing failed for guild %s channel %s message %s: %s",
@@ -374,29 +325,7 @@ class Mirror(commands.Cog):
             )
             await db.commit()
 
-            attachments = [
-                AttachmentDto(
-                    url=a.url,
-                    filename=a.filename,
-                    contentType=a.content_type,
-                )
-                for a in message.attachments
-            ] or None
-            dto = ChatMessage(
-                id=str(message.id),
-                channelId=str(channel_id),
-                authorName=author.name,
-                authorAvatarUrl=author.avatarUrl,
-                timestamp=message.created_at,
-                content=message.content,
-                attachments=attachments,
-                mentions=mentions or None,
-                author=author,
-                embeds=json.loads(embeds_json) if embeds_json else None,
-                reference=json.loads(reference_json) if reference_json else None,
-                components=json.loads(components_json) if components_json else None,
-                editedTimestamp=message.edited_at,
-            )
+            dto = message_to_chat_message(message)
             await manager.broadcast_text(
                 json.dumps(dto.model_dump()),
                 guild_id,
@@ -468,52 +397,7 @@ class Mirror(commands.Cog):
                     return
 
                 try:
-                    footer_data = data.get("footer", {})
-                    provider_data = data.get("provider", {})
-                    video_data = data.get("video", {})
-                    author_list: list[dict] = []
-                    first_author = data.get("author")
-                    if first_author:
-                        author_list.append(first_author)
-                    author_list.extend(data.get("authors", []))
-                    authors = [
-                        EmbedAuthorDto(
-                            name=a.get("name"),
-                            url=a.get("url"),
-                            iconUrl=a.get("icon_url"),
-                        )
-                        for a in author_list
-                        if a
-                    ] or None
-
-                    dto = EmbedDto(
-                        id=str(after.id),
-                        timestamp=emb.timestamp,
-                        color=emb.color.value if emb.color else None,
-                        authorName=first_author.get("name") if first_author else None,
-                        authorIconUrl=first_author.get("icon_url") if first_author else None,
-                        authors=authors,
-                        title=emb.title,
-                        description=emb.description,
-                        url=emb.url,
-                        fields=[
-                            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
-                            for f in emb.fields
-                        ]
-                        or None,
-                        thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
-                        imageUrl=emb.image.url if emb.image else None,
-                        providerName=provider_data.get("name"),
-                        providerUrl=provider_data.get("url"),
-                        footerText=footer_data.get("text"),
-                        footerIconUrl=footer_data.get("icon_url"),
-                        videoUrl=video_data.get("url"),
-                        videoWidth=video_data.get("width"),
-                        videoHeight=video_data.get("height"),
-                        buttons=buttons or None,
-                        channelId=channel_id,
-                        mentions=[m.id for m in after.mentions] or None,
-                    )
+                    dto = embed_to_dto(after, emb, buttons)
                 except Exception:
                     logging.exception(
                         "Embed parsing failed for guild %s channel %s message %s: %s",
@@ -610,30 +494,7 @@ class Mirror(commands.Cog):
                 msg.edited_timestamp = after.edited_at
                 await db.commit()
 
-                attachments = [
-                    AttachmentDto(
-                        url=a.url,
-                        filename=a.filename,
-                        contentType=a.content_type,
-                    )
-                    for a in after.attachments
-                ] or None
-
-                dto = ChatMessage(
-                    id=str(after.id),
-                    channelId=str(channel_id),
-                    authorName=author.name,
-                    authorAvatarUrl=author.avatarUrl,
-                    timestamp=after.created_at,
-                    content=after.content,
-                    attachments=attachments,
-                    mentions=mentions or None,
-                    author=author,
-                    embeds=json.loads(embeds_json) if embeds_json else None,
-                    reference=json.loads(reference_json) if reference_json else None,
-                    components=json.loads(components_json) if components_json else None,
-                    editedTimestamp=after.edited_at,
-                )
+                dto = message_to_chat_message(after)
                 await manager.broadcast_text(
                     json.dumps(dto.model_dump()),
                     guild_id,
