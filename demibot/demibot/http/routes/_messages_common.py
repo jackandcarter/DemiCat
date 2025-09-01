@@ -18,6 +18,7 @@ from ..schemas import (
     Mention,
     ButtonComponentDto,
     ReactionDto,
+    EmbedDto,
 )
 
 from ..ws import manager
@@ -90,7 +91,8 @@ async def fetch_messages(
         embeds = None
         if m.embeds_json:
             try:
-                embeds = json.loads(m.embeds_json)
+                data = json.loads(m.embeds_json)
+                embeds = [EmbedDto(**e) for e in data]
             except Exception:
                 embeds = None
 

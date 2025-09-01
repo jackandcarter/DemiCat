@@ -13,6 +13,7 @@ from ...db.models import Embed, Guild, GuildChannel, Message
 from ...db.session import get_session
 from ...http.schemas import (
     EmbedButtonDto,
+    EmbedDto,
     Mention,
     AttachmentDto,
     MessageAuthor,
@@ -285,11 +286,46 @@ class Mirror(commands.Cog):
                 else None,
             )
 
-            embeds_json = (
-                json.dumps([e.to_dict() for e in message.embeds])
-                if message.embeds
-                else None
-            )
+            embeds_json = None
+            if message.embeds:
+                buttons: list[EmbedButtonDto] = []
+                try:
+                    for row_comp in getattr(message, "components", []) or []:
+                        children = getattr(row_comp, "children", None) or getattr(
+                            row_comp, "components", []
+                        )
+                        for comp in children or []:
+                            if getattr(comp, "type", None) != 2:
+                                continue
+                            style = getattr(comp, "style", None)
+                            style_val = style.value if hasattr(style, "value") else style
+                            emoji = getattr(comp, "emoji", None)
+                            emoji_str = str(emoji) if emoji else None
+                            buttons.append(
+                                EmbedButtonDto(
+                                    customId=getattr(comp, "custom_id", None),
+                                    label=getattr(comp, "label", None),
+                                    style=style_val,
+                                    emoji=emoji_str,
+                                    url=getattr(comp, "url", None),
+                                )
+                            )
+                except Exception:
+                    buttons = []
+
+                embed_dtos: list[EmbedDto] = []
+                for emb in message.embeds:
+                    try:
+                        embed_dtos.append(
+                            embed_to_dto(message, emb, buttons or None)
+                        )
+                    except Exception:
+                        continue
+                embeds_json = (
+                    json.dumps([e.model_dump(mode="json") for e in embed_dtos])
+                    if embed_dtos
+                    else None
+                )
             reference_json = None
             if message.reference:
                 reference_json = json.dumps(
@@ -474,11 +510,48 @@ class Mirror(commands.Cog):
                     else None,
                 )
 
-                embeds_json = (
-                    json.dumps([e.to_dict() for e in after.embeds])
-                    if after.embeds
-                    else None
-                )
+                embeds_json = None
+                if after.embeds:
+                    buttons: list[EmbedButtonDto] = []
+                    try:
+                        for row_comp in getattr(after, "components", []) or []:
+                            children = getattr(row_comp, "children", None) or getattr(
+                                row_comp, "components", []
+                            )
+                            for comp in children or []:
+                                if getattr(comp, "type", None) != 2:
+                                    continue
+                                style = getattr(comp, "style", None)
+                                style_val = (
+                                    style.value if hasattr(style, "value") else style
+                                )
+                                emoji = getattr(comp, "emoji", None)
+                                emoji_str = str(emoji) if emoji else None
+                                buttons.append(
+                                    EmbedButtonDto(
+                                        customId=getattr(comp, "custom_id", None),
+                                        label=getattr(comp, "label", None),
+                                        style=style_val,
+                                        emoji=emoji_str,
+                                        url=getattr(comp, "url", None),
+                                    )
+                                )
+                    except Exception:
+                        buttons = []
+
+                    embed_dtos: list[EmbedDto] = []
+                    for emb in after.embeds:
+                        try:
+                            embed_dtos.append(
+                                embed_to_dto(after, emb, buttons or None)
+                            )
+                        except Exception:
+                            continue
+                    embeds_json = (
+                        json.dumps([e.model_dump(mode="json") for e in embed_dtos])
+                        if embed_dtos
+                        else None
+                    )
                 reference_json = None
                 if after.reference:
                     reference_json = json.dumps(
