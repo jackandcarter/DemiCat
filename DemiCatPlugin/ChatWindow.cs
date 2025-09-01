@@ -39,6 +39,9 @@ public class ChatWindow : IDisposable
     protected readonly List<string> _attachments = new();
     protected string _newAttachmentPath = string.Empty;
     protected string? _replyToId;
+    protected string? _editingMessageId;
+    protected string _editingChannelId = string.Empty;
+    protected string _editContent = string.Empty;
     private static readonly string[] DefaultReactions = new[] { "👍", "👎", "❤️" };
     private readonly EmojiPicker _emojiPicker;
     private readonly Dictionary<string, EmojiPicker.EmojiDto> _emojiCatalog = new();
@@ -182,6 +185,13 @@ public class ChatWindow : IDisposable
             }
 
             FormatContent(msg);
+            if (msg.EditedTimestamp != null)
+            {
+                ImGui.SameLine();
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+                ImGui.TextUnformatted("(edited)");
+                ImGui.PopStyleColor();
+            }
             if (msg.Embeds != null)
             {
                 foreach (var embed in msg.Embeds)
@@ -301,6 +311,17 @@ public class ChatWindow : IDisposable
                 {
                     _replyToId = msg.Id;
                 }
+                if (ImGui.MenuItem("Edit"))
+                {
+                    _editingMessageId = msg.Id;
+                    _editingChannelId = msg.ChannelId;
+                    _editContent = msg.Content ?? string.Empty;
+                    ImGui.OpenPopup("editMessage");
+                }
+                if (ImGui.MenuItem("Delete"))
+                {
+                    _ = DeleteMessage(msg.Id, msg.ChannelId);
+                }
                 ImGui.EndPopup();
             }
 
@@ -323,6 +344,27 @@ public class ChatWindow : IDisposable
                     _replyToId = null;
                 }
             }
+        }
+
+        if (ImGui.BeginPopup("editMessage"))
+        {
+            ImGui.InputTextMultiline("##editContent", ref _editContent, 1024, new Vector2(400, ImGui.GetTextLineHeight() * 5));
+            if (ImGui.Button("Save"))
+            {
+                if (_editingMessageId != null)
+                {
+                    _ = EditMessage(_editingMessageId, _editingChannelId, _editContent);
+                }
+                _editingMessageId = null;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel"))
+            {
+                _editingMessageId = null;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
         }
 
         if (ImGui.Button("Attach"))
@@ -569,6 +611,76 @@ public class ChatWindow : IDisposable
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error reacting to message");
+        }
+    }
+
+    protected virtual async Task EditMessage(string messageId, string channelId, string content)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot edit: API base URL is not configured.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(content))
+        {
+            return;
+        }
+
+        try
+        {
+            var body = new { content };
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages/{messageId}";
+            var request = new HttpRequestMessage(HttpMethod.Patch, url);
+            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            ApiHelpers.AddAuthHeader(request, _config);
+            var response = await _httpClient.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                await RefreshMessages();
+            }
+            else
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to edit message. Status: {response.StatusCode}. Response Body: {responseBody}");
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error editing message");
+        }
+    }
+
+    protected virtual async Task DeleteMessage(string messageId, string channelId)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot delete: API base URL is not configured.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(messageId))
+        {
+            return;
+        }
+
+        try
+        {
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages/{messageId}";
+            var request = new HttpRequestMessage(HttpMethod.Delete, url);
+            ApiHelpers.AddAuthHeader(request, _config);
+            var response = await _httpClient.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                await RefreshMessages();
+            }
+            else
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to delete message. Status: {response.StatusCode}. Response Body: {responseBody}");
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error deleting message");
         }
     }
 
