@@ -165,7 +165,7 @@ public class ChatWindow : IDisposable
             ImGui.SameLine();
 
             ImGui.BeginGroup();
-            ImGui.TextUnformatted(msg.Author.Name);
+            ImGui.TextUnformatted(msg.Author?.Name ?? "Unknown");
             ImGui.SameLine();
             ImGui.TextUnformatted(msg.Timestamp.ToLocalTime().ToString());
 
@@ -179,7 +179,7 @@ public class ChatWindow : IDisposable
 
                     if (preview.Length > 50) preview = preview.Substring(0, 50) + "...";
                     ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.7f, 0.7f, 0.7f, 1f));
-                    ImGui.TextUnformatted($"> {refMsg.Author.Name}: {preview}");
+                    ImGui.TextUnformatted($"> {refMsg.Author?.Name ?? "Unknown"}: {preview}");
                     ImGui.PopStyleColor();
                 }
             }
@@ -242,12 +242,14 @@ public class ChatWindow : IDisposable
                 EmbedRenderer.Draw(pseudo, LoadTexture, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
             }
             ImGui.Spacing();
-            if (msg.Reactions != null)
+            if (msg.Reactions != null && msg.Reactions.Count > 0)
             {
-                foreach (var reaction in msg.Reactions)
+                for (int i = 0; i < msg.Reactions.Count; i++)
                 {
+                    var reaction = msg.Reactions[i];
                     ImGui.BeginGroup();
                     var handled = false;
+
                     if (!string.IsNullOrEmpty(reaction.EmojiId))
                     {
                         if (reaction.Texture == null)
@@ -268,6 +270,7 @@ public class ChatWindow : IDisposable
                             handled = true;
                         }
                     }
+
                     if (!handled)
                     {
                         if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
@@ -275,8 +278,9 @@ public class ChatWindow : IDisposable
                             _ = React(msg.Id, reaction.Emoji, reaction.Me);
                         }
                     }
+
                     ImGui.EndGroup();
-                    ImGui.SameLine();
+                    if (i < msg.Reactions.Count - 1) ImGui.SameLine();
                 }
             }
             if (ImGui.SmallButton($"+##react{msg.Id}"))
@@ -337,7 +341,7 @@ public class ChatWindow : IDisposable
             {
                 var preview = refMsg.Content ?? string.Empty;
                 if (preview.Length > 50) preview = preview.Substring(0, 50) + "...";
-                ImGui.TextUnformatted($"Replying to {refMsg.Author.Name}: {preview}");
+                ImGui.TextUnformatted($"Replying to {refMsg.Author?.Name ?? "Unknown"}: {preview}");
                 ImGui.SameLine();
                 if (ImGui.SmallButton("Cancel Reply"))
                 {
@@ -539,7 +543,16 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var body = new { channelId = _channelId, content = _input, useCharacterName = _useCharacterName };
+            // Build request body (includes reply threading if set)
+            var body = new
+            {
+                channelId = _channelId,
+                content = _input,
+                useCharacterName = _useCharacterName,
+                messageReference = _replyToId != null
+                    ? new { messageId = _replyToId, channelId = _channelId }
+                    : null
+            };
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, _config);
@@ -558,11 +571,14 @@ public class ChatWindow : IDisposable
                 {
                     // ignore parse errors
                 }
+
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _input = string.Empty;
                     _statusMessage = string.Empty;
+                    _replyToId = null; // <-- clear reply state after a successful send
                 });
+
                 await WaitForEchoAndRefresh(id);
             }
             else

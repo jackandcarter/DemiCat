@@ -45,7 +45,16 @@ public class OfficerChatWindow : ChatWindow
 
         try
         {
-            var body = new { channelId = _channelId, content = _input, useCharacterName = _useCharacterName };
+            // Build request body (includes reply threading if set)
+            var body = new
+            {
+                channelId = _channelId,
+                content = _input,
+                useCharacterName = _useCharacterName,
+                messageReference = _replyToId != null
+                    ? new { messageId = _replyToId, channelId = _channelId }
+                    : null
+            };
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/officer-messages");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, _config);
@@ -64,11 +73,14 @@ public class OfficerChatWindow : ChatWindow
                 {
                     // ignore parse errors
                 }
+
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _input = string.Empty;
                     _statusMessage = string.Empty;
+                    _replyToId = null; // <-- clear reply state after a successful send
                 });
+
                 await WaitForEchoAndRefresh(id);
             }
             else
