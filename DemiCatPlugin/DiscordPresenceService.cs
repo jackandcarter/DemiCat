@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.IO;
 
 namespace DemiCatPlugin;
 
@@ -131,12 +132,31 @@ public class DiscordPresenceService : IDisposable
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
-                    var result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    using var ms = new MemoryStream();
+                    WebSocketReceiveResult result;
+                    do
+                    {
+                        result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            break;
+                        }
+
+                        ms.Write(buffer, 0, result.Count);
+
+                        if (result.Count == buffer.Length)
+                        {
+                            Array.Resize(ref buffer, buffer.Length * 2);
+                        }
+
+                    } while (!result.EndOfMessage);
+
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
                         break;
                     }
-                    var json = Encoding.UTF8.GetString(buffer, 0, result.Count);
+
+                    var json = Encoding.UTF8.GetString(ms.ToArray());
                     PresenceDto? dto = null;
                     try
                     {
