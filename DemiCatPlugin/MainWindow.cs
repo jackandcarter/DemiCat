@@ -111,11 +111,6 @@ public class MainWindow : IDisposable
 
             if (_config.EnableFcChat && _chat != null && ImGui.BeginTabItem("Chat"))
             {
-                if (_presenceSidebar != null)
-                {
-                    _presenceSidebar.Draw();
-                    ImGui.SameLine();
-                }
                 ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
                 _chat.Draw();
                 ImGui.EndChild();

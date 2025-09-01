@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text;
 using System.IO;
 using System.Text.RegularExpressions;
@@ -16,8 +15,7 @@ namespace DemiCatPlugin;
 
 public class FcChatWindow : ChatWindow
 {
-    private readonly List<UserDto> _users = new();
-    private DateTime _lastUserFetch = DateTime.MinValue;
+    private bool _presenceInitialized;
 
     public FcChatWindow(Config config, HttpClient httpClient, PresenceSidebar? presence) : base(config, httpClient, presence)
     {
@@ -28,9 +26,11 @@ public class FcChatWindow : ChatWindow
     {
         var originalChatChannel = _config.ChatChannelId;
 
-        if (DateTime.UtcNow - _lastUserFetch > TimeSpan.FromSeconds(_config.PollIntervalSeconds))
+        if (!_presenceInitialized && _presence != null)
         {
-            _ = RefreshUsers();
+            _presence.Reset();
+            _ = _presence.Refresh();
+            _presenceInitialized = true;
         }
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
@@ -41,7 +41,9 @@ public class FcChatWindow : ChatWindow
 
         ImGui.SameLine();
         ImGui.BeginChild("##userList", new Vector2(150, -30), true);
-        foreach (var user in _users)
+
+        var presences = _presence?.Presences ?? new List<PresenceDto>();
+        foreach (var user in presences)
         {
             var color = user.Status == "online"
                 ? new Vector4(0f, 1f, 0f, 1f)
@@ -69,17 +71,15 @@ public class FcChatWindow : ChatWindow
                 _input += $"@{user.Name} ";
             }
         }
-        if (RoleCache.Roles.Count > 0)
+
+        foreach (var role in RoleCache.Roles)
         {
-            ImGui.Separator();
-            foreach (var role in RoleCache.Roles)
+            if (ImGui.Selectable($"@{role.Name}"))
             {
-                if (ImGui.Selectable($"@{role.Name}"))
-                {
-                    _input += $"@{role.Name} ";
-                }
+                _input += $"@{role.Name} ";
             }
         }
+
         ImGui.EndChild();
 
         if (_config.ChatChannelId != originalChatChannel || _config.FcChannelId != _channelId)
@@ -126,7 +126,8 @@ public class FcChatWindow : ChatWindow
         }
 
         var content = _input;
-        foreach (var u in _users)
+        var presences = _presence?.Presences ?? new List<PresenceDto>();
+        foreach (var u in presences)
         {
             content = Regex.Replace(content, $"@{Regex.Escape(u.Name)}\\b", $"<@{u.Id}>");
         }
@@ -190,44 +191,6 @@ public class FcChatWindow : ChatWindow
         {
             // ignored
         }
-    }
-
-    private async Task RefreshUsers()
-    {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
-
-        try
-        {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
-            ApiHelpers.AddAuthHeader(request, _config);
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                return;
-            }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var users = await JsonSerializer.DeserializeAsync<List<UserDto>>(stream) ?? new List<UserDto>();
-
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                _users.Clear();
-                _users.AddRange(users);
-                _lastUserFetch = DateTime.UtcNow;
-            });
-        }
-        catch
-        {
-            // ignored
-        }
-    }
-
-    private class UserDto
-    {
-        [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
-        [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
-        [JsonPropertyName("avatar_url")] public string? AvatarUrl { get; set; }
-        [JsonIgnore] public ISharedImmediateTexture? AvatarTexture { get; set; }
     }
 }
 
