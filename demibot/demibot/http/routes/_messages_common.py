@@ -17,7 +17,9 @@ from ..schemas import (
     MessageAuthor,
     Mention,
     ButtonComponentDto,
+    ReactionDto,
 )
+
 from ..ws import manager
 from ...db.models import Message
 from ..discord_client import discord_client
@@ -107,6 +109,14 @@ async def fetch_messages(
             except Exception:
                 components = None
 
+        reactions = None
+        if m.reactions_json:
+            try:
+                data = json.loads(m.reactions_json)
+                reactions = [ReactionDto(**a) for a in data]
+            except Exception:
+                reactions = None
+
         out.append(
             ChatMessage(
                 id=str(m.discord_message_id),
@@ -121,6 +131,7 @@ async def fetch_messages(
                 embeds=embeds,
                 reference=reference,
                 components=components,
+                reactions=reactions,
                 editedTimestamp=m.edited_timestamp,
                 useCharacterName=getattr(author, "useCharacterName", False),
             )
