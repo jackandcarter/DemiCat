@@ -176,7 +176,38 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
         ),
     )
 
-    embeds = [e.to_dict() for e in message.embeds] or None
+    embeds = None
+    if message.embeds:
+        buttons: list[EmbedButtonDto] = []
+        try:
+            for row in getattr(message, "components", []) or []:
+                children = getattr(row, "children", None) or getattr(row, "components", [])
+                for comp in children or []:
+                    if getattr(comp, "type", None) != 2:
+                        continue
+                    style = getattr(comp, "style", None)
+                    style_val = style.value if hasattr(style, "value") else style
+                    emoji = getattr(comp, "emoji", None)
+                    emoji_str = str(emoji) if emoji else None
+                    buttons.append(
+                        EmbedButtonDto(
+                            label=getattr(comp, "label", None),
+                            customId=getattr(comp, "custom_id", None),
+                            url=getattr(comp, "url", None),
+                            style=style_val,
+                            emoji=emoji_str,
+                        )
+                    )
+        except Exception:
+            buttons = []
+
+        embeds_list: list[EmbedDto] = []
+        for emb in message.embeds:
+            try:
+                embeds_list.append(embed_to_dto(message, emb, buttons or None))
+            except Exception:
+                continue
+        embeds = embeds_list or None
 
     reference = None
     if message.reference:
@@ -193,7 +224,7 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
         except Exception:
             components = None
 
-    reactions = [reaction_to_dto(r) for r in message.reactions] or None
+    reactions = [reaction_to_dto(r) for r in getattr(message, "reactions", [])] or None
 
     return ChatMessage(
         id=str(message.id),

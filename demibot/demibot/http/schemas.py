@@ -105,7 +105,7 @@ class ChatMessage(BaseModel):
     attachments: List[AttachmentDto] | None = None
     mentions: List[Mention] | None = None
     author: MessageAuthor | None = None
-    embeds: List[dict] | None = None
+    embeds: List[EmbedDto] | None = None
     reference: dict | None = None
     components: List[ButtonComponentDto] | None = None
     reactions: List[ReactionDto] | None = None
