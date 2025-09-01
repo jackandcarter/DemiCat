@@ -21,6 +21,7 @@ from .schemas import (
     EmbedFieldDto,
     Mention,
     MessageAuthor,
+    ReactionDto,
 )
 
 
@@ -37,6 +38,21 @@ def mention_to_dto(user: discord.abc.User) -> Mention:
     """Convert a Discord user/member into a :class:`Mention`."""
     name = getattr(user, "display_name", None) or getattr(user, "name", "")
     return Mention(id=str(user.id), name=name)
+
+
+def reaction_to_dto(reaction: discord.Reaction) -> ReactionDto:
+    """Convert a Discord reaction into a :class:`ReactionDto`."""
+    emoji = reaction.emoji
+    emoji_name = getattr(emoji, "name", str(emoji))
+    emoji_id = getattr(emoji, "id", None)
+    is_animated = getattr(emoji, "animated", False)
+    return ReactionDto(
+        emoji=emoji_name,
+        emojiId=str(emoji_id) if emoji_id else None,
+        isAnimated=is_animated,
+        count=reaction.count,
+        me=reaction.me,
+    )
 
 
 def embed_to_dto(
@@ -145,6 +161,8 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
         except Exception:
             components = None
 
+    reactions = [reaction_to_dto(r) for r in message.reactions] or None
+
     return ChatMessage(
         id=str(message.id),
         channelId=str(message.channel.id),
@@ -158,6 +176,7 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
         embeds=embeds,
         reference=reference,
         components=components,
+        reactions=reactions,
         editedTimestamp=message.edited_at,
     )
 

@@ -79,6 +79,14 @@ class MessageAuthor(BaseModel):
     useCharacterName: bool | None = False
 
 
+class ReactionDto(BaseModel):
+    emoji: str
+    emojiId: str | None = None
+    isAnimated: bool
+    count: int
+    me: bool
+
+
 class ChatMessage(BaseModel):
     id: str
     channelId: str
@@ -92,6 +100,7 @@ class ChatMessage(BaseModel):
     embeds: List[dict] | None = None
     reference: dict | None = None
     components: List[dict] | None = None
+    reactions: List[ReactionDto] | None = None
     editedTimestamp: Optional[datetime] = None
     useCharacterName: bool | None = False
 
