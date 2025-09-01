@@ -23,6 +23,7 @@ from ...http.discord_helpers import (
     message_to_chat_message,
     components_to_dtos,
     reaction_to_dto,
+    extract_embed_buttons,
 )
 
 from ...http.ws import manager
@@ -165,40 +166,9 @@ class Mirror(commands.Cog):
                 is_officer = kind == "officer_chat"
 
                 stored = False
+                buttons = extract_embed_buttons(message)
                 for emb in message.embeds:
                     data = emb.to_dict()
-                    buttons: list[EmbedButtonDto] = []
-                    try:
-                        for row in getattr(message, "components", []) or []:
-                            children = getattr(row, "children", None) or getattr(
-                                row, "components", []
-                            )
-                            for comp in children or []:
-                                if getattr(comp, "type", None) == 2:
-                                    style = getattr(comp, "style", None)
-                                    style_val = (
-                                        style.value if hasattr(style, "value") else style
-                                    )
-                                    emoji = getattr(comp, "emoji", None)
-                                    emoji_str = str(emoji) if emoji else None
-                                    buttons.append(
-                                        EmbedButtonDto(
-                                            customId=getattr(comp, "custom_id", None),
-                                            label=getattr(comp, "label", None),
-                                            style=style_val,
-                                            emoji=emoji_str,
-                                        )
-                                    )
-                    except Exception:
-                        logging.exception(
-                            "Button extraction failed for guild %s channel %s message %s: %s",
-                            getattr(message.guild, "id", None),
-                            channel_id,
-                            message.id,
-                            data,
-                        )
-                        continue
-
                     try:
                         dto = embed_to_dto(message, emb, buttons)
                     except Exception:
@@ -288,31 +258,7 @@ class Mirror(commands.Cog):
 
             embeds_json = None
             if message.embeds:
-                buttons: list[EmbedButtonDto] = []
-                try:
-                    for row_comp in getattr(message, "components", []) or []:
-                        children = getattr(row_comp, "children", None) or getattr(
-                            row_comp, "components", []
-                        )
-                        for comp in children or []:
-                            if getattr(comp, "type", None) != 2:
-                                continue
-                            style = getattr(comp, "style", None)
-                            style_val = style.value if hasattr(style, "value") else style
-                            emoji = getattr(comp, "emoji", None)
-                            emoji_str = str(emoji) if emoji else None
-                            buttons.append(
-                                EmbedButtonDto(
-                                    customId=getattr(comp, "custom_id", None),
-                                    label=getattr(comp, "label", None),
-                                    style=style_val,
-                                    emoji=emoji_str,
-                                    url=getattr(comp, "url", None),
-                                )
-                            )
-                except Exception:
-                    buttons = []
-
+                buttons = extract_embed_buttons(message)
                 embed_dtos: list[EmbedDto] = []
                 for emb in message.embeds:
                     try:
@@ -417,37 +363,7 @@ class Mirror(commands.Cog):
                 emb = after.embeds[0]
                 data = emb.to_dict()
 
-                buttons: list[EmbedButtonDto] = []
-                try:
-                    for row_comp in getattr(after, "components", []) or []:
-                        children = getattr(row_comp, "children", None) or getattr(
-                            row_comp, "components", []
-                        )
-                        for comp in children or []:
-                            if getattr(comp, "type", None) == 2:
-                                style = getattr(comp, "style", None)
-                                style_val = (
-                                    style.value if hasattr(style, "value") else style
-                                )
-                                emoji = getattr(comp, "emoji", None)
-                                emoji_str = str(emoji) if emoji else None
-                                buttons.append(
-                                    EmbedButtonDto(
-                                        customId=getattr(comp, "custom_id", None),
-                                        label=getattr(comp, "label", None),
-                                        style=style_val,
-                                        emoji=emoji_str,
-                                    )
-                                )
-                except Exception:
-                    logging.exception(
-                        "Button extraction failed for guild %s channel %s message %s: %s",
-                        getattr(after.guild, "id", None),
-                        channel_id,
-                        after.id,
-                        data,
-                    )
-                    return
+                buttons = extract_embed_buttons(after)
 
                 try:
                     dto = embed_to_dto(after, emb, buttons)
@@ -512,33 +428,7 @@ class Mirror(commands.Cog):
 
                 embeds_json = None
                 if after.embeds:
-                    buttons: list[EmbedButtonDto] = []
-                    try:
-                        for row_comp in getattr(after, "components", []) or []:
-                            children = getattr(row_comp, "children", None) or getattr(
-                                row_comp, "components", []
-                            )
-                            for comp in children or []:
-                                if getattr(comp, "type", None) != 2:
-                                    continue
-                                style = getattr(comp, "style", None)
-                                style_val = (
-                                    style.value if hasattr(style, "value") else style
-                                )
-                                emoji = getattr(comp, "emoji", None)
-                                emoji_str = str(emoji) if emoji else None
-                                buttons.append(
-                                    EmbedButtonDto(
-                                        customId=getattr(comp, "custom_id", None),
-                                        label=getattr(comp, "label", None),
-                                        style=style_val,
-                                        emoji=emoji_str,
-                                        url=getattr(comp, "url", None),
-                                    )
-                                )
-                    except Exception:
-                        buttons = []
-
+                    buttons = extract_embed_buttons(after)
                     embed_dtos: list[EmbedDto] = []
                     for emb in after.embeds:
                         try:
