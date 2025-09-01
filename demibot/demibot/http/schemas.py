@@ -126,3 +126,4 @@ class PresenceDto(BaseModel):
     name: str
     status: str
     avatarUrl: str | None = Field(default=None, alias="avatar_url")
+    roles: List[str] = Field(default_factory=list)

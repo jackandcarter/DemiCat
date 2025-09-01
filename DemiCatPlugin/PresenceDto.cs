@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using System.Collections.Generic;
 using Dalamud.Interface.Textures;
 
 namespace DemiCatPlugin;
@@ -10,4 +11,5 @@ public class PresenceDto
     [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
     [JsonPropertyName("avatar_url")] public string? AvatarUrl { get; set; }
     [JsonIgnore] public ISharedImmediateTexture? AvatarTexture { get; set; }
+    [JsonPropertyName("roles")] public List<string> Roles { get; set; } = new();
 }

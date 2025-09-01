@@ -24,11 +24,13 @@ class PresenceTracker(commands.Cog):
         return "online"
 
     async def _update(self, member: discord.Member) -> dict[str, str | None]:
+        role_ids = [r.id for r in member.roles if r.name != "@everyone"]
         data = StorePresence(
             id=member.id,
             name=member.display_name or member.name,
             status=self._status(member),
             avatar_url=str(member.display_avatar.url),
+            roles=role_ids,
         )
         set_presence(member.guild.id, data)
         async for db in get_session():
@@ -55,6 +57,7 @@ class PresenceTracker(commands.Cog):
             "name": data.name,
             "status": data.status,
             "avatar_url": data.avatar_url,
+            "roles": [str(r) for r in role_ids],
         }
 
     @commands.Cog.listener()
