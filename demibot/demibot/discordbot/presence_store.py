@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, List
 
 
@@ -10,6 +10,7 @@ class Presence:
     name: str
     status: str
     avatar_url: str | None = None
+    roles: list[int] = field(default_factory=list)
 
 
 _presences: Dict[int, Dict[int, Presence]] = {}

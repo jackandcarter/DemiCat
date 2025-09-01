@@ -66,7 +66,19 @@ public class FcChatWindow : ChatWindow
                 ImGui.Dummy(new Vector2(24, 24));
             }
             ImGui.SameLine();
-            if (ImGui.Selectable(user.Name))
+            var label = user.Name;
+            foreach (var roleId in user.Roles)
+            {
+                foreach (var role in RoleCache.Roles)
+                {
+                    if (role.Id == roleId)
+                    {
+                        label += $" [{role.Name}]";
+                        break;
+                    }
+                }
+            }
+            if (ImGui.Selectable(label))
             {
                 _input += $"@{user.Name} ";
             }

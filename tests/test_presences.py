@@ -17,6 +17,7 @@ from demibot.http.routes.presences import list_presences
 from demibot.discordbot.presence_store import set_presence, Presence as StorePresence
 from demibot.db.models import Presence as DbPresence, User
 from demibot.db.session import init_db, get_session
+from demibot.db import session as db_session
 import asyncio
 
 
@@ -56,6 +57,8 @@ def test_presence_broadcast_filtered_by_path():
 
 def test_list_presences_returns_data():
     async def _run():
+        db_session._engine = None
+        db_session._Session = None
         set_presence(
             1,
             StorePresence(
@@ -63,6 +66,7 @@ def test_list_presences_returns_data():
                 name="Alice",
                 status="online",
                 avatar_url="https://example.com/a.png",
+                roles=[100],
             ),
         )
         set_presence(
@@ -72,15 +76,16 @@ def test_list_presences_returns_data():
                 name="Bob",
                 status="offline",
                 avatar_url="https://example.com/b.png",
+                roles=[],
             ),
         )
         ctx = StubContext(1)
         res = await list_presences(ctx=ctx)
         assert {
-            (p["id"], p["status"], p["avatar_url"]) for p in res
+            (p["id"], p["status"], p["avatar_url"], tuple(p["roles"])) for p in res
         } == {
-            ("10", "online", "https://example.com/a.png"),
-            ("20", "offline", "https://example.com/b.png"),
+            ("10", "online", "https://example.com/a.png", ("100",)),
+            ("20", "offline", "https://example.com/b.png", ()),
         }
 
     asyncio.run(_run())
@@ -88,6 +93,8 @@ def test_list_presences_returns_data():
 
 def test_list_presences_reads_from_db():
     async def _run():
+        db_session._engine = None
+        db_session._Session = None
         url = "sqlite+aiosqlite://"
         await init_db(url)
         async for db in get_session():
@@ -99,7 +106,6 @@ def test_list_presences_reads_from_db():
         ctx = StubContext(1)
         res = await list_presences(ctx=ctx)
         assert {
-            (p["id"], p["status"], p["avatar_url"]) for p in res
-        } == {("10", "online", None), ("20", "offline", None)}
-
+            (p["id"], p["status"], p["avatar_url"], tuple(p["roles"])) for p in res
+        } == {("10", "online", None, ()), ("20", "offline", None, ())}
     asyncio.run(_run())
