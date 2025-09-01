@@ -10,6 +10,7 @@ plugin.
 
 from typing import List
 
+import logging
 import discord
 
 from .schemas import (
@@ -156,6 +157,45 @@ def components_to_dtos(message: discord.Message) -> List[ButtonComponentDto] | N
     return components or None
 
 
+def extract_embed_buttons(message: discord.Message) -> List[EmbedButtonDto]:
+    """Extract button components from a message for embedding.
+
+    Parameters
+    ----------
+    message:
+        The Discord message whose components should be inspected.
+    """
+
+    buttons: list[EmbedButtonDto] = []
+    try:
+        for row in getattr(message, "components", []) or []:
+            children = getattr(row, "children", None) or getattr(row, "components", [])
+            for comp in children or []:
+                if getattr(comp, "type", None) != 2:  # 2 == button
+                    continue
+                style = getattr(comp, "style", None)
+                style_val = style.value if hasattr(style, "value") else style
+                emoji = getattr(comp, "emoji", None)
+                emoji_str = str(emoji) if emoji else None
+                buttons.append(
+                    EmbedButtonDto(
+                        customId=getattr(comp, "custom_id", None),
+                        label=getattr(comp, "label", None),
+                        style=style_val,
+                        emoji=emoji_str,
+                        url=getattr(comp, "url", None),
+                    )
+                )
+    except Exception:
+        logging.exception(
+            "Button extraction failed for channel %s message %s",
+            getattr(getattr(message, "channel", None), "id", None),
+            getattr(message, "id", None),
+        )
+        return []
+    return buttons
+
+
 def message_to_chat_message(message: discord.Message) -> ChatMessage:
     """Convert a :class:`discord.Message` into a :class:`ChatMessage` DTO."""
 
@@ -178,29 +218,7 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
 
     embeds = None
     if message.embeds:
-        buttons: list[EmbedButtonDto] = []
-        try:
-            for row in getattr(message, "components", []) or []:
-                children = getattr(row, "children", None) or getattr(row, "components", [])
-                for comp in children or []:
-                    if getattr(comp, "type", None) != 2:
-                        continue
-                    style = getattr(comp, "style", None)
-                    style_val = style.value if hasattr(style, "value") else style
-                    emoji = getattr(comp, "emoji", None)
-                    emoji_str = str(emoji) if emoji else None
-                    buttons.append(
-                        EmbedButtonDto(
-                            label=getattr(comp, "label", None),
-                            customId=getattr(comp, "custom_id", None),
-                            url=getattr(comp, "url", None),
-                            style=style_val,
-                            emoji=emoji_str,
-                        )
-                    )
-        except Exception:
-            buttons = []
-
+        buttons = extract_embed_buttons(message)
         embeds_list: list[EmbedDto] = []
         for emb in message.embeds:
             try:
