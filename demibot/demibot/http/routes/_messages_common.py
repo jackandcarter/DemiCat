@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import io
+import types
 
 import discord
 from fastapi import HTTPException, UploadFile
@@ -21,6 +22,7 @@ from ..schemas import (
     EmbedDto,
     MessageReferenceDto,
 )
+from ..discord_helpers import serialize_message
 
 from ..ws import manager
 from ...db.models import Message
@@ -221,9 +223,44 @@ async def save_message(
         avatarUrl=None,
         useCharacterName=body.useCharacterName,
     )
-    attachments_json = (
-        json.dumps([a.model_dump() for a in attachments]) if attachments else None
+
+    dummy = types.SimpleNamespace(
+        id=discord_msg_id,
+        channel=types.SimpleNamespace(id=channel_id),
+        author=types.SimpleNamespace(
+            id=ctx.user.id,
+            display_name=display_name,
+            name=display_name,
+            display_avatar=None,
+        ),
+        content=body.content,
+        attachments=[
+            types.SimpleNamespace(
+                url=a.url, filename=a.filename, content_type=a.contentType
+            )
+            for a in (attachments or [])
+        ],
+        mentions=[],
+        embeds=[],
+        reference=types.SimpleNamespace(
+            message_id=int(body.messageReference.messageId),
+            channel_id=int(body.messageReference.channelId),
+        )
+        if body.messageReference
+        else None,
+        components=[],
+        reactions=[],
+        created_at=datetime.utcnow(),
+        edited_at=None,
     )
+
+    dto, fragments = serialize_message(dummy)
+    dto.author = author
+    dto.authorName = author.name
+    dto.authorAvatarUrl = author.avatarUrl
+    dto.useCharacterName = body.useCharacterName
+    fragments["author_json"] = author.model_dump_json()
+
     msg = Message(
         discord_message_id=discord_msg_id,
         channel_id=channel_id,
@@ -234,28 +271,19 @@ async def save_message(
         content_raw=body.content,
         content_display=body.content,
         content=body.content,
-        author_json=author.model_dump_json(),
-        attachments_json=attachments_json,
-        reference_json=
-        body.messageReference.model_dump_json() if body.messageReference else None,
+        author_json=fragments["author_json"],
+        attachments_json=fragments["attachments_json"],
+        mentions_json=fragments["mentions_json"],
+        embeds_json=fragments["embeds_json"],
+        reference_json=fragments["reference_json"],
+        components_json=fragments["components_json"],
+        reactions_json=fragments["reactions_json"],
         is_officer=is_officer,
     )
     db.add(msg)
     await db.commit()
     await db.refresh(msg)
-    dto = ChatMessage(
-        id=str(discord_msg_id),
-        channelId=str(channel_id),
-        authorName=msg.author_name,
-        authorAvatarUrl=msg.author_avatar_url,
-        timestamp=msg.created_at,
-        content=msg.content or msg.content_display,
-        attachments=attachments,
-        reference=body.messageReference,
-        author=author,
-        editedTimestamp=msg.edited_timestamp,
-        useCharacterName=body.useCharacterName,
-    )
+
     await manager.broadcast_text(
         dto.model_dump_json(),
         ctx.guild.id,

@@ -11,18 +11,11 @@ from sqlalchemy.exc import IntegrityError
 
 from ...db.models import Embed, Guild, GuildChannel, Message
 from ...db.session import get_session
-from ...http.schemas import (
-    EmbedButtonDto,
-    EmbedDto,
-    Mention,
-    AttachmentDto,
-    MessageAuthor,
-    MessageReferenceDto,
-)
+from ...http.schemas import EmbedButtonDto, EmbedDto
 from ...http.discord_helpers import (
     embed_to_dto,
     message_to_chat_message,
-    components_to_dtos,
+    serialize_message,
     reaction_to_dto,
     extract_embed_buttons,
 )
@@ -223,106 +216,32 @@ class Mirror(commands.Cog):
             kind, guild_id = row
             is_officer = kind == "officer_chat"
 
-            # Persist the message
-            attachments_json = None
-            if message.attachments:
-                attachments_json = json.dumps(
-                    [
-                        {
-                            "url": a.url,
-                            "filename": a.filename,
-                            "contentType": a.content_type,
-                        }
-                        for a in message.attachments
-                    ]
-                )
-
-            mentions = [
-                Mention(
-                    id=str(m.id),
-                    name=m.display_name or m.name,
-                )
-                for m in message.mentions
-                if not m.bot
-            ]
-            mentions_json = (
-                json.dumps([m.model_dump() for m in mentions]) if mentions else None
-            )
-
-            author = MessageAuthor(
-                id=str(message.author.id),
-                name=message.author.display_name or message.author.name,
-                avatarUrl=str(message.author.display_avatar.url)
-                if message.author.display_avatar
-                else None,
-            )
-
-            embeds_json = None
-            if message.embeds:
-                buttons = extract_embed_buttons(message)
-                embed_dtos: list[EmbedDto] = []
-                for emb in message.embeds:
-                    try:
-                        embed_dtos.append(
-                            embed_to_dto(message, emb, buttons or None)
-                        )
-                    except Exception:
-                        continue
-                embeds_json = (
-                    json.dumps([e.model_dump(mode="json") for e in embed_dtos])
-                    if embed_dtos
-                    else None
-                )
-            reference_json = None
-            if message.reference:
-                reference_json = MessageReferenceDto(
-                    messageId=str(message.reference.message_id),
-                    channelId=str(message.reference.channel_id),
-                ).model_dump_json()
-            components_json = None
-            if getattr(message, "components", None):
-                try:
-                    comps = components_to_dtos(message)
-                    components_json = (
-                        json.dumps([c.model_dump() for c in comps]) if comps else None
-                    )
-                except Exception:
-                    components_json = None
-
-            reactions_json = None
-            if message.reactions:
-                try:
-                    reactions_json = json.dumps(
-                        [reaction_to_dto(r).model_dump() for r in message.reactions]
-                    )
-                except Exception:
-                    reactions_json = None
-
+            # Persist and broadcast the message
+            dto, fragments = serialize_message(message)
             db.add(
                 Message(
                     discord_message_id=message.id,
                     channel_id=channel_id,
                     guild_id=guild_id,
                     author_id=message.author.id,
-                    author_name=author.name,
-                    author_avatar_url=author.avatarUrl,
+                    author_name=dto.authorName,
+                    author_avatar_url=dto.authorAvatarUrl,
                     content_raw=message.content,
                     content_display=message.content,
                     content=message.content,
-                    attachments_json=attachments_json,
-                    mentions_json=mentions_json,
-                    author_json=author.model_dump_json(),
-                    embeds_json=embeds_json,
-                    reference_json=reference_json,
-                    components_json=components_json,
-                    reactions_json=reactions_json,
+                    attachments_json=fragments["attachments_json"],
+                    mentions_json=fragments["mentions_json"],
+                    author_json=fragments["author_json"],
+                    embeds_json=fragments["embeds_json"],
+                    reference_json=fragments["reference_json"],
+                    components_json=fragments["components_json"],
+                    reactions_json=fragments["reactions_json"],
                     edited_timestamp=message.edited_at,
                     is_officer=is_officer,
                 )
             )
             await db.commit()
 
-            dto = message_to_chat_message(message)
             await manager.broadcast_text(
                 json.dumps(dto.model_dump()),
                 guild_id,
@@ -394,95 +313,23 @@ class Mirror(commands.Cog):
                 if msg is None:
                     return
 
-                attachments_json = None
-                if after.attachments:
-                    attachments_json = json.dumps(
-                        [
-                            {
-                                "url": a.url,
-                                "filename": a.filename,
-                                "contentType": a.content_type,
-                            }
-                            for a in after.attachments
-                        ]
-                    )
-
-                mentions = [
-                    Mention(id=str(m.id), name=m.display_name or m.name)
-                    for m in after.mentions
-                    if not m.bot
-                ]
-                mentions_json = (
-                    json.dumps([m.model_dump() for m in mentions]) if mentions else None
-                )
-
-                author = MessageAuthor(
-                    id=str(after.author.id),
-                    name=after.author.display_name or after.author.name,
-                    avatarUrl=str(after.author.display_avatar.url)
-                    if after.author.display_avatar
-                    else None,
-                )
-
-                embeds_json = None
-                if after.embeds:
-                    buttons = extract_embed_buttons(after)
-                    embed_dtos: list[EmbedDto] = []
-                    for emb in after.embeds:
-                        try:
-                            embed_dtos.append(
-                                embed_to_dto(after, emb, buttons or None)
-                            )
-                        except Exception:
-                            continue
-                    embeds_json = (
-                        json.dumps([e.model_dump(mode="json") for e in embed_dtos])
-                        if embed_dtos
-                        else None
-                    )
-                reference_json = None
-                if after.reference:
-                    reference_json = MessageReferenceDto(
-                        messageId=str(after.reference.message_id),
-                        channelId=str(after.reference.channel_id),
-                    ).model_dump_json()
-                components_json = None
-                if getattr(after, "components", None):
-                    try:
-                        comps = components_to_dtos(after)
-                        components_json = (
-                            json.dumps([c.model_dump() for c in comps])
-                            if comps
-                            else None
-                        )
-                    except Exception:
-                        components_json = None
-
-                reactions_json = None
-                if after.reactions:
-                    try:
-                        reactions_json = json.dumps(
-                            [reaction_to_dto(r).model_dump() for r in after.reactions]
-                        )
-                    except Exception:
-                        reactions_json = None
+                dto, fragments = serialize_message(after)
 
                 msg.content_raw = after.content
                 msg.content_display = after.content
                 msg.content = after.content
-                msg.attachments_json = attachments_json
-                msg.mentions_json = mentions_json
-                msg.author_name = author.name
-                msg.author_avatar_url = author.avatarUrl
-                msg.author_json = author.model_dump_json()
-                msg.embeds_json = embeds_json
-                msg.reference_json = reference_json
-                msg.components_json = components_json
-                msg.reactions_json = reactions_json
+                msg.attachments_json = fragments["attachments_json"]
+                msg.mentions_json = fragments["mentions_json"]
+                msg.author_name = dto.authorName
+                msg.author_avatar_url = dto.authorAvatarUrl
+                msg.author_json = fragments["author_json"]
+                msg.embeds_json = fragments["embeds_json"]
+                msg.reference_json = fragments["reference_json"]
+                msg.components_json = fragments["components_json"]
+                msg.reactions_json = fragments["reactions_json"]
                 msg.edited_timestamp = after.edited_at
                 await db.commit()
 
-                dto = message_to_chat_message(after)
                 await manager.broadcast_text(
                     json.dumps(dto.model_dump()),
                     guild_id,
