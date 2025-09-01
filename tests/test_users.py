@@ -37,6 +37,10 @@ def test_get_users_includes_status_from_cache():
     async def _run():
         await init_db('sqlite+aiosqlite://')
         async for db in get_session():
+            await db.execute(delete(DbPresence))
+            await db.execute(delete(Membership))
+            await db.execute(delete(User))
+            await db.commit()
             db.add(User(id=1, discord_user_id=10, global_name='Alice'))
             db.add(User(id=2, discord_user_id=20, global_name='Bob'))
             db.add(Membership(guild_id=1, user_id=1))

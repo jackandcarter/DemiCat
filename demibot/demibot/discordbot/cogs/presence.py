@@ -23,11 +23,12 @@ class PresenceTracker(commands.Cog):
             return "offline"
         return "online"
 
-    async def _update(self, member: discord.Member) -> dict[str, str]:
+    async def _update(self, member: discord.Member) -> dict[str, str | None]:
         data = StorePresence(
             id=member.id,
             name=member.display_name or member.name,
             status=self._status(member),
+            avatar_url=str(member.display_avatar.url),
         )
         set_presence(member.guild.id, data)
         async for db in get_session():
@@ -49,7 +50,12 @@ class PresenceTracker(commands.Cog):
                 row.status = data.status
                 row.updated_at = datetime.utcnow()
             await db.commit()
-        return {"id": str(member.id), "name": data.name, "status": data.status}
+        return {
+            "id": str(member.id),
+            "name": data.name,
+            "status": data.status,
+            "avatar_url": data.avatar_url,
+        }
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:
