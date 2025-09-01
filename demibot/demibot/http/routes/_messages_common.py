@@ -292,12 +292,60 @@ async def edit_message(
                 await discord_msg.edit(content=content)
             except Exception:
                 pass
+    attachments = None
+    if msg.attachments_json:
+        try:
+            data = json.loads(msg.attachments_json)
+            attachments = [AttachmentDto(**a) for a in data]
+        except Exception:
+            attachments = None
+
+    mentions = None
+    if msg.mentions_json:
+        try:
+            data = json.loads(msg.mentions_json)
+            mentions = [Mention(**m) for m in data]
+        except Exception:
+            mentions = None
+
     author = None
     if msg.author_json:
         try:
             author = MessageAuthor(**json.loads(msg.author_json))
         except Exception:
             author = None
+
+    embeds = None
+    if msg.embeds_json:
+        try:
+            data = json.loads(msg.embeds_json)
+            embeds = [EmbedDto(**e) for e in data]
+        except Exception:
+            embeds = None
+
+    reference = None
+    if msg.reference_json:
+        try:
+            reference = json.loads(msg.reference_json)
+        except Exception:
+            reference = None
+
+    components = None
+    if msg.components_json:
+        try:
+            data = json.loads(msg.components_json)
+            components = [ButtonComponentDto(**c) for c in data]
+        except Exception:
+            components = None
+
+    reactions = None
+    if msg.reactions_json:
+        try:
+            data = json.loads(msg.reactions_json)
+            reactions = [ReactionDto(**r) for r in data]
+        except Exception:
+            reactions = None
+
     dto = ChatMessage(
         id=str(message_id),
         channelId=str(channel_id),
@@ -305,8 +353,14 @@ async def edit_message(
         authorAvatarUrl=msg.author_avatar_url,
         timestamp=msg.created_at,
         content=content,
-        editedTimestamp=msg.edited_timestamp,
+        attachments=attachments,
+        mentions=mentions,
         author=author,
+        embeds=embeds,
+        reference=reference,
+        components=components,
+        reactions=reactions,
+        editedTimestamp=msg.edited_timestamp,
         useCharacterName=getattr(author, "useCharacterName", False),
     )
     await manager.broadcast_text(
