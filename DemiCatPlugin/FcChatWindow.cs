@@ -15,9 +15,7 @@ namespace DemiCatPlugin;
 
 public class FcChatWindow : ChatWindow
 {
-    private bool _presenceInitialized;
-
-    public FcChatWindow(Config config, HttpClient httpClient, PresenceSidebar? presence) : base(config, httpClient, presence)
+    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence) : base(config, httpClient, presence)
     {
         _channelId = config.FcChannelId;
     }
@@ -25,13 +23,6 @@ public class FcChatWindow : ChatWindow
     public override void Draw()
     {
         var originalChatChannel = _config.ChatChannelId;
-
-        if (!_presenceInitialized && _presence != null)
-        {
-            _presence.Reset();
-            _ = _presence.Refresh();
-            _presenceInitialized = true;
-        }
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 

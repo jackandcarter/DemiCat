@@ -22,6 +22,7 @@ public class Plugin : IDalamudPlugin
     private readonly SettingsWindow _settings;
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
+    private readonly DiscordPresenceService? _presenceService;
     private readonly PresenceSidebar? _presenceSidebar;
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
@@ -50,9 +51,15 @@ public class Plugin : IDalamudPlugin
 
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
-        _presenceSidebar = _config.EnableFcChat ? new PresenceSidebar(_config, _httpClient) : null;
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceSidebar);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceSidebar);
+        _presenceService = _config.EnableFcChat ? new DiscordPresenceService(_config, _httpClient) : null;
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService);
+        _presenceSidebar = _presenceService != null ? new PresenceSidebar(_presenceService) : null;
+        if (_presenceSidebar != null)
+        {
+            _presenceSidebar.TextureLoader = _chatWindow.TextureLoader;
+        }
+        _presenceService?.Reset();
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _presenceSidebar, _httpClient);
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow);
         _requestWatcher = new RequestWatcher(_config, _httpClient);
@@ -92,6 +99,7 @@ public class Plugin : IDalamudPlugin
 
         _httpClient.Dispose();
         _presenceSidebar?.Dispose();
+        _presenceService?.Dispose();
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();
         _mainWindow.Dispose();
@@ -171,6 +179,7 @@ public class Plugin : IDalamudPlugin
                 {
                     _chatWindow.StopNetworking();
                     _presenceSidebar?.Dispose();
+                    _presenceService?.Dispose();
                 }
                 _services.PluginInterface.SavePluginConfig(_config);
             });

@@ -35,7 +35,7 @@ public class ChatWindow : IDisposable
     protected string _input = string.Empty;
     protected bool _useCharacterName;
     protected string _statusMessage = string.Empty;
-    protected readonly PresenceSidebar? _presence;
+    protected readonly DiscordPresenceService? _presence;
     protected readonly List<string> _attachments = new();
     protected string _newAttachmentPath = string.Empty;
     protected string? _replyToId;
@@ -77,19 +77,16 @@ public class ChatWindow : IDisposable
         set => _channelsLoaded = value;
     }
 
-    public PresenceSidebar? Presence => _presence;
+    public DiscordPresenceService? Presence => _presence;
+    public Action<string?, Action<ISharedImmediateTexture?>> TextureLoader => LoadTexture;
 
     protected virtual string MessagesPath => "/api/messages";
 
-    public ChatWindow(Config config, HttpClient httpClient, PresenceSidebar? presence)
+    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence)
     {
         _config = config;
         _httpClient = httpClient;
         _presence = presence;
-        if (_presence != null)
-        {
-            _presence.TextureLoader = LoadTexture;
-        }
         _emojiPicker = new EmojiPicker(config, httpClient) { TextureLoader = LoadTexture };
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
