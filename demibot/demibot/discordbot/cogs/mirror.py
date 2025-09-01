@@ -17,7 +17,11 @@ from ...http.schemas import (
     AttachmentDto,
     MessageAuthor,
 )
-from ...http.discord_helpers import embed_to_dto, message_to_chat_message
+from ...http.discord_helpers import (
+    embed_to_dto,
+    message_to_chat_message,
+    reaction_to_dto,
+)
 from ...http.ws import manager
 
 
@@ -302,6 +306,15 @@ class Mirror(commands.Cog):
                 except Exception:
                     components_json = None
 
+            reactions_json = None
+            if message.reactions:
+                try:
+                    reactions_json = json.dumps(
+                        [reaction_to_dto(r).model_dump() for r in message.reactions]
+                    )
+                except Exception:
+                    reactions_json = None
+
             db.add(
                 Message(
                     discord_message_id=message.id,
@@ -319,6 +332,7 @@ class Mirror(commands.Cog):
                     embeds_json=embeds_json,
                     reference_json=reference_json,
                     components_json=components_json,
+                    reactions_json=reactions_json,
                     edited_timestamp=message.edited_at,
                     is_officer=is_officer,
                 )
@@ -480,6 +494,15 @@ class Mirror(commands.Cog):
                     except Exception:
                         components_json = None
 
+                reactions_json = None
+                if after.reactions:
+                    try:
+                        reactions_json = json.dumps(
+                            [reaction_to_dto(r).model_dump() for r in after.reactions]
+                        )
+                    except Exception:
+                        reactions_json = None
+
                 msg.content_raw = after.content
                 msg.content_display = after.content
                 msg.content = after.content
@@ -491,6 +514,7 @@ class Mirror(commands.Cog):
                 msg.embeds_json = embeds_json
                 msg.reference_json = reference_json
                 msg.components_json = components_json
+                msg.reactions_json = reactions_json
                 msg.edited_timestamp = after.edited_at
                 await db.commit()
 

@@ -216,6 +216,7 @@ class Message(Base):
     mentions_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     reference_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     components_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    reactions_json: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     edited_timestamp: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     is_officer: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
