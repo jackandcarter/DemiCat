@@ -19,6 +19,7 @@ from ..schemas import (
     ButtonComponentDto,
     ReactionDto,
     EmbedDto,
+    MessageReferenceDto,
 )
 
 from ..ws import manager
@@ -34,7 +35,7 @@ class PostBody(BaseModel):
     channelId: str
     content: str
     useCharacterName: bool | None = False
-    messageReference: dict | None = None
+    messageReference: MessageReferenceDto | None = None
 
 
 async def fetch_messages(
@@ -99,7 +100,7 @@ async def fetch_messages(
         reference = None
         if m.reference_json:
             try:
-                reference = json.loads(m.reference_json)
+                reference = MessageReferenceDto(**json.loads(m.reference_json))
             except Exception:
                 reference = None
 
@@ -235,9 +236,8 @@ async def save_message(
         content=body.content,
         author_json=author.model_dump_json(),
         attachments_json=attachments_json,
-        reference_json=json.dumps(body.messageReference)
-        if body.messageReference
-        else None,
+        reference_json=
+        body.messageReference.model_dump_json() if body.messageReference else None,
         is_officer=is_officer,
     )
     db.add(msg)
@@ -326,7 +326,7 @@ async def edit_message(
     reference = None
     if msg.reference_json:
         try:
-            reference = json.loads(msg.reference_json)
+            reference = MessageReferenceDto(**json.loads(msg.reference_json))
         except Exception:
             reference = None
 

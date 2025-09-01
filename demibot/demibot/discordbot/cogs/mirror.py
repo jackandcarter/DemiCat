@@ -17,6 +17,7 @@ from ...http.schemas import (
     Mention,
     AttachmentDto,
     MessageAuthor,
+    MessageReferenceDto,
 )
 from ...http.discord_helpers import (
     embed_to_dto,
@@ -274,13 +275,10 @@ class Mirror(commands.Cog):
                 )
             reference_json = None
             if message.reference:
-                reference_json = json.dumps(
-                    {
-                        "messageId": message.reference.message_id,
-                        "channelId": message.reference.channel_id,
-                        "guildId": message.reference.guild_id,
-                    }
-                )
+                reference_json = MessageReferenceDto(
+                    messageId=str(message.reference.message_id),
+                    channelId=str(message.reference.channel_id),
+                ).model_dump_json()
             components_json = None
             if getattr(message, "components", None):
                 try:
@@ -444,13 +442,10 @@ class Mirror(commands.Cog):
                     )
                 reference_json = None
                 if after.reference:
-                    reference_json = json.dumps(
-                        {
-                            "messageId": after.reference.message_id,
-                            "channelId": after.reference.channel_id,
-                            "guildId": after.reference.guild_id,
-                        }
-                    )
+                    reference_json = MessageReferenceDto(
+                        messageId=str(after.reference.message_id),
+                        channelId=str(after.reference.channel_id),
+                    ).model_dump_json()
                 components_json = None
                 if getattr(after, "components", None):
                     try:
