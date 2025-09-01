@@ -72,6 +72,14 @@ class AttachmentDto(BaseModel):
     contentType: Optional[str] = None
 
 
+class ButtonComponentDto(BaseModel):
+    label: str
+    customId: Optional[str] = None
+    url: Optional[str] = None
+    style: ButtonStyle
+    emoji: Optional[str] = None
+
+
 class MessageAuthor(BaseModel):
     id: str
     name: str
@@ -91,7 +99,7 @@ class ChatMessage(BaseModel):
     author: MessageAuthor | None = None
     embeds: List[dict] | None = None
     reference: dict | None = None
-    components: List[dict] | None = None
+    components: List[ButtonComponentDto] | None = None
     editedTimestamp: Optional[datetime] = None
     useCharacterName: bool | None = False
 

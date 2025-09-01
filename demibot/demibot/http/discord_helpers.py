@@ -14,6 +14,7 @@ import discord
 
 from .schemas import (
     AttachmentDto,
+    ButtonComponentDto,
     ChatMessage,
     EmbedAuthorDto,
     EmbedButtonDto,
@@ -108,6 +109,37 @@ def embed_to_dto(
     )
 
 
+def components_to_dtos(message: discord.Message) -> List[ButtonComponentDto] | None:
+    """Flatten message component rows into :class:`ButtonComponentDto` objects.
+
+    Discord exposes components as a list of action rows which in turn contain the
+    actual interactive elements (buttons, selects, ...).  The Dalamud plugin only
+    understands simple buttons, so this helper extracts those and converts them to
+    our API DTOs.
+    """
+
+    components: list[ButtonComponentDto] = []
+    for row in getattr(message, "components", []) or []:
+        children = getattr(row, "children", None) or getattr(row, "components", [])
+        for comp in children or []:
+            if getattr(comp, "type", None) != 2:  # 2 == button
+                continue
+            style = getattr(comp, "style", None)
+            style_val = style.value if hasattr(style, "value") else style
+            emoji = getattr(comp, "emoji", None)
+            emoji_str = str(emoji) if emoji else None
+            components.append(
+                ButtonComponentDto(
+                    label=getattr(comp, "label", None),
+                    customId=getattr(comp, "custom_id", None),
+                    url=getattr(comp, "url", None),
+                    style=style_val,
+                    emoji=emoji_str,
+                )
+            )
+    return components or None
+
+
 def message_to_chat_message(message: discord.Message) -> ChatMessage:
     """Convert a :class:`discord.Message` into a :class:`ChatMessage` DTO."""
 
@@ -141,7 +173,7 @@ def message_to_chat_message(message: discord.Message) -> ChatMessage:
     components = None
     if getattr(message, "components", None):
         try:
-            components = [c.to_dict() for c in message.components]
+            components = components_to_dtos(message)
         except Exception:
             components = None
 
