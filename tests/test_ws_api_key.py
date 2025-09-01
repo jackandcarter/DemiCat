@@ -69,3 +69,18 @@ def test_websocket_auth_failure(monkeypatch):
     asyncio.run(ws_module.websocket_endpoint(ws))
     assert ws.close_code == 1008
     assert ws.close_reason == "auth failed"
+
+
+def test_websocket_rejects_query_token(monkeypatch):
+    ws = StubWebSocket()
+    ws.headers = {}
+    ws.query_params = {"token": "abc"}
+
+    async def fake_get_session():
+        yield None
+
+    monkeypatch.setattr(ws_module, "get_session", fake_get_session)
+
+    asyncio.run(ws_module.websocket_endpoint(ws))
+    assert ws.close_code == 1008
+    assert ws.close_reason == "token in url"

@@ -1114,10 +1114,6 @@ public class ChatWindow : IDisposable
         {
             builder.Scheme = "ws";
         }
-        if (!string.IsNullOrEmpty(_config.AuthToken))
-        {
-            builder.Query = $"token={Uri.EscapeDataString(_config.AuthToken)}";
-        }
         return builder.Uri;
     }
 
