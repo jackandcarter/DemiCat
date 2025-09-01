@@ -5,7 +5,7 @@
     "InternalName": "DemiCatPlugin",
     "Punchline": "Discord-linked FC tools and chat.",
     "Description": "A mod to manage Discord FC communities and Events.",
-    "AssemblyVersion": "1.2.1.1",
+    "AssemblyVersion": "1.2.2.1",
     "ApplicableVersion": "any",
     "DalamudApiLevel": 13,
     "RepoUrl": "https://github.com/jackandcarter/DemiCat",
