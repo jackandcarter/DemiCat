@@ -11,16 +11,8 @@ from sqlalchemy.exc import IntegrityError
 
 from ...db.models import Embed, Guild, GuildChannel, Message
 from ...db.session import get_session
-from ...http.schemas import (
-    ChatMessage,
-    EmbedDto,
-    EmbedFieldDto,
-    EmbedButtonDto,
-    EmbedAuthorDto,
-    Mention,
-    AttachmentDto,
-    MessageAuthor,
-)
+from ...http.schemas import EmbedButtonDto
+from ...http.discord_helpers import embed_to_dto, message_to_chat_message
 from ...http.ws import manager
 
 
@@ -196,53 +188,7 @@ class Mirror(commands.Cog):
                         continue
 
                     try:
-                        footer_data = data.get("footer", {})
-                        provider_data = data.get("provider", {})
-                        video_data = data.get("video", {})
-                        author_list = []
-                        first_author = data.get("author")
-                        if first_author:
-                            author_list.append(first_author)
-                        author_list.extend(data.get("authors", []))
-                        authors = [
-                            EmbedAuthorDto(
-                                name=a.get("name"),
-                                url=a.get("url"),
-                                iconUrl=a.get("icon_url"),
-                            )
-                            for a in author_list
-                            if a
-                        ] or None
-                        dto = EmbedDto(
-                            id=str(message.id),
-                            timestamp=emb.timestamp,
-                            color=emb.color.value if emb.color else None,
-                            authorName=first_author.get("name") if first_author else None,
-                            authorIconUrl=first_author.get("icon_url")
-                            if first_author
-                            else None,
-                            authors=authors,
-                            title=emb.title,
-                            description=emb.description,
-                            url=emb.url,
-                            fields=[
-                                EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
-                                for f in emb.fields
-                            ]
-                            or None,
-                            thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
-                            imageUrl=emb.image.url if emb.image else None,
-                            providerName=provider_data.get("name"),
-                            providerUrl=provider_data.get("url"),
-                            footerText=footer_data.get("text"),
-                            footerIconUrl=footer_data.get("icon_url"),
-                            videoUrl=video_data.get("url"),
-                            videoWidth=video_data.get("width"),
-                            videoHeight=video_data.get("height"),
-                            buttons=buttons or None,
-                            channelId=channel_id,
-                            mentions=[m.id for m in message.mentions] or None,
-                        )
+                        dto = embed_to_dto(message, emb, buttons)
                     except Exception:
                         logging.exception(
                             "Embed parsing failed for guild %s channel %s message %s: %s",
@@ -294,62 +240,37 @@ class Mirror(commands.Cog):
             kind, guild_id = row
             is_officer = kind == "officer_chat"
 
-            # Persist the message
-            attachments_json = None
-            if message.attachments:
-                attachments_json = json.dumps(
-                    [
-                        {
-                            "url": a.url,
-                            "filename": a.filename,
-                            "contentType": a.content_type,
-                        }
-                        for a in message.attachments
-                    ]
-                )
+            dto = message_to_chat_message(message)
 
-            mentions = [
-                Mention(
-                    id=str(m.id),
-                    name=m.display_name or m.name,
-                )
-                for m in message.mentions
-                if not m.bot
-            ]
-            mentions_json = (
-                json.dumps([m.model_dump() for m in mentions]) if mentions else None
-            )
-
-            author = MessageAuthor(
-                id=str(message.author.id),
-                name=message.author.display_name or message.author.name,
-                avatarUrl=str(message.author.display_avatar.url)
-                if message.author.display_avatar
-                else None,
-            )
-
-            embeds_json = (
-                json.dumps([e.to_dict() for e in message.embeds])
-                if message.embeds
+            attachments_json = (
+                json.dumps([a.model_dump(mode="json") for a in dto.attachments])
+                if dto.attachments
                 else None
             )
-            reference_json = None
-            if message.reference:
-                reference_json = json.dumps(
-                    {
-                        "messageId": message.reference.message_id,
-                        "channelId": message.reference.channel_id,
-                        "guildId": message.reference.guild_id,
-                    }
-                )
-            components_json = None
-            if getattr(message, "components", None):
-                try:
-                    components_json = json.dumps(
-                        [c.to_dict() for c in message.components]
-                    )
-                except Exception:
-                    components_json = None
+            mentions_json = (
+                json.dumps([m.model_dump() for m in dto.mentions])
+                if dto.mentions
+                else None
+            )
+            author_json = dto.author.model_dump_json() if dto.author else None
+            embeds_json = (
+                json.dumps([e.model_dump(mode="json") for e in dto.embeds])
+                if dto.embeds
+                else None
+            )
+            reference_json = (
+                dto.reference.model_dump_json() if dto.reference else None
+            )
+            components_json = (
+                json.dumps([c.model_dump(mode="json") for c in dto.components])
+                if dto.components
+                else None
+            )
+            reactions_json = (
+                json.dumps([r.model_dump(mode="json") for r in dto.reactions])
+                if dto.reactions
+                else None
+            )
 
             db.add(
                 Message(
@@ -357,48 +278,26 @@ class Mirror(commands.Cog):
                     channel_id=channel_id,
                     guild_id=guild_id,
                     author_id=message.author.id,
-                    author_name=author.name,
-                    author_avatar_url=author.avatarUrl,
+                    author_name=dto.authorName,
+                    author_avatar_url=dto.authorAvatarUrl,
                     content_raw=message.content,
                     content_display=message.content,
                     content=message.content,
                     attachments_json=attachments_json,
                     mentions_json=mentions_json,
-                    author_json=author.model_dump_json(),
+                    author_json=author_json,
                     embeds_json=embeds_json,
                     reference_json=reference_json,
                     components_json=components_json,
+                    reactions_json=reactions_json,
                     edited_timestamp=message.edited_at,
                     is_officer=is_officer,
                 )
             )
             await db.commit()
 
-            attachments = [
-                AttachmentDto(
-                    url=a.url,
-                    filename=a.filename,
-                    contentType=a.content_type,
-                )
-                for a in message.attachments
-            ] or None
-            dto = ChatMessage(
-                id=str(message.id),
-                channelId=str(channel_id),
-                authorName=author.name,
-                authorAvatarUrl=author.avatarUrl,
-                timestamp=message.created_at,
-                content=message.content,
-                attachments=attachments,
-                mentions=mentions or None,
-                author=author,
-                embeds=json.loads(embeds_json) if embeds_json else None,
-                reference=json.loads(reference_json) if reference_json else None,
-                components=json.loads(components_json) if components_json else None,
-                editedTimestamp=message.edited_at,
-            )
             await manager.broadcast_text(
-                json.dumps(dto.model_dump()),
+                json.dumps(dto.model_dump(mode="json")),
                 guild_id,
                 officer_only=is_officer,
                 path="/ws/messages",
@@ -468,52 +367,7 @@ class Mirror(commands.Cog):
                     return
 
                 try:
-                    footer_data = data.get("footer", {})
-                    provider_data = data.get("provider", {})
-                    video_data = data.get("video", {})
-                    author_list: list[dict] = []
-                    first_author = data.get("author")
-                    if first_author:
-                        author_list.append(first_author)
-                    author_list.extend(data.get("authors", []))
-                    authors = [
-                        EmbedAuthorDto(
-                            name=a.get("name"),
-                            url=a.get("url"),
-                            iconUrl=a.get("icon_url"),
-                        )
-                        for a in author_list
-                        if a
-                    ] or None
-
-                    dto = EmbedDto(
-                        id=str(after.id),
-                        timestamp=emb.timestamp,
-                        color=emb.color.value if emb.color else None,
-                        authorName=first_author.get("name") if first_author else None,
-                        authorIconUrl=first_author.get("icon_url") if first_author else None,
-                        authors=authors,
-                        title=emb.title,
-                        description=emb.description,
-                        url=emb.url,
-                        fields=[
-                            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
-                            for f in emb.fields
-                        ]
-                        or None,
-                        thumbnailUrl=emb.thumbnail.url if emb.thumbnail else None,
-                        imageUrl=emb.image.url if emb.image else None,
-                        providerName=provider_data.get("name"),
-                        providerUrl=provider_data.get("url"),
-                        footerText=footer_data.get("text"),
-                        footerIconUrl=footer_data.get("icon_url"),
-                        videoUrl=video_data.get("url"),
-                        videoWidth=video_data.get("width"),
-                        videoHeight=video_data.get("height"),
-                        buttons=buttons or None,
-                        channelId=channel_id,
-                        mentions=[m.id for m in after.mentions] or None,
-                    )
+                    dto = embed_to_dto(after, emb, buttons)
                 except Exception:
                     logging.exception(
                         "Embed parsing failed for guild %s channel %s message %s: %s",
@@ -543,99 +397,47 @@ class Mirror(commands.Cog):
                 if msg is None:
                     return
 
-                attachments_json = None
-                if after.attachments:
-                    attachments_json = json.dumps(
-                        [
-                            {
-                                "url": a.url,
-                                "filename": a.filename,
-                                "contentType": a.content_type,
-                            }
-                            for a in after.attachments
-                        ]
-                    )
-
-                mentions = [
-                    Mention(id=str(m.id), name=m.display_name or m.name)
-                    for m in after.mentions
-                    if not m.bot
-                ]
-                mentions_json = (
-                    json.dumps([m.model_dump() for m in mentions]) if mentions else None
-                )
-
-                author = MessageAuthor(
-                    id=str(after.author.id),
-                    name=after.author.display_name or after.author.name,
-                    avatarUrl=str(after.author.display_avatar.url)
-                    if after.author.display_avatar
-                    else None,
-                )
-
-                embeds_json = (
-                    json.dumps([e.to_dict() for e in after.embeds])
-                    if after.embeds
-                    else None
-                )
-                reference_json = None
-                if after.reference:
-                    reference_json = json.dumps(
-                        {
-                            "messageId": after.reference.message_id,
-                            "channelId": after.reference.channel_id,
-                            "guildId": after.reference.guild_id,
-                        }
-                    )
-                components_json = None
-                if getattr(after, "components", None):
-                    try:
-                        components_json = json.dumps(
-                            [c.to_dict() for c in after.components]
-                        )
-                    except Exception:
-                        components_json = None
+                dto = message_to_chat_message(after)
 
                 msg.content_raw = after.content
                 msg.content_display = after.content
                 msg.content = after.content
-                msg.attachments_json = attachments_json
-                msg.mentions_json = mentions_json
-                msg.author_name = author.name
-                msg.author_avatar_url = author.avatarUrl
-                msg.author_json = author.model_dump_json()
-                msg.embeds_json = embeds_json
-                msg.reference_json = reference_json
-                msg.components_json = components_json
+                msg.attachments_json = (
+                    json.dumps([a.model_dump(mode="json") for a in dto.attachments])
+                    if dto.attachments
+                    else None
+                )
+                msg.mentions_json = (
+                    json.dumps([m.model_dump() for m in dto.mentions])
+                    if dto.mentions
+                    else None
+                )
+                msg.author_name = dto.authorName
+                msg.author_avatar_url = dto.authorAvatarUrl
+                msg.author_json = dto.author.model_dump_json() if dto.author else None
+                msg.embeds_json = (
+                    json.dumps([e.model_dump(mode="json") for e in dto.embeds])
+                    if dto.embeds
+                    else None
+                )
+                msg.reference_json = (
+                    dto.reference.model_dump_json() if dto.reference else None
+                )
+                msg.components_json = (
+                    json.dumps([c.model_dump(mode="json") for c in dto.components])
+                    if dto.components
+                    else None
+                )
+                msg.reactions_json = (
+                    json.dumps([r.model_dump(mode="json") for r in dto.reactions])
+                    if dto.reactions
+                    else None
+                )
                 msg.edited_timestamp = after.edited_at
                 await db.commit()
 
-                attachments = [
-                    AttachmentDto(
-                        url=a.url,
-                        filename=a.filename,
-                        contentType=a.content_type,
-                    )
-                    for a in after.attachments
-                ] or None
-
-                dto = ChatMessage(
-                    id=str(after.id),
-                    channelId=str(channel_id),
-                    authorName=author.name,
-                    authorAvatarUrl=author.avatarUrl,
-                    timestamp=after.created_at,
-                    content=after.content,
-                    attachments=attachments,
-                    mentions=mentions or None,
-                    author=author,
-                    embeds=json.loads(embeds_json) if embeds_json else None,
-                    reference=json.loads(reference_json) if reference_json else None,
-                    components=json.loads(components_json) if components_json else None,
-                    editedTimestamp=after.edited_at,
-                )
                 await manager.broadcast_text(
-                    json.dumps(dto.model_dump()),
+                    json.dumps(dto.model_dump(mode="json")),
                     guild_id,
                     officer_only=is_officer,
                     path="/ws/messages",
@@ -683,6 +485,80 @@ class Mirror(commands.Cog):
                     officer_only=is_officer,
                     path="/ws/messages",
                 )
+            break
+
+    @commands.Cog.listener()
+    async def on_reaction_add(
+        self, reaction: discord.Reaction, user: discord.abc.User
+    ) -> None:
+        if user.bot:
+            return
+        message = reaction.message
+        channel_id = message.channel.id
+        async for db in get_session():
+            result = await db.execute(
+                select(GuildChannel.kind, GuildChannel.guild_id).where(
+                    GuildChannel.channel_id == channel_id
+                )
+            )
+            row = result.one_or_none()
+            if row is None:
+                return
+            kind, guild_id = row
+            is_officer = kind == "officer_chat"
+            msg = await db.get(Message, message.id)
+            if msg is None:
+                return
+            dto = message_to_chat_message(message)
+            msg.reactions_json = (
+                json.dumps([r.model_dump(mode="json") for r in dto.reactions])
+                if dto.reactions
+                else None
+            )
+            await db.commit()
+            await manager.broadcast_text(
+                json.dumps(dto.model_dump(mode="json")),
+                guild_id,
+                officer_only=is_officer,
+                path="/ws/messages",
+            )
+            break
+
+    @commands.Cog.listener()
+    async def on_reaction_remove(
+        self, reaction: discord.Reaction, user: discord.abc.User
+    ) -> None:
+        if user.bot:
+            return
+        message = reaction.message
+        channel_id = message.channel.id
+        async for db in get_session():
+            result = await db.execute(
+                select(GuildChannel.kind, GuildChannel.guild_id).where(
+                    GuildChannel.channel_id == channel_id
+                )
+            )
+            row = result.one_or_none()
+            if row is None:
+                return
+            kind, guild_id = row
+            is_officer = kind == "officer_chat"
+            msg = await db.get(Message, message.id)
+            if msg is None:
+                return
+            dto = message_to_chat_message(message)
+            msg.reactions_json = (
+                json.dumps([r.model_dump(mode="json") for r in dto.reactions])
+                if dto.reactions
+                else None
+            )
+            await db.commit()
+            await manager.broadcast_text(
+                json.dumps(dto.model_dump(mode="json")),
+                guild_id,
+                officer_only=is_officer,
+                path="/ws/messages",
+            )
             break
 
 

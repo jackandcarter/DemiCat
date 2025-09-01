@@ -34,6 +34,7 @@ public class DiscordMentionDto
 {
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string Kind { get; set; } = "user";
 }
 
 public class DiscordAttachmentDto

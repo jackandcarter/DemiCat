@@ -28,6 +28,9 @@ class PresenceTracker(commands.Cog):
             id=member.id,
             name=member.display_name or member.name,
             status=self._status(member),
+            avatar_url=str(member.display_avatar.url)
+            if member.display_avatar
+            else None,
         )
         set_presence(member.guild.id, data)
         async for db in get_session():
@@ -43,13 +46,20 @@ class PresenceTracker(commands.Cog):
                         guild_id=member.guild.id,
                         user_id=member.id,
                         status=data.status,
+                        avatar_url=data.avatar_url,
                     )
                 )
             else:
                 row.status = data.status
+                row.avatar_url = data.avatar_url
                 row.updated_at = datetime.utcnow()
             await db.commit()
-        return {"id": str(member.id), "name": data.name, "status": data.status}
+        return {
+            "id": str(member.id),
+            "name": data.name,
+            "status": data.status,
+            "avatarUrl": data.avatar_url,
+        }
 
     @commands.Cog.listener()
     async def on_ready(self) -> None:

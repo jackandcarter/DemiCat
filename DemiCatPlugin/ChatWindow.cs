@@ -418,7 +418,13 @@ public class ChatWindow : IDisposable
         {
             foreach (var m in msg.Mentions)
             {
-                text = text.Replace($"<@{m.Id}>", $"@{m.Name}");
+                var prefix = m.Kind switch
+                {
+                    "role" => "<@&",
+                    "channel" => "<#",
+                    _ => "<@",
+                };
+                text = text.Replace($"{prefix}{m.Id}>", $"@{m.Name}");
             }
         }
         text = Regex.Replace(text, "<a?:([a-zA-Z0-9_]+):\\d+>", ":$1:");

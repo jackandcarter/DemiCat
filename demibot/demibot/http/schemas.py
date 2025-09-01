@@ -5,6 +5,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime
 from enum import IntEnum
+from typing import Literal
 
 # ---- Embeds ----
 
@@ -64,6 +65,7 @@ class EmbedDto(BaseModel):
 class Mention(BaseModel):
     id: str
     name: str
+    kind: Literal["user", "role", "channel"] = "user"
 
 
 class AttachmentDto(BaseModel):
@@ -89,9 +91,10 @@ class ChatMessage(BaseModel):
     attachments: List[AttachmentDto] | None = None
     mentions: List[Mention] | None = None
     author: MessageAuthor | None = None
-    embeds: List[dict] | None = None
-    reference: dict | None = None
-    components: List[dict] | None = None
+    embeds: List[EmbedDto] | None = None
+    reference: "MessageReferenceDto" | None = None
+    components: List["ButtonComponentDto"] | None = None
+    reactions: List["ReactionDto"] | None = None
     editedTimestamp: Optional[datetime] = None
     useCharacterName: bool | None = False
 
@@ -102,3 +105,25 @@ class PresenceDto(BaseModel):
     id: str
     name: str
     status: str
+    avatarUrl: Optional[str] = None
+
+
+class MessageReferenceDto(BaseModel):
+    messageId: str
+    channelId: str
+
+
+class ReactionDto(BaseModel):
+    emoji: str
+    emojiId: Optional[str] = None
+    isAnimated: bool = False
+    count: int = 0
+    me: bool = False
+
+
+class ButtonComponentDto(BaseModel):
+    label: str
+    customId: Optional[str] = None
+    url: Optional[str] = None
+    style: Optional[ButtonStyle] = None
+    emoji: Optional[str] = None
