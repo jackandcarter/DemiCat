@@ -112,15 +112,19 @@ manager = ConnectionManager()
 async def websocket_endpoint(websocket: WebSocket) -> None:
     path = websocket.scope.get("path", "")
     header_token = websocket.headers.get("X-Api-Key")
+    query_token = websocket.query_params.get("token")
+    if query_token:
+        logging.warning("WS %s closing with 1008: token in url", path)
+        await websocket.close(code=1008, reason="token in url")
+        return
     if header_token:
         logging.debug("WS %s received X-Api-Key header", path)
     else:
         logging.debug("WS %s missing X-Api-Key header", path)
-    token = header_token or websocket.query_params.get("token")
-    if not token:
         logging.warning("WS %s closing with 1008: missing token", path)
         await websocket.close(code=1008, reason="missing token")
         return
+    token = header_token
 
     ctx: RequestContext | None = None
     async for db in get_session():
