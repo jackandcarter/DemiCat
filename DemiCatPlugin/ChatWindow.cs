@@ -103,6 +103,7 @@ public class ChatWindow : IDisposable
         _ws = null;
         _wsCts = new CancellationTokenSource();
         _wsTask = RunWebSocket(_wsCts.Token);
+        _presence?.Reset();
     }
 
     public void StopNetworking()
@@ -110,6 +111,7 @@ public class ChatWindow : IDisposable
         _wsCts?.Cancel();
         _ws?.Dispose();
         _ws = null;
+        _presence?.Reset();
     }
 
     public virtual void Draw()
