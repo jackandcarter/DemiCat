@@ -704,11 +704,16 @@ public class ChatWindow : IDisposable
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
+            if (response.IsSuccessStatusCode)
+            {
+                await RefreshMessages();
+            }
+            else
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to send interaction. Status: {response.StatusCode}. Response Body: {responseBody}");
             }
+
         }
         catch (Exception ex)
         {
