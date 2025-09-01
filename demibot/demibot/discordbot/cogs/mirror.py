@@ -497,6 +497,66 @@ class Mirror(commands.Cog):
             break
 
     @commands.Cog.listener()
+    async def on_reaction_add(
+        self, reaction: discord.Reaction, user: discord.abc.User
+    ) -> None:
+        """Persist and broadcast reaction additions."""
+
+        async for db in get_session():
+            msg = await db.get(Message, reaction.message.id)
+            if msg is None:
+                break
+
+            reactions_json = None
+            try:
+                reactions_json = json.dumps(
+                    [reaction_to_dto(r).model_dump() for r in reaction.message.reactions]
+                )
+            except Exception:
+                reactions_json = None
+            msg.reactions_json = reactions_json
+            await db.commit()
+
+            dto = message_to_chat_message(reaction.message)
+            await manager.broadcast_text(
+                json.dumps(dto.model_dump()),
+                msg.guild_id,
+                officer_only=msg.is_officer,
+                path="/ws/messages",
+            )
+            break
+
+    @commands.Cog.listener()
+    async def on_reaction_remove(
+        self, reaction: discord.Reaction, user: discord.abc.User
+    ) -> None:
+        """Persist and broadcast reaction removals."""
+
+        async for db in get_session():
+            msg = await db.get(Message, reaction.message.id)
+            if msg is None:
+                break
+
+            reactions_json = None
+            try:
+                reactions_json = json.dumps(
+                    [reaction_to_dto(r).model_dump() for r in reaction.message.reactions]
+                )
+            except Exception:
+                reactions_json = None
+            msg.reactions_json = reactions_json
+            await db.commit()
+
+            dto = message_to_chat_message(reaction.message)
+            await manager.broadcast_text(
+                json.dumps(dto.model_dump()),
+                msg.guild_id,
+                officer_only=msg.is_officer,
+                path="/ws/messages",
+            )
+            break
+
+    @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message) -> None:
         channel_id = message.channel.id
 

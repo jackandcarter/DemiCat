@@ -80,28 +80,28 @@ async def add_reaction(
         raise HTTPException(status_code=503, detail="Discord client unavailable")
     row = await db.get(Message, int(message_id))
     if not row or row.channel_id != int(channel_id):
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="message not found")
     if row.is_officer:
         if "officer" not in ctx.roles:
-            raise HTTPException(status_code=403)
+            raise HTTPException(status_code=403, detail="forbidden")
     elif "chat" not in ctx.roles:
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="forbidden")
     channel = discord_client.get_channel(int(channel_id))
     if not channel or not isinstance(channel, discord.abc.Messageable):
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="channel not found")
     try:
         msg = await channel.fetch_message(int(message_id))
     except discord.NotFound:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="message not found")
     except discord.Forbidden:
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="forbidden")
 
     try:
         await msg.add_reaction(emoji)
     except discord.NotFound:
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="message not found")
     except discord.Forbidden:
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="forbidden")
 
     return {"ok": True}
 
@@ -118,15 +118,15 @@ async def remove_reaction(
         raise HTTPException(status_code=503, detail="Discord client unavailable")
     row = await db.get(Message, int(message_id))
     if not row or row.channel_id != int(channel_id):
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="message not found")
     if row.is_officer:
         if "officer" not in ctx.roles:
-            raise HTTPException(status_code=403)
+            raise HTTPException(status_code=403, detail="forbidden")
     elif "chat" not in ctx.roles:
-        raise HTTPException(status_code=403)
+        raise HTTPException(status_code=403, detail="forbidden")
     channel = discord_client.get_channel(int(channel_id))
     if not channel or not isinstance(channel, discord.abc.Messageable):
-        raise HTTPException(status_code=404)
+        raise HTTPException(status_code=404, detail="channel not found")
     try:
         msg = await channel.fetch_message(int(message_id))
         await msg.remove_reaction(emoji, discord_client.user)
