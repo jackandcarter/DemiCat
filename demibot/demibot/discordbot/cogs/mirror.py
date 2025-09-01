@@ -20,8 +20,10 @@ from ...http.schemas import (
 from ...http.discord_helpers import (
     embed_to_dto,
     message_to_chat_message,
+    components_to_dtos,
     reaction_to_dto,
 )
+
 from ...http.ws import manager
 
 
@@ -300,8 +302,9 @@ class Mirror(commands.Cog):
             components_json = None
             if getattr(message, "components", None):
                 try:
-                    components_json = json.dumps(
-                        [c.to_dict() for c in message.components]
+                    comps = components_to_dtos(message)
+                    components_json = (
+                        json.dumps([c.model_dump() for c in comps]) if comps else None
                     )
                 except Exception:
                     components_json = None
@@ -488,8 +491,11 @@ class Mirror(commands.Cog):
                 components_json = None
                 if getattr(after, "components", None):
                     try:
-                        components_json = json.dumps(
-                            [c.to_dict() for c in after.components]
+                        comps = components_to_dtos(after)
+                        components_json = (
+                            json.dumps([c.model_dump() for c in comps])
+                            if comps
+                            else None
                         )
                     except Exception:
                         components_json = None

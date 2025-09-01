@@ -11,7 +11,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext
-from ..schemas import ChatMessage, AttachmentDto, MessageAuthor, Mention, ReactionDto
+from ..schemas import (
+    ChatMessage,
+    AttachmentDto,
+    MessageAuthor,
+    Mention,
+    ButtonComponentDto,
+    ReactionDto,
+)
+
 from ..ws import manager
 from ...db.models import Message
 from ..discord_client import discord_client
@@ -96,7 +104,8 @@ async def fetch_messages(
         components = None
         if m.components_json:
             try:
-                components = json.loads(m.components_json)
+                data = json.loads(m.components_json)
+                components = [ButtonComponentDto(**c) for c in data]
             except Exception:
                 components = None
 
