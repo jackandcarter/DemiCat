@@ -176,6 +176,7 @@ class SyncshellPairing(Base):
     )
     token: Mapped[str] = mapped_column(String(64), unique=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
 
 
 class SyncshellManifest(Base):
@@ -189,6 +190,16 @@ class SyncshellManifest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
+
+
+class SyncshellRateLimit(Base):
+    __tablename__ = "syncshell_rate_limits"
+
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
+    )
+    requests: Mapped[int] = mapped_column(Integer, default=0)
+    window_start: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Message(Base):

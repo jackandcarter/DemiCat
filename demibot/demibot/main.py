@@ -21,6 +21,7 @@ from .http.discord_client import set_discord_client
 from .repeat_events import recurring_event_poster
 from .channel_names import channel_name_resync
 from .asset_cleanup import purge_deleted_assets
+from .syncshell_cleanup import prune_syncshell
 
 
 async def main_async() -> None:
@@ -80,6 +81,7 @@ async def main_async() -> None:
             recurring_event_poster(),
             channel_name_resync(),
             purge_deleted_assets(),
+            prune_syncshell(),
         )
     except Exception:
         logging.exception("Failed to start services")
