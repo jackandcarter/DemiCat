@@ -32,7 +32,7 @@ def test_x_discord_id_overrides_user(tmp_path):
     asyncio.run(init_db(f"sqlite+aiosqlite:///{db_path}"))
 
     async def populate():
-        async for db in get_session():
+        async with get_session() as db:
             guild = Guild(id=1, discord_guild_id=1, name="Test")
             svc = User(id=1, discord_user_id=10)
             user = User(id=2, discord_user_id=20)
@@ -57,7 +57,7 @@ def test_x_discord_id_overrides_user(tmp_path):
     asyncio.run(populate())
 
     async def run():
-        async for db in get_session():
+        async with get_session() as db:
             ctx = await api_key_auth(x_api_key="svc", x_discord_id=20, db=db)
             return ctx.user.id
 
@@ -72,7 +72,7 @@ def test_x_discord_id_requires_officer(tmp_path):
     asyncio.run(init_db(f"sqlite+aiosqlite:///{db_path}"))
 
     async def populate():
-        async for db in get_session():
+        async with get_session() as db:
             guild = Guild(id=1, discord_guild_id=1, name="Test")
             svc = User(id=1, discord_user_id=10)
             user = User(id=2, discord_user_id=20)
@@ -84,7 +84,7 @@ def test_x_discord_id_requires_officer(tmp_path):
     asyncio.run(populate())
 
     async def run():
-        async for db in get_session():
+        async with get_session() as db:
             await api_key_auth(x_api_key="svc", x_discord_id=20, db=db)
 
     with pytest.raises(HTTPException) as exc:

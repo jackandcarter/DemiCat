@@ -16,7 +16,7 @@ from demibot.db.session import get_session, init_db
 def test_vault_assigns_fc_id():
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             guild = Guild(id=1, discord_guild_id=1, name="Guild")
             fc = Fc(id=1, name="FC", world="World")
             user = User(id=1, discord_user_id=1)

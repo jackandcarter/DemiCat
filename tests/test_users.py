@@ -42,7 +42,7 @@ class StubContext:
 def test_get_users_includes_status_from_cache():
     async def _run():
         await init_db('sqlite+aiosqlite://')
-        async for db in get_session():
+        async with get_session() as db:
             await db.execute(delete(MembershipRole))
             await db.execute(delete(Role))
             await db.execute(delete(DbPresence))
@@ -70,7 +70,7 @@ def test_get_users_includes_status_from_cache():
 def test_get_users_reads_presence_from_db():
     async def _run():
         await init_db('sqlite+aiosqlite://')
-        async for db in get_session():
+        async with get_session() as db:
             await db.execute(delete(MembershipRole))
             await db.execute(delete(Role))
             await db.execute(delete(DbPresence))

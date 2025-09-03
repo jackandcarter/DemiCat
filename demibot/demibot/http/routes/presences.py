@@ -25,7 +25,7 @@ async def list_presences(
 ) -> list[dict[str, str | list[str] | None]]:
     db_presences: list[dict[str, str | list[str] | None]] | None = None
     try:
-        async for db in get_session():
+        async with get_session() as db:
             result = await db.execute(
                 select(DbPresence, User, Role.discord_role_id)
                 .join(User, User.discord_user_id == DbPresence.user_id, isouter=True)

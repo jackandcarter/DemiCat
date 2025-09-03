@@ -22,7 +22,7 @@ def _setup_db(path: str) -> None:
     asyncio.run(init_db(url))
 
     async def populate() -> None:
-        async for db in get_session():
+        async with get_session() as db:
             guild = Guild(id=1, discord_guild_id=1, name="Test")
             db.add(guild)
             db.add(GuildChannel(guild_id=guild.id, channel_id=100, kind="event", name=None))
@@ -53,7 +53,7 @@ def test_fetch_channel_updates_name(monkeypatch):
     monkeypatch.setattr(cn.manager, "broadcast_text", dummy_broadcast)
 
     async def run() -> str | None:
-        async for db in get_session():
+        async with get_session() as db:
             await cn.ensure_channel_name(db, 1, 100, "event", None)
             row = (
                 await db.execute(
@@ -107,7 +107,7 @@ def test_rest_fallback_updates_name(monkeypatch):
     monkeypatch.setattr(cn.manager, "broadcast_text", dummy_broadcast)
 
     async def run() -> str | None:
-        async for db in get_session():
+        async with get_session() as db:
             await cn.ensure_channel_name(db, 1, 100, "event", None)
             row = (
                 await db.execute(
@@ -140,7 +140,7 @@ def test_retry_null_channel_names_logs_failure(caplog):
     asyncio.run(cn.retry_null_channel_names(max_attempts=2))
 
     async def get_name() -> str | None:
-        async for db in get_session():
+        async with get_session() as db:
             row = (
                 await db.execute(
                     select(GuildChannel.name).where(

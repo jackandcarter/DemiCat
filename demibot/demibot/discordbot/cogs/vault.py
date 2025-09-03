@@ -99,7 +99,7 @@ class Vault(commands.Cog):
         if not message.attachments:
             return
 
-        async for db in get_session():
+        async with get_session() as db:
             fc_id = await self._get_fc_id(db, message.guild)
             uploader_id = await self._ensure_user(db, message.author)
             await db.commit()
@@ -125,7 +125,7 @@ class Vault(commands.Cog):
             except Exception:
                 errors.append(f"{attachment.filename}: failed to store file")
                 continue
-            async for db in get_session():
+            async with get_session() as db:
                 asset = await self._upsert_asset(
                     db,
                     fc_id,

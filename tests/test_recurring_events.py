@@ -31,7 +31,7 @@ async def _run_test() -> None:
         db_path.unlink()
     url = f"sqlite+aiosqlite:///{db_path}"
     await init_db(url)
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test")
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind="event"))
@@ -46,7 +46,7 @@ async def _run_test() -> None:
         repeat="daily",
     )
     ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
-    async for db in get_session():
+    async with get_session() as db:
         original_dumps = json.dumps
         with patch(
             "demibot.http.routes.events.json.dumps",
@@ -60,7 +60,7 @@ async def _run_test() -> None:
 
     await process_recurring_events_once()
 
-    async for db in get_session():
+    async with get_session() as db:
         embeds = (await db.execute(select(Embed))).scalars().all()
         assert len(embeds) == 2
         row = (await db.execute(select(RecurringEvent))).scalar_one()

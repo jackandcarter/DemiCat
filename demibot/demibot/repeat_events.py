@@ -15,7 +15,7 @@ from .http.discord_client import discord_client
 
 
 async def process_recurring_events_once() -> None:
-    async for db in get_session():
+    async with get_session() as db:
         now = datetime.utcnow()
         res = await db.execute(select(RecurringEvent))
         events = list(res.scalars())

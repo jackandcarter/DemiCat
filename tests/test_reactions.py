@@ -84,7 +84,7 @@ def test_add_reaction_success():
         session_module._engine = None
         session_module._Session = None
         await init_db(f"sqlite+aiosqlite:///{db_path}")
-        async for db in get_session():
+        async with get_session() as db:
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             db.add(
@@ -120,7 +120,7 @@ def test_add_reaction_not_found():
         session_module._engine = None
         session_module._Session = None
         await init_db(f"sqlite+aiosqlite:///{db_path}")
-        async for db in get_session():
+        async with get_session() as db:
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             db.add(
@@ -155,7 +155,7 @@ def test_add_reaction_forbidden():
         session_module._engine = None
         session_module._Session = None
         await init_db(f"sqlite+aiosqlite:///{db_path}")
-        async for db in get_session():
+        async with get_session() as db:
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             db.add(

@@ -35,7 +35,7 @@ async def _setup_db(path: Path) -> None:
         path.unlink()
     url = f"sqlite+aiosqlite:///{path}"
     await init_db(url)
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test")
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind="event"))
@@ -55,7 +55,7 @@ async def _test_patch_delete() -> None:
         repeat="daily",
     )
     ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
-    async for db in get_session():
+    async with get_session() as db:
         res = await create_event(body=body, ctx=ctx, db=db)
         ev_id = int(res["id"])
         await db.commit()
@@ -63,7 +63,7 @@ async def _test_patch_delete() -> None:
 
     new_time = (datetime.utcnow() + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     patch_body = RepeatPatchBody(time=new_time, repeat="weekly")
-    async for db in get_session():
+    async with get_session() as db:
         await update_recurring_event(str(ev_id), patch_body, ctx=ctx, db=db)
         row = await db.get(RecurringEvent, ev_id)
         assert row.repeat == "weekly"
@@ -78,7 +78,7 @@ async def _test_cleanup() -> None:
     db_path = Path("test_recurring_cleanup.db")
     await _setup_db(db_path)
 
-    async for db in get_session():
+    async with get_session() as db:
         db.add(
             RecurringEvent(
                 id=111,
@@ -94,11 +94,11 @@ async def _test_cleanup() -> None:
 
     repeat_events.discord_client = SimpleNamespace(get_channel=lambda _: None)
     await process_recurring_events_once()
-    async for db in get_session():
+    async with get_session() as db:
         assert (await db.get(RecurringEvent, 111)) is None
         break
 
-    async for db in get_session():
+    async with get_session() as db:
         db.add(
             RecurringEvent(
                 id=222,
@@ -118,7 +118,7 @@ async def _test_cleanup() -> None:
 
     repeat_events.discord_client = SimpleNamespace(get_channel=lambda _: DummyChannel())
     await process_recurring_events_once()
-    async for db in get_session():
+    async with get_session() as db:
         assert (await db.get(RecurringEvent, 222)) is None
         break
 

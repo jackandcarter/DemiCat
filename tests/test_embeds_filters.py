@@ -22,7 +22,7 @@ async def _run_test() -> None:
         db_path.unlink()
     url = f"sqlite+aiosqlite:///{db_path}"
     await init_db(url)
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test")
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=10, kind="event"))
@@ -34,7 +34,7 @@ async def _run_test() -> None:
         break
 
     ctx = SimpleNamespace(guild=SimpleNamespace(id=1), roles=["officer"])
-    async for db in get_session():
+    async with get_session() as db:
         res = await get_embeds(ctx=ctx, db=db, channel_id=10)
         assert len(res) == 2
         assert all(e["channelId"] == 10 for e in res)

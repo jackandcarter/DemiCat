@@ -12,7 +12,7 @@ from demibot.db.session import get_session, init_db
 async def _refresh() -> None:
     cfg = await ensure_config()
     await init_db(cfg.database.url)
-    async for db in get_session():
+    async with get_session() as db:
         result = await db.execute(
             select(
                 GuildChannel.guild_id,

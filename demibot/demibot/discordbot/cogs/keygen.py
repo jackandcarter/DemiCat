@@ -29,7 +29,7 @@ class KeyGen(commands.Cog):
 async def key_command(interaction: discord.Interaction) -> None:
     token = secrets.token_hex(16)
     try:
-        async for db in get_session():
+        async with get_session() as db:
             guild_res = await db.execute(
                 select(Guild).where(Guild.discord_guild_id == interaction.guild.id)
             )

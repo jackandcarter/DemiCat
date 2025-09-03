@@ -20,7 +20,7 @@ class RequestContext:
 
 
 async def get_db() -> AsyncSession:
-    async for session in get_session():
+    async with get_session() as session:
         yield session
 
 

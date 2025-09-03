@@ -11,7 +11,7 @@ from sqlalchemy import select
 def test_delta_token_updates_last_pull():
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             user = User(id=1, discord_user_id=1, global_name="Test")
             guild = Guild(id=1, discord_guild_id=1, name="Guild")
             fc = Fc(id=1, name="FC", world="World")

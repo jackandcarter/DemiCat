@@ -13,7 +13,7 @@ PRUNE_INTERVAL = 60
 
 
 async def prune_syncshell_once() -> None:
-    async for db in get_session():
+    async with get_session() as db:
         now = datetime.utcnow()
         await db.execute(delete(SyncshellPairing).where(SyncshellPairing.expires_at < now))
         cutoff = now - timedelta(minutes=5)

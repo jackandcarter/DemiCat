@@ -39,7 +39,7 @@ def _setup_db() -> None:
     asyncio.run(init_db(url))
 
     async def populate():
-        async for db in get_session():
+        async with get_session() as db:
             guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
             db.add(guild)
             db.add(
@@ -73,7 +73,7 @@ def test_resync_rebuilds_membership_and_roles():
     asyncio.run(admin_module.resync_members.callback(inter))
 
     async def check():
-        async for db in get_session():
+        async with get_session() as db:
             membership = (
                 await db.execute(
                     select(Membership).where(

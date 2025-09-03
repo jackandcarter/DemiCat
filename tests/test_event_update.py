@@ -34,7 +34,7 @@ async def _run_test() -> None:
     constant = datetime(2024, 1, 1)
     eid = str(int(constant.timestamp() * 1000))
 
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test")
         db.add(guild)
         db.add(GuildChannel(guild_id=1, channel_id=123, kind="event"))
@@ -49,7 +49,7 @@ async def _run_test() -> None:
         description="desc",
     )
 
-    async for db in get_session():
+    async with get_session() as db:
         original_dumps = json.dumps
         with patch(
             "demibot.http.routes.events.json.dumps",
@@ -67,7 +67,7 @@ async def _run_test() -> None:
         time="2024-01-01T00:00:00Z",
         description="desc",
     )
-    async for db in get_session():
+    async with get_session() as db:
         original_dumps = json.dumps
         with patch(
             "demibot.http.routes.events.json.dumps",

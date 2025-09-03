@@ -18,7 +18,7 @@ class DummyKey:
 def test_save_and_fetch_messages(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             await db.commit()
@@ -52,7 +52,7 @@ def test_save_and_fetch_messages(monkeypatch):
 def test_officer_flow(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             await db.commit()
@@ -86,7 +86,7 @@ def test_officer_flow(monkeypatch):
 def test_officer_requires_role(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             await db.commit()
@@ -107,7 +107,7 @@ def test_officer_requires_role(monkeypatch):
 def test_fetch_messages_pagination():
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             await db.commit()

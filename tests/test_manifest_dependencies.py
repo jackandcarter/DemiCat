@@ -31,7 +31,7 @@ def test_manifest_declared_dependencies():
 
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             user = User(id=1, discord_user_id=1)
             fc = Fc(id=1, name="FC", world="World")
             fcu = FcUser(fc_id=1, user_id=1, joined_at=datetime.utcnow())

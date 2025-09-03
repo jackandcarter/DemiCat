@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import AsyncGenerator
+from typing import AsyncIterator
 
 import asyncio
 import logging
@@ -18,6 +18,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from contextlib import asynccontextmanager
 
 from .base import Base
 
@@ -98,7 +99,8 @@ async def init_db(url: str) -> AsyncEngine:
         return _engine
 
 
-async def get_session() -> AsyncGenerator[AsyncSession, None]:
+@asynccontextmanager
+async def get_session() -> AsyncIterator[AsyncSession]:
     if _Session is None:
         raise RuntimeError("Engine not initialized")
     async with _Session() as session:

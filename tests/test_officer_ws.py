@@ -1,6 +1,7 @@
-import types
 import asyncio
+import types
 import pytest
+from contextlib import asynccontextmanager
 
 from demibot.http.ws import ConnectionManager
 from demibot.http import ws as ws_module
@@ -80,8 +81,21 @@ def test_officer_path_requires_role(monkeypatch):
         user = types.SimpleNamespace(id=1, discord_user_id=1)
         ctx = RequestContext(user=user, guild=guild, key=None, roles=[])
 
+        class DummySession:
+            def __init__(self):
+                self.closed = False
+
+            async def close(self):  # pragma: no cover - trivial
+                self.closed = True
+
+        session = DummySession()
+
+        @asynccontextmanager
         async def fake_get_session():
-            yield None
+            try:
+                yield session
+            finally:
+                await session.close()
 
         async def fake_api_key_auth(x_api_key, x_discord_id, db):
             assert x_discord_id is None
@@ -102,5 +116,6 @@ def test_officer_path_requires_role(monkeypatch):
         assert ws.close_code == 1008
         assert ws.close_reason == "unauthorized"
         assert connected is False
+        assert session.closed is True
 
     asyncio.run(_run())

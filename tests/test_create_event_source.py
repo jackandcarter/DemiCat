@@ -29,7 +29,7 @@ async def _run_test() -> None:
         db_path.unlink()
     url = f"sqlite+aiosqlite:///{db_path}"
     await init_db(url)
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind="event"))
@@ -43,7 +43,7 @@ async def _run_test() -> None:
         description="desc",
     )
     ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
-    async for db in get_session():
+    async with get_session() as db:
         original_dumps = json.dumps
         with patch(
             "demibot.http.routes.events.json.dumps",
