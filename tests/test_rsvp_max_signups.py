@@ -39,7 +39,7 @@ async def _run_test() -> None:
         await db.commit()
 
         body = CreateEventBody(
-            channelId="123",
+            channel_id="123",
             title="Test",
             time="2024-01-01T00:00:00Z",
             description="desc",
@@ -55,14 +55,14 @@ async def _run_test() -> None:
 
         ctx1 = SimpleNamespace(user=SimpleNamespace(id=1), guild=SimpleNamespace(id=1))
         await post_interaction(
-            body=InteractionBody(MessageId=result["id"], CustomId="rsvp:join"),
+            body=InteractionBody(message_id=result["id"], custom_id="rsvp:join"),
             ctx=ctx1,
             db=db,
         )
 
         ctx2 = SimpleNamespace(user=SimpleNamespace(id=2), guild=SimpleNamespace(id=1))
         resp = await post_interaction(
-            body=InteractionBody(MessageId=result["id"], CustomId="rsvp:join"),
+            body=InteractionBody(message_id=result["id"], custom_id="rsvp:join"),
             ctx=ctx2,
             db=db,
         )

@@ -8,7 +8,7 @@ import discord
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, delete
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -28,13 +28,13 @@ class FieldBody(BaseModel):
 
 
 class CreateEventBody(BaseModel):
-    channelId: str
+    channel_id: str = Field(alias="channelId")
     title: str
     time: str
     description: str
     url: Optional[str] = None
-    imageUrl: Optional[str] = None
-    thumbnailUrl: Optional[str] = None
+    image_url: Optional[str] = Field(default=None, alias="imageUrl")
+    thumbnail_url: Optional[str] = Field(default=None, alias="thumbnailUrl")
     color: Optional[int] = None
     fields: List[FieldBody] | None = None
     buttons: List[EmbedButtonDto] | None = None
@@ -56,7 +56,7 @@ async def create_event(
     if not buttons:
         for tag in body.attendance or ["yes", "maybe", "no"]:
             buttons.append(
-                EmbedButtonDto(label=tag.capitalize(), customId=f"rsvp:{tag}")
+                EmbedButtonDto(label=tag.capitalize(), custom_id=f"rsvp:{tag}")
             )
     if body.time:
         time_str = body.time.replace("Z", "+00:00")
@@ -87,7 +87,7 @@ async def create_event(
     )
 
     discord_msg_id: int | None = None
-    channel_id = int(body.channelId)
+    channel_id = int(body.channel_id)
     sent: discord.Message | None = None
     if discord_client:
         channel = discord_client.get_channel(channel_id)
@@ -100,10 +100,10 @@ async def create_event(
                 emb.url = body.url
             for f in body.fields or []:
                 emb.add_field(name=f.name, value=f.value, inline=f.inline)
-            if body.thumbnailUrl:
-                emb.set_thumbnail(url=body.thumbnailUrl)
-            if body.imageUrl:
-                emb.set_image(url=body.imageUrl)
+            if body.thumbnail_url:
+                emb.set_thumbnail(url=body.thumbnail_url)
+            if body.image_url:
+                emb.set_image(url=body.image_url)
 
             view: discord.ui.View | None = None
             if buttons:
@@ -127,7 +127,7 @@ async def create_event(
                         view.add_item(
                             discord.ui.Button(
                                 label=b.label,
-                                custom_id=b.customId,
+                                custom_id=b.custom_id,
                                 emoji=b.emoji,
                                 style=style,
                             )
@@ -154,8 +154,8 @@ async def create_event(
         id=eid,
         timestamp=ts,
         color=body.color,
-        authorName=None,
-        authorIconUrl=None,
+        author_name=None,
+        author_icon_url=None,
         title=body.title,
         description=body.description,
         url=body.url,
@@ -163,10 +163,10 @@ async def create_event(
             EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
             for f in (body.fields or [])
         ],
-        thumbnailUrl=body.thumbnailUrl,
-        imageUrl=body.imageUrl,
+        thumbnail_url=body.thumbnail_url,
+        image_url=body.image_url,
         buttons=buttons,
-        channelId=int(body.channelId) if body.channelId.isdigit() else None,
+        channel_id=int(body.channel_id) if body.channel_id.isdigit() else None,
         mentions=mention_ids or None,
     )
     existing = await db.get(Embed, int(eid))
@@ -209,7 +209,7 @@ async def create_event(
         )
 
     for b in buttons:
-        cid = b.customId
+        cid = b.custom_id
         if cid and cid.startswith("rsvp:"):
             tag = cid.split(":", 1)[1]
             db.add(
@@ -219,7 +219,7 @@ async def create_event(
                     label=b.label,
                     emoji=b.emoji,
                     style=int(b.style) if b.style is not None else None,
-                    max_signups=b.maxSignups,
+                    max_signups=b.max_signups,
                 )
             )
     if body.repeat in ("daily", "weekly"):

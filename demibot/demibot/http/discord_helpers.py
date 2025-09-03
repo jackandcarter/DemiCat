@@ -34,7 +34,7 @@ def attachment_to_dto(attachment: discord.Attachment) -> AttachmentDto:
     return AttachmentDto(
         url=attachment.url,
         filename=attachment.filename,
-        contentType=attachment.content_type,
+        content_type=attachment.content_type,
     )
 
 
@@ -52,8 +52,8 @@ def reaction_to_dto(reaction: discord.Reaction) -> ReactionDto:
     is_animated = getattr(emoji, "animated", False)
     return ReactionDto(
         emoji=emoji_name,
-        emojiId=str(emoji_id) if emoji_id else None,
-        isAnimated=is_animated,
+        emoji_id=str(emoji_id) if emoji_id else None,
+        is_animated=is_animated,
         count=reaction.count,
         me=reaction.me,
     )
@@ -92,7 +92,7 @@ def embed_to_dto(
         EmbedAuthorDto(
             name=a.get("name"),
             url=a.get("url"),
-            iconUrl=a.get("icon_url"),
+            icon_url=a.get("icon_url"),
         )
         for a in author_list
         if a
@@ -102,8 +102,8 @@ def embed_to_dto(
         id=str(message.id),
         timestamp=embed.timestamp,
         color=embed.color.value if embed.color else None,
-        authorName=first_author.get("name") if first_author else None,
-        authorIconUrl=first_author.get("icon_url") if first_author else None,
+        author_name=first_author.get("name") if first_author else None,
+        author_icon_url=first_author.get("icon_url") if first_author else None,
         authors=authors,
         title=embed.title,
         description=embed.description,
@@ -113,17 +113,17 @@ def embed_to_dto(
             for f in embed.fields
         ]
         or None,
-        thumbnailUrl=embed.thumbnail.url if embed.thumbnail else None,
-        imageUrl=embed.image.url if embed.image else None,
-        providerName=provider_data.get("name"),
-        providerUrl=provider_data.get("url"),
-        footerText=footer_data.get("text"),
-        footerIconUrl=footer_data.get("icon_url"),
-        videoUrl=video_data.get("url"),
-        videoWidth=video_data.get("width"),
-        videoHeight=video_data.get("height"),
+        thumbnail_url=embed.thumbnail.url if embed.thumbnail else None,
+        image_url=embed.image.url if embed.image else None,
+        provider_name=provider_data.get("name"),
+        provider_url=provider_data.get("url"),
+        footer_text=footer_data.get("text"),
+        footer_icon_url=footer_data.get("icon_url"),
+        video_url=video_data.get("url"),
+        video_width=video_data.get("width"),
+        video_height=video_data.get("height"),
         buttons=buttons or None,
-        channelId=message.channel.id if hasattr(message, "channel") else None,
+        channel_id=message.channel.id if hasattr(message, "channel") else None,
         mentions=[m.id for m in message.mentions] or None,
     )
 
@@ -150,7 +150,7 @@ def components_to_dtos(message: discord.Message) -> List[ButtonComponentDto] | N
             components.append(
                 ButtonComponentDto(
                     label=getattr(comp, "label", None),
-                    customId=getattr(comp, "custom_id", None),
+                    custom_id=getattr(comp, "custom_id", None),
                     url=getattr(comp, "url", None),
                     style=style_val,
                     emoji=emoji_str,
@@ -181,7 +181,7 @@ def extract_embed_buttons(message: discord.Message) -> List[EmbedButtonDto]:
                 emoji_str = str(emoji) if emoji else None
                 buttons.append(
                     EmbedButtonDto(
-                        customId=getattr(comp, "custom_id", None),
+                        custom_id=getattr(comp, "custom_id", None),
                         label=getattr(comp, "label", None),
                         style=style_val,
                         emoji=emoji_str,
@@ -213,7 +213,7 @@ def serialize_message(
     author = MessageAuthor(
         id=str(message.author.id),
         name=message.author.display_name or message.author.name,
-        avatarUrl=(
+        avatar_url=(
             str(message.author.display_avatar.url)
             if getattr(message.author, "display_avatar", None)
             else None
@@ -238,8 +238,8 @@ def serialize_message(
     reference_json = None
     if message.reference:
         reference = MessageReferenceDto(
-            messageId=str(message.reference.message_id),
-            channelId=str(message.reference.channel_id),
+            message_id=str(message.reference.message_id),
+            channel_id=str(message.reference.channel_id),
         )
         reference_json = reference.model_dump_json()
 
@@ -260,9 +260,9 @@ def serialize_message(
 
     dto = ChatMessage(
         id=str(message.id),
-        channelId=str(message.channel.id),
-        authorName=author.name,
-        authorAvatarUrl=author.avatarUrl,
+        channel_id=str(message.channel.id),
+        author_name=author.name,
+        author_avatar_url=author.avatar_url,
         timestamp=message.created_at,
         content=message.content,
         attachments=attachments,
@@ -272,7 +272,7 @@ def serialize_message(
         reference=reference,
         components=components,
         reactions=reactions,
-        editedTimestamp=message.edited_at,
+        edited_timestamp=message.edited_at,
     )
 
     fragments: Dict[str, str | None] = {

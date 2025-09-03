@@ -714,7 +714,7 @@ public class ChatWindow : IDisposable
         try
         {
             long? cid = long.TryParse(channelId, out var parsed) ? parsed : null;
-            var body = new { MessageId = messageId, ChannelId = cid, CustomId = customId };
+            var body = new { messageId = messageId, channelId = cid, customId = customId };
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, _config);

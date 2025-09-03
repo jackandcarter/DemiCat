@@ -82,13 +82,13 @@ internal static class RequestStateService
                 var title = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "Request" : "Request";
                 var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
                 var version = payload.TryGetProperty("version", out var verEl) ? verEl.GetInt32() : 0;
-                var itemId = payload.TryGetProperty("item_id", out var itemEl) ? itemEl.GetUInt32() : (uint?)null;
-                var dutyId = payload.TryGetProperty("duty_id", out var dutyEl) ? dutyEl.GetUInt32() : (uint?)null;
+                var itemId = payload.TryGetProperty("itemId", out var itemEl) ? itemEl.GetUInt32() : (uint?)null;
+                var dutyId = payload.TryGetProperty("dutyId", out var dutyEl) ? dutyEl.GetUInt32() : (uint?)null;
                 var hq = payload.TryGetProperty("hq", out var hqEl) && hqEl.GetBoolean();
                 var quantity = payload.TryGetProperty("quantity", out var qtyEl) ? qtyEl.GetInt32() : 0;
-                var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)null;
+                var assigneeId = payload.TryGetProperty("assigneeId", out var aEl) ? aEl.GetUInt32() : (uint?)null;
                 var description = payload.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? string.Empty : string.Empty;
-                var createdBy = payload.TryGetProperty("created_by", out var cbEl) ? cbEl.GetString() ?? string.Empty : string.Empty;
+                var createdBy = payload.TryGetProperty("createdBy", out var cbEl) ? cbEl.GetString() ?? string.Empty : string.Empty;
                 DateTime createdAt = DateTime.MinValue;
                 if (payload.TryGetProperty("created", out var cEl))
                     cEl.TryGetDateTime(out createdAt);

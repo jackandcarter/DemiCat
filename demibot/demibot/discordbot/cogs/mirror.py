@@ -224,8 +224,8 @@ class Mirror(commands.Cog):
                     channel_id=channel_id,
                     guild_id=guild_id,
                     author_id=message.author.id,
-                    author_name=dto.authorName,
-                    author_avatar_url=dto.authorAvatarUrl,
+                    author_name=dto.author_name,
+                    author_avatar_url=dto.author_avatar_url,
                     content_raw=message.content,
                     content_display=message.content,
                     content=message.content,
@@ -320,8 +320,8 @@ class Mirror(commands.Cog):
                 msg.content = after.content
                 msg.attachments_json = fragments["attachments_json"]
                 msg.mentions_json = fragments["mentions_json"]
-                msg.author_name = dto.authorName
-                msg.author_avatar_url = dto.authorAvatarUrl
+                msg.author_name = dto.author_name
+                msg.author_avatar_url = dto.author_avatar_url
                 msg.author_json = fragments["author_json"]
                 msg.embeds_json = fragments["embeds_json"]
                 msg.reference_json = fragments["reference_json"]

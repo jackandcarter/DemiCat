@@ -339,7 +339,7 @@ public class EventView : IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");
-            var body = new { MessageId = _dto.Id, ChannelId = _dto.ChannelId, CustomId = customId };
+            var body = new { messageId = _dto.Id, channelId = _dto.ChannelId, customId = customId };
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);

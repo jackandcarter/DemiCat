@@ -59,5 +59,5 @@ def test_message_components_to_dtos():
     dto = message_to_chat_message(msg)
     assert dto.components is not None
     assert dto.components[0].label == "Test"
-    assert dto.components[0].customId == "test"
+    assert dto.components[0].custom_id == "test"
     assert dto.components[0].style == ButtonStyle.primary
