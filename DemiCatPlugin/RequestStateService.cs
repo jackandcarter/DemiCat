@@ -11,6 +11,7 @@ internal static class RequestStateService
 {
     private static readonly Dictionary<string, RequestState> RequestsMap = new();
     private static readonly object LockObj = new();
+    private static Config? _config;
 
     public static IEnumerable<RequestState> All
     {
@@ -19,6 +20,46 @@ internal static class RequestStateService
             lock (LockObj)
                 return RequestsMap.Values.ToList();
         }
+    }
+
+    public static void Load(Config config)
+    {
+        _config = config;
+        lock (LockObj)
+        {
+            RequestsMap.Clear();
+            foreach (var s in config.RequestStates)
+            {
+                RequestsMap[s.Id] = s;
+            }
+        }
+    }
+
+    private static void Save()
+    {
+        if (_config == null) return;
+        lock (LockObj)
+        {
+            _config.RequestStates = RequestsMap.Values.ToList();
+        }
+        PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+    }
+
+    public static void Prune()
+    {
+        lock (LockObj)
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-14);
+            var remove = RequestsMap
+                .Where(kvp =>
+                    (kvp.Value.Status == RequestStatus.Completed || kvp.Value.Status == RequestStatus.Cancelled) &&
+                    kvp.Value.CreatedAt < cutoff)
+                .Select(kvp => kvp.Key)
+                .ToList();
+            foreach (var id in remove)
+                RequestsMap.Remove(id);
+        }
+        Save();
     }
 
     public static void Upsert(RequestState state)
@@ -39,6 +80,7 @@ internal static class RequestStateService
                 RequestsMap[state.Id] = state;
             }
         }
+        Save();
     }
 
     public static void Remove(string id)
@@ -47,6 +89,7 @@ internal static class RequestStateService
         {
             RequestsMap.Remove(id);
         }
+        Save();
     }
 
     public static bool TryGet(string id, out RequestState state)
@@ -60,9 +103,29 @@ internal static class RequestStateService
     public static async Task RefreshAll(HttpClient httpClient, Config config)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
+        _config = config;
         try
         {
-            var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/requests";
+            string? newToken = null;
+            try
+            {
+                var tokenResp = await httpClient.GetAsync($"{config.ApiBaseUrl.TrimEnd('/')}/api/delta-token");
+                if (tokenResp.IsSuccessStatusCode)
+                {
+                    var tokenStream = await tokenResp.Content.ReadAsStreamAsync();
+                    using var tokenDoc = await JsonDocument.ParseAsync(tokenStream);
+                    newToken = tokenDoc.RootElement.GetProperty("since").GetString();
+                }
+            }
+            catch
+            {
+                // ignore token failure
+            }
+
+            var baseUrl = config.ApiBaseUrl.TrimEnd('/');
+            var url = string.IsNullOrEmpty(config.RequestsDeltaToken)
+                ? $"{baseUrl}/api/requests"
+                : $"{baseUrl}/api/requests/delta?since={Uri.EscapeDataString(config.RequestsDeltaToken)}";
             var msg = new HttpRequestMessage(HttpMethod.Get, url);
             ApiHelpers.AddAuthHeader(msg, config);
             var resp = await httpClient.SendAsync(msg);
@@ -75,10 +138,16 @@ internal static class RequestStateService
             else if (doc.RootElement.TryGetProperty("requests", out var arr) && arr.ValueKind == JsonValueKind.Array)
                 list = arr.EnumerateArray();
             else
-                return;
+                list = Array.Empty<JsonElement>();
             foreach (var payload in list)
             {
                 var id = payload.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                var deleted = payload.TryGetProperty("deleted", out var delEl) && delEl.GetBoolean();
+                if (deleted)
+                {
+                    if (id != null) Remove(id);
+                    continue;
+                }
                 var title = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "Request" : "Request";
                 var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
                 var version = payload.TryGetProperty("version", out var verEl) ? verEl.GetInt32() : 0;
@@ -109,6 +178,11 @@ internal static class RequestStateService
                     CreatedAt = createdAt
                 });
             }
+            if (newToken != null)
+            {
+                config.RequestsDeltaToken = newToken;
+            }
+            Prune();
         }
         catch
         {

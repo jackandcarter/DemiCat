@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -152,6 +153,23 @@ async def list_requests(
     result = await db.execute(
         select(DbRequest)
         .where(DbRequest.guild_id == ctx.guild.id)
+        .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
+    )
+    return [_dto(r) for r in result.scalars()]
+
+
+@router.get("/requests/delta")
+async def list_request_deltas(
+    since: datetime,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> list[dict[str, Any]]:
+    result = await db.execute(
+        select(DbRequest)
+        .where(
+            DbRequest.guild_id == ctx.guild.id,
+            DbRequest.updated_at >= since,
+        )
         .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
     )
     return [_dto(r) for r in result.scalars()]

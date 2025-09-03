@@ -9,7 +9,7 @@ namespace DemiCatPlugin;
 public class Config : IPluginConfiguration
 { 
     // Required by Dalamud
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -28,6 +28,12 @@ public class Config : IPluginConfiguration
     public List<RoleDto> GuildRoles { get; set; } = new();
     public List<Template> Templates { get; set; } = new();
     public List<SignupPreset> SignupPresets { get; set; } = new();
+
+    [JsonPropertyName("requestStates")]
+    public List<RequestState> RequestStates { get; set; } = new();
+
+    [JsonPropertyName("requestsDeltaToken")]
+    public string? RequestsDeltaToken { get; set; }
 
     [JsonPropertyName("syncEnabled")]
     public bool SyncEnabled { get; set; } = false;
@@ -78,6 +84,29 @@ public class Config : IPluginConfiguration
                 }
             }
             Version = 3;
+            ExtensionData = null;
+        }
+        if (Version < 4)
+        {
+            if (ExtensionData != null)
+            {
+                if (ExtensionData.TryGetValue("requestStates", out var reqStates) && reqStates.ValueKind == JsonValueKind.Array)
+                {
+                    try
+                    {
+                        RequestStates = JsonSerializer.Deserialize<List<RequestState>>(reqStates.GetRawText()) ?? new();
+                    }
+                    catch
+                    {
+                        // ignore
+                    }
+                }
+                if (ExtensionData.TryGetValue("requestsDeltaToken", out var tokEl) && tokEl.ValueKind == JsonValueKind.String)
+                {
+                    RequestsDeltaToken = tokEl.GetString();
+                }
+            }
+            Version = 4;
             ExtensionData = null;
         }
     }

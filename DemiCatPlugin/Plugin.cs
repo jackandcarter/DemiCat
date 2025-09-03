@@ -49,6 +49,8 @@ public class Plugin : IDalamudPlugin
             _services.PluginInterface.SavePluginConfig(_config);
         }
 
+        RequestStateService.Load(_config);
+
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
         _presenceService = _config.EnableFcChat ? new DiscordPresenceService(_config, _httpClient) : null;
