@@ -32,7 +32,14 @@ sys.modules.setdefault("discord.ext.commands", commands_mod)
 
 from types import SimpleNamespace
 
-from demibot.db.models import Guild, User, Request as DbRequest, RequestStatus, RequestType, Urgency
+from demibot.db.models import (
+    Guild,
+    User,
+    Request as DbRequest,
+    RequestStatus,
+    RequestType,
+    Urgency,
+)
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
 import demibot.http.routes.requests as request_routes
@@ -78,9 +85,16 @@ def test_requests_delta(db_setup):
             # update request
             req.title = "Updated"
             await db.commit()
+            since2 = req.updated_at
             res2 = await request_routes.list_request_deltas(since=since, ctx=ctx, db=db)
-            return res1, res2
-    first, second = asyncio.run(run())
+            # delete request
+            await request_routes.delete_request(request_id=req.id, ctx=ctx, db=db)
+            res3 = await request_routes.list_request_deltas(since=since2, ctx=ctx, db=db)
+            return res1, res2, res3
+    first, second, third = asyncio.run(run())
     assert first == []
     assert len(second) == 1
     assert second[0]["title"] == "Updated"
+    assert len(third) == 1
+    assert third[0]["deleted"] is True
+    assert third[0]["id"] == "1"

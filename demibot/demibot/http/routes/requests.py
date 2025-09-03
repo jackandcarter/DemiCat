@@ -16,6 +16,7 @@ from ..deps import RequestContext, api_key_auth, get_db
 from ..ws import manager
 from ..discord_client import discord_client
 from ...db.models import Request as DbRequest, RequestStatus, RequestType, Urgency, User
+from ...db.models import RequestTombstone
 from ...config import load_config
 
 router = APIRouter(prefix="/api")
@@ -168,11 +169,20 @@ async def list_request_deltas(
         select(DbRequest)
         .where(
             DbRequest.guild_id == ctx.guild.id,
-            DbRequest.updated_at >= since,
+            DbRequest.updated_at > since,
         )
         .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
     )
-    return [_dto(r) for r in result.scalars()]
+    deltas = [_dto(r) for r in result.scalars()]
+    tombstones = await db.execute(
+        select(RequestTombstone).where(
+            RequestTombstone.guild_id == ctx.guild.id,
+            RequestTombstone.deleted_at > since,
+        )
+    )
+    for t in tombstones.scalars():
+        deltas.append({"id": str(t.request_id), "deleted": True, "version": t.version})
+    return deltas
 
 
 @router.post("/requests")
@@ -242,7 +252,10 @@ async def delete_request(
     if not req or req.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404)
     version = req.version
+    guild_id = req.guild_id
     await db.delete(req)
+    tomb = RequestTombstone(request_id=request_id, guild_id=guild_id, version=version)
+    db.add(tomb)
     await db.commit()
     delta = {"id": str(request_id), "deleted": True, "version": version}
     await _broadcast(ctx.guild.id, request_id, delta)
