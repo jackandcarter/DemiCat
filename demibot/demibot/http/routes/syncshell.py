@@ -102,3 +102,30 @@ async def request_asset_download(
     except Exception as e:  # pragma: no cover - network failure
         raise HTTPException(status_code=502, detail="vault unavailable") from e
     return {"url": url}
+
+
+async def _clear_manifest(ctx: RequestContext, db: AsyncSession) -> None:
+    record = await db.get(SyncshellManifest, ctx.user.id)
+    if record:
+        await db.delete(record)
+        await db.commit()
+
+
+@router.post("/resync")
+async def resync(
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    _check_rate_limit(ctx.user.id)
+    await _clear_manifest(ctx, db)
+    return {"status": "ok"}
+
+
+@router.post("/cache")
+async def clear_cache(
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, str]:
+    _check_rate_limit(ctx.user.id)
+    await _clear_manifest(ctx, db)
+    return {"status": "ok"}

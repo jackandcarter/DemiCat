@@ -43,6 +43,7 @@ public class SyncshellWindow : IDisposable
     private bool _manualSyncCustom;
     private float _fileSizeLimitMb = 100f;
     private bool _syncPaused;
+    private DateTimeOffset? _lastResyncAt;
 
     public SyncshellWindow(Config config, HttpClient httpClient)
     {
@@ -56,6 +57,8 @@ public class SyncshellWindow : IDisposable
         }
         _lastPullAt = state.LastPullAt;
         _seenAssetIds = state.SeenAssets;
+        _syncPaused = state.Paused;
+        _lastResyncAt = state.LastResyncAt;
 
         var dir = PluginServices.Instance!.PluginInterface.GetPluginConfigDirectory();
         _assetsFile = Path.Combine(dir, "assets.json");
@@ -121,19 +124,23 @@ public class SyncshellWindow : IDisposable
         ImGui.SliderFloat("File-size limit (MB)", ref _fileSizeLimitMb, 100f, 5120f, "%.0f MB");
         if (ImGui.Button("Resync All"))
         {
-            // TODO: implement resync logic
+            _ = ResyncAll();
         }
         ImGui.SameLine();
         if (ImGui.Button("Clear Cache"))
         {
-            // TODO: implement cache clearing logic
+            _ = ClearRemoteCache();
         }
         ImGui.SameLine();
         var pauseLabel = _syncPaused ? "Resume Sync" : "Pause Sync";
         if (ImGui.Button(pauseLabel))
         {
             _syncPaused = !_syncPaused;
-            // TODO: implement pause/resume logic
+            if (_config.Categories.TryGetValue("syncshell", out var st))
+            {
+                st.Paused = _syncPaused;
+                PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+            }
         }
         ImGui.EndChild();
         ImGui.Separator();
@@ -205,7 +212,7 @@ public class SyncshellWindow : IDisposable
 
     private async Task Refresh()
     {
-        if (!_config.SyncEnabled || _loading)
+        if (!_config.SyncEnabled || _loading || _syncPaused)
             return;
 
         try
@@ -664,6 +671,62 @@ public class SyncshellWindow : IDisposable
         _seenAssetIds.Clear();
         _etag = null;
         _needsRefresh = true;
+    }
+
+    private async Task PostAsync(string path)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{path}";
+            var req = new HttpRequestMessage(HttpMethod.Post, url);
+            ApiHelpers.AddAuthHeader(req, _config);
+            await _httpClient.SendAsync(req);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private async Task UploadManifest()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/syncshell/manifest";
+            var req = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = new StringContent("[]", Encoding.UTF8, "application/json")
+            };
+            ApiHelpers.AddAuthHeader(req, _config);
+            await _httpClient.SendAsync(req);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    private async Task ResyncAll()
+    {
+        ClearCaches();
+        await PostAsync("/api/syncshell/resync");
+        await UploadManifest();
+        _lastResyncAt = DateTimeOffset.UtcNow;
+        if (_config.Categories.TryGetValue("syncshell", out var st))
+        {
+            st.LastResyncAt = _lastResyncAt;
+            PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+        }
+    }
+
+    private async Task ClearRemoteCache()
+    {
+        ClearCaches();
+        await PostAsync("/api/syncshell/cache");
     }
 
     private async Task FetchInstallations()
