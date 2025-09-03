@@ -13,7 +13,7 @@ PURGE_INTERVAL = 3600
 
 
 async def purge_deleted_assets_once(retention_days: int = 30) -> None:
-    async for db in get_session():
+    async with get_session() as db:
         cutoff = datetime.utcnow() - timedelta(days=retention_days)
         await db.execute(delete(Asset).where(Asset.deleted_at < cutoff))
         await db.commit()

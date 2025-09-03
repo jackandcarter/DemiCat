@@ -127,7 +127,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     token = header_token
 
     ctx: RequestContext | None = None
-    async for db in get_session():
+    async with get_session() as db:
         try:
             ctx = await api_key_auth(
                 x_api_key=token,
@@ -143,7 +143,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             )
             await websocket.close(code=1008, reason="auth failed")
             return
-        break
+        finally:
+            await db.close()
 
     if ctx is None:
         logging.error("WS %s api_key_auth returned no context", path)

@@ -11,7 +11,7 @@ from demibot.asset_cleanup import purge_deleted_assets_once
 def test_purge_deleted_assets_once():
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             old = Asset(
                 id=1,
                 kind=AssetKind.FILE,

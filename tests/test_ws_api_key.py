@@ -1,7 +1,8 @@
-import types
 import asyncio
+import types
 import pytest
 from fastapi import HTTPException, WebSocketDisconnect
+from contextlib import asynccontextmanager
 
 from demibot.http import ws as ws_module
 from demibot.http.deps import RequestContext
@@ -24,14 +25,28 @@ class StubWebSocket:
     async def receive_text(self):
         raise WebSocketDisconnect()
 
+
+class DummySession:
+    def __init__(self):
+        self.closed = False
+
+    async def close(self):  # pragma: no cover - trivial
+        self.closed = True
+
 def test_websocket_auth_success(monkeypatch):
     ws = StubWebSocket()
     guild = types.SimpleNamespace(id=1, discord_guild_id=1)
     user = types.SimpleNamespace(id=1, discord_user_id=1)
     ctx = RequestContext(user=user, guild=guild, key=None, roles=[])
 
+    session = DummySession()
+
+    @asynccontextmanager
     async def fake_get_session():
-        yield None
+        try:
+            yield session
+        finally:
+            await session.close()
 
     async def fake_api_key_auth(x_api_key, x_discord_id, db):
         assert x_discord_id is None
@@ -51,13 +66,20 @@ def test_websocket_auth_success(monkeypatch):
     asyncio.run(ws_module.websocket_endpoint(ws))
     assert connected is True
     assert ws.close_code is None
+    assert session.closed is True
 
 
 def test_websocket_auth_failure(monkeypatch):
     ws = StubWebSocket()
 
+    session = DummySession()
+
+    @asynccontextmanager
     async def fake_get_session():
-        yield None
+        try:
+            yield session
+        finally:
+            await session.close()
 
     async def fake_api_key_auth(x_api_key, x_discord_id, db):
         assert x_discord_id is None
@@ -69,6 +91,7 @@ def test_websocket_auth_failure(monkeypatch):
     asyncio.run(ws_module.websocket_endpoint(ws))
     assert ws.close_code == 1008
     assert ws.close_reason == "auth failed"
+    assert session.closed is True
 
 
 def test_websocket_rejects_query_token(monkeypatch):
@@ -76,11 +99,17 @@ def test_websocket_rejects_query_token(monkeypatch):
     ws.headers = {}
     ws.query_params = {"token": "abc"}
 
+    called = False
+
+    @asynccontextmanager
     async def fake_get_session():
-        yield None
+        nonlocal called
+        called = True
+        yield DummySession()
 
     monkeypatch.setattr(ws_module, "get_session", fake_get_session)
 
     asyncio.run(ws_module.websocket_endpoint(ws))
     assert ws.close_code == 1008
     assert ws.close_reason == "token in url"
+    assert called is False

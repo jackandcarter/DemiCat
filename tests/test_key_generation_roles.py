@@ -65,7 +65,7 @@ async def _setup_db() -> None:
         db_path.unlink()
     url = f"sqlite+aiosqlite:///{db_path}"
     await init_db(url)
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
         db.add(guild)
         db.add(
@@ -105,7 +105,7 @@ async def _generate(user_roles):
     button_inter = ButtonInteraction(user)
     await view.children[0].callback(button_inter)
 
-    async for db in get_session():
+    async with get_session() as db:
         user_row = (
             await db.execute(select(User).where(User.discord_user_id == user.id))
         ).scalar_one()

@@ -21,7 +21,7 @@ from demibot.http.routes.user_settings import forget_me
 def test_forget_me_scrubs_user_and_assets():
     async def _run():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             user = User(
                 id=1,
                 discord_user_id=1,

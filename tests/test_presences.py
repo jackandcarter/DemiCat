@@ -97,7 +97,7 @@ def test_list_presences_reads_from_db():
         db_session._Session = None
         url = "sqlite+aiosqlite://"
         await init_db(url)
-        async for db in get_session():
+        async with get_session() as db:
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             db.add(User(id=2, discord_user_id=20, global_name="Bob"))
             db.add(DbPresence(guild_id=1, user_id=10, status="online"))

@@ -31,7 +31,7 @@ async def _run_test() -> None:
         db_path.unlink()
     url = f"sqlite+aiosqlite:///{db_path}"
     await init_db(url)
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
         db.add(guild)
         await db.commit()

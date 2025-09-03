@@ -32,7 +32,7 @@ def _override_auth(user):
 
 def _get_last_pull(user_id=1, fc_id=1):
     async def _run():
-        async for db in get_session():
+        async with get_session() as db:
             res = await db.execute(
                 select(FcUser.last_pull_at).where(
                     FcUser.fc_id == fc_id, FcUser.user_id == user_id
@@ -74,7 +74,7 @@ def test_assets_etag_and_last_pull():
 
     async def _setup():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             db.add_all([user, fc, fcu, dep_asset, asset, dep_rel, cp])
             await db.commit()
             break
@@ -125,7 +125,7 @@ def test_bundles_etag_and_last_pull():
 
     async def _setup():
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             db.add_all([user, fc, fcu, asset, bundle, item, cp])
             await db.commit()
             break

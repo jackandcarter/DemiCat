@@ -18,7 +18,7 @@ def _setup_db(path: str) -> None:
     asyncio.run(init_db(url))
 
     async def populate() -> None:
-        async for db in get_session():
+        async with get_session() as db:
             guild = Guild(id=1, discord_guild_id=1, name="Test")
             db.add(guild)
             db.add(
@@ -49,7 +49,7 @@ def test_get_channels_returns_placeholder_and_flags_retry(monkeypatch):
         pass
 
     async def run():
-        async for db in get_session():
+        async with get_session() as db:
             guild = (await db.execute(select(Guild).where(Guild.id == 1))).scalar_one()
             ctx = RequestContext(user=Dummy(), guild=guild, key=Dummy(), roles=[])
             resp = await channel_routes.get_channels(ctx=ctx, db=db)

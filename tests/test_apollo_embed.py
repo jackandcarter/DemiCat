@@ -73,7 +73,7 @@ async def _run_test() -> None:
     bot = DummyBot(url)
     Mirror(bot)  # initializes DB
 
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind="event"))
@@ -87,7 +87,7 @@ async def _run_test() -> None:
     mirror = Mirror(bot)
     await mirror.on_message(msg)
 
-    async for db in get_session():
+    async with get_session() as db:
         row = (
             await db.execute(
                 select(Embed).where(Embed.discord_message_id == msg.id)

@@ -111,7 +111,7 @@ async def ensure_channel_name(
 async def resync_channel_names_once() -> None:
     """Refresh channel names for all guilds once."""
 
-    async for db in get_session():
+    async with get_session() as db:
         result = await db.execute(
             select(
                 GuildChannel.guild_id,
@@ -139,7 +139,7 @@ async def retry_null_channel_names(max_attempts: int = 3) -> None:
     logged with their guild and channel IDs for further investigation.
     """
 
-    async for db in get_session():
+    async with get_session() as db:
         unresolved: list[tuple[int, int]] = []
         for attempt in range(max_attempts):
             result = await db.execute(

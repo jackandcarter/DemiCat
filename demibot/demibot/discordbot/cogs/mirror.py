@@ -74,7 +74,7 @@ class Mirror(commands.Cog):
 
     async def _reconcile_channels(self) -> None:
         async with self._reconcile_lock:
-            async for db in get_session():
+            async with get_session() as db:
                 try:
                     for guild in self.bot.guilds:
                         result = await db.execute(
@@ -146,7 +146,7 @@ class Mirror(commands.Cog):
         channel_id = message.channel.id
 
         if ApolloHelper.IsApolloMessage(message):
-            async for db in get_session():
+            async with get_session() as db:
                 result = await db.execute(
                     select(GuildChannel.kind, GuildChannel.guild_id).where(
                         GuildChannel.channel_id == channel_id
@@ -203,7 +203,7 @@ class Mirror(commands.Cog):
         if message.author.bot:
             return
 
-        async for db in get_session():
+        async with get_session() as db:
             result = await db.execute(
                 select(GuildChannel.kind, GuildChannel.guild_id).where(
                     GuildChannel.channel_id == channel_id
@@ -256,7 +256,7 @@ class Mirror(commands.Cog):
     ) -> None:
         channel_id = after.channel.id
 
-        async for db in get_session():
+        async with get_session() as db:
             result = await db.execute(
                 select(GuildChannel.kind, GuildChannel.guild_id).where(
                     GuildChannel.channel_id == channel_id
@@ -344,7 +344,7 @@ class Mirror(commands.Cog):
     ) -> None:
         """Persist and broadcast reaction additions."""
 
-        async for db in get_session():
+        async with get_session() as db:
             msg = await db.get(Message, reaction.message.id)
             if msg is None:
                 break
@@ -374,7 +374,7 @@ class Mirror(commands.Cog):
     ) -> None:
         """Persist and broadcast reaction removals."""
 
-        async for db in get_session():
+        async with get_session() as db:
             msg = await db.get(Message, reaction.message.id)
             if msg is None:
                 break
@@ -402,7 +402,7 @@ class Mirror(commands.Cog):
     async def on_message_delete(self, message: discord.Message) -> None:
         channel_id = message.channel.id
 
-        async for db in get_session():
+        async with get_session() as db:
             result = await db.execute(
                 select(GuildChannel.kind, GuildChannel.guild_id).where(
                     GuildChannel.channel_id == channel_id

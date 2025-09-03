@@ -33,7 +33,7 @@ class PresenceTracker(commands.Cog):
             roles=role_ids,
         )
         set_presence(member.guild.id, data)
-        async for db in get_session():
+        async with get_session() as db:
             stmt = select(DbPresence).where(
                 DbPresence.guild_id == member.guild.id,
                 DbPresence.user_id == member.id,

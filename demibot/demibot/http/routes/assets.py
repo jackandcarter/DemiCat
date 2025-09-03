@@ -130,7 +130,7 @@ async def download_asset(
     asset_id: int | None = None,
 ):
     if asset_id is not None:
-        async for db in get_session():
+        async with get_session() as db:
             res = await db.execute(
                 select(Asset.id).where(
                     Asset.id == asset_id, Asset.deleted_at.is_(None)

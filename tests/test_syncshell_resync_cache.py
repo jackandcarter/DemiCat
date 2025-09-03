@@ -24,7 +24,7 @@ def test_resync_and_cache_clear():
         db_session._engine = None
         db_session._Session = None
         await init_db("sqlite+aiosqlite://")
-        async for db in get_session():
+        async with get_session() as db:
             user = User(id=1, discord_user_id=1, global_name="Test")
             db.add(user)
             await db.commit()

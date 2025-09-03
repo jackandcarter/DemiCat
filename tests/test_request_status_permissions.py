@@ -46,7 +46,7 @@ import demibot.http.routes.requests as request_routes
 
 async def _setup_db(db_path: str) -> None:
     await init_db(f"sqlite+aiosqlite:///{db_path}")
-    async for db in get_session():
+    async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
         requester = User(id=1, discord_user_id=1)
         assignee = User(id=2, discord_user_id=2)
@@ -75,7 +75,7 @@ def patch_broadcast(monkeypatch):
 
 def test_start_requires_assignee(db_setup):
     async def run():
-        async for db in get_session():
+        async with get_session() as db:
             guild = await db.get(Guild, 1)
             requester = await db.get(User, 1)
             assignee = await db.get(User, 2)
@@ -103,7 +103,7 @@ def test_start_requires_assignee(db_setup):
 
 def test_complete_requires_assignee(db_setup):
     async def run():
-        async for db in get_session():
+        async with get_session() as db:
             guild = await db.get(Guild, 1)
             requester = await db.get(User, 1)
             assignee = await db.get(User, 2)
@@ -131,7 +131,7 @@ def test_complete_requires_assignee(db_setup):
 
 def test_confirm_requires_requester(db_setup):
     async def run():
-        async for db in get_session():
+        async with get_session() as db:
             guild = await db.get(Guild, 1)
             requester = await db.get(User, 1)
             assignee = await db.get(User, 2)
@@ -159,7 +159,7 @@ def test_confirm_requires_requester(db_setup):
 
 def test_cancel_requires_requester(db_setup):
     async def run():
-        async for db in get_session():
+        async with get_session() as db:
             guild = await db.get(Guild, 1)
             requester = await db.get(User, 1)
             assignee = await db.get(User, 2)
@@ -187,7 +187,7 @@ def test_cancel_requires_requester(db_setup):
 
 def test_cancel_returns_dto(db_setup):
     async def run():
-        async for db in get_session():
+        async with get_session() as db:
             guild = await db.get(Guild, 1)
             requester = await db.get(User, 1)
             req = DbRequest(
