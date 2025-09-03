@@ -405,6 +405,15 @@ class RequestEvent(Base):
     request: Mapped[Request] = relationship(back_populates="events")
 
 
+class RequestTombstone(Base):
+    __tablename__ = "request_tombstones"
+
+    request_id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    deleted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class Fc(Base):
     __tablename__ = "fc"
 
