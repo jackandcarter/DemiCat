@@ -52,6 +52,12 @@ public class Config : IPluginConfiguration
         [JsonPropertyName("seenAssets")]
         public HashSet<string> SeenAssets { get; set; } = new();
 
+        [JsonPropertyName("paused")]
+        public bool Paused { get; set; }
+
+        [JsonPropertyName("lastResyncAt")]
+        public DateTimeOffset? LastResyncAt { get; set; }
+
         [JsonExtensionData]
         public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     }
