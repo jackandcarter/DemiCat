@@ -2,6 +2,8 @@
 
 DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts directly into the game.
 
+All public HTTP APIs now use **camelCase** for JSON field names. Python and C# code may use snake_case or PascalCase internally, but requests and responses over the wire are consistently camelCase.
+
 ```
 DemiCat/
 ├── demibot/         # Python Discord bot and REST interface

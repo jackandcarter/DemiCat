@@ -7,7 +7,7 @@ import types
 
 import discord
 from fastapi import HTTPException, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,10 +34,12 @@ _channel_webhooks: dict[int, str] = {}
 
 
 class PostBody(BaseModel):
-    channelId: str
+    channel_id: str = Field(alias="channelId")
     content: str
-    useCharacterName: bool | None = False
-    messageReference: MessageReferenceDto | None = None
+    use_character_name: bool | None = Field(default=False, alias="useCharacterName")
+    message_reference: MessageReferenceDto | None = Field(
+        default=None, alias="messageReference"
+    )
 
 
 async def fetch_messages(
@@ -125,9 +127,9 @@ async def fetch_messages(
         out.append(
             ChatMessage(
                 id=str(m.discord_message_id),
-                channelId=str(m.channel_id),
-                authorName=m.author_name,
-                authorAvatarUrl=m.author_avatar_url,
+                channel_id=str(m.channel_id),
+                author_name=m.author_name,
+                author_avatar_url=m.author_avatar_url,
                 timestamp=m.created_at,
                 content=m.content or m.content_display or m.content_raw,
                 attachments=attachments,
@@ -137,8 +139,8 @@ async def fetch_messages(
                 reference=reference,
                 components=components,
                 reactions=reactions,
-                editedTimestamp=m.edited_timestamp,
-                useCharacterName=getattr(author, "useCharacterName", False),
+                edited_timestamp=m.edited_timestamp,
+                use_character_name=getattr(author, "use_character_name", False),
             )
         )
     return [o.model_dump() for o in out]
@@ -154,7 +156,7 @@ async def save_message(
 ) -> dict:
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
-    channel_id = int(body.channelId)
+    channel_id = int(body.channel_id)
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
     channel = None
@@ -182,7 +184,7 @@ async def save_message(
                     discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
             username_base = ctx.user.global_name or ("Officer" if is_officer else "Player")
             username = f"{username_base}@FFXIV FC"
-            if body.useCharacterName and ctx.user.character_name:
+            if body.use_character_name and ctx.user.character_name:
                 username = f"{username_base} / {ctx.user.character_name}@FFXIV FC"
             try:
                 sent = await webhook.send(
@@ -215,13 +217,13 @@ async def save_message(
                 for f in files
             ]
     display_name = ctx.user.global_name or ("Officer" if is_officer else "Player")
-    if body.useCharacterName and ctx.user.character_name:
+    if body.use_character_name and ctx.user.character_name:
         display_name = f"{ctx.user.character_name} ({display_name})"
     author = MessageAuthor(
         id=str(ctx.user.id),
         name=display_name,
-        avatarUrl=None,
-        useCharacterName=body.useCharacterName,
+        avatar_url=None,
+        use_character_name=body.use_character_name,
     )
 
     dummy = types.SimpleNamespace(
@@ -243,10 +245,10 @@ async def save_message(
         mentions=[],
         embeds=[],
         reference=types.SimpleNamespace(
-            message_id=int(body.messageReference.messageId),
-            channel_id=int(body.messageReference.channelId),
+            message_id=int(body.message_reference.message_id),
+            channel_id=int(body.message_reference.channel_id),
         )
-        if body.messageReference
+        if body.message_reference
         else None,
         components=[],
         reactions=[],
@@ -256,9 +258,9 @@ async def save_message(
 
     dto, fragments = serialize_message(dummy)
     dto.author = author
-    dto.authorName = author.name
-    dto.authorAvatarUrl = author.avatarUrl
-    dto.useCharacterName = body.useCharacterName
+    dto.author_name = author.name
+    dto.author_avatar_url = author.avatar_url
+    dto.use_character_name = body.use_character_name
     fragments["author_json"] = author.model_dump_json()
 
     msg = Message(
@@ -267,7 +269,7 @@ async def save_message(
         guild_id=ctx.guild.id,
         author_id=ctx.user.id,
         author_name=author.name,
-        author_avatar_url=author.avatarUrl,
+        author_avatar_url=author.avatar_url,
         content_raw=body.content,
         content_display=body.content,
         content=body.content,
@@ -376,9 +378,9 @@ async def edit_message(
 
     dto = ChatMessage(
         id=str(message_id),
-        channelId=str(channel_id),
-        authorName=msg.author_name,
-        authorAvatarUrl=msg.author_avatar_url,
+        channel_id=str(channel_id),
+        author_name=msg.author_name,
+        author_avatar_url=msg.author_avatar_url,
         timestamp=msg.created_at,
         content=content,
         attachments=attachments,
@@ -388,8 +390,8 @@ async def edit_message(
         reference=reference,
         components=components,
         reactions=reactions,
-        editedTimestamp=msg.edited_timestamp,
-        useCharacterName=getattr(author, "useCharacterName", False),
+        edited_timestamp=msg.edited_timestamp,
+        use_character_name=getattr(author, "use_character_name", False),
     )
     await manager.broadcast_text(
         dto.model_dump_json(),

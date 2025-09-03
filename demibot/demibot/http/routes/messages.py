@@ -60,10 +60,10 @@ async def post_message_with_attachments(
         except Exception:
             raise HTTPException(status_code=400, detail="invalid message_reference")
     body = PostBody(
-        channelId=channel_id,
+        channel_id=channel_id,
         content=content,
-        useCharacterName=useCharacterName,
-        messageReference=ref,
+        use_character_name=useCharacterName,
+        message_reference=ref,
     )
     return await save_message(body, ctx, db, is_officer=False, files=files)
 

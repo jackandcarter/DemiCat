@@ -6,7 +6,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 import logging
 import discord
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -50,11 +50,11 @@ class RequestDto(BaseModel):
     status: str
     urgency: Urgency | None = None
     version: int
-    item_id: int | None = None
-    duty_id: int | None = None
+    item_id: int | None = Field(default=None, alias="itemId")
+    duty_id: int | None = Field(default=None, alias="dutyId")
     hq: bool | None = None
     quantity: int | None = None
-    assignee_id: int | None = None
+    assignee_id: int | None = Field(default=None, alias="assigneeId")
 
 
 def _status(status: RequestStatus) -> str:

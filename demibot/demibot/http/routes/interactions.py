@@ -5,7 +5,7 @@ from typing import Dict, List
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -17,9 +17,9 @@ router = APIRouter(prefix="/api")
 
 
 class InteractionBody(BaseModel):
-    MessageId: str
-    ChannelId: int | None = None
-    CustomId: str
+    message_id: str = Field(alias="messageId")
+    channel_id: int | None = Field(default=None, alias="channelId")
+    custom_id: str = Field(alias="customId")
 
 
 def summarize(att: Dict[str, List[str]], labels: Dict[str, str], order: List[str]) -> List[dict]:
@@ -37,8 +37,8 @@ async def post_interaction(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    choice = body.CustomId.split(":", 1)[1] if ":" in body.CustomId else body.CustomId
-    message_id = int(body.MessageId)
+    choice = body.custom_id.split(":", 1)[1] if ":" in body.custom_id else body.custom_id
+    message_id = int(body.message_id)
     embed = (
         await db.execute(select(Embed).where(Embed.discord_message_id == message_id))
     ).scalar_one_or_none()
