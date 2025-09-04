@@ -20,7 +20,7 @@ public class EventCreateWindow
 
     private string _title = string.Empty;
     private string _description = string.Empty;
-    private string _time = DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'");
+    private string _time = DateTime.UtcNow.ToString("O");
     private string _imageUrl = string.Empty;
     private string _url = string.Empty;
     private string _thumbnailUrl = string.Empty;
@@ -92,7 +92,7 @@ public class EventCreateWindow
             DateTime.TryParse(_time, null, DateTimeStyles.AdjustToUniversal, out var baseTime))
         {
             var next = _repeat == RepeatOption.Daily ? baseTime.AddDays(1) : baseTime.AddDays(7);
-            var nextStr = next.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'");
+            var nextStr = next.ToUniversalTime().ToString("O");
             ImGui.TextUnformatted($"Next: {nextStr}");
         }
         ImGui.InputTextMultiline("Description", ref _description, 4096, new Vector2(400, 100));
@@ -331,7 +331,7 @@ public class EventCreateWindow
         _title = template.Title;
         _description = template.Description;
         _time = string.IsNullOrEmpty(template.Time)
-            ? DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'")
+            ? DateTime.UtcNow.ToString("O")
             : template.Time;
         _url = template.Url;
         _imageUrl = template.ImageUrl;
