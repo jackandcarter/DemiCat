@@ -1005,6 +1005,7 @@ public class ChatWindow : IDisposable
 
     private async Task RunWebSocket(CancellationToken token)
     {
+        var backoff = 1;
         while (!token.IsCancellationRequested)
         {
             if (!ApiHelpers.ValidateApiBaseUrl(_config))
@@ -1025,6 +1026,7 @@ public class ChatWindow : IDisposable
             var forbidden = false;
             try
             {
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Connecting...");
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_ws, _config);
@@ -1034,6 +1036,7 @@ public class ChatWindow : IDisposable
                 _presence?.Reload();
                 _ = _presence?.Refresh();
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
+                backoff = 1;
 
                 var buffer = new byte[8192];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -1152,17 +1155,20 @@ public class ChatWindow : IDisposable
                 _ws = null;
             }
 
+            if (token.IsCancellationRequested)
+            {
+                break;
+            }
+
             try
             {
+                var delay = forbidden ? 30 : backoff;
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    _statusMessage = $"Reconnecting in {delay}s...");
+                await Task.Delay(TimeSpan.FromSeconds(delay), token);
                 if (!forbidden)
                 {
-                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                        _statusMessage = "Reconnecting...");
-                    await Task.Delay(TimeSpan.FromSeconds(5), token);
-                }
-                else
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(30), token);
+                    backoff = Math.Min(backoff * 2, 30);
                 }
             }
             catch
