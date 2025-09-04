@@ -48,6 +48,12 @@ class Mirror(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
         self._reconcile_lock = asyncio.Lock()
+        whitelist = os.getenv("BOT_MIRROR_WHITELIST", "")
+        self._bot_whitelist = {
+            int(item)
+            for item in (p.strip() for p in whitelist.split(","))
+            if item
+        }
 
     async def cog_load(self) -> None:
         self.bot.loop.create_task(self._sync_guild_channels_once())
@@ -252,7 +258,7 @@ class Mirror(commands.Cog):
                     await db.commit()
             return
 
-        if message.author.bot:
+        if message.author.bot and message.author.id not in self._bot_whitelist:
             return
 
         async with get_session() as db:
@@ -320,7 +326,7 @@ class Mirror(commands.Cog):
             kind, guild_id = row
             is_officer = kind == ChannelKind.OFFICER_CHAT
 
-            if after.author.bot:
+            if after.author.bot and after.author.id not in self._bot_whitelist:
                 emb_row = await db.get(Embed, after.id)
                 if emb_row is None:
                     return

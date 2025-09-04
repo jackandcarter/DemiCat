@@ -59,6 +59,19 @@ bot token and server options such as the WebSocket path (default
 > permissions so only your user can read it (e.g. `chmod 600
 > ~/.config/demibot/config.json`).
 
+### Bot mirroring whitelist
+
+By default, DemiBot ignores messages sent by other bots. To persist and broadcast
+messages from specific bot accounts, set the `BOT_MIRROR_WHITELIST` environment
+variable to a comma-separated list of Discord user IDs:
+
+```bash
+export BOT_MIRROR_WHITELIST="123456789012345678,987654321098765432"
+```
+
+Only bots with IDs in this whitelist are mirrored; all other bot messages
+continue to be ignored.
+
 ## Setup
 
 Run the helper script to bootstrap both the Python and .NET parts of the
