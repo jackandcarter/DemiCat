@@ -489,6 +489,18 @@ class Mirror(commands.Cog):
                         officer_only=is_officer,
                         path="/ws/messages",
                     )
+            else:
+                msg = await db.get(Message, message.id)
+                if msg is not None:
+                    await db.delete(msg)
+                    await db.commit()
+
+                await manager.broadcast_text(
+                    json.dumps({"deletedId": str(message.id)}),
+                    guild_id,
+                    officer_only=is_officer,
+                    path="/ws/messages",
+                )
 
 
 async def setup(bot: commands.Bot) -> None:
