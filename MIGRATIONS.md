@@ -15,3 +15,9 @@ When creating a new migration:
 
 Following these guidelines prevents future migrations from exceeding the
 `version_num` column's length limit.
+
+## Bot mirroring whitelist
+
+No database migration is required. To mirror messages from specific bot accounts,
+set the `BOT_MIRROR_WHITELIST` environment variable to a comma-separated list of
+Discord user IDs. Unlisted bots continue to be ignored.
