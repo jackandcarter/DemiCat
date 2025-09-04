@@ -39,7 +39,18 @@ def upgrade() -> None:
         "guild_channels",
         sa.Column("guild_id", sa.Integer(), sa.ForeignKey("guilds.id"), primary_key=True),
         sa.Column("channel_id", sa.BigInteger(), primary_key=True),
-        sa.Column("kind", sa.String(length=24), primary_key=True),
+        sa.Column(
+            "kind",
+            sa.Enum(
+                "chat",
+                "event",
+                "fc_chat",
+                "officer_chat",
+                "officer_visible",
+                name="channelkind",
+            ),
+            primary_key=True,
+        ),
     )
 
     op.create_table(

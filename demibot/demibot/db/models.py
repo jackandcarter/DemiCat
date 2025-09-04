@@ -60,6 +60,14 @@ class InstallStatus(str, Enum):
     FAILED = "FAILED"
 
 
+class ChannelKind(str, Enum):
+    CHAT = "chat"
+    EVENT = "event"
+    FC_CHAT = "fc_chat"
+    OFFICER_CHAT = "officer_chat"
+    OFFICER_VISIBLE = "officer_visible"
+
+
 class Guild(Base):
     __tablename__ = "guilds"
 
@@ -97,7 +105,9 @@ class GuildChannel(Base):
 
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), primary_key=True)
     channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
-    kind: Mapped[str] = mapped_column(String(24), primary_key=True)
+    kind: Mapped[ChannelKind] = mapped_column(
+        SAEnum(ChannelKind, validate_strings=True), primary_key=True
+    )
     name: Mapped[Optional[str]] = mapped_column(String(255))
 
 

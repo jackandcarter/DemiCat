@@ -22,6 +22,7 @@ from ...db.models import (
     Asset,
     IndexCheckpoint,
     UserInstallation,
+    ChannelKind,
 )
 from ...db.session import get_session
 
@@ -574,7 +575,9 @@ class ConfigWizard(discord.ui.View):
                 await db.execute(
                     delete(GuildChannel).where(
                         GuildChannel.guild_id == guild.id,
-                        GuildChannel.kind.in_(["event", "fc_chat", "officer_chat"]),
+                        GuildChannel.kind.in_(
+                            [ChannelKind.EVENT, ChannelKind.FC_CHAT, ChannelKind.OFFICER_CHAT]
+                        ),
                     )
                 )
                 channel_name_lookup = {
@@ -585,7 +588,7 @@ class ConfigWizard(discord.ui.View):
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
-                            kind="event",
+                            kind=ChannelKind.EVENT,
                             name=channel_name_lookup.get(cid),
                         )
                     )
@@ -594,7 +597,7 @@ class ConfigWizard(discord.ui.View):
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
-                            kind="fc_chat",
+                            kind=ChannelKind.FC_CHAT,
                             name=channel_name_lookup.get(cid),
                         )
                     )
@@ -603,7 +606,7 @@ class ConfigWizard(discord.ui.View):
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
-                            kind="officer_chat",
+                            kind=ChannelKind.OFFICER_CHAT,
                             name=channel_name_lookup.get(cid),
                         )
                     )

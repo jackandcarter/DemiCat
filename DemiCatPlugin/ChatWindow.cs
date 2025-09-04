@@ -1192,6 +1192,6 @@ public class ChatWindow : IDisposable
 
     protected class ChannelListDto
     {
-        [JsonPropertyName("fc_chat")] public List<ChannelDto> Chat { get; set; } = new();
+        [JsonPropertyName(ChannelKind.FcChat)] public List<ChannelDto> Chat { get; set; } = new();
     }
 }

@@ -7,7 +7,7 @@ import aiohttp
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from .db.models import GuildChannel
+from .db.models import GuildChannel, ChannelKind
 from .db.session import get_session
 from .http.discord_client import discord_client
 from .http.ws import manager
@@ -18,7 +18,7 @@ async def ensure_channel_name(
     db: AsyncSession,
     guild_id: int,
     channel_id: int,
-    kind: str,
+    kind: ChannelKind,
     current_name: str | None = None,
 ) -> str | None:
     """Ensure the channel's name is stored in the database.
@@ -50,14 +50,20 @@ async def ensure_channel_name(
                 channel = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
             except Exception as exc:  # pragma: no cover - network errors
                 logging.warning(
-                    "Failed to fetch channel %s in guild %s: %s",
+                    "Failed to fetch channel %s (%s) in guild %s: %s",
                     channel_id,
+                    kind.value,
                     guild_id,
                     exc,
                 )
                 return None
         if channel is None:
-            logging.warning("Channel %s not found in guild %s", channel_id, guild_id)
+            logging.warning(
+                "Channel %s (%s) not found in guild %s",
+                channel_id,
+                kind.value,
+                guild_id,
+            )
             return None
         name = channel.name
     else:
@@ -73,18 +79,20 @@ async def ensure_channel_name(
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
-                        logging.warning(
-                            "Failed to fetch channel %s in guild %s: HTTP %s",
-                            channel_id,
-                            guild_id,
-                            resp.status,
-                        )
-                        return None
+                logging.warning(
+                    "Failed to fetch channel %s (%s) in guild %s: HTTP %s",
+                    channel_id,
+                    kind.value,
+                    guild_id,
+                    resp.status,
+                )
+                return None
                     data = await resp.json()
         except Exception as exc:  # pragma: no cover - network errors
             logging.warning(
-                "Failed to fetch channel %s in guild %s: %s",
+                "Failed to fetch channel %s (%s) in guild %s: %s",
                 channel_id,
+                kind.value,
                 guild_id,
                 exc,
             )
@@ -92,7 +100,10 @@ async def ensure_channel_name(
         name = data.get("name")
         if not name:
             logging.warning(
-                "Channel %s returned no name in guild %s", channel_id, guild_id
+                "Channel %s (%s) returned no name in guild %s",
+                channel_id,
+                kind.value,
+                guild_id,
             )
             return None
     await db.execute(

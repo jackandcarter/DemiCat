@@ -8,7 +8,7 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ...db.models import GuildChannel
+from ...db.models import GuildChannel, ChannelKind
 from ...channel_names import ensure_channel_name
 from ..ws import manager
 
@@ -42,25 +42,23 @@ async def get_channels(
     )
     # Include human-friendly channel names so the plugin can display readable
     # labels in dropdowns.
+    plugin_kinds = [k for k in ChannelKind if k != ChannelKind.CHAT]
     by_kind: dict[str, list[dict[str, str]]] = {
-        "event": [],
-        "fc_chat": [],
-        "officer_chat": [],
-        "officer_visible": [],
+        kind.value: [] for kind in plugin_kinds
     }
     updated = False
     for kind, channel_id, name in result.all():
+        if kind not in plugin_kinds:
+            continue
         new_name = await ensure_channel_name(db, ctx.guild.id, channel_id, kind, name)
         if new_name is None:
             logging.warning(
                 "Channel name missing for %s (%s) in guild %s",
                 channel_id,
-                kind,
+                kind.value,
                 ctx.guild.id,
             )
-            by_kind.setdefault(kind, []).append(
-                {"id": str(channel_id), "name": str(channel_id)}
-            )
+            by_kind[kind.value].append({"id": str(channel_id), "name": str(channel_id)})
             if name is not None:
                 await db.execute(
                     update(GuildChannel)
@@ -76,7 +74,7 @@ async def get_channels(
         if new_name != name:
             name = new_name
             updated = True
-        by_kind.setdefault(kind, []).append({"id": str(channel_id), "name": name})
+        by_kind[kind.value].append({"id": str(channel_id), "name": name})
     if updated:
         await db.commit()
         await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
@@ -93,14 +91,17 @@ async def refresh_channels(
             GuildChannel.guild_id == ctx.guild.id
         )
     )
+    plugin_kinds = [k for k in ChannelKind if k != ChannelKind.CHAT]
     updated = False
     for kind, channel_id, name in result.all():
+        if kind not in plugin_kinds:
+            continue
         new_name = await ensure_channel_name(db, ctx.guild.id, channel_id, kind, name)
         if new_name is None:
             logging.warning(
                 "Channel name missing for %s (%s) in guild %s",
                 channel_id,
-                kind,
+                kind.value,
                 ctx.guild.id,
             )
             if name is not None:

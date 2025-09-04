@@ -24,7 +24,7 @@ http_pkg.__path__ = [str(root / "demibot/http")]
 sys.modules.setdefault("demibot.http", http_pkg)
 
 from demibot.discordbot.cogs.mirror import Mirror
-from demibot.db.models import Embed, Guild, GuildChannel
+from demibot.db.models import Embed, Guild, GuildChannel, ChannelKind
 from demibot.db.session import get_session, init_db
 from demibot.http.routes.embeds import get_embeds
 
@@ -76,7 +76,7 @@ async def _run_test() -> None:
     async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
         db.add(guild)
-        db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind="event"))
+        db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
         break
 

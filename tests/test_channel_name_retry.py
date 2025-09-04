@@ -7,7 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from demibot import channel_names as cn
-from demibot.db.models import Guild, GuildChannel
+from demibot.db.models import Guild, GuildChannel, ChannelKind
 from demibot.db.session import init_db, get_session
 import demibot.db.session as db_session
 
@@ -25,7 +25,7 @@ def _setup_db(path: str) -> None:
         async with get_session() as db:
             guild = Guild(id=1, discord_guild_id=1, name="Test")
             db.add(guild)
-            db.add(GuildChannel(guild_id=guild.id, channel_id=100, kind="event", name=None))
+            db.add(GuildChannel(guild_id=guild.id, channel_id=100, kind=ChannelKind.EVENT, name=None))
             await db.commit()
             break
 
@@ -54,13 +54,13 @@ def test_fetch_channel_updates_name(monkeypatch):
 
     async def run() -> str | None:
         async with get_session() as db:
-            await cn.ensure_channel_name(db, 1, 100, "event", None)
+            await cn.ensure_channel_name(db, 1, 100, ChannelKind.EVENT, None)
             row = (
                 await db.execute(
                     select(GuildChannel).where(
                         GuildChannel.guild_id == 1,
                         GuildChannel.channel_id == 100,
-                        GuildChannel.kind == "event",
+                        GuildChannel.kind == ChannelKind.EVENT,
                     )
                 )
             ).scalar_one()
@@ -108,13 +108,13 @@ def test_rest_fallback_updates_name(monkeypatch):
 
     async def run() -> str | None:
         async with get_session() as db:
-            await cn.ensure_channel_name(db, 1, 100, "event", None)
+            await cn.ensure_channel_name(db, 1, 100, ChannelKind.EVENT, None)
             row = (
                 await db.execute(
                     select(GuildChannel.name).where(
                         GuildChannel.guild_id == 1,
                         GuildChannel.channel_id == 100,
-                        GuildChannel.kind == "event",
+                        GuildChannel.kind == ChannelKind.EVENT,
                     )
                 )
             ).scalar_one()
@@ -146,7 +146,7 @@ def test_retry_null_channel_names_logs_failure(caplog):
                     select(GuildChannel.name).where(
                         GuildChannel.guild_id == 1,
                         GuildChannel.channel_id == 100,
-                        GuildChannel.kind == "event",
+                        GuildChannel.kind == ChannelKind.EVENT,
                     )
                 )
             ).scalar_one()

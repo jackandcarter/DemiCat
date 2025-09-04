@@ -169,7 +169,7 @@ public class OfficerChatWindow : ChatWindow
 
     private class OfficerChannelListDto
     {
-        [JsonPropertyName("officer_chat")]
+        [JsonPropertyName(ChannelKind.OfficerChat)]
         public List<ChannelDto> Officer { get; set; } = new();
     }
 }

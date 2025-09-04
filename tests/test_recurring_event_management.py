@@ -17,7 +17,7 @@ http_pkg = types.ModuleType("demibot.http")
 http_pkg.__path__ = [str(root / "demibot/http")]
 sys.modules.setdefault("demibot.http", http_pkg)
 
-from demibot.db.models import Guild, GuildChannel, RecurringEvent
+from demibot.db.models import Guild, GuildChannel, RecurringEvent, ChannelKind
 from demibot.db.session import init_db, get_session
 from demibot.http.routes.events import (
     create_event,
@@ -38,7 +38,7 @@ async def _setup_db(path: Path) -> None:
     async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test")
         db.add(guild)
-        db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind="event"))
+        db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
         break
 

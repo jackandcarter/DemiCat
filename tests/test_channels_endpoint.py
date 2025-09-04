@@ -4,7 +4,7 @@ from pathlib import Path
 
 from sqlalchemy import select
 
-from demibot.db.models import Guild, GuildChannel
+from demibot.db.models import Guild, GuildChannel, ChannelKind
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
 from demibot.http.routes import channels as channel_routes
@@ -23,7 +23,7 @@ def _setup_db(path: str) -> None:
             db.add(guild)
             db.add(
                 GuildChannel(
-                    guild_id=guild.id, channel_id=100, kind="event", name="12345"
+                    guild_id=guild.id, channel_id=100, kind=ChannelKind.EVENT, name="12345"
                 )
             )
             await db.commit()
@@ -59,13 +59,13 @@ def test_get_channels_returns_placeholder_and_flags_retry(monkeypatch):
                     select(GuildChannel).where(
                         GuildChannel.guild_id == 1,
                         GuildChannel.channel_id == 100,
-                        GuildChannel.kind == "event",
+                        GuildChannel.kind == ChannelKind.EVENT,
                     )
                 )
             ).scalar_one()
             return data, row.name
 
     data, name = asyncio.run(run())
-    assert data["event"][0]["name"] == "100"
+    assert data[ChannelKind.EVENT.value][0]["name"] == "100"
     assert name is None
 

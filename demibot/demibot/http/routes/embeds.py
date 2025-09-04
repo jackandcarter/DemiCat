@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ...db.models import Embed, GuildChannel
+from ...db.models import Embed, GuildChannel, ChannelKind
 
 router = APIRouter(prefix="/api")
 
@@ -28,7 +28,7 @@ async def get_embeds(
     if "officer" not in ctx.roles:
         stmt = stmt.join(
             GuildChannel, GuildChannel.channel_id == Embed.channel_id
-        ).where(GuildChannel.kind != "officer_chat")
+        ).where(GuildChannel.kind != ChannelKind.OFFICER_CHAT)
     stmt = stmt.order_by(Embed.updated_at.desc())
     if limit is not None:
         stmt = stmt.limit(limit)
