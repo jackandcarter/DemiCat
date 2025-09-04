@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 from sqlalchemy import select
 
-from ...db.models import Presence as DbPresence
+from ...db.models import Presence as DbPresence, Membership
 from ...db.session import get_session
 from ...http.ws import manager
 from ..presence_store import Presence as StorePresence, set_presence
@@ -25,15 +25,28 @@ class PresenceTracker(commands.Cog):
 
     async def _update(self, member: discord.Member) -> dict[str, str | None]:
         role_ids = [r.id for r in member.roles if r.name != "@everyone"]
+        display_name = member.display_name or member.name
+        avatar_url = str(member.display_avatar.url)
         data = StorePresence(
             id=member.id,
-            name=member.display_name or member.name,
+            name=display_name,
             status=self._status(member),
-            avatar_url=str(member.display_avatar.url),
+            avatar_url=avatar_url,
             roles=role_ids,
         )
         set_presence(member.guild.id, data)
         async with get_session() as db:
+            mem_stmt = select(Membership).where(
+                Membership.guild_id == member.guild.id,
+                Membership.user_id == member.id,
+            )
+            mem_res = await db.execute(mem_stmt)
+            mem = mem_res.scalars().first()
+            if mem is None:
+                mem = Membership(guild_id=member.guild.id, user_id=member.id)
+                db.add(mem)
+            mem.nickname = display_name
+            mem.avatar_url = avatar_url
             stmt = select(DbPresence).where(
                 DbPresence.guild_id == member.guild.id,
                 DbPresence.user_id == member.id,
@@ -68,6 +81,15 @@ class PresenceTracker(commands.Cog):
 
     @commands.Cog.listener()
     async def on_presence_update(
+        self, before: discord.Member, after: discord.Member
+    ) -> None:
+        payload = await self._update(after)
+        await manager.broadcast_text(
+            json.dumps(payload), after.guild.id, path="/ws/presences"
+        )
+
+    @commands.Cog.listener()
+    async def on_member_update(
         self, before: discord.Member, after: discord.Member
     ) -> None:
         payload = await self._update(after)

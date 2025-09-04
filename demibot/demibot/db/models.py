@@ -156,6 +156,8 @@ class Membership(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), ForeignKey("users.id"))
+    nickname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    avatar_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
 
 class Role(Base):
