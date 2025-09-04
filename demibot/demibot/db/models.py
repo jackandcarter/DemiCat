@@ -106,7 +106,13 @@ class GuildChannel(Base):
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), primary_key=True)
     channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     kind: Mapped[ChannelKind] = mapped_column(
-        SAEnum(ChannelKind, validate_strings=True), primary_key=True
+        SAEnum(
+            ChannelKind,
+            name="channelkind",
+            values_callable=lambda enum: [e.value for e in enum],
+            validate_strings=True,
+        ),
+        primary_key=True,
     )
     name: Mapped[Optional[str]] = mapped_column(String(255))
     webhook_url: Mapped[Optional[str]] = mapped_column(String(255))
