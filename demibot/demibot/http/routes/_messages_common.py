@@ -25,7 +25,7 @@ from ..schemas import (
 from ..discord_helpers import serialize_message
 
 from ..ws import manager
-from ...db.models import Message
+from ...db.models import Message, Membership
 from ..discord_client import discord_client
 
 
@@ -160,6 +160,14 @@ async def save_message(
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
     channel = None
+    membership = await db.scalar(
+        select(Membership).where(
+            Membership.guild_id == ctx.guild.id,
+            Membership.user_id == ctx.user.id,
+        )
+    )
+    nickname = membership.nickname if membership else None
+    avatar = membership.avatar_url if membership else None
     if discord_client:
         channel = discord_client.get_channel(channel_id)
     if channel and isinstance(channel, discord.abc.Messageable):
@@ -182,14 +190,19 @@ async def save_message(
                 for f in files:
                     data = await f.read()
                     discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
-            username_base = ctx.user.global_name or ("Officer" if is_officer else "Player")
+            username_base = nickname or (
+                ctx.user.global_name or ("Officer" if is_officer else "Player")
+            )
             username = f"{username_base}@FFXIV FC"
             if body.use_character_name and ctx.user.character_name:
-                username = f"{username_base} / {ctx.user.character_name}@FFXIV FC"
+                username = (
+                    f"{username_base} / {ctx.user.character_name}@FFXIV FC"
+                )
             try:
                 sent = await webhook.send(
                     body.content,
                     username=username,
+                    avatar_url=avatar,
                     files=discord_files,
                     wait=True,
                 )
@@ -216,13 +229,16 @@ async def save_message(
                 )
                 for f in files
             ]
-    display_name = ctx.user.global_name or ("Officer" if is_officer else "Player")
+    display_name_base = nickname or (
+        ctx.user.global_name or ("Officer" if is_officer else "Player")
+    )
+    display_name = display_name_base
     if body.use_character_name and ctx.user.character_name:
-        display_name = f"{ctx.user.character_name} ({display_name})"
+        display_name = f"{ctx.user.character_name} ({display_name_base})"
     author = MessageAuthor(
         id=str(ctx.user.id),
         name=display_name,
-        avatar_url=None,
+        avatar_url=avatar,
         use_character_name=body.use_character_name,
     )
 

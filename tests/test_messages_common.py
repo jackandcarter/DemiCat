@@ -5,7 +5,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select
 
-from demibot.db.models import Guild, User, Message
+from demibot.db.models import Guild, User, Message, Membership
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
 from demibot.http.routes import _messages_common as mc, messages as routes
@@ -21,6 +21,14 @@ def test_save_and_fetch_messages(monkeypatch):
         async with get_session() as db:
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
+            db.add(
+                Membership(
+                    guild_id=1,
+                    user_id=1,
+                    nickname="AliceNick",
+                    avatar_url="http://example.com/avatar.png",
+                )
+            )
             await db.commit()
             guild = await db.get(Guild, 1)
             user = await db.get(User, 1)
@@ -39,11 +47,15 @@ def test_save_and_fetch_messages(monkeypatch):
 
             msg = (await db.execute(select(Message))).scalar_one()
             assert msg.is_officer is False
+            assert msg.author_name == "AliceNick"
+            assert msg.author_avatar_url == "http://example.com/avatar.png"
 
             assert calls and calls[0][2] is False and calls[0][3] == "/ws/messages"
 
             data = await mc.fetch_messages("123", ctx, db, is_officer=False)
             assert len(data) == 1 and data[0]["content"] == "hello"
+            assert data[0]["authorName"] == "AliceNick"
+            assert data[0]["authorAvatarUrl"] == "http://example.com/avatar.png"
             break
 
     asyncio.run(_run())
