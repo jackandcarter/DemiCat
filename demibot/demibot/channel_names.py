@@ -79,14 +79,14 @@ async def ensure_channel_name(
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
-                logging.warning(
-                    "Failed to fetch channel %s (%s) in guild %s: HTTP %s",
-                    channel_id,
-                    kind.value,
-                    guild_id,
-                    resp.status,
-                )
-                return None
+                        logging.warning(
+                            "Failed to fetch channel %s (%s) in guild %s: HTTP %s",
+                            channel_id,
+                            kind.value,
+                            guild_id,
+                            resp.status,
+                        )
+                        return None
                     data = await resp.json()
         except Exception as exc:  # pragma: no cover - network errors
             logging.warning(
@@ -140,7 +140,6 @@ async def resync_channel_names_once() -> None:
             await db.commit()
             for guild_id in updated_guilds:
                 await manager.broadcast_text("update", guild_id, path="/ws/channels")
-        break
 
 
 async def retry_null_channel_names(max_attempts: int = 3) -> None:
@@ -186,7 +185,6 @@ async def retry_null_channel_names(max_attempts: int = 3) -> None:
                 guild_id,
                 max_attempts,
             )
-        break
 
 
 SYNC_INTERVAL = 3600

@@ -21,7 +21,6 @@ async def prune_syncshell_once() -> None:
             delete(SyncshellRateLimit).where(SyncshellRateLimit.window_start < cutoff)
         )
         await db.commit()
-        break
 
 
 async def prune_syncshell() -> None:
