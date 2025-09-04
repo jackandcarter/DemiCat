@@ -138,7 +138,6 @@ async def download_asset(
             )
             if res.scalar_one_or_none() is None:
                 raise HTTPException(status_code=404)
-            break
     base = Path(os.environ.get("ASSET_STORAGE_PATH", "assets")).resolve()
     file_path = (base / object_key).resolve()
     if not str(file_path).startswith(str(base)) or not file_path.is_file():
