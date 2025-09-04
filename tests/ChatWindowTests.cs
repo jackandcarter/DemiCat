@@ -13,4 +13,16 @@ public class ChatWindowTests
 
         Assert.Equal(expected, result);
     }
+
+    [Fact]
+    public void MentionResolver_ReplacesUserAndRoleMentions()
+    {
+        var presences = new[] { new PresenceDto { Id = "1", Name = "Alice" } };
+        var roles = new[] { new RoleDto { Id = "2", Name = "Admin" } };
+        var input = "Hello @Alice and @Admin";
+
+        var result = MentionResolver.Resolve(input, presences, roles);
+
+        Assert.Equal("Hello <@1> and <@&2>", result);
+    }
 }
