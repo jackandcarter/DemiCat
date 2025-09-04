@@ -72,6 +72,10 @@ public class RequestWatcher : IDisposable
                     PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
                 }
             }
+            catch (OperationCanceledException)
+            {
+                // Swallow cancellation during shutdown
+            }
             catch (Exception ex)
             {
                 if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message.Contains("403"))
@@ -85,6 +89,9 @@ public class RequestWatcher : IDisposable
                 _ws?.Dispose();
                 _ws = null;
             }
+            if (token.IsCancellationRequested)
+                break;
+
             try { await RequestStateService.RefreshAll(_httpClient, _config); } catch { }
             try { await Task.Delay(delay, token); } catch { }
             delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
@@ -174,6 +181,8 @@ public class RequestWatcher : IDisposable
     public void Dispose()
     {
         _cts?.Cancel();
+        try { _task?.GetAwaiter().GetResult(); } catch { }
         _ws?.Dispose();
+        _cts?.Dispose();
     }
 }
