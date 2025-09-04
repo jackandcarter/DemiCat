@@ -1,12 +1,13 @@
 import asyncio
 import types
 from typing import List, Tuple
+from datetime import datetime
 
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
-from demibot.db.models import Guild, User, Message, Membership
+from demibot.db.models import Guild, User, Message, Membership, GuildChannel
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
 import importlib.util
@@ -230,6 +231,122 @@ def test_save_message_webhook_failure(monkeypatch):
             assert exc.value.status_code == 502
             result = await db.execute(select(Message))
             assert result.first() is None
+
+    asyncio.run(_run())
+
+
+def test_webhook_cache_persist_and_load(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=6, discord_guild_id=6, name="Guild"))
+            db.add(User(id=6, discord_user_id=60, global_name="Alice"))
+            db.add(
+                Membership(
+                    guild_id=6,
+                    user_id=6,
+                    nickname="AliceNick",
+                    avatar_url="http://example.com/avatar.png",
+                )
+            )
+            await db.commit()
+            guild = await db.get(Guild, 6)
+            user = await db.get(User, 6)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            create_calls = 0
+            send_calls = 0
+
+            async def dummy_broadcast(message: str, guild_id: int, officer_only: bool = False, path: str | None = None):
+                pass
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    nonlocal send_calls
+                    send_calls += 1
+                    return types.SimpleNamespace(id=send_calls, attachments=[])
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    nonlocal create_calls
+                    create_calls += 1
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+
+            def fake_serialize_message(message):
+                dto = types.SimpleNamespace(
+                    id=str(message.id),
+                    channel_id=str(message.channel.id),
+                    author_name="AliceNick",
+                    author_avatar_url="http://example.com/avatar.png",
+                    timestamp=datetime.utcnow(),
+                    content=message.content,
+                    attachments=[],
+                    mentions=[],
+                    author=types.SimpleNamespace(
+                        name="AliceNick", avatar_url="http://example.com/avatar.png"
+                    ),
+                    embeds=[],
+                    reference=None,
+                    components=[],
+                    reactions=[],
+                    edited_timestamp=None,
+                    model_dump=lambda: {},
+                    model_dump_json=lambda: "{}",
+                )
+                fragments = {
+                    "author_json": "{}",
+                    "attachments_json": "[]",
+                    "mentions_json": "[]",
+                    "embeds_json": "[]",
+                    "reference_json": "null",
+                    "components_json": "[]",
+                    "reactions_json": "[]",
+                }
+                return dto, fragments
+
+            monkeypatch.setattr(mc, "serialize_message", fake_serialize_message)
+
+            body = mc.PostBody(channelId="321", content="hello")
+            res = await mc.save_message(body, ctx, db, is_officer=False)
+            assert res["ok"] is True
+
+            stored = await db.scalar(
+                select(GuildChannel.webhook_url).where(
+                    GuildChannel.guild_id == guild.id,
+                    GuildChannel.channel_id == 321,
+                )
+            )
+            assert stored == "http://example.com"
+
+            mc._channel_webhooks.clear()
+            await mc.load_webhook_cache(db)
+            assert mc._channel_webhooks[321] == "http://example.com"
+
+            monkeypatch.setattr(
+                mc.discord.Webhook,
+                "from_url",
+                lambda url, client=None: DummyWebhook(),
+            )
+
+            body2 = mc.PostBody(channelId="321", content="again")
+            res2 = await mc.save_message(body2, ctx, db, is_officer=False)
+            assert res2["ok"] is True
+            assert create_calls == 1
 
     asyncio.run(_run())
 
