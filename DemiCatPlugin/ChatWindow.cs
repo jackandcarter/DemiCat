@@ -149,7 +149,9 @@ public class ChatWindow : IDisposable
         {
             ImGui.PushID(msg.Id);
             ImGui.BeginGroup();
-            if (!string.IsNullOrEmpty(msg.Author.AvatarUrl) && msg.AvatarTexture == null)
+            if (msg.Author != null &&
+                !string.IsNullOrEmpty(msg.Author.AvatarUrl) &&
+                msg.AvatarTexture == null)
             {
                 LoadTexture(msg.Author.AvatarUrl, t => msg.AvatarTexture = t);
             }
