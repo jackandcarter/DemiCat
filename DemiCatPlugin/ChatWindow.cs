@@ -543,10 +543,13 @@ public class ChatWindow : IDisposable
         try
         {
             // Build request body (includes reply threading if set)
+            var presences = _presence?.Presences ?? new List<PresenceDto>();
+            var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles);
+
             var body = new
             {
                 channelId = _channelId,
-                content = _input,
+                content,
                 useCharacterName = _useCharacterName,
                 messageReference = _replyToId != null
                     ? new { messageId = _replyToId, channelId = _channelId }

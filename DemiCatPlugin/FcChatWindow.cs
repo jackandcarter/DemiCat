@@ -5,7 +5,6 @@ using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text;
 using System.IO;
-using System.Text.RegularExpressions;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -128,16 +127,8 @@ public class FcChatWindow : ChatWindow
             return;
         }
 
-        var content = _input;
         var presences = _presence?.Presences ?? new List<PresenceDto>();
-        foreach (var u in presences)
-        {
-            content = Regex.Replace(content, $"@{Regex.Escape(u.Name)}\\b", $"<@{u.Id}>");
-        }
-        foreach (var r in RoleCache.Roles)
-        {
-            content = Regex.Replace(content, $"@{Regex.Escape(r.Name)}\\b", $"<@&{r.Id}>");
-        }
+        var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles);
 
         try
         {
