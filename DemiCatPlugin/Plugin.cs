@@ -99,16 +99,16 @@ public class Plugin : IDalamudPlugin
         _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
 
-        _httpClient.Dispose();
+        _channelWatcher.Dispose();
+        _requestWatcher.Dispose();
         _presenceSidebar?.Dispose();
         _presenceService?.Dispose();
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();
         _mainWindow.Dispose();
         _ui.DisposeAsync().GetAwaiter().GetResult();
-        _channelWatcher.Dispose();
-        _requestWatcher.Dispose();
         _settings.Dispose();
+        _httpClient.Dispose();
     }
 
     private async Task<bool> RefreshRoles(IPluginLog log)

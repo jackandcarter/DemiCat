@@ -92,6 +92,10 @@ public class ChannelWatcher : IDisposable
                     PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
                 }
             }
+            catch (OperationCanceledException)
+            {
+                // Swallow cancellation during shutdown
+            }
             catch (Exception ex)
             {
                 if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message.Contains("403"))
@@ -105,6 +109,9 @@ public class ChannelWatcher : IDisposable
                 _ws?.Dispose();
                 _ws = null;
             }
+            if (token.IsCancellationRequested)
+                break;
+
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _ = SafeRefresh(_ui.RefreshChannels);
@@ -159,6 +166,8 @@ public class ChannelWatcher : IDisposable
     public void Dispose()
     {
         _cts?.Cancel();
+        try { _task?.GetAwaiter().GetResult(); } catch { }
         _ws?.Dispose();
+        _cts?.Dispose();
     }
 }
