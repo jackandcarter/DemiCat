@@ -109,6 +109,7 @@ class GuildChannel(Base):
         SAEnum(ChannelKind, validate_strings=True), primary_key=True
     )
     name: Mapped[Optional[str]] = mapped_column(String(255))
+    webhook_url: Mapped[Optional[str]] = mapped_column(String(255))
 
 
 class User(Base):
