@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Any
 
 import discord
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
 from sqlalchemy import select, delete
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -30,7 +29,7 @@ class FieldBody(BaseModel):
 class CreateEventBody(BaseModel):
     channel_id: str = Field(alias="channelId")
     title: str
-    time: str
+    time: datetime | None = None
     description: str
     url: Optional[str] = None
     image_url: Optional[str] = Field(default=None, alias="imageUrl")
@@ -43,6 +42,35 @@ class CreateEventBody(BaseModel):
     repeat: Optional[str] = None
     embeds: List[dict] | None = None
     attachments: List[AttachmentDto] | None = None
+
+    @field_validator("time", mode="before")
+    @classmethod
+    def _parse_time(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            s = value.replace("Z", "+00:00")
+            if "." in s:
+                head, tail = s.split(".", 1)
+                if "+" in tail:
+                    frac, tz = tail.split("+", 1)
+                    s = f"{head}.{frac[:6]}+{tz}"
+                elif "-" in tail:
+                    frac, tz = tail.split("-", 1)
+                    s = f"{head}.{frac[:6]}-{tz}"
+                else:
+                    s = f"{head}.{tail[:6]}"
+            try:
+                dt = datetime.fromisoformat(s)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid time format")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
 
 
 @router.post("/events")
@@ -59,23 +87,9 @@ async def create_event(
                 EmbedButtonDto(label=tag.capitalize(), custom_id=f"rsvp:{tag}")
             )
     if body.time:
-        time_str = body.time.replace("Z", "+00:00")
-        if "." in time_str:
-            head, tail = time_str.split(".", 1)
-            if "+" in tail:
-                frac, tz = tail.split("+", 1)
-                time_str = f"{head}.{frac[:6]}+{tz}"
-            elif "-" in tail:
-                frac, tz = tail.split("-", 1)
-                time_str = f"{head}.{frac[:6]}-{tz}"
-            else:
-                time_str = f"{head}.{tail[:6]}"
-        try:
-            ts = datetime.fromisoformat(time_str)
-        except ValueError:
-            return JSONResponse({"error": "Invalid time format"}, status_code=400)
+        ts = body.time
     else:
-        ts = datetime.utcnow()
+        ts = datetime.now(timezone.utc)
 
     mention_ids = [int(m) for m in body.mentions or []]
 
@@ -279,7 +293,36 @@ async def list_events(
 
 class RepeatPatchBody(BaseModel):
     repeat: Optional[str] = None
-    time: Optional[str] = None
+    time: datetime | None = None
+
+    @field_validator("time", mode="before")
+    @classmethod
+    def _parse_time(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, datetime):
+            dt = value
+        else:
+            s = value.replace("Z", "+00:00")
+            if "." in s:
+                head, tail = s.split(".", 1)
+                if "+" in tail:
+                    frac, tz = tail.split("+", 1)
+                    s = f"{head}.{frac[:6]}+{tz}"
+                elif "-" in tail:
+                    frac, tz = tail.split("-", 1)
+                    s = f"{head}.{frac[:6]}-{tz}"
+                else:
+                    s = f"{head}.{tail[:6]}"
+            try:
+                dt = datetime.fromisoformat(s)
+            except ValueError:
+                raise HTTPException(status_code=400, detail="Invalid time format")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        else:
+            dt = dt.astimezone(timezone.utc)
+        return dt
 
 
 @router.get("/events/repeat")
@@ -323,22 +366,7 @@ async def update_recurring_event(
     if body.repeat in ("daily", "weekly"):
         ev.repeat = body.repeat
     if body.time:
-        time_str = body.time.replace("Z", "+00:00")
-        if "." in time_str:
-            head, tail = time_str.split(".", 1)
-            if "+" in tail:
-                frac, tz = tail.split("+", 1)
-                time_str = f"{head}.{frac[:6]}+{tz}"
-            elif "-" in tail:
-                frac, tz = tail.split("-", 1)
-                time_str = f"{head}.{frac[:6]}-{tz}"
-            else:
-                time_str = f"{head}.{tail[:6]}"
-        try:
-            ts = datetime.fromisoformat(time_str)
-        except ValueError:
-            raise HTTPException(status_code=400, detail="Invalid time format")
-        ev.next_post_at = ts
+        ev.next_post_at = body.time
     await db.commit()
     return {"ok": True}
 

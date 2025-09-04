@@ -252,7 +252,7 @@ public class TemplatesWindow
                 channelId = _channelId,
                 title = tmpl.Title,
                 time = string.IsNullOrWhiteSpace(tmpl.Time)
-                    ? DateTime.UtcNow.ToString("yyyy-MM-dd'T'HH:mm:ss.ffffff'Z'")
+                    ? DateTime.UtcNow.ToString("O")
                     : tmpl.Time,
                 description = tmpl.Description,
                 url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
