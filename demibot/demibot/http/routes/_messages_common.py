@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 import io
 import types
+import logging
 
 import discord
 from fastapi import HTTPException, UploadFile
@@ -206,8 +207,12 @@ async def save_message(
                     files=discord_files,
                     wait=True,
                 )
-                discord_msg_id = sent.id
-                if sent.attachments:
+                discord_msg_id = getattr(sent, "id", None)
+                if discord_msg_id is None:
+                    logging.warning(
+                        "webhook.send returned no id for channel %s", channel_id
+                    )
+                elif sent.attachments:
                     attachments = [
                         AttachmentDto(
                             url=a.url,
@@ -217,18 +222,13 @@ async def save_message(
                         for a in sent.attachments
                     ]
             except Exception:
+                logging.exception("webhook.send failed for channel %s", channel_id)
                 discord_msg_id = None
     if discord_msg_id is None:
-        discord_msg_id = int(datetime.utcnow().timestamp() * 1000)
-        if files:
-            attachments = [
-                AttachmentDto(
-                    url=f"attachment://{f.filename}",
-                    filename=f.filename,
-                    contentType=f.content_type,
-                )
-                for f in files
-            ]
+        logging.warning(
+            "Failed to relay message to Discord for channel %s", channel_id
+        )
+        raise HTTPException(status_code=502, detail="Failed to relay message to Discord")
     display_name_base = nickname or (
         ctx.user.global_name or ("Officer" if is_officer else "Player")
     )

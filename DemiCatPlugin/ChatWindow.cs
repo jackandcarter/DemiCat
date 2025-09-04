@@ -584,7 +584,18 @@ public class ChatWindow : IDisposable
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to send message. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
+                var msg = "Failed to send message";
+                try
+                {
+                    using var doc = JsonDocument.Parse(responseBody);
+                    if (doc.RootElement.TryGetProperty("detail", out var detail))
+                        msg = detail.GetString() ?? msg;
+                }
+                catch
+                {
+                    // ignore parse errors
+                }
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = msg);
             }
         }
         catch (Exception ex)

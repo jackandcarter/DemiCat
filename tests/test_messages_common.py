@@ -1,14 +1,44 @@
 import asyncio
+import types
 from typing import List, Tuple
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from demibot.db.models import Guild, User, Message, Membership
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
-from demibot.http.routes import _messages_common as mc, messages as routes
+import importlib.util
+import pathlib
+import demibot.http.schemas  # ensure pydantic models are registered
+import sys
+import types
+
+sys.modules.setdefault("demibot.http.routes", types.ModuleType("demibot.http.routes"))
+
+spec = importlib.util.spec_from_file_location(
+    "demibot.http.routes._messages_common",
+    pathlib.Path("demibot/demibot/http/routes/_messages_common.py"),
+)
+mc = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mc)  # type: ignore
+mc.PostBody.model_rebuild(
+    _types_namespace={"MessageReferenceDto": mc.MessageReferenceDto}
+)
+mc.ChatMessage.model_config["populate_by_name"] = True
+mc.MessageAuthor.model_config["populate_by_name"] = True
+mc.ChatMessage.model_rebuild(
+    _types_namespace={
+        "AttachmentDto": mc.AttachmentDto,
+        "Mention": mc.Mention,
+        "MessageAuthor": mc.MessageAuthor,
+        "EmbedDto": mc.EmbedDto,
+        "MessageReferenceDto": mc.MessageReferenceDto,
+        "ButtonComponentDto": mc.ButtonComponentDto,
+        "ReactionDto": mc.ReactionDto,
+    }
+)
 
 
 class DummyKey:
@@ -19,6 +49,10 @@ def test_save_and_fetch_messages(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             db.add(
@@ -41,6 +75,24 @@ def test_save_and_fetch_messages(monkeypatch):
 
             monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
 
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    return types.SimpleNamespace(id=1, attachments=[])
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
             body = mc.PostBody(channelId="123", content="hello")
             res = await mc.save_message(body, ctx, db, is_officer=False)
             assert res["ok"] is True
@@ -56,7 +108,6 @@ def test_save_and_fetch_messages(monkeypatch):
             assert len(data) == 1 and data[0]["content"] == "hello"
             assert data[0]["authorName"] == "AliceNick"
             assert data[0]["authorAvatarUrl"] == "http://example.com/avatar.png"
-            break
 
     asyncio.run(_run())
 
@@ -65,11 +116,15 @@ def test_officer_flow(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
-            db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
-            db.add(User(id=1, discord_user_id=10, global_name="Alice"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=2, discord_guild_id=2, name="Guild"))
+            db.add(User(id=2, discord_user_id=20, global_name="Alice"))
             await db.commit()
-            guild = await db.get(Guild, 1)
-            user = await db.get(User, 1)
+            guild = await db.get(Guild, 2)
+            user = await db.get(User, 2)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=["officer"])
 
             calls: List[Tuple[str, int, bool, str | None]] = []
@@ -78,6 +133,24 @@ def test_officer_flow(monkeypatch):
                 calls.append((message, guild_id, officer_only, path))
 
             monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    return types.SimpleNamespace(id=2, attachments=[])
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             body = mc.PostBody(channelId="123", content="secret")
             res = await mc.save_message(body, ctx, db, is_officer=True)
@@ -90,7 +163,6 @@ def test_officer_flow(monkeypatch):
 
             data = await mc.fetch_messages("123", ctx, db, is_officer=True)
             assert len(data) == 1 and data[0]["content"] == "secret"
-            break
 
     asyncio.run(_run())
 
@@ -99,11 +171,15 @@ def test_officer_requires_role(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
-            db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
-            db.add(User(id=1, discord_user_id=10, global_name="Alice"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=3, discord_guild_id=3, name="Guild"))
+            db.add(User(id=3, discord_user_id=30, global_name="Alice"))
             await db.commit()
-            guild = await db.get(Guild, 1)
-            user = await db.get(User, 1)
+            guild = await db.get(Guild, 3)
+            user = await db.get(User, 3)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
 
             body = mc.PostBody(channelId="123", content="secret")
@@ -111,7 +187,49 @@ def test_officer_requires_role(monkeypatch):
                 await mc.save_message(body, ctx, db, is_officer=True)
             with pytest.raises(HTTPException):
                 await mc.fetch_messages("123", ctx, db, is_officer=True)
-            break
+
+    asyncio.run(_run())
+
+
+def test_save_message_webhook_failure(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=4, discord_guild_id=4, name="Guild"))
+            db.add(User(id=4, discord_user_id=40, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 4)
+            user = await db.get(User, 4)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    raise RuntimeError("fail")
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="123", content="oops")
+            with pytest.raises(HTTPException) as exc:
+                await mc.save_message(body, ctx, db, is_officer=False)
+            assert exc.value.status_code == 502
+            result = await db.execute(select(Message))
+            assert result.first() is None
 
     asyncio.run(_run())
 
@@ -120,11 +238,15 @@ def test_fetch_messages_pagination():
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
-            db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
-            db.add(User(id=1, discord_user_id=10, global_name="Alice"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=5, discord_guild_id=5, name="Guild"))
+            db.add(User(id=5, discord_user_id=50, global_name="Alice"))
             await db.commit()
-            guild = await db.get(Guild, 1)
-            user = await db.get(User, 1)
+            guild = await db.get(Guild, 5)
+            user = await db.get(User, 5)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
             for i in range(1, 11):
                 db.add(
@@ -161,10 +283,7 @@ def test_fetch_messages_pagination():
             )
             assert msgs == []
 
-            data = await routes.get_messages(
-                "123", limit=2, ctx=ctx, db=db
-            )
+            data = await mc.fetch_messages("123", ctx, db, is_officer=False, limit=2)
             assert [int(m["id"]) for m in data] == [9, 10]
-            break
 
     asyncio.run(_run())
