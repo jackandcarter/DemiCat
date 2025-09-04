@@ -44,33 +44,18 @@ class ApolloHelper:
         return False
 
 
-CHANNEL_SYNC_INTERVAL = 3600
-
-
 class Mirror(commands.Cog):
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
-        self._sync_task: asyncio.Task | None = None
         self._reconcile_lock = asyncio.Lock()
 
     async def cog_load(self) -> None:
         self.bot.loop.create_task(self._sync_guild_channels_once())
-        self._sync_task = asyncio.create_task(self._channel_sync_loop())
 
     async def _sync_guild_channels_once(self) -> None:
         if hasattr(self.bot, "wait_until_ready"):
             await self.bot.wait_until_ready()
         await self._reconcile_channels()
-
-    async def _channel_sync_loop(self) -> None:
-        if hasattr(self.bot, "wait_until_ready"):
-            await self.bot.wait_until_ready()
-        while True:
-            await asyncio.sleep(CHANNEL_SYNC_INTERVAL)
-            try:
-                await self._reconcile_channels()
-            except Exception:
-                logging.exception("Guild channel sync failed")
 
     async def _reconcile_channels(self) -> None:
         async with self._reconcile_lock:
@@ -128,11 +113,79 @@ class Mirror(commands.Cog):
                 except IntegrityError:
                     await db.rollback()
                     logging.exception("Guild channel reconciliation failed")
-                break
 
     def cog_unload(self) -> None:
-        if self._sync_task is not None:
-            self._sync_task.cancel()
+        pass
+
+    @commands.Cog.listener()
+    async def on_guild_channel_create(
+        self, channel: discord.abc.GuildChannel
+    ) -> None:
+        if not hasattr(channel, "name"):
+            return
+        async with get_session() as db:
+            result = await db.execute(
+                select(Guild).where(Guild.discord_guild_id == channel.guild.id)
+            )
+            db_guild = result.scalar_one_or_none()
+            if db_guild is None:
+                db_guild = Guild(discord_guild_id=channel.guild.id, name=channel.guild.name)
+                db.add(db_guild)
+                await db.flush()
+
+            existing = await db.get(
+                GuildChannel, (db_guild.id, channel.id, ChannelKind.CHAT)
+            )
+            if existing is None:
+                db.add(
+                    GuildChannel(
+                        guild_id=db_guild.id,
+                        channel_id=channel.id,
+                        kind=ChannelKind.CHAT,
+                        name=channel.name,
+                    )
+                )
+            else:
+                existing.name = channel.name
+            await db.commit()
+            guild_id = db_guild.id
+        await manager.broadcast_text("update", guild_id, path="/ws/channels")
+
+    @commands.Cog.listener()
+    async def on_guild_channel_update(
+        self, before: discord.abc.GuildChannel, after: discord.abc.GuildChannel
+    ) -> None:
+        if not hasattr(after, "name"):
+            return
+        async with get_session() as db:
+            result = await db.execute(
+                select(GuildChannel).where(GuildChannel.channel_id == after.id)
+            )
+            rows = result.scalars().all()
+            if not rows:
+                return
+            for row in rows:
+                row.name = after.name
+            guild_id = rows[0].guild_id
+            await db.commit()
+        await manager.broadcast_text("update", guild_id, path="/ws/channels")
+
+    @commands.Cog.listener()
+    async def on_guild_channel_delete(
+        self, channel: discord.abc.GuildChannel
+    ) -> None:
+        async with get_session() as db:
+            result = await db.execute(
+                select(GuildChannel).where(GuildChannel.channel_id == channel.id)
+            )
+            rows = result.scalars().all()
+            if not rows:
+                return
+            guild_id = rows[0].guild_id
+            for row in rows:
+                await db.delete(row)
+            await db.commit()
+        await manager.broadcast_text("update", guild_id, path="/ws/channels")
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message) -> None:
@@ -197,7 +250,6 @@ class Mirror(commands.Cog):
                     stored = True
                 if stored:
                     await db.commit()
-                break
             return
 
         if message.author.bot:
@@ -248,7 +300,6 @@ class Mirror(commands.Cog):
                 officer_only=is_officer,
                 path="/ws/messages",
             )
-            break
 
     @commands.Cog.listener()
     async def on_message_edit(
@@ -336,7 +387,6 @@ class Mirror(commands.Cog):
                     officer_only=is_officer,
                     path="/ws/messages",
                 )
-            break
 
     @commands.Cog.listener()
     async def on_reaction_add(
@@ -347,7 +397,7 @@ class Mirror(commands.Cog):
         async with get_session() as db:
             msg = await db.get(Message, reaction.message.id)
             if msg is None:
-                break
+                return
 
             reactions_json = None
             try:
@@ -366,7 +416,7 @@ class Mirror(commands.Cog):
                 officer_only=msg.is_officer,
                 path="/ws/messages",
             )
-            break
+        return
 
     @commands.Cog.listener()
     async def on_reaction_remove(
@@ -377,7 +427,7 @@ class Mirror(commands.Cog):
         async with get_session() as db:
             msg = await db.get(Message, reaction.message.id)
             if msg is None:
-                break
+                return
 
             reactions_json = None
             try:
@@ -396,7 +446,7 @@ class Mirror(commands.Cog):
                 officer_only=msg.is_officer,
                 path="/ws/messages",
             )
-            break
+        return
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message) -> None:
@@ -421,12 +471,24 @@ class Mirror(commands.Cog):
                     await db.delete(emb_row)
                     await db.commit()
 
-                await manager.broadcast_text(
-                    json.dumps({"deletedId": str(message.id)}),
-                    guild_id,
-                    officer_only=is_officer,
-                    path="/ws/embeds",
-                )
+                    await manager.broadcast_text(
+                        json.dumps({"deletedId": str(message.id)}),
+                        guild_id,
+                        officer_only=is_officer,
+                        path="/ws/embeds",
+                    )
+                else:
+                    msg = await db.get(Message, message.id)
+                    if msg is not None:
+                        await db.delete(msg)
+                        await db.commit()
+
+                    await manager.broadcast_text(
+                        json.dumps({"deletedId": str(message.id)}),
+                        guild_id,
+                        officer_only=is_officer,
+                        path="/ws/messages",
+                    )
             else:
                 msg = await db.get(Message, message.id)
                 if msg is not None:
@@ -439,7 +501,6 @@ class Mirror(commands.Cog):
                     officer_only=is_officer,
                     path="/ws/messages",
                 )
-            break
 
 
 async def setup(bot: commands.Bot) -> None:
