@@ -49,7 +49,6 @@ async def process_recurring_events_once() -> None:
                 elif ev.repeat == "weekly":
                     ev.next_post_at += timedelta(days=7)
         await db.commit()
-        break
 
 
 async def recurring_event_poster() -> None:
