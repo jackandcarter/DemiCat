@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..ws import manager
-from ...db.models import Attendance, Embed, EventButton, GuildChannel, User
+from ...db.models import Attendance, Embed, EventButton, GuildChannel, User, ChannelKind
 
 router = APIRouter(prefix="/api")
 
@@ -128,7 +128,7 @@ async def post_interaction(
         await manager.broadcast_text(
             json.dumps(payload),
             embed.guild_id,
-            officer_only=kind == "officer_chat",
+            officer_only=kind == ChannelKind.OFFICER_CHAT,
             path="/ws/embeds",
         )
 

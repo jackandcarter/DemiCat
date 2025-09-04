@@ -9,7 +9,7 @@ from discord.ext import commands
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from ...db.models import Embed, Guild, GuildChannel, Message
+from ...db.models import Embed, Guild, GuildChannel, Message, ChannelKind
 from ...db.session import get_session
 from ...http.schemas import EmbedButtonDto, EmbedDto
 from ...http.discord_helpers import (
@@ -118,7 +118,7 @@ class Mirror(commands.Cog):
                                     GuildChannel(
                                         guild_id=db_guild.id,
                                         channel_id=ch.id,
-                                        kind="chat",
+                                        kind=ChannelKind.CHAT,
                                         name=ch.name,
                                     )
                                 )
@@ -157,7 +157,7 @@ class Mirror(commands.Cog):
                     return  # channel not registered
 
                 kind, guild_id = row
-                is_officer = kind == "officer_chat"
+                is_officer = kind == ChannelKind.OFFICER_CHAT
 
                 stored = False
                 buttons = extract_embed_buttons(message)
@@ -214,7 +214,7 @@ class Mirror(commands.Cog):
                 return  # channel not registered
 
             kind, guild_id = row
-            is_officer = kind == "officer_chat"
+            is_officer = kind == ChannelKind.OFFICER_CHAT
 
             # Persist and broadcast the message
             dto, fragments = serialize_message(message)
@@ -267,7 +267,7 @@ class Mirror(commands.Cog):
                 return  # channel not registered
 
             kind, guild_id = row
-            is_officer = kind == "officer_chat"
+            is_officer = kind == ChannelKind.OFFICER_CHAT
 
             if after.author.bot:
                 emb_row = await db.get(Embed, after.id)
@@ -413,7 +413,7 @@ class Mirror(commands.Cog):
                 return  # channel not registered
 
             kind, guild_id = row
-            is_officer = kind == "officer_chat"
+            is_officer = kind == ChannelKind.OFFICER_CHAT
 
             if message.author.bot:
                 emb_row = await db.get(Embed, message.id)

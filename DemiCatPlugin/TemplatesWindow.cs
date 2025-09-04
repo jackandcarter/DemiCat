@@ -190,7 +190,7 @@ public class TemplatesWindow
 
     private class ChannelListDto
     {
-        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
+        [JsonPropertyName(ChannelKind.Event)] public List<ChannelDto> Event { get; set; } = new();
     }
 
     private EmbedDto ToEmbedDto(Template tmpl)

@@ -15,7 +15,7 @@ from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto, AttachmentDto
 from ..ws import manager
 from ..discord_client import discord_client
-from ...db.models import Embed, EventButton, GuildChannel, RecurringEvent
+from ...db.models import Embed, EventButton, GuildChannel, RecurringEvent, ChannelKind
 from models.event import Event
 
 router = APIRouter(prefix="/api")
@@ -243,14 +243,14 @@ async def create_event(
             select(GuildChannel.kind).where(
                 GuildChannel.guild_id == ctx.guild.id,
                 GuildChannel.channel_id == channel_id,
-                GuildChannel.kind == "officer_chat",
+                GuildChannel.kind == ChannelKind.OFFICER_CHAT,
             )
         )
     ).scalar_one_or_none()
     await manager.broadcast_text(
         json.dumps(dto.model_dump(mode="json")),
         ctx.guild.id,
-        officer_only=kind == "officer_chat",
+        officer_only=kind == ChannelKind.OFFICER_CHAT,
         path="/ws/embeds",
     )
     return {"ok": True, "id": eid}

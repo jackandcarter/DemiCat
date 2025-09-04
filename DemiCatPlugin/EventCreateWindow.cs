@@ -635,7 +635,7 @@ public class EventCreateWindow
 
     private class ChannelListDto
     {
-        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
+        [JsonPropertyName(ChannelKind.Event)] public List<ChannelDto> Event { get; set; } = new();
     }
 
     private class RepeatSchedule

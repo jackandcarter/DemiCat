@@ -12,7 +12,7 @@ demibot_pkg = types.ModuleType("demibot")
 demibot_pkg.__path__ = [str(root / "demibot")]
 sys.modules.setdefault("demibot", demibot_pkg)
 
-from demibot.db.models import Embed, Guild, GuildChannel
+from demibot.db.models import Embed, Guild, GuildChannel, ChannelKind
 from demibot.db.session import init_db, get_session
 from demibot.http.routes.embeds import get_embeds
 
@@ -25,8 +25,8 @@ async def _run_test() -> None:
     async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test")
         db.add(guild)
-        db.add(GuildChannel(guild_id=guild.id, channel_id=10, kind="event"))
-        db.add(GuildChannel(guild_id=guild.id, channel_id=20, kind="event"))
+        db.add(GuildChannel(guild_id=guild.id, channel_id=10, kind=ChannelKind.EVENT))
+        db.add(GuildChannel(guild_id=guild.id, channel_id=20, kind=ChannelKind.EVENT))
         db.add(Embed(discord_message_id=1, channel_id=10, guild_id=1, payload_json=json.dumps({"id": "1"}), buttons_json=None, source="test"))
         db.add(Embed(discord_message_id=2, channel_id=10, guild_id=1, payload_json=json.dumps({"id": "2"}), buttons_json=None, source="test"))
         db.add(Embed(discord_message_id=3, channel_id=20, guild_id=1, payload_json=json.dumps({"id": "3"}), buttons_json=None, source="test"))

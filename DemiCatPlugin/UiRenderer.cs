@@ -567,7 +567,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private class ChannelListDto
     {
-        [JsonPropertyName("event")] public List<ChannelDto> Event { get; set; } = new();
+        [JsonPropertyName(ChannelKind.Event)] public List<ChannelDto> Event { get; set; } = new();
     }
 
     public async ValueTask DisposeAsync()

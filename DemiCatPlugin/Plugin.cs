@@ -203,6 +203,6 @@ public class Plugin : IDalamudPlugin
 
     private class ChannelListDto
     {
-        [JsonPropertyName("fc_chat")] public List<ChannelDto> Chat { get; set; } = new();
+        [JsonPropertyName(ChannelKind.FcChat)] public List<ChannelDto> Chat { get; set; } = new();
     }
 }
