@@ -31,7 +31,6 @@ async def _run_test() -> None:
         db.add(Embed(discord_message_id=2, channel_id=10, guild_id=1, payload_json=json.dumps({"id": "2"}), buttons_json=None, source="test"))
         db.add(Embed(discord_message_id=3, channel_id=20, guild_id=1, payload_json=json.dumps({"id": "3"}), buttons_json=None, source="test"))
         await db.commit()
-        break
 
     ctx = SimpleNamespace(guild=SimpleNamespace(id=1), roles=["officer"])
     async with get_session() as db:
@@ -42,7 +41,6 @@ async def _run_test() -> None:
         assert len(res2) == 1
         res3 = await get_embeds(ctx=ctx, db=db, channel_id=10, limit=1)
         assert len(res3) == 1 and res3[0]["channelId"] == 10
-        break
 
 def test_embeds_filters() -> None:
     asyncio.run(_run_test())

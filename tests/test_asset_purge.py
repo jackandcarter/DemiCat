@@ -34,5 +34,4 @@ def test_purge_deleted_assets_once():
             assets = (await db.execute(select(Asset).order_by(Asset.id))).scalars().all()
             assert len(assets) == 1
             assert assets[0].id == 2
-            break
     asyncio.run(_run())

@@ -75,7 +75,6 @@ async def list_presences(
                             "roles": roles,
                         }
                     )
-            break
     except RuntimeError:
         pass
     if db_presences is not None:

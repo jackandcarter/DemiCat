@@ -1,6 +1,6 @@
 import asyncio
-from pathlib import Path
 import logging
+from pathlib import Path
 import types
 
 import pytest
@@ -27,7 +27,6 @@ def _setup_db(path: str) -> None:
             db.add(guild)
             db.add(GuildChannel(guild_id=guild.id, channel_id=100, kind=ChannelKind.EVENT, name=None))
             await db.commit()
-            break
 
     asyncio.run(populate())
 

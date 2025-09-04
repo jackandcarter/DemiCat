@@ -36,7 +36,6 @@ async def _run_test() -> None:
         res = await get_guild_roles(ctx=ctx, db=db)
         pairs = {(r["id"], r["name"]) for r in res}
         assert pairs == {("10", "Alpha"), ("20", "Beta")}
-        break
 
 
 def test_get_guild_roles() -> None:

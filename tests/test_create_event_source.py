@@ -34,7 +34,6 @@ async def _run_test() -> None:
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
-        break
 
     body = CreateEventBody(
         channelId="123",
@@ -56,7 +55,6 @@ async def _run_test() -> None:
             )
         ).scalar_one()
         assert row.source == "demibot"
-        break
 
 
 def test_create_event_sets_source() -> None:

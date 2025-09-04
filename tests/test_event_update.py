@@ -39,7 +39,6 @@ async def _run_test() -> None:
         db.add(guild)
         db.add(GuildChannel(guild_id=1, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
-        break
 
     ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
     body = CreateEventBody(
@@ -59,7 +58,6 @@ async def _run_test() -> None:
             dt.fromisoformat.side_effect = datetime.fromisoformat
             await create_event(body=body, ctx=ctx, db=db)
         await db.commit()
-        break
 
     body2 = CreateEventBody(
         channelId="123",
@@ -82,7 +80,6 @@ async def _run_test() -> None:
         res = await db.execute(select(Embed))
         embeds = res.scalars().all()
         assert len(embeds) == 1
-        break
 
 
 def test_event_update_existing() -> None:

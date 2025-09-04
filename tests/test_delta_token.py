@@ -26,5 +26,4 @@ def test_delta_token_updates_last_pull():
             since_dt = datetime.fromisoformat(res["since"])
             assert row.last_pull_at is not None
             assert abs(row.last_pull_at - since_dt) < timedelta(seconds=1)
-            break
     asyncio.run(_run())

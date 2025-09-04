@@ -2,6 +2,11 @@ import types
 import sys
 import asyncio
 import pytest
+import asyncio
+import sys
+import types
+
+import pytest
 from fastapi import HTTPException
 from pathlib import Path
 
@@ -108,7 +113,6 @@ def test_add_reaction_success():
             res = await messages.add_reaction("1", "1", "😀", ctx, db)
             assert res == {"ok": True}
             assert dummy_msg.called
-            break
     asyncio.run(run())
 
 
@@ -143,7 +147,6 @@ def test_add_reaction_not_found():
             with pytest.raises(HTTPException) as exc:
                 await messages.add_reaction("1", "1", "😀", ctx, db)
             assert exc.value.status_code == 404
-            break
     asyncio.run(run())
 
 
@@ -179,5 +182,4 @@ def test_add_reaction_forbidden():
             with pytest.raises(HTTPException) as exc:
                 await messages.add_reaction("1", "1", "😀", ctx, db)
             assert exc.value.status_code == 403
-            break
     asyncio.run(run())

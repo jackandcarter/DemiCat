@@ -78,7 +78,6 @@ async def _run_test() -> None:
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
-        break
 
     emb = discord.Embed(title="Raid Night", description="Prepare")
     emb.set_footer(text="Powered by Apollo")
@@ -101,7 +100,6 @@ async def _run_test() -> None:
         assert result[0]["guildId"] == 1
         assert result[0]["channelId"] == 123
         assert result[0]["buttons"][0]["customId"] == "rsvp:yes"
-        break
 
 
 def test_apollo_embed_stored_and_retrieved() -> None:

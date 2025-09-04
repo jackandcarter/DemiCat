@@ -61,7 +61,6 @@ async def _run_test() -> None:
         await delete_signup_preset(preset_id=pid, ctx=ctx, db=db)
         presets = await list_signup_presets(ctx=ctx, db=db)
         assert presets == []
-        break
 
 
 def test_signup_presets() -> None:

@@ -36,7 +36,6 @@ async def _refresh() -> None:
                 updated = True
         if updated:
             await db.commit()
-        break
 
 
 if __name__ == "__main__":

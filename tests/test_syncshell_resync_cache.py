@@ -43,5 +43,4 @@ def test_resync_and_cache_clear():
 
             await syncshell.resync(ctx=ctx, db=db)
             assert await db.get(SyncshellManifest, 1) is None
-            break
     asyncio.run(_run())

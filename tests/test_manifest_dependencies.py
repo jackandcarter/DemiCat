@@ -69,6 +69,5 @@ def test_manifest_declared_dependencies():
                 )
             )
             assert res.scalar_one() == dep_asset.id
-            break
 
     asyncio.run(_run())
