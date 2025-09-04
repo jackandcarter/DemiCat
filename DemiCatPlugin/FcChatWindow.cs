@@ -1,10 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text.Json;
-using System.Text;
-using System.IO;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -112,79 +108,6 @@ public class FcChatWindow : ChatWindow
             return Task.CompletedTask;
         }
         return base.FetchChannels(refreshed);
-    }
-
-    protected override async Task SendMessage()
-    {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            PluginServices.Instance!.Log.Warning("Cannot send message: API base URL is not configured.");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Invalid API URL");
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
-        {
-            return;
-        }
-
-        var presences = _presence?.Presences ?? new List<PresenceDto>();
-        var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles);
-
-        try
-        {
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{_channelId}/messages";
-            var form = new MultipartFormDataContent();
-            form.Add(new StringContent(content), "content");
-            form.Add(new StringContent(_useCharacterName ? "true" : "false"), "useCharacterName");
-            if (!string.IsNullOrEmpty(_replyToId))
-            {
-                var refJson = JsonSerializer.Serialize(new { messageId = _replyToId });
-                form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
-            }
-            foreach (var path in _attachments)
-            {
-                try
-                {
-                    var bytes = await File.ReadAllBytesAsync(path);
-                    var contentPart = new ByteArrayContent(bytes);
-                    contentPart.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
-                    form.Add(contentPart, "files", Path.GetFileName(path));
-                }
-                catch
-                {
-                    // ignore individual file errors
-                }
-            }
-            var request = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = form
-            };
-            ApiHelpers.AddAuthHeader(request, _config);
-            var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-            {
-                string? id = null;
-                try
-                {
-                    var bodyText = await response.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(bodyText);
-                    if (doc.RootElement.TryGetProperty("id", out var idProp))
-                        id = idProp.GetString();
-                }
-                catch
-                {
-                    // ignore parse errors
-                }
-                _input = string.Empty;
-                _attachments.Clear();
-                _replyToId = null;
-                await WaitForEchoAndRefresh(id);
-            }
-        }
-        catch
-        {
-            // ignored
-        }
     }
 }
 

@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -29,76 +28,6 @@ public class OfficerChatWindow : ChatWindow
     }
 
     protected override string MessagesPath => "/api/officer-messages";
-
-    protected override async Task SendMessage()
-    {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            PluginServices.Instance!.Log.Warning("Cannot send message: API base URL is not configured.");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Invalid API URL");
-            return;
-        }
-        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
-        {
-            return;
-        }
-
-        try
-        {
-            // Build request body (includes reply threading if set)
-            var presences = _presence?.Presences ?? new List<PresenceDto>();
-            var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles);
-
-            var body = new
-            {
-                channelId = _channelId,
-                content,
-                useCharacterName = _useCharacterName,
-                messageReference = _replyToId != null
-                    ? new { messageId = _replyToId, channelId = _channelId }
-                    : null
-            };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/officer-messages");
-            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            ApiHelpers.AddAuthHeader(request, _config);
-            var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-            {
-                string? id = null;
-                try
-                {
-                    var bodyText = await response.Content.ReadAsStringAsync();
-                    using var doc = JsonDocument.Parse(bodyText);
-                    if (doc.RootElement.TryGetProperty("id", out var idProp))
-                        id = idProp.GetString();
-                }
-                catch
-                {
-                    // ignore parse errors
-                }
-
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    _input = string.Empty;
-                    _statusMessage = string.Empty;
-                    _replyToId = null; // <-- clear reply state after a successful send
-                });
-
-                await WaitForEchoAndRefresh(id);
-            }
-            else
-            {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to send officer message. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
-            }
-        }
-        catch (Exception ex)
-        {
-            PluginServices.Instance!.Log.Error(ex, "Error sending officer message");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
-        }
-    }
 
     protected override async Task FetchChannels(bool refreshed = false)
     {

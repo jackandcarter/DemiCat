@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Net.WebSockets;
 using System.Net;
 using System.Text;
@@ -546,17 +547,25 @@ public class ChatWindow : IDisposable
             var presences = _presence?.Presences ?? new List<PresenceDto>();
             var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles);
 
-            var body = new
+            HttpRequestMessage request;
+            if (_attachments.Count > 0)
             {
-                channelId = _channelId,
-                content,
-                useCharacterName = _useCharacterName,
-                messageReference = _replyToId != null
-                    ? new { messageId = _replyToId, channelId = _channelId }
-                    : null
-            };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/messages");
-            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                request = await BuildMultipartRequest(content);
+            }
+            else
+            {
+                var body = new
+                {
+                    channelId = _channelId,
+                    content,
+                    useCharacterName = _useCharacterName,
+                    messageReference = _replyToId != null
+                        ? new { messageId = _replyToId, channelId = _channelId }
+                        : null
+                };
+                request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}");
+                request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            }
             ApiHelpers.AddAuthHeader(request, _config);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
@@ -579,6 +588,7 @@ public class ChatWindow : IDisposable
                     _input = string.Empty;
                     _statusMessage = string.Empty;
                     _replyToId = null; // <-- clear reply state after a successful send
+                    _attachments.Clear();
                 });
 
                 await WaitForEchoAndRefresh(id);
@@ -606,6 +616,37 @@ public class ChatWindow : IDisposable
             PluginServices.Instance!.Log.Error(ex, "Error sending message");
             _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
         }
+    }
+
+    protected virtual async Task<HttpRequestMessage> BuildMultipartRequest(string content)
+    {
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{_channelId}/messages";
+        var form = new MultipartFormDataContent();
+        form.Add(new StringContent(content), "content");
+        form.Add(new StringContent(_useCharacterName ? "true" : "false"), "useCharacterName");
+        if (!string.IsNullOrEmpty(_replyToId))
+        {
+            var refJson = JsonSerializer.Serialize(new { messageId = _replyToId });
+            form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
+        }
+        foreach (var path in _attachments)
+        {
+            try
+            {
+                var bytes = await File.ReadAllBytesAsync(path);
+                var contentPart = new ByteArrayContent(bytes);
+                contentPart.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                form.Add(contentPart, "files", Path.GetFileName(path));
+            }
+            catch
+            {
+                // ignore individual file errors
+            }
+        }
+        return new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = form
+        };
     }
 
     protected virtual async Task React(string messageId, string emoji, bool remove)

@@ -2,6 +2,7 @@ import asyncio
 import types
 from typing import List, Tuple
 from datetime import datetime
+import json
 
 import pytest
 from fastapi import HTTPException
@@ -109,6 +110,116 @@ def test_save_and_fetch_messages(monkeypatch):
             assert len(data) == 1 and data[0]["content"] == "hello"
             assert data[0]["authorName"] == "AliceNick"
             assert data[0]["authorAvatarUrl"] == "http://example.com/avatar.png"
+
+    asyncio.run(_run())
+
+
+def test_multipart_message(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=9, discord_guild_id=9, name="Guild"))
+            db.add(User(id=9, discord_user_id=90, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 9)
+            user = await db.get(User, 9)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def dummy_broadcast(message: str, guild_id: int, officer_only: bool = False, path: str | None = None):
+                pass
+
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+            monkeypatch.setattr(mc.AttachmentDto, "contentType", property(lambda self: self.content_type), raising=False)
+
+            def fake_serialize_message(message):
+                dto = types.SimpleNamespace(
+                    id=str(message.id),
+                    channel_id=str(message.channel.id),
+                    author_name="Alice",
+                    author_avatar_url=None,
+                    timestamp=datetime.utcnow(),
+                    content=message.content,
+                    attachments=[
+                        types.SimpleNamespace(
+                            url=a.url,
+                            filename=a.filename,
+                            contentType=a.content_type,
+                        )
+                        for a in message.attachments
+                    ],
+                    mentions=[],
+                    author=None,
+                    embeds=[],
+                    reference=None,
+                    components=[],
+                    reactions=[],
+                    edited_timestamp=None,
+                    model_dump=lambda: {},
+                    model_dump_json=lambda: "{}",
+                )
+                fragments = {
+                    "author_json": "{}",
+                    "attachments_json": json.dumps(
+                        [
+                            {
+                                "url": a.url,
+                                "filename": a.filename,
+                                "contentType": a.contentType,
+                            }
+                            for a in dto.attachments
+                        ]
+                    ),
+                    "mentions_json": "[]",
+                    "embeds_json": "[]",
+                    "reference_json": "null",
+                    "components_json": "[]",
+                    "reactions_json": "[]",
+                }
+                return dto, fragments
+
+            monkeypatch.setattr(mc, "serialize_message", fake_serialize_message)
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    files = kwargs.get("files") or []
+                    attachments = [
+                        types.SimpleNamespace(
+                            url=f"http://example.com/{f.filename}",
+                            filename=f.filename,
+                            content_type="text/plain",
+                        )
+                        for f in files
+                    ]
+                    return types.SimpleNamespace(id=1, attachments=attachments)
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            from fastapi import UploadFile
+            import io
+
+            upload = UploadFile(filename="a.txt", file=io.BytesIO(b"hi"))
+            body = mc.PostBody(channelId="123", content="hello")
+            res = await mc.save_message(body, ctx, db, is_officer=False, files=[upload])
+            assert res["ok"] is True
+
+            msg = (await db.execute(select(Message))).scalar_one()
+            assert "a.txt" in (msg.attachments_json or "")
 
     asyncio.run(_run())
 
