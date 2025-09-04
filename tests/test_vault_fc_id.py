@@ -47,7 +47,6 @@ def test_vault_assigns_fc_id():
             await db.commit()
             bundle = (await db.execute(select(AppearanceBundle))).scalar_one()
             assert bundle.fc_id == 1
-            break
 
     asyncio.run(_run())
 

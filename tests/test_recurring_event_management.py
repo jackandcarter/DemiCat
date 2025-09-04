@@ -1,10 +1,12 @@
 from pathlib import Path
 import sys
-import types
 import asyncio
+import sys
 from datetime import datetime, timedelta
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+import types
 
 root = Path(__file__).resolve().parents[1] / "demibot"
 sys.path.append(str(root))
@@ -40,7 +42,6 @@ async def _setup_db(path: Path) -> None:
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
-        break
 
 
 async def _test_patch_delete() -> None:
@@ -59,7 +60,6 @@ async def _test_patch_delete() -> None:
         res = await create_event(body=body, ctx=ctx, db=db)
         ev_id = int(res["id"])
         await db.commit()
-        break
 
     new_time = (datetime.utcnow() + timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
     patch_body = RepeatPatchBody(time=new_time, repeat="weekly")
@@ -71,7 +71,6 @@ async def _test_patch_delete() -> None:
         await delete_recurring_event(str(ev_id), ctx=ctx, db=db)
         row = await db.get(RecurringEvent, ev_id)
         assert row is None
-        break
 
 
 async def _test_cleanup() -> None:
@@ -90,13 +89,11 @@ async def _test_cleanup() -> None:
             )
         )
         await db.commit()
-        break
 
     repeat_events.discord_client = SimpleNamespace(get_channel=lambda _: None)
     await process_recurring_events_once()
     async with get_session() as db:
         assert (await db.get(RecurringEvent, 111)) is None
-        break
 
     async with get_session() as db:
         db.add(
@@ -110,7 +107,6 @@ async def _test_cleanup() -> None:
             )
         )
         await db.commit()
-        break
 
     class DummyChannel:
         async def fetch_message(self, _):
@@ -120,7 +116,6 @@ async def _test_cleanup() -> None:
     await process_recurring_events_once()
     async with get_session() as db:
         assert (await db.get(RecurringEvent, 222)) is None
-        break
 
     repeat_events.discord_client = None
 

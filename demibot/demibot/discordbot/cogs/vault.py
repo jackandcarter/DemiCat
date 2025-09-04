@@ -103,7 +103,6 @@ class Vault(commands.Cog):
             fc_id = await self._get_fc_id(db, message.guild)
             uploader_id = await self._ensure_user(db, message.author)
             await db.commit()
-            break
 
         errors: list[str] = []
         for attachment in message.attachments:

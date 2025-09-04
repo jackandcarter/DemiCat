@@ -4,9 +4,14 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 
+import asyncio
 import sys
 import types
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
 
 root = Path(__file__).resolve().parents[1] / "demibot"
 sys.path.append(str(root))
@@ -53,7 +58,6 @@ async def _setup_db(db_path: str) -> None:
         other = User(id=3, discord_user_id=3)
         db.add_all([guild, requester, assignee, other])
         await db.commit()
-        break
 
 
 @pytest.fixture()

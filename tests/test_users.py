@@ -1,9 +1,11 @@
 
 from pathlib import Path
+import asyncio
+from pathlib import Path
 import sys
 import types
+
 import pytest
-import asyncio
 
 root = Path(__file__).resolve().parents[1] / 'demibot'
 sys.path.append(str(root))
@@ -63,7 +65,6 @@ def test_get_users_includes_status_from_cache():
             assert {
                 (u['id'], u['status'], tuple(u['roles'])) for u in res
             } == {('10', 'online', ('100',)), ('20', 'offline', ())}
-            break
     asyncio.run(_run())
 
 
@@ -89,5 +90,4 @@ def test_get_users_reads_presence_from_db():
             assert {
                 (u['id'], u['status'], tuple(u['roles'])) for u in res
             } == {('30', 'online', ()), ('40', 'offline', ())}
-            break
     asyncio.run(_run())

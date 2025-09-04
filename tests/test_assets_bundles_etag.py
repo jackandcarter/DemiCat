@@ -2,6 +2,10 @@ import time
 import asyncio
 from datetime import datetime
 
+import asyncio
+import time
+from datetime import datetime
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -77,7 +81,6 @@ def test_assets_etag_and_last_pull():
         async with get_session() as db:
             db.add_all([user, fc, fcu, dep_asset, asset, dep_rel, cp])
             await db.commit()
-            break
 
     asyncio.run(_setup())
 
@@ -128,7 +131,6 @@ def test_bundles_etag_and_last_pull():
         async with get_session() as db:
             db.add_all([user, fc, fcu, asset, bundle, item, cp])
             await db.commit()
-            break
 
     asyncio.run(_setup())
 

@@ -1,8 +1,10 @@
 import sys
 from pathlib import Path
-import types
 import asyncio
 import json
+import sys
+import types
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 from sqlalchemy import select
@@ -56,7 +58,6 @@ async def _run_test() -> None:
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
-        break
 
     body = CreateEventBody(
         channelId="123",
@@ -80,7 +81,6 @@ async def _run_test() -> None:
         payload = json.loads(row.payload_json)
         assert payload["mentions"] == [1, 2]
         assert client.channel.last_content == "<@&1> <@&2>"
-        break
 
 
 def test_create_event_mentions() -> None:

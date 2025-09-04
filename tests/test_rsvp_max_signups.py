@@ -68,7 +68,6 @@ async def _run_test() -> None:
         )
         assert isinstance(resp, JSONResponse)
         assert resp.status_code == 400
-        break
 
 
 def test_max_signups_enforced() -> None:

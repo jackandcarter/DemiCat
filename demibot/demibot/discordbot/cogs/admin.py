@@ -99,7 +99,6 @@ async def delete_asset_cmd(
             return
         asset.deleted_at = datetime.utcnow()
         await db.commit()
-        break
     await interaction.response.send_message("Asset deleted", ephemeral=True)
 
 
@@ -115,7 +114,6 @@ async def rebuild_index_cmd(
         if forget:
             await db.execute(delete(UserInstallation))
         await db.commit()
-        break
     msg = "Index rebuilt"
     if forget:
         msg += " and user installations cleared"

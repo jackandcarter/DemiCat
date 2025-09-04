@@ -2,6 +2,10 @@ import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+import asyncio
+import sys
+from pathlib import Path
+from types import SimpleNamespace
 import types
 
 from sqlalchemy import select
@@ -86,7 +90,6 @@ async def _setup_db() -> None:
             )
         )
         await db.commit()
-        break
 
 
 async def _generate(user_roles):

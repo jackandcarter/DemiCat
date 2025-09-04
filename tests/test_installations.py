@@ -57,5 +57,4 @@ def test_installations_flow():
             # only one row exists
             rows = (await db.execute(select(UserInstallation))).scalars().all()
             assert len(rows) == 1
-            break
     asyncio.run(_run())

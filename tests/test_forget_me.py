@@ -60,5 +60,4 @@ def test_forget_me_scrubs_user_and_assets():
                 await db.execute(select(Asset).where(Asset.id == 1))
             ).scalar_one()
             assert asset_row.deleted_at is not None
-            break
     asyncio.run(_run())

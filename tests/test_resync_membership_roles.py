@@ -2,6 +2,10 @@ import asyncio
 from pathlib import Path
 from types import SimpleNamespace
 
+import asyncio
+from pathlib import Path
+from types import SimpleNamespace
+
 from sqlalchemy import select
 
 from demibot.discordbot.cogs import admin as admin_module
@@ -61,7 +65,6 @@ def _setup_db() -> None:
                 )
             )
             await db.commit()
-            break
 
     asyncio.run(populate())
 

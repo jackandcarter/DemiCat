@@ -1,4 +1,5 @@
 import asyncio
+import asyncio
 import sys
 import types
 from pathlib import Path
@@ -52,7 +53,6 @@ def test_x_discord_id_overrides_user(tmp_path):
                 [guild, svc, user, officer, svc_membership, svc_role, key]
             )
             await db.commit()
-            break
 
     asyncio.run(populate())
 
@@ -79,7 +79,6 @@ def test_x_discord_id_requires_officer(tmp_path):
             key = UserKey(user_id=svc.id, guild_id=guild.id, token="svc")
             db.add_all([guild, svc, user, key])
             await db.commit()
-            break
 
     asyncio.run(populate())
 

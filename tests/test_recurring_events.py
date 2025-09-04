@@ -36,7 +36,6 @@ async def _run_test() -> None:
         db.add(guild)
         db.add(GuildChannel(guild_id=guild.id, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
-        break
 
     body = CreateEventBody(
         channelId="123",
@@ -56,7 +55,6 @@ async def _run_test() -> None:
         row = (await db.execute(select(RecurringEvent))).scalar_one()
         row.next_post_at = datetime.utcnow() - timedelta(seconds=1)
         await db.commit()
-        break
 
     await process_recurring_events_once()
 
@@ -65,7 +63,6 @@ async def _run_test() -> None:
         assert len(embeds) == 2
         row = (await db.execute(select(RecurringEvent))).scalar_one()
         assert row.next_post_at > datetime.utcnow()
-        break
 
 
 def test_recurring_event_reposted() -> None:

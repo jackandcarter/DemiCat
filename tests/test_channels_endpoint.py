@@ -4,6 +4,8 @@ from pathlib import Path
 
 from sqlalchemy import select
 
+import asyncio
+
 from demibot.db.models import Guild, GuildChannel, ChannelKind
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
@@ -27,7 +29,6 @@ def _setup_db(path: str) -> None:
                 )
             )
             await db.commit()
-            break
 
     asyncio.run(populate())
 
