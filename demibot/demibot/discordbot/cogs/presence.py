@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 from sqlalchemy import select
 
-from ...db.models import Presence as DbPresence, Membership
+from ...db.models import Guild, Membership, Presence as DbPresence
 from ...db.session import get_session
 from ...http.ws import manager
 from ..presence_store import Presence as StorePresence, set_presence
@@ -36,19 +36,34 @@ class PresenceTracker(commands.Cog):
         )
         set_presence(member.guild.id, data)
         async with get_session() as db:
+            # Look up or create the internal guild record so that we can use its
+            # database id for related records. The Membership and Presence tables
+            # reference Guild.id rather than the Discord guild id.
+            guild_res = await db.execute(
+                select(Guild).where(Guild.discord_guild_id == member.guild.id)
+            )
+            guild_row = guild_res.scalar_one_or_none()
+            if guild_row is None:
+                guild_row = Guild(
+                    discord_guild_id=member.guild.id, name=member.guild.name
+                )
+                db.add(guild_row)
+                await db.flush()
+
             mem_stmt = select(Membership).where(
-                Membership.guild_id == member.guild.id,
+                Membership.guild_id == guild_row.id,
                 Membership.user_id == member.id,
             )
             mem_res = await db.execute(mem_stmt)
             mem = mem_res.scalars().first()
             if mem is None:
-                mem = Membership(guild_id=member.guild.id, user_id=member.id)
+                mem = Membership(guild_id=guild_row.id, user_id=member.id)
                 db.add(mem)
             mem.nickname = display_name
             mem.avatar_url = avatar_url
+
             stmt = select(DbPresence).where(
-                DbPresence.guild_id == member.guild.id,
+                DbPresence.guild_id == guild_row.id,
                 DbPresence.user_id == member.id,
             )
             res = await db.execute(stmt)
@@ -56,7 +71,7 @@ class PresenceTracker(commands.Cog):
             if row is None:
                 db.add(
                     DbPresence(
-                        guild_id=member.guild.id,
+                        guild_id=guild_row.id,
                         user_id=member.id,
                         status=data.status,
                     )
