@@ -10,6 +10,7 @@ from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 
 from ..db.session import get_session
 from .deps import RequestContext, api_key_auth
+from .chat_events import emit_event
 
 # Delay window for batching fan-out.
 BATCH_MIN = 0.04
@@ -115,7 +116,7 @@ class ChatConnectionManager:
         elif op == "send":
             channel = str(message.get("channel"))
             payload = message.get("payload", {})
-            await self.send(channel, payload)
+            await emit_event({"channel": channel, **payload})
         elif op == "resync":
             await self.resync(websocket, message)
         elif op == "ping":

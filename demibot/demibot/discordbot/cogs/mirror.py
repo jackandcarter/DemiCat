@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import os
+from datetime import datetime
 import discord
 from discord.ext import commands
 from sqlalchemy import select
@@ -11,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 
 from ...db.models import Embed, Guild, GuildChannel, Message, ChannelKind
 from ...db.session import get_session
-from ...http.schemas import EmbedButtonDto, EmbedDto
+from ...http.schemas import EmbedButtonDto, EmbedDto, MessageAuthor
 from ...http.discord_helpers import (
     embed_to_dto,
     message_to_chat_message,
@@ -21,6 +22,7 @@ from ...http.discord_helpers import (
 )
 
 from ...http.ws import manager
+from ...http.chat_events import emit_event
 
 
 class ApolloHelper:
@@ -307,6 +309,12 @@ class Mirror(commands.Cog):
                 path="/ws/messages",
             )
 
+            await emit_event({
+                "channel": str(channel_id),
+                "op": "mc",
+                "d": dto.model_dump(),
+            })
+
     @commands.Cog.listener()
     async def on_message_edit(
         self, before: discord.Message, after: discord.Message
@@ -394,6 +402,12 @@ class Mirror(commands.Cog):
                     path="/ws/messages",
                 )
 
+                await emit_event({
+                    "channel": str(channel_id),
+                    "op": "mu",
+                    "d": dto.model_dump(),
+                })
+
     @commands.Cog.listener()
     async def on_reaction_add(
         self, reaction: discord.Reaction, user: discord.abc.User
@@ -455,6 +469,26 @@ class Mirror(commands.Cog):
         return
 
     @commands.Cog.listener()
+    async def on_typing(
+        self, channel: discord.abc.Messageable, user: discord.abc.User, when: datetime
+    ) -> None:
+        channel_id = getattr(channel, "id", None)
+        if channel_id is None:
+            return
+        author = MessageAuthor(
+            id=str(user.id),
+            name=getattr(user, "display_name", getattr(user, "name", "")),
+            avatar_url=getattr(getattr(user, "display_avatar", None), "url", None),
+        )
+        await emit_event(
+            {
+                "channel": str(channel_id),
+                "op": "ty",
+                "d": author.model_dump(),
+            }
+        )
+
+    @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message) -> None:
         channel_id = message.channel.id
 
@@ -495,6 +529,13 @@ class Mirror(commands.Cog):
                         officer_only=is_officer,
                         path="/ws/messages",
                     )
+                    await emit_event(
+                        {
+                            "channel": str(channel_id),
+                            "op": "md",
+                            "d": {"id": str(message.id)},
+                        }
+                    )
             else:
                 msg = await db.get(Message, message.id)
                 if msg is not None:
@@ -506,6 +547,13 @@ class Mirror(commands.Cog):
                     guild_id,
                     officer_only=is_officer,
                     path="/ws/messages",
+                )
+                await emit_event(
+                    {
+                        "channel": str(channel_id),
+                        "op": "md",
+                        "d": {"id": str(message.id)},
+                    }
                 )
 
 
