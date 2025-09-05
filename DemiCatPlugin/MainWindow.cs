@@ -60,6 +60,13 @@ public class MainWindow : IDisposable
             return;
         }
 
+        var linked = TokenManager.Instance?.State == LinkState.Linked;
+        if (!linked)
+        {
+            ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
+            ImGui.Separator();
+        }
+
         var padding = ImGui.GetStyle().FramePadding;
         var buttonSize = ImGui.GetFrameHeight();
         var cursor = ImGui.GetCursorPos();
@@ -76,8 +83,22 @@ public class MainWindow : IDisposable
             {
                 if (_config.EnableFcChat && _presenceSidebar != null)
                 {
-                    _presenceSidebar.Draw();
-                    ImGui.SameLine();
+                    if (!linked)
+                    {
+                        ImGui.BeginDisabled();
+                        ImGui.BeginChild("##presence", new Vector2(150, 0), true);
+                        ImGui.TextUnformatted("Presence");
+                        ImGui.EndChild();
+                        ImGui.EndDisabled();
+                        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                            ImGui.SetTooltip("Link DemiCat to show presence.");
+                        ImGui.SameLine();
+                    }
+                    else
+                    {
+                        _presenceSidebar.Draw();
+                        ImGui.SameLine();
+                    }
                 }
                 ImGui.BeginChild("##eventsArea", ImGui.GetContentRegionAvail(), false);
                 _ui.Draw();
@@ -109,25 +130,47 @@ public class MainWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
-            if (_config.EnableFcChat && _chat != null && ImGui.BeginTabItem("Chat"))
+            if (_config.EnableFcChat && _chat != null)
             {
-                ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
-                _chat.Draw();
-                ImGui.EndChild();
-                ImGui.EndTabItem();
+                if (!linked)
+                {
+                    ImGui.BeginDisabled();
+                    ImGui.TabItemButton("Chat");
+                    ImGui.EndDisabled();
+                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                        ImGui.SetTooltip("Link DemiCat to use chat.");
+                }
+                else if (ImGui.BeginTabItem("Chat"))
+                {
+                    ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
+                    _chat.Draw();
+                    ImGui.EndChild();
+                    ImGui.EndTabItem();
+                }
             }
 
-            if (HasOfficerRole && ImGui.BeginTabItem("Officer"))
+            if (HasOfficerRole)
             {
-                if (_config.EnableFcChat && _presenceSidebar != null)
+                if (!linked)
                 {
-                    _presenceSidebar.Draw();
-                    ImGui.SameLine();
+                    ImGui.BeginDisabled();
+                    ImGui.TabItemButton("Officer");
+                    ImGui.EndDisabled();
+                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                        ImGui.SetTooltip("Link DemiCat to use officer chat.");
                 }
-                ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
-                _officer.Draw();
-                ImGui.EndChild();
-                ImGui.EndTabItem();
+                else if (ImGui.BeginTabItem("Officer"))
+                {
+                    if (_config.EnableFcChat && _presenceSidebar != null)
+                    {
+                        _presenceSidebar.Draw();
+                        ImGui.SameLine();
+                    }
+                    ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
+                    _officer.Draw();
+                    ImGui.EndChild();
+                    ImGui.EndTabItem();
+                }
             }
 
             ImGui.EndTabBar();

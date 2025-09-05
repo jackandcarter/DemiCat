@@ -63,6 +63,13 @@ public class SettingsWindow : IDisposable
                     _ = Task.Run(LoadSettings);
                 }
 
+                var linked = _tokenManager.State == LinkState.Linked;
+                if (!linked)
+                {
+                    ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
+                    ImGui.Separator();
+                }
+
                 if (ImGui.InputText("API Base URL", ref _apiBaseUrl, 256))
                 {
                     _config.ApiBaseUrl = _apiBaseUrl;
@@ -80,6 +87,8 @@ public class SettingsWindow : IDisposable
                 }
 
                 var enableFc = _config.EnableFcChat;
+                if (!linked)
+                    ImGui.BeginDisabled();
                 if (ImGui.Checkbox("Enable FC Chat", ref enableFc))
                 {
                     _config.EnableFcChat = enableFc;
@@ -98,6 +107,12 @@ public class SettingsWindow : IDisposable
                             ChatWindow.Presence?.Dispose();
                         }
                     }
+                }
+                if (!linked)
+                {
+                    ImGui.EndDisabled();
+                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                        ImGui.SetTooltip("Link DemiCat to enable chat and presence.");
                 }
 
                 var syncEnabled = _config.SyncEnabled;
