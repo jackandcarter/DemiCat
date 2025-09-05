@@ -3,6 +3,7 @@ using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
+using System.IO;
 
 namespace DemiCatPlugin;
 
@@ -127,7 +128,7 @@ public class ChannelWatcher : IDisposable
 
     internal static async Task<(string message, WebSocketMessageType messageType)> ReceiveMessageAsync(WebSocket ws, byte[] buffer, CancellationToken token)
     {
-        var sb = new StringBuilder();
+        using var ms = new MemoryStream();
         WebSocketReceiveResult result;
         do
         {
@@ -136,10 +137,15 @@ public class ChannelWatcher : IDisposable
             {
                 return (string.Empty, WebSocketMessageType.Close);
             }
-            sb.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
+            ms.Write(buffer, 0, result.Count);
+            if (result.Count == buffer.Length)
+            {
+                Array.Resize(ref buffer, buffer.Length * 2);
+            }
         } while (!result.EndOfMessage);
 
-        return (sb.ToString(), result.MessageType);
+        var message = Encoding.UTF8.GetString(ms.ToArray());
+        return (message, result.MessageType);
     }
 
     private static async Task SafeRefresh(Func<Task> refresh)
