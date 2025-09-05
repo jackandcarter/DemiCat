@@ -1,16 +1,27 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import io
 import json
+import logging
 import random
+import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Set
 
+import discord
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
 
+from ..db.models import GuildChannel
 from ..db.session import get_session
-from .deps import RequestContext, api_key_auth
 from .chat_events import emit_event
+from .deps import RequestContext, api_key_auth
+from .discord_client import discord_client
+from .discord_helpers import serialize_message
+
+logger = logging.getLogger(__name__)
 
 # Delay window for batching fan-out.
 BATCH_MIN = 0.04
@@ -30,6 +41,8 @@ class ChatConnectionManager:
         self._channel_queues: Dict[str, List[dict]] = {}
         self._channel_tasks: Dict[str, asyncio.Task] = {}
         self._channel_cursors: Dict[str, int] = {}
+        self._send_count = 0
+        self._resync_count = 0
 
     async def connect(self, websocket: WebSocket, ctx: RequestContext) -> None:
         await websocket.accept(
@@ -96,6 +109,13 @@ class ChatConnectionManager:
 
     async def _send_resync(self, websocket: WebSocket, channel: str) -> None:
         cursor = self._channel_cursors.get(channel, 0)
+        self._resync_count += 1
+        logger.info(
+            "chat.ws resync channel=%s cursor=%s count=%s",
+            channel,
+            cursor,
+            self._resync_count,
+        )
         await websocket.send_text(
             json.dumps({"op": "resync", "channel": channel, "cursor": cursor})
         )
@@ -114,13 +134,71 @@ class ChatConnectionManager:
         elif op == "ack":
             self.ack(websocket, message)
         elif op == "send":
-            channel = str(message.get("channel"))
-            payload = message.get("payload", {})
-            await emit_event({"channel": channel, **payload})
+            await self._handle_send(websocket, message)
         elif op == "resync":
             await self.resync(websocket, message)
         elif op == "ping":
             await self.ping(websocket)
+
+    async def _handle_send(self, websocket: WebSocket, data: dict) -> None:
+        info = self.connections.get(websocket)
+        if info is None:
+            return
+        channel_id = int(data.get("ch") or 0)
+        payload = data.get("d") or data.get("payload") or {}
+        content = payload.get("content", "")
+        attachments = payload.get("attachments") or []
+        avatar_url = payload.get("avatar_url")
+        async with get_session() as db:
+            webhook_url = await db.scalar(
+                select(GuildChannel.webhook_url).where(
+                    GuildChannel.guild_id == info.ctx.guild.id,
+                    GuildChannel.channel_id == channel_id,
+                )
+            )
+        if not webhook_url:
+            logger.warning("chat.ws missing webhook channel=%s", channel_id)
+            return
+        files = []
+        for a in attachments:
+            b64 = a.get("data") or a.get("content")
+            if not b64:
+                continue
+            try:
+                file_bytes = base64.b64decode(b64)
+            except Exception:
+                continue
+            files.append(
+                discord.File(io.BytesIO(file_bytes), filename=a.get("filename", "file"))
+            )
+        username = (
+            f"{info.ctx.user.character_name} (DemiCat)"
+            if info.ctx.user.character_name
+            else "DemiCat"
+        )
+        start = time.perf_counter()
+        try:
+            webhook = discord.Webhook.from_url(webhook_url, client=discord_client)
+            sent = await webhook.send(
+                content,
+                username=username,
+                avatar_url=avatar_url,
+                files=files or None,
+                wait=True,
+            )
+        except Exception:
+            logger.exception("chat.ws webhook send failed channel=%s", channel_id)
+            return
+        latency_ms = (time.perf_counter() - start) * 1000
+        self._send_count += 1
+        logger.info(
+            "chat.ws send channel=%s latency_ms=%.1f count=%s",
+            channel_id,
+            latency_ms,
+            self._send_count,
+        )
+        dto, _ = serialize_message(sent)
+        await emit_event({"channel": str(channel_id), "op": "mc", "d": dto.model_dump()})
 
 
 manager = ChatConnectionManager()
