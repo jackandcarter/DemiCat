@@ -56,8 +56,8 @@ public class Plugin : IDalamudPlugin
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
         _presenceService = _config.EnableFcChat ? new DiscordPresenceService(_config, _httpClient) : null;
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService);
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager);
         _presenceSidebar = _presenceService != null ? new PresenceSidebar(_presenceService) : null;
         if (_presenceSidebar != null)
         {

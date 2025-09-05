@@ -10,13 +10,20 @@ namespace DemiCatPlugin;
 
 public class FcChatWindow : ChatWindow
 {
-    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence) : base(config, httpClient, presence)
+    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager)
+        : base(config, httpClient, presence, tokenManager)
     {
         _channelId = config.FcChannelId;
     }
 
     public override void Draw()
     {
+        if (!_tokenManager.IsReady())
+        {
+            base.Draw();
+            return;
+        }
+
         var originalChatChannel = _config.ChatChannelId;
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);

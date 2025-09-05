@@ -74,7 +74,7 @@ public class ChatWindowWebSocketTests
     private class TestChatWindow : ChatWindow
     {
         private readonly Uri _uri;
-        public TestChatWindow(Config config, HttpClient httpClient, Uri uri) : base(config, httpClient, null)
+        public TestChatWindow(Config config, HttpClient httpClient, Uri uri) : base(config, httpClient, null, new TokenManager())
         {
             _uri = uri;
         }

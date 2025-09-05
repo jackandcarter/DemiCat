@@ -22,6 +22,14 @@ public class TokenManager
 
     public static TokenManager? Instance { get; private set; }
 
+    public TokenManager()
+    {
+        _pluginInterface = null!;
+        _token = "test";
+        State = LinkState.Linked;
+        Instance = this;
+    }
+
     public TokenManager(IDalamudPluginInterface pluginInterface)
     {
         _pluginInterface = pluginInterface;
