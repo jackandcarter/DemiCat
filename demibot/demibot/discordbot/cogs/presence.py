@@ -7,7 +7,7 @@ import discord
 from discord.ext import commands
 from sqlalchemy import select
 
-from ...db.models import Guild, Membership, Presence as DbPresence
+from ...db.models import Guild, Membership, Presence as DbPresence, User
 from ...db.session import get_session
 from ...http.ws import manager
 from ..presence_store import Presence as StorePresence, set_presence
@@ -50,14 +50,30 @@ class PresenceTracker(commands.Cog):
                 db.add(guild_row)
                 await db.flush()
 
+            # Ensure we have an internal user record and use its database id for
+            # memberships. Membership.user_id references users.id, not the
+            # Discord snowflake.
+            user_res = await db.execute(
+                select(User).where(User.discord_user_id == member.id)
+            )
+            user_row = user_res.scalar_one_or_none()
+            if user_row is None:
+                user_row = User(
+                    discord_user_id=member.id,
+                    global_name=getattr(member, "global_name", None),
+                    discriminator=getattr(member, "discriminator", None),
+                )
+                db.add(user_row)
+                await db.flush()
+
             mem_stmt = select(Membership).where(
                 Membership.guild_id == guild_row.id,
-                Membership.user_id == member.id,
+                Membership.user_id == user_row.id,
             )
             mem_res = await db.execute(mem_stmt)
             mem = mem_res.scalars().first()
             if mem is None:
-                mem = Membership(guild_id=guild_row.id, user_id=member.id)
+                mem = Membership(guild_id=guild_row.id, user_id=user_row.id)
                 db.add(mem)
             mem.nickname = display_name
             mem.avatar_url = avatar_url
