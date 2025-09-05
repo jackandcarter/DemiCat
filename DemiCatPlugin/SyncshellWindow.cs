@@ -231,7 +231,7 @@ public class SyncshellWindow : IDisposable
                 url += $"?since={Uri.EscapeDataString(state.LastPullAt.Value.ToString("O"))}";
 
             var req = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(req, _config);
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             if (!string.IsNullOrEmpty(_etag))
                 req.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(_etag));
 
@@ -301,7 +301,7 @@ public class SyncshellWindow : IDisposable
             url += $"?since={Uri.EscapeDataString(since.Value.ToString("O"))}";
 
         var req = new HttpRequestMessage(HttpMethod.Get, url);
-        ApiHelpers.AddAuthHeader(req, _config);
+        ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
 
         var resp = await _httpClient.SendAsync(req);
         if (!resp.IsSuccessStatusCode)
@@ -561,7 +561,7 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
-            if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!TokenManager.Instance!.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/installations";
@@ -570,7 +570,7 @@ public class SyncshellWindow : IDisposable
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json")
             };
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             await _httpClient.SendAsync(request);
 
             _installations[assetId] = new Installation { AssetId = assetId, Status = status, UpdatedAt = DateTimeOffset.UtcNow };
@@ -677,11 +677,11 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
-            if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!TokenManager.Instance!.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{path}";
             var req = new HttpRequestMessage(HttpMethod.Post, url);
-            ApiHelpers.AddAuthHeader(req, _config);
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             await _httpClient.SendAsync(req);
         }
         catch
@@ -694,14 +694,14 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
-            if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!TokenManager.Instance!.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/syncshell/manifest";
             var req = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent("[]", Encoding.UTF8, "application/json")
             };
-            ApiHelpers.AddAuthHeader(req, _config);
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             await _httpClient.SendAsync(req);
         }
         catch
@@ -733,12 +733,12 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
-            if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!TokenManager.Instance!.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/installations";
             var req = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(req, _config);
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             var resp = await _httpClient.SendAsync(req);
             if (!resp.IsSuccessStatusCode)
                 return;

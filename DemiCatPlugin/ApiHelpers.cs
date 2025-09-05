@@ -17,8 +17,8 @@ internal static class ApiHelpers
         return true;
     }
 
-    internal static void AddAuthHeader(HttpRequestMessage request, Config config)
-        => AddAuthHeader(request, config.AuthToken);
+    internal static void AddAuthHeader(HttpRequestMessage request, TokenManager tokenManager)
+        => AddAuthHeader(request, tokenManager.Token);
 
     internal static void AddAuthHeader(HttpRequestMessage request, string? token)
     {
@@ -28,8 +28,8 @@ internal static class ApiHelpers
         }
     }
 
-    internal static void AddAuthHeader(ClientWebSocket socket, Config config)
-        => AddAuthHeader(socket, config.AuthToken);
+    internal static void AddAuthHeader(ClientWebSocket socket, TokenManager tokenManager)
+        => AddAuthHeader(socket, tokenManager.Token);
 
     internal static void AddAuthHeader(ClientWebSocket socket, string? token)
     {

@@ -145,7 +145,7 @@ public class RequestBoardWindow
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests/{req.Id}/{action}";
                 var json = JsonSerializer.Serialize(new { version = req.Version });
                 var msg = new HttpRequestMessage(HttpMethod.Post, url);
-                ApiHelpers.AddAuthHeader(msg, _config);
+                ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
                 msg.Content = new StringContent(json, Encoding.UTF8, "application/json");
                 var resp = await _httpClient.SendAsync(msg);
                 if (resp.IsSuccessStatusCode)
@@ -219,7 +219,7 @@ public class RequestBoardWindow
         {
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests/{id}";
             var msg = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(msg, _config);
+            ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
             var resp = await _httpClient.SendAsync(msg);
             if (resp.IsSuccessStatusCode)
             {
