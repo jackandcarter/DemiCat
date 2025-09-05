@@ -22,6 +22,9 @@ public class TokenManager
 
     public static TokenManager? Instance { get; private set; }
 
+    public event Action? OnLinked;
+    public event Action? OnUnlinked;
+
     public TokenManager()
     {
         _pluginInterface = null!;
@@ -75,6 +78,7 @@ public class TokenManager
             File.WriteAllBytes(path, encrypted);
             _token = token;
             State = LinkState.Linked;
+            OnLinked?.Invoke();
         }
         catch
         {
@@ -97,6 +101,7 @@ public class TokenManager
         }
         _token = null;
         State = LinkState.Unlinked;
+        OnUnlinked?.Invoke();
     }
 }
 

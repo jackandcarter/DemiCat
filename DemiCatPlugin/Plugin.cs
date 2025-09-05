@@ -65,8 +65,8 @@ public class Plugin : IDalamudPlugin
         }
         _presenceService?.Reset();
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _presenceSidebar, _httpClient);
-        _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow);
-        _requestWatcher = new RequestWatcher(_config, _httpClient);
+        _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow, _tokenManager);
+        _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
         _settings.MainWindow = _mainWindow;
         _settings.ChatWindow = _chatWindow;
         _settings.OfficerChatWindow = _officerChatWindow;
@@ -85,8 +85,12 @@ public class Plugin : IDalamudPlugin
         _openConfigUi = () => _settings.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
-        _requestWatcher.Start();
-        _ = _channelWatcher.Start();
+        _tokenManager.OnLinked += StartWatchers;
+        _tokenManager.OnUnlinked += StopWatchers;
+        if (_tokenManager.IsReady())
+        {
+            StartWatchers();
+        }
         _services.Log.Info("DemiCat loaded.");
     }
 
@@ -101,6 +105,9 @@ public class Plugin : IDalamudPlugin
         _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
 
+        _tokenManager.OnLinked -= StartWatchers;
+        _tokenManager.OnUnlinked -= StopWatchers;
+
         _channelWatcher.Dispose();
         _requestWatcher.Dispose();
         _presenceSidebar?.Dispose();
@@ -111,6 +118,20 @@ public class Plugin : IDalamudPlugin
         _ui.DisposeAsync().GetAwaiter().GetResult();
         _settings.Dispose();
         _httpClient.Dispose();
+    }
+
+    private void StartWatchers()
+    {
+        if (!_tokenManager.IsReady())
+            return;
+        _requestWatcher.Start();
+        _ = _channelWatcher.Start();
+    }
+
+    private void StopWatchers()
+    {
+        _requestWatcher.Stop();
+        _channelWatcher.Stop();
     }
 
     private async Task<bool> RefreshRoles(IPluginLog log)
