@@ -16,6 +16,7 @@ import pkgutil
 from fastapi import FastAPI
 
 from .ws import websocket_endpoint
+from .ws_chat import websocket_endpoint_chat
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
@@ -27,6 +28,7 @@ def create_app() -> FastAPI:
     app.add_api_websocket_route("/ws/presences", websocket_endpoint)
     app.add_api_websocket_route("/ws/channels", websocket_endpoint)
     app.add_api_websocket_route("/ws/requests", websocket_endpoint)
+    app.add_api_websocket_route("/ws/chat", websocket_endpoint_chat)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
