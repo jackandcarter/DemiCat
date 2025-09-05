@@ -127,12 +127,6 @@ public class ChatBridge : IDisposable
                     }
 
                     var json = Encoding.UTF8.GetString(ms.ToArray());
-                    if (json == "ping")
-                    {
-                        await _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")), WebSocketMessageType.Text, true, token);
-                        continue;
-                    }
-
                     MessageReceived?.Invoke(json);
                 }
             }

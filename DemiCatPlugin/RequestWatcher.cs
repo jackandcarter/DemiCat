@@ -1,7 +1,6 @@
 using System;
 using System.Net.Http;
 using System.Net.WebSockets;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -67,16 +66,6 @@ public class RequestWatcher : IDisposable
                     var (message, type) = await ChannelWatcher.ReceiveMessageAsync(_ws, buffer, token);
                     if (type == WebSocketMessageType.Close)
                         break;
-                    if (message == "ping")
-                    {
-                        await _ws.SendAsync(
-                            new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")),
-                            WebSocketMessageType.Text,
-                            true,
-                            token
-                        );
-                        continue;
-                    }
                     HandleMessage(message);
                 }
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)

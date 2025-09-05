@@ -16,6 +16,9 @@ class StubWebSocket:
     async def send_text(self, message: str):
         self.sent.append(message)
 
+    async def ping(self):
+        return None
+
 class StubContext:
     def __init__(self, guild_id: int, roles):
         self.guild = types.SimpleNamespace(id=guild_id)
@@ -69,8 +72,11 @@ class EndpointStubWebSocket:
         self.close_code = code
         self.close_reason = reason
 
-    async def receive_text(self) -> str:  # pragma: no cover - should not be called
-        raise RuntimeError("receive_text should not be called")
+    async def receive(self) -> str:  # pragma: no cover - should not be called
+        raise RuntimeError("receive should not be called")
+
+    async def ping(self):
+        return None
 
 
 def test_officer_path_requires_role(monkeypatch):
