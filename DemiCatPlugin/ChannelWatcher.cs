@@ -44,7 +44,7 @@ public class ChannelWatcher : IDisposable
         var delay = TimeSpan.FromSeconds(5);
         while (!token.IsCancellationRequested)
         {
-            if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(_config.AuthToken) || !_config.Enabled)
+            if (!ApiHelpers.ValidateApiBaseUrl(_config) || !TokenManager.Instance!.IsReady() || !_config.Enabled)
             {
                 try { await Task.Delay(delay, token); } catch { }
                 delay = TimeSpan.FromSeconds(5);
@@ -54,7 +54,7 @@ public class ChannelWatcher : IDisposable
             {
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_ws, _config);
+                ApiHelpers.AddAuthHeader(_ws, TokenManager.Instance!);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 delay = TimeSpan.FromSeconds(5);

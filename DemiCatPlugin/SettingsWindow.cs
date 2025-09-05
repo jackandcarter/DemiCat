@@ -16,6 +16,7 @@ namespace DemiCatPlugin;
 public class SettingsWindow : IDisposable
 {
     private readonly Config _config;
+    private readonly TokenManager _tokenManager;
     private readonly HttpClient _httpClient;
     private readonly Func<Task<bool>> _refreshRoles;
     private readonly Func<Task> _startNetworking;
@@ -37,13 +38,14 @@ public class SettingsWindow : IDisposable
     public ChannelWatcher? ChannelWatcher { get; set; }
     public RequestWatcher? RequestWatcher { get; set; }
 
-    public SettingsWindow(Config config, HttpClient httpClient, Func<Task<bool>> refreshRoles, Func<Task> startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
+    public SettingsWindow(Config config, TokenManager tokenManager, HttpClient httpClient, Func<Task<bool>> refreshRoles, Func<Task> startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
         _config = config;
+        _tokenManager = tokenManager;
         _httpClient = httpClient;
         _refreshRoles = refreshRoles;
         _startNetworking = startNetworking;
-        _apiKey = config.AuthToken ?? string.Empty;
+        _apiKey = tokenManager.Token ?? string.Empty;
         _apiBaseUrl = config.ApiBaseUrl;
         _devWindow = new DeveloperWindow(config, pluginInterface);
         _log = log;
@@ -194,12 +196,12 @@ public class SettingsWindow : IDisposable
     {
         try
         {
-            if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (_httpClient == null || !_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/settings";
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
                 return;
@@ -244,7 +246,7 @@ public class SettingsWindow : IDisposable
     {
         try
         {
-            if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (_httpClient == null || !_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/settings";
@@ -262,7 +264,7 @@ public class SettingsWindow : IDisposable
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
             };
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             await _httpClient.SendAsync(request);
         }
         catch (Exception ex)
@@ -283,16 +285,16 @@ public class SettingsWindow : IDisposable
         var framework = PluginServices.Instance?.Framework;
         try
         {
-            if (_httpClient == null || string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (_httpClient == null || !_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/forget";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                _config.AuthToken = null;
+                _tokenManager.Clear();
                 _apiKey = string.Empty;
                 ClearCachedData();
                 if (framework != null)
@@ -369,7 +371,7 @@ public class SettingsWindow : IDisposable
                 {
                     _log.Info("API key validated successfully.");
                     var newKey = key;
-                    _config.AuthToken = newKey;
+                    _tokenManager.Set(newKey);
                     _apiKey = newKey;
                     SaveConfig();
                     _ = framework.RunOnTick(() => _syncStatus = "API key validated");

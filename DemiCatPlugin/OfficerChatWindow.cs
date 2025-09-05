@@ -46,7 +46,7 @@ public class OfficerChatWindow : ChatWindow
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {

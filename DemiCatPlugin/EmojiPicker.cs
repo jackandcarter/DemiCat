@@ -71,7 +71,7 @@ public class EmojiPicker
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis");
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {

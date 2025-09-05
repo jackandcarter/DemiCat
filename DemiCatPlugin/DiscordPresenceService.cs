@@ -79,7 +79,7 @@ public class DiscordPresenceService : IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -123,7 +123,7 @@ public class DiscordPresenceService : IDisposable
             {
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_ws, _config);
+                ApiHelpers.AddAuthHeader(_ws, TokenManager.Instance!);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 _loaded = false;

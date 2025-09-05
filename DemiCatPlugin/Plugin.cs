@@ -31,6 +31,7 @@ public class Plugin : IDalamudPlugin
     private readonly HttpClient _httpClient = new();
     private readonly Action _openMainUi;
     private readonly Action _openConfigUi;
+    private readonly TokenManager _tokenManager;
 
     public Plugin()
     {
@@ -41,6 +42,7 @@ public class Plugin : IDalamudPlugin
         }
 
         _config = _services.PluginInterface.GetPluginConfig() as Config ?? new Config();
+        _tokenManager = new TokenManager(_services.PluginInterface);
         var oldVersion = _config.Version;
         _config.Migrate();
         var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
@@ -52,7 +54,7 @@ public class Plugin : IDalamudPlugin
         RequestStateService.Load(_config);
 
         _ui = new UiRenderer(_config, _httpClient);
-        _settings = new SettingsWindow(_config, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
+        _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
         _presenceService = _config.EnableFcChat ? new DiscordPresenceService(_config, _httpClient) : null;
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService);
@@ -113,7 +115,7 @@ public class Plugin : IDalamudPlugin
 
     private async Task<bool> RefreshRoles(IPluginLog log)
     {
-        if (string.IsNullOrEmpty(_config.AuthToken) || !ApiHelpers.ValidateApiBaseUrl(_config))
+        if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
         {
             return false;
         }
@@ -122,7 +124,7 @@ public class Plugin : IDalamudPlugin
         {
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/roles";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             log.Info($"Requesting roles from {url}");
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
@@ -137,7 +139,7 @@ public class Plugin : IDalamudPlugin
 
             var channelUrl = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels";
             var channelRequest = new HttpRequestMessage(HttpMethod.Get, channelUrl);
-            ApiHelpers.AddAuthHeader(channelRequest, _config);
+            ApiHelpers.AddAuthHeader(channelRequest, _tokenManager);
             List<ChannelDto> chatChannels = new();
             try
             {

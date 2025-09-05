@@ -94,7 +94,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             _webSocket = null;
         }
 
-        if (string.IsNullOrEmpty(_config.AuthToken) || !_config.Enabled)
+        if (!TokenManager.Instance!.IsReady() || !_config.Enabled)
         {
             return;
         }
@@ -137,7 +137,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return;
             var stream = await response.Content.ReadAsStreamAsync();
@@ -208,7 +208,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 url += $"?channel_id={_channelId}";
             }
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -259,7 +259,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             try
             {
                 _webSocket = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_webSocket, _config);
+                ApiHelpers.AddAuthHeader(_webSocket, TokenManager.Instance!);
                 var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
                 var wsUrl = new Uri(($"{baseUrl}/ws/embeds")
                     .Replace("http://", "ws://")
@@ -418,7 +418,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 url += $"?channel_id={_channelId}";
             }
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -518,7 +518,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {

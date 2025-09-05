@@ -136,7 +136,7 @@ public class TemplatesWindow
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -271,7 +271,7 @@ public class TemplatesWindow
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            ApiHelpers.AddAuthHeader(request, _config);
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             await _httpClient.SendAsync(request);
             _lastResult = "Template posted";
         }
