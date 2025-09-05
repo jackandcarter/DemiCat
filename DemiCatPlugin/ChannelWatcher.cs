@@ -78,16 +78,6 @@ public class ChannelWatcher : IDisposable
                     {
                         break;
                     }
-                    if (message == "ping")
-                    {
-                        await _ws.SendAsync(
-                            new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")),
-                            WebSocketMessageType.Text,
-                            true,
-                            token
-                        );
-                        continue;
-                    }
                     if (message == "update" && _tokenManager.IsReady())
                     {
                         _ = PluginServices.Instance!.Framework.RunOnTick(() =>

@@ -27,6 +27,9 @@ logger = logging.getLogger(__name__)
 BATCH_MIN = 0.04
 BATCH_MAX = 0.08
 
+PING_INTERVAL = 30.0
+PING_TIMEOUT = 60.0
+
 
 @dataclass
 class ChatConnection:
@@ -43,15 +46,41 @@ class ChatConnectionManager:
         self._channel_cursors: Dict[str, int] = {}
         self._send_count = 0
         self._resync_count = 0
+        self._ping_task: asyncio.Task | None = None
 
     async def connect(self, websocket: WebSocket, ctx: RequestContext) -> None:
         await websocket.accept(
             headers=[(b"sec-websocket-extensions", b"permessage-deflate")]
         )
         self.connections[websocket] = ChatConnection(ctx)
+        if self._ping_task is None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                loop = None
+            if loop is not None:
+                self._ping_task = loop.create_task(self._ping_loop())
 
     def disconnect(self, websocket: WebSocket) -> None:
         self.connections.pop(websocket, None)
+        if not self.connections and self._ping_task is not None:
+            self._ping_task.cancel()
+            self._ping_task = None
+
+    async def _ping_loop(self) -> None:
+        try:
+            while True:
+                await asyncio.sleep(PING_INTERVAL)
+                dead: list[WebSocket] = []
+                for ws in list(self.connections.keys()):
+                    try:
+                        await asyncio.wait_for(ws.ping(), PING_TIMEOUT)
+                    except Exception:
+                        dead.append(ws)
+                for ws in dead:
+                    self.disconnect(ws)
+        except asyncio.CancelledError:
+            pass
 
     async def sub(self, websocket: WebSocket, data: dict) -> None:
         info = self.connections.get(websocket)
@@ -124,9 +153,6 @@ class ChatConnectionManager:
         channel = str(data.get("channel"))
         await self._send_resync(websocket, channel)
 
-    async def ping(self, websocket: WebSocket) -> None:
-        await websocket.send_text(json.dumps({"op": "pong"}))
-
     async def handle(self, websocket: WebSocket, message: dict) -> None:
         op = message.get("op")
         if op == "sub":
@@ -137,8 +163,6 @@ class ChatConnectionManager:
             await self._handle_send(websocket, message)
         elif op == "resync":
             await self.resync(websocket, message)
-        elif op == "ping":
-            await self.ping(websocket)
 
     async def _handle_send(self, websocket: WebSocket, data: dict) -> None:
         info = self.connections.get(websocket)

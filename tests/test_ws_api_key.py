@@ -1,4 +1,5 @@
 import asyncio
+import asyncio
 import types
 import pytest
 from fastapi import HTTPException, WebSocketDisconnect
@@ -22,8 +23,11 @@ class StubWebSocket:
         self.close_code = code
         self.close_reason = reason
 
-    async def receive_text(self):
+    async def receive(self):
         raise WebSocketDisconnect()
+
+    async def ping(self):
+        return None
 
 
 class DummySession:

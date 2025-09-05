@@ -1,8 +1,7 @@
 
 from __future__ import annotations
 import asyncio
-import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
@@ -25,7 +24,6 @@ class ConnectionInfo:
     guild_id: int
     roles: list[str]
     path: str
-    last_activity: float = field(default_factory=time.monotonic)
 
 
 class ConnectionManager:
@@ -52,11 +50,6 @@ class ConnectionManager:
         if not self.connections and self._ping_task is not None:
             self._ping_task.cancel()
             self._ping_task = None
-
-    def touch(self, websocket: WebSocket) -> None:
-        info = self.connections.get(websocket)
-        if info is not None:
-            info.last_activity = time.monotonic()
 
     async def broadcast_text(
         self,
@@ -89,17 +82,10 @@ class ConnectionManager:
         try:
             while True:
                 await asyncio.sleep(PING_INTERVAL)
-                now = time.monotonic()
                 dead: list[WebSocket] = []
-                for ws, info in list(self.connections.items()):
-                    if now - info.last_activity > PING_TIMEOUT:
-                        try:
-                            await ws.close()
-                        finally:
-                            dead.append(ws)
-                        continue
+                for ws in list(self.connections.keys()):
                     try:
-                        await ws.send_text("ping")
+                        await asyncio.wait_for(ws.ping(), PING_TIMEOUT)
                     except Exception:
                         dead.append(ws)
                 for ws in dead:
@@ -169,7 +155,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     )
     try:
         while True:
-            await websocket.receive_text()
-            manager.touch(websocket)
+            await websocket.receive()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
