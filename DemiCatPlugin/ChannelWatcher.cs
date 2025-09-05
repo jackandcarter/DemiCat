@@ -14,17 +14,19 @@ public class ChannelWatcher : IDisposable
     private readonly EventCreateWindow _eventCreateWindow;
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
+    private readonly TokenManager _tokenManager;
     private ClientWebSocket? _ws;
     private Task? _task;
     private CancellationTokenSource? _cts;
 
-    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow)
+    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager)
     {
         _config = config;
         _ui = ui;
         _eventCreateWindow = eventCreateWindow;
         _chatWindow = chatWindow;
         _officerChatWindow = officerChatWindow;
+        _tokenManager = tokenManager;
     }
 
     public async Task Start()
@@ -39,12 +41,22 @@ public class ChannelWatcher : IDisposable
         _task = Run(_cts.Token);
     }
 
+    public void Stop()
+    {
+        _cts?.Cancel();
+        try { _task?.GetAwaiter().GetResult(); } catch { }
+        _ws?.Dispose();
+        _ws = null;
+        _cts = null;
+        _task = null;
+    }
+
     private async Task Run(CancellationToken token)
     {
         var delay = TimeSpan.FromSeconds(5);
         while (!token.IsCancellationRequested)
         {
-            if (!ApiHelpers.ValidateApiBaseUrl(_config) || !TokenManager.Instance!.IsReady() || !_config.Enabled)
+            if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady() || !_config.Enabled)
             {
                 try { await Task.Delay(delay, token); } catch { }
                 delay = TimeSpan.FromSeconds(5);
@@ -54,7 +66,7 @@ public class ChannelWatcher : IDisposable
             {
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_ws, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(_ws, _tokenManager);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 delay = TimeSpan.FromSeconds(5);
@@ -76,7 +88,7 @@ public class ChannelWatcher : IDisposable
                         );
                         continue;
                     }
-                    if (message == "update")
+                    if (message == "update" && _tokenManager.IsReady())
                     {
                         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                         {
@@ -113,14 +125,17 @@ public class ChannelWatcher : IDisposable
             if (token.IsCancellationRequested)
                 break;
 
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            if (_tokenManager.IsReady())
             {
-                _ = SafeRefresh(_ui.RefreshChannels);
-                _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
-                if (_config.EnableFcChat)
-                    _ = SafeRefresh(_chatWindow.RefreshChannels);
-                _ = SafeRefresh(_officerChatWindow.RefreshChannels);
-            });
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _ = SafeRefresh(_ui.RefreshChannels);
+                    _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
+                    if (_config.EnableFcChat)
+                        _ = SafeRefresh(_chatWindow.RefreshChannels);
+                    _ = SafeRefresh(_officerChatWindow.RefreshChannels);
+                });
+            }
             try { await Task.Delay(delay, token); } catch { }
             delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
         }
