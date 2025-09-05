@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.WebSockets;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -49,9 +48,7 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, EmojiPicker.EmojiDto> _emojiCatalog = new();
     private bool _emojiCatalogLoaded;
     private bool _emojiFetchInProgress;
-    private ClientWebSocket? _ws;
-    private Task? _wsTask;
-    private CancellationTokenSource? _wsCts;
+    private readonly ChatBridge _bridge;
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true
@@ -93,6 +90,11 @@ public class ChatWindow : IDisposable
         _emojiPicker = new EmojiPicker(config, httpClient) { TextureLoader = LoadTexture };
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
+        _bridge = new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri);
+        _bridge.MessageReceived += HandleBridgeMessage;
+        _bridge.Linked += HandleBridgeLinked;
+        _bridge.Unlinked += HandleBridgeUnlinked;
+        _bridge.StatusChanged += s => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = s);
     }
 
     public void StartNetworking()
@@ -101,19 +103,13 @@ public class ChatWindow : IDisposable
         {
             return;
         }
-        _wsCts?.Cancel();
-        _ws?.Dispose();
-        _ws = null;
-        _wsCts = new CancellationTokenSource();
-        _wsTask = RunWebSocket(_wsCts.Token);
+        _bridge.Start();
         _presence?.Reset();
     }
 
     public void StopNetworking()
     {
-        _wsCts?.Cancel();
-        _ws?.Dispose();
-        _ws = null;
+        _bridge.Stop();
         _presence?.Reset();
     }
 
@@ -943,6 +939,7 @@ public class ChatWindow : IDisposable
     public void Dispose()
     {
         StopNetworking();
+        _bridge.Dispose();
         ClearTextureCache();
     }
 
@@ -1023,179 +1020,84 @@ public class ChatWindow : IDisposable
         }
     }
 
-    private async Task RunWebSocket(CancellationToken token)
+    private void HandleBridgeMessage(string json)
     {
-        var backoff = 1;
-        while (!token.IsCancellationRequested)
+        try
         {
-            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            using var document = JsonDocument.Parse(json);
+            if (document.RootElement.TryGetProperty("deletedId", out var delProp))
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = "Invalid API URL");
-                try
+                var id = delProp.GetString();
+                if (!string.IsNullOrEmpty(id))
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(5), token);
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    {
+                        var index = _messages.FindIndex(m => m.Id == id);
+                        if (index >= 0)
+                        {
+                            DisposeMessageTextures(_messages[index]);
+                            _messages.RemoveAt(index);
+                        }
+                    });
                 }
-                catch
-                {
-                    // ignore cancellation
-                }
-                continue;
             }
-
-            var forbidden = false;
-            try
+            else
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Connecting...");
-                _ws?.Dispose();
-                _ws = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_ws, _tokenManager);
-                var uri = BuildWebSocketUri();
-                await _ws.ConnectAsync(uri, token);
-                // Refresh presence information in case updates were missed while offline.
-                _presence?.Reload();
-                _ = _presence?.Refresh();
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
-                backoff = 1;
-
-                var buffer = new byte[8192];
-                while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
+                var msg = document.RootElement.Deserialize<DiscordMessageDto>(JsonOpts);
+                if (msg != null)
                 {
-                    using var ms = new MemoryStream();
-                    WebSocketReceiveResult result;
-                    do
+                    if (_pendingMessages.TryRemove(msg.Id, out var tcs))
                     {
-                        result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
-                        if (result.MessageType == WebSocketMessageType.Close)
-                        {
-                            break;
-                        }
-
-                        ms.Write(buffer, 0, result.Count);
-
-                        if (result.Count == buffer.Length)
-                        {
-                            Array.Resize(ref buffer, buffer.Length * 2);
-                        }
-
-                    } while (!result.EndOfMessage);
-
-                    if (result.MessageType == WebSocketMessageType.Close)
-                    {
-                        break;
+                        tcs.TrySetResult(true);
                     }
-
-                    var json = Encoding.UTF8.GetString(ms.ToArray());
-                    if (json == "ping")
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                     {
-                        await _ws.SendAsync(new ArraySegment<byte>(Encoding.UTF8.GetBytes("pong")), WebSocketMessageType.Text, true, token);
-                        continue;
-                    }
-                    try
-                    {
-                        using var document = JsonDocument.Parse(json);
-                        if (document.RootElement.TryGetProperty("deletedId", out var delProp))
+                        if (msg.ChannelId == _channelId)
                         {
-                            var id = delProp.GetString();
-                            if (!string.IsNullOrEmpty(id))
+                            var index = _messages.FindIndex(m => m.Id == msg.Id);
+                            if (index >= 0)
                             {
-                                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                                {
-                                    var index = _messages.FindIndex(m => m.Id == id);
-                                    if (index >= 0)
-                                    {
-                                        DisposeMessageTextures(_messages[index]);
-                                        _messages.RemoveAt(index);
-                                    }
-                                });
+                                DisposeMessageTextures(_messages[index]);
+                                _messages[index] = msg;
                             }
-                        }
-                        else
-                        {
-
-                            var msg = document.RootElement.Deserialize<DiscordMessageDto>(JsonOpts);
-
-                            if (msg != null)
+                            else
                             {
-                                if (_pendingMessages.TryRemove(msg.Id, out var tcs))
+                                _messages.Add(msg);
+                            }
+                            if (!string.IsNullOrEmpty(msg.Author.AvatarUrl))
+                            {
+                                LoadTexture(msg.Author.AvatarUrl, t => msg.AvatarTexture = t);
+                            }
+                            if (msg.Attachments != null)
+                            {
+                                foreach (var a in msg.Attachments)
                                 {
-                                    tcs.TrySetResult(true);
+                                    if (a.ContentType != null && a.ContentType.StartsWith("image"))
+                                    {
+                                        LoadTexture(a.Url, t => a.Texture = t);
+                                    }
                                 }
-                                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                                {
-                                    if (msg.ChannelId == _channelId)
-                                    {
-                                        var index = _messages.FindIndex(m => m.Id == msg.Id);
-                                        if (index >= 0)
-                                        {
-                                            DisposeMessageTextures(_messages[index]);
-                                            _messages[index] = msg;
-                                        }
-                                        else
-                                        {
-                                            _messages.Add(msg);
-                                        }
-                                        if (!string.IsNullOrEmpty(msg.Author.AvatarUrl))
-                                        {
-                                            LoadTexture(msg.Author.AvatarUrl, t => msg.AvatarTexture = t);
-                                        }
-                                        if (msg.Attachments != null)
-                                        {
-                                            foreach (var a in msg.Attachments)
-                                            {
-                                                if (a.ContentType != null && a.ContentType.StartsWith("image"))
-                                                {
-                                                    LoadTexture(a.Url, t => a.Texture = t);
-                                                }
-                                            }
-                                        }
-                                    }
-                                });
                             }
                         }
-                    }
-                    catch
-                    {
-                        // ignored
-                    }
+                    });
                 }
-            }
-            catch (Exception ex)
-            {
-                PluginServices.Instance!.Log.Error(ex, "WebSocket connection error");
-                forbidden = ex is HttpRequestException hre && hre.StatusCode == HttpStatusCode.Forbidden
-                    || (ex as WebSocketException)?.Message.Contains("403") == true
-                    || (ex.InnerException as HttpRequestException)?.StatusCode == HttpStatusCode.Forbidden;
-                var msg = forbidden ? "Forbidden – check API key/roles" : $"Connection failed: {ex.Message}";
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = msg);
-            }
-            finally
-            {
-                _ws?.Dispose();
-                _ws = null;
-            }
-
-            if (token.IsCancellationRequested)
-            {
-                break;
-            }
-
-            try
-            {
-                var delay = forbidden ? 30 : backoff;
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = $"Reconnecting in {delay}s...");
-                await Task.Delay(TimeSpan.FromSeconds(delay), token);
-                if (!forbidden)
-                {
-                    backoff = Math.Min(backoff * 2, 30);
-                }
-            }
-            catch
-            {
-                // ignore cancellation
             }
         }
+        catch
+        {
+            // ignored
+        }
+    }
+
+    private void HandleBridgeLinked()
+    {
+        _presence?.Reload();
+        _ = _presence?.Refresh();
+    }
+
+    private void HandleBridgeUnlinked()
+    {
+        // nothing additional
     }
 
     protected virtual Uri BuildWebSocketUri()
