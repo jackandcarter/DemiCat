@@ -39,6 +39,7 @@ public class ChatWindow : IDisposable
     protected readonly DiscordPresenceService? _presence;
     protected readonly List<string> _attachments = new();
     protected string _newAttachmentPath = string.Empty;
+    protected readonly TokenManager _tokenManager;
     protected string? _replyToId;
     protected string? _editingMessageId;
     protected string _editingChannelId = string.Empty;
@@ -83,11 +84,12 @@ public class ChatWindow : IDisposable
 
     protected virtual string MessagesPath => "/api/messages";
 
-    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence)
+    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager)
     {
         _config = config;
         _httpClient = httpClient;
         _presence = presence;
+        _tokenManager = tokenManager;
         _emojiPicker = new EmojiPicker(config, httpClient) { TextureLoader = LoadTexture };
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
@@ -117,6 +119,12 @@ public class ChatWindow : IDisposable
 
     public virtual void Draw()
     {
+        if (!_tokenManager.IsReady())
+        {
+            ImGui.TextUnformatted("Link DemiCat…");
+            return;
+        }
+
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
@@ -442,7 +450,7 @@ public class ChatWindow : IDisposable
             try
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis");
-                ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
                 var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -568,7 +576,7 @@ public class ChatWindow : IDisposable
                 request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}");
                 request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             }
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -668,7 +676,7 @@ public class ChatWindow : IDisposable
             var method = remove ? HttpMethod.Delete : HttpMethod.Put;
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{_channelId}/messages/{messageId}/reactions/{Uri.EscapeDataString(emoji)}";
             var request = new HttpRequestMessage(method, url);
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -704,7 +712,7 @@ public class ChatWindow : IDisposable
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages/{messageId}";
             var request = new HttpRequestMessage(HttpMethod.Patch, url);
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -738,7 +746,7 @@ public class ChatWindow : IDisposable
         {
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages/{messageId}";
             var request = new HttpRequestMessage(HttpMethod.Delete, url);
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -774,7 +782,7 @@ public class ChatWindow : IDisposable
             var body = new { messageId = messageId, channelId = cid, customId = customId };
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
@@ -831,7 +839,7 @@ public class ChatWindow : IDisposable
                 }
 
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
-                ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
 
                 var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode)
@@ -945,12 +953,22 @@ public class ChatWindow : IDisposable
 
     public Task RefreshChannels()
     {
+        if (!_tokenManager.IsReady())
+        {
+            return Task.CompletedTask;
+        }
         _channelsLoaded = false;
         return FetchChannels();
     }
 
     protected virtual async Task FetchChannels(bool refreshed = false)
     {
+        if (!_tokenManager.IsReady())
+        {
+            _channelsLoaded = true;
+            return;
+        }
+
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
@@ -966,7 +984,7 @@ public class ChatWindow : IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -1031,7 +1049,7 @@ public class ChatWindow : IDisposable
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Connecting...");
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_ws, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(_ws, _tokenManager);
                 var uri = BuildWebSocketUri();
                 await _ws.ConnectAsync(uri, token);
                 // Refresh presence information in case updates were missed while offline.

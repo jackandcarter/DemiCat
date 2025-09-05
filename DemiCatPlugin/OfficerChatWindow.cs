@@ -9,13 +9,20 @@ namespace DemiCatPlugin;
 
 public class OfficerChatWindow : ChatWindow
 {
-    public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence) : base(config, httpClient, presence)
+    public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager)
+        : base(config, httpClient, presence, tokenManager)
     {
         _channelId = config.OfficerChannelId;
     }
 
     public override void Draw()
     {
+        if (!_tokenManager.IsReady())
+        {
+            base.Draw();
+            return;
+        }
+
         var originalChatChannel = _config.ChatChannelId;
         base.Draw();
 
@@ -31,6 +38,12 @@ public class OfficerChatWindow : ChatWindow
 
     protected override async Task FetchChannels(bool refreshed = false)
     {
+        if (!_tokenManager.IsReady())
+        {
+            _channelsLoaded = true;
+            return;
+        }
+
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
@@ -46,7 +59,7 @@ public class OfficerChatWindow : ChatWindow
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
