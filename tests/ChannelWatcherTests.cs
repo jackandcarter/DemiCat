@@ -61,4 +61,15 @@ public class ChannelWatcherTests
         Assert.Equal(WebSocketMessageType.Text, type);
         Assert.Equal(message, received);
     }
+
+    [Fact]
+    public async Task ReceiveMessageAsync_HandlesMultiByteCharacters()
+    {
+        var message = "a🙂b";
+        var ws = new StubWebSocket(message, 2);
+        var buffer = new byte[3];
+        var (received, type) = await ChannelWatcher.ReceiveMessageAsync(ws, buffer, CancellationToken.None);
+        Assert.Equal(WebSocketMessageType.Text, type);
+        Assert.Equal(message, received);
+    }
 }
