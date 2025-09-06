@@ -100,6 +100,8 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
 
         StartPolling();
+        await RefreshChannels();
+        await LoadPresences();
         await ConnectWebSocket();
     }
 
@@ -472,20 +474,18 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public void Draw()
     {
+        if (TokenManager.Instance?.IsReady() != true)
+        {
+            ImGui.TextUnformatted("Link DemiCat to view events");
+            return;
+        }
+
         if (!_config.Events)
         {
             ImGui.TextUnformatted("Feature disabled");
             return;
         }
 
-        if (!_presenceLoaded)
-        {
-            _ = LoadPresences();
-        }
-        if (!_channelsLoaded)
-        {
-            _ = FetchChannels();
-        }
         if (_channels.Count > 0)
         {
             var channelNames = _channels.Select(c => c.Name).ToArray();
@@ -494,7 +494,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _channelId = _channels[_selectedIndex].Id;
                 _config.EventChannelId = _channelId;
                 SaveConfig();
-                _ = FetchChannels();
+                _ = RefreshChannels();
                 _ = RefreshEmbeds();
             }
         }
