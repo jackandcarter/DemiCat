@@ -16,7 +16,7 @@ public class ChatWindowWebSocketTests
     {
         using var server = new MockWsServer();
         SetupServices();
-        var config = new Config { EnableFcChat = true };
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
         using var client = new HttpClient();
         var chat = new TestChatWindow(config, client, server.Uri);
         chat.StartNetworking();
@@ -89,13 +89,15 @@ public class ChatWindowWebSocketTests
         private int _connections;
         public int ConnectionCount => _connections;
         public Uri Uri { get; }
+        public string HttpBase { get; }
         public MockWsServer()
         {
             var port = GetFreePort();
             _listener = new HttpListener();
-            _listener.Prefixes.Add($"http://localhost:{port}/ws/messages/");
+            _listener.Prefixes.Add($"http://localhost:{port}/");
             _listener.Start();
-            Uri = new Uri($"ws://localhost:{port}/ws/messages");
+            Uri = new Uri($"ws://localhost:{port}/ws/chat");
+            HttpBase = $"http://localhost:{port}";
             _ = Task.Run(AcceptLoop);
         }
         private async Task AcceptLoop()
@@ -103,7 +105,13 @@ public class ChatWindowWebSocketTests
             while (!_cts.Token.IsCancellationRequested)
             {
                 var ctx = await _listener.GetContextAsync();
-                if (!ctx.Request.IsWebSocketRequest)
+                if (ctx.Request.HttpMethod == "HEAD" && ctx.Request.RawUrl == "/api/ping")
+                {
+                    ctx.Response.StatusCode = 200;
+                    ctx.Response.Close();
+                    continue;
+                }
+                if (!ctx.Request.IsWebSocketRequest || ctx.Request.RawUrl != "/ws/chat")
                 {
                     ctx.Response.StatusCode = 400;
                     ctx.Response.Close();
