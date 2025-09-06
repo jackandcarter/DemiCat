@@ -240,9 +240,16 @@ class Mirror(commands.Cog):
                             discord_message_id=message.id,
                             channel_id=channel_id,
                             guild_id=guild_id,
-                            payload_json=json.dumps(dto.model_dump(mode="json")),
+                            payload_json=json.dumps(
+                                dto.model_dump(mode="json", by_alias=True, exclude_none=True)
+                            ),
                             buttons_json=json.dumps(
-                                [b.model_dump(mode="json") for b in buttons]
+                                [
+                                    b.model_dump(
+                                        mode="json", by_alias=True, exclude_none=True
+                                    )
+                                    for b in buttons
+                                ]
                             )
                             if buttons
                             else None,
@@ -250,7 +257,9 @@ class Mirror(commands.Cog):
                         )
                     )
                     await manager.broadcast_text(
-                        json.dumps(dto.model_dump(mode="json")),
+                        json.dumps(
+                            dto.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        ),
                         guild_id,
                         officer_only=is_officer,
                         path="/ws/embeds",
@@ -303,17 +312,19 @@ class Mirror(commands.Cog):
             await db.commit()
 
             await manager.broadcast_text(
-                json.dumps(dto.model_dump()),
+                json.dumps(dto.model_dump(by_alias=True, exclude_none=True)),
                 guild_id,
                 officer_only=is_officer,
                 path="/ws/messages",
             )
 
-            await emit_event({
-                "channel": str(channel_id),
-                "op": "mc",
-                "d": dto.model_dump(),
-            })
+            await emit_event(
+                {
+                    "channel": str(channel_id),
+                    "op": "mc",
+                    "d": dto.model_dump(by_alias=True, exclude_none=True),
+                }
+            )
 
     @commands.Cog.listener()
     async def on_message_edit(
@@ -359,16 +370,27 @@ class Mirror(commands.Cog):
                     )
                     return
 
-                emb_row.payload_json = json.dumps(dto.model_dump(mode="json"))
+                emb_row.payload_json = json.dumps(
+                    dto.model_dump(mode="json", by_alias=True, exclude_none=True)
+                )
                 emb_row.buttons_json = (
-                    json.dumps([b.model_dump(mode="json") for b in buttons])
+                    json.dumps(
+                        [
+                            b.model_dump(
+                                mode="json", by_alias=True, exclude_none=True
+                            )
+                            for b in buttons
+                        ]
+                    )
                     if buttons
                     else None
                 )
                 await db.commit()
 
                 await manager.broadcast_text(
-                    json.dumps(dto.model_dump(mode="json")),
+                    json.dumps(
+                        dto.model_dump(mode="json", by_alias=True, exclude_none=True)
+                    ),
                     guild_id,
                     officer_only=is_officer,
                     path="/ws/embeds",
@@ -396,17 +418,19 @@ class Mirror(commands.Cog):
                 await db.commit()
 
                 await manager.broadcast_text(
-                    json.dumps(dto.model_dump()),
+                    json.dumps(dto.model_dump(by_alias=True, exclude_none=True)),
                     guild_id,
                     officer_only=is_officer,
                     path="/ws/messages",
                 )
 
-                await emit_event({
-                    "channel": str(channel_id),
-                    "op": "mu",
-                    "d": dto.model_dump(),
-                })
+                await emit_event(
+                    {
+                        "channel": str(channel_id),
+                        "op": "mu",
+                        "d": dto.model_dump(by_alias=True, exclude_none=True),
+                    }
+                )
 
     @commands.Cog.listener()
     async def on_reaction_add(
@@ -422,7 +446,12 @@ class Mirror(commands.Cog):
             reactions_json = None
             try:
                 reactions_json = json.dumps(
-                    [reaction_to_dto(r).model_dump() for r in reaction.message.reactions]
+                    [
+                        reaction_to_dto(r).model_dump(
+                            by_alias=True, exclude_none=True
+                        )
+                        for r in reaction.message.reactions
+                    ]
                 )
             except Exception:
                 reactions_json = None
@@ -431,7 +460,7 @@ class Mirror(commands.Cog):
 
             dto = message_to_chat_message(reaction.message)
             await manager.broadcast_text(
-                json.dumps(dto.model_dump()),
+                json.dumps(dto.model_dump(by_alias=True, exclude_none=True)),
                 msg.guild_id,
                 officer_only=msg.is_officer,
                 path="/ws/messages",
@@ -452,7 +481,12 @@ class Mirror(commands.Cog):
             reactions_json = None
             try:
                 reactions_json = json.dumps(
-                    [reaction_to_dto(r).model_dump() for r in reaction.message.reactions]
+                    [
+                        reaction_to_dto(r).model_dump(
+                            by_alias=True, exclude_none=True
+                        )
+                        for r in reaction.message.reactions
+                    ]
                 )
             except Exception:
                 reactions_json = None
@@ -461,7 +495,7 @@ class Mirror(commands.Cog):
 
             dto = message_to_chat_message(reaction.message)
             await manager.broadcast_text(
-                json.dumps(dto.model_dump()),
+                json.dumps(dto.model_dump(by_alias=True, exclude_none=True)),
                 msg.guild_id,
                 officer_only=msg.is_officer,
                 path="/ws/messages",
@@ -484,7 +518,7 @@ class Mirror(commands.Cog):
             {
                 "channel": str(channel_id),
                 "op": "ty",
-                "d": author.model_dump(),
+                "d": author.model_dump(by_alias=True, exclude_none=True),
             }
         )
 

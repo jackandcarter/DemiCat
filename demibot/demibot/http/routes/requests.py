@@ -82,7 +82,7 @@ def _dto(req: DbRequest) -> dict[str, Any]:
         quantity=quantity,
         assignee_id=req.assignee_id,
     )
-    return dto.model_dump(mode="json", exclude_none=True)
+    return dto.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> None:

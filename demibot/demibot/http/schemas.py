@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from datetime import datetime
 from enum import IntEnum
 
 # ---- Embeds ----
 
-class EmbedFieldDto(BaseModel):
+class CamelModel(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+
+class EmbedFieldDto(CamelModel):
     name: str
     value: str
     inline: bool | None = None
@@ -21,7 +25,7 @@ class ButtonStyle(IntEnum):
     link = 5
 
 
-class EmbedButtonDto(BaseModel):
+class EmbedButtonDto(CamelModel):
     label: str
     url: Optional[str] = None
     custom_id: Optional[str] = Field(default=None, alias="customId")
@@ -30,12 +34,12 @@ class EmbedButtonDto(BaseModel):
     max_signups: Optional[int] = Field(default=None, alias="maxSignups")
 
 
-class EmbedAuthorDto(BaseModel):
+class EmbedAuthorDto(CamelModel):
     name: Optional[str] = None
     url: Optional[str] = None
     icon_url: Optional[str] = Field(default=None, alias="iconUrl")
 
-class EmbedDto(BaseModel):
+class EmbedDto(CamelModel):
     id: str
     timestamp: Optional[datetime] = None
     color: Optional[int] = None
@@ -61,18 +65,18 @@ class EmbedDto(BaseModel):
 
 # ---- Chat ----
 
-class Mention(BaseModel):
+class Mention(CamelModel):
     id: str
     name: str
 
 
-class AttachmentDto(BaseModel):
+class AttachmentDto(CamelModel):
     url: str
     filename: Optional[str] = None
     content_type: Optional[str] = Field(default=None, alias="contentType")
 
 
-class ButtonComponentDto(BaseModel):
+class ButtonComponentDto(CamelModel):
     label: str
     custom_id: Optional[str] = Field(default=None, alias="customId")
     url: Optional[str] = None
@@ -80,14 +84,14 @@ class ButtonComponentDto(BaseModel):
     emoji: Optional[str] = None
 
 
-class MessageAuthor(BaseModel):
+class MessageAuthor(CamelModel):
     id: str
     name: str
     avatar_url: Optional[str] = Field(default=None, alias="avatarUrl")
     use_character_name: bool | None = Field(default=False, alias="useCharacterName")
 
 
-class ReactionDto(BaseModel):
+class ReactionDto(CamelModel):
     emoji: str
     emoji_id: str | None = Field(default=None, alias="emojiId")
     is_animated: bool = Field(alias="isAnimated")
@@ -95,12 +99,13 @@ class ReactionDto(BaseModel):
     me: bool
 
 
-class MessageReferenceDto(BaseModel):
+class MessageReferenceDto(CamelModel):
     message_id: str = Field(alias="messageId")
     channel_id: str = Field(alias="channelId")
 
 
-class ChatMessage(BaseModel):
+class ChatMessage(CamelModel):
+    cursor: int | None = None
     id: str
     channel_id: str = Field(alias="channelId")
     author_name: str = Field(alias="authorName")
@@ -121,7 +126,7 @@ class ChatMessage(BaseModel):
 # ---- Presence ----
 
 
-class PresenceDto(BaseModel):
+class PresenceDto(CamelModel):
     id: str
     name: str
     status: str

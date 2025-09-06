@@ -173,7 +173,7 @@ async def fetch_messages(
                 use_character_name=getattr(author, "use_character_name", False),
             )
         )
-    return [o.model_dump() for o in out]
+    return [o.model_dump(by_alias=True, exclude_none=True) for o in out]
 
 
 async def save_message(
@@ -390,7 +390,7 @@ async def save_message(
     dto.author_name = author.name
     dto.author_avatar_url = author.avatar_url
     dto.use_character_name = body.use_character_name
-    fragments["author_json"] = author.model_dump_json()
+    fragments["author_json"] = author.model_dump_json(by_alias=True, exclude_none=True)
 
     msg = Message(
         discord_message_id=discord_msg_id,
@@ -416,7 +416,7 @@ async def save_message(
     await db.refresh(msg)
 
     await manager.broadcast_text(
-        dto.model_dump_json(),
+        dto.model_dump_json(by_alias=True, exclude_none=True),
         ctx.guild.id,
         officer_only=is_officer,
         path="/ws/officer-messages" if is_officer else "/ws/messages",
@@ -523,7 +523,7 @@ async def edit_message(
         use_character_name=getattr(author, "use_character_name", False),
     )
     await manager.broadcast_text(
-        dto.model_dump_json(),
+        dto.model_dump_json(by_alias=True, exclude_none=True),
         ctx.guild.id,
         officer_only=is_officer,
         path="/ws/officer-messages" if is_officer else "/ws/messages",
