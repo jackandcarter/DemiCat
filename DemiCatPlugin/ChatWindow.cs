@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Net;
@@ -9,7 +8,6 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Numerics;
-using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
@@ -56,7 +54,6 @@ public class ChatWindow : IDisposable
     private const int TextureCacheCapacity = 100;
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<bool>> _pendingMessages = new();
 
     private class TextureCacheEntry
     {
@@ -123,9 +120,13 @@ public class ChatWindow : IDisposable
 
     public virtual void Draw()
     {
-        if (!_tokenManager.IsReady())
+        if (!_bridge.IsReady())
         {
             ImGui.TextUnformatted("Link DemiCat…");
+            if (!string.IsNullOrEmpty(_statusMessage))
+            {
+                ImGui.TextUnformatted(_statusMessage);
+            }
             return;
         }
 
@@ -158,8 +159,13 @@ public class ChatWindow : IDisposable
         }
 
         ImGui.BeginChild("##chatScroll", new Vector2(-1, -30), true);
-        foreach (var msg in _messages)
+        var clipper = new ImGuiListClipper();
+        clipper.Begin(_messages.Count);
+        while (clipper.Step())
         {
+            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+            {
+                var msg = _messages[i];
             ImGui.PushID(msg.Id);
             ImGui.BeginGroup();
             if (msg.Author != null &&
@@ -347,9 +353,11 @@ public class ChatWindow : IDisposable
             ImGui.PopID();
             ImGui.EndGroup();
         }
-        ImGui.EndChild();
-        _bridge.Ack(_channelId);
-        SaveConfig();
+    }
+    clipper.End();
+    ImGui.EndChild();
+    _bridge.Ack(_channelId);
+    SaveConfig();
 
         if (_replyToId != null)
         {
@@ -600,15 +608,24 @@ public class ChatWindow : IDisposable
                     // ignore parse errors
                 }
 
+                var text = _input;
+                var optimistic = new DiscordMessageDto
+                {
+                    Id = id ?? Guid.NewGuid().ToString(),
+                    ChannelId = _channelId,
+                    Content = text,
+                    Author = new DiscordUserDto { Name = "You" },
+                    Timestamp = DateTime.UtcNow
+                };
+
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
+                    _messages.Add(optimistic);
                     _input = string.Empty;
                     _statusMessage = string.Empty;
                     _replyToId = null; // <-- clear reply state after a successful send
                     _attachments.Clear();
                 });
-
-                await WaitForEchoAndRefresh(id);
             }
             else
             {
@@ -685,11 +702,7 @@ public class ChatWindow : IDisposable
             var request = new HttpRequestMessage(method, url);
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-            {
-                await RefreshMessages();
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to react. Status: {response.StatusCode}. Response Body: {responseBody}");
@@ -721,11 +734,7 @@ public class ChatWindow : IDisposable
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-            {
-                await RefreshMessages();
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to edit message. Status: {response.StatusCode}. Response Body: {responseBody}");
@@ -755,11 +764,7 @@ public class ChatWindow : IDisposable
             var request = new HttpRequestMessage(HttpMethod.Delete, url);
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-            {
-                await RefreshMessages();
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to delete message. Status: {response.StatusCode}. Response Body: {responseBody}");
@@ -791,11 +796,7 @@ public class ChatWindow : IDisposable
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-            {
-                await RefreshMessages();
-            }
-            else
+            if (!response.IsSuccessStatusCode)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to send interaction. Status: {response.StatusCode}. Response Body: {responseBody}");
@@ -806,23 +807,6 @@ public class ChatWindow : IDisposable
         {
             PluginServices.Instance!.Log.Error(ex, "Error sending interaction");
         }
-    }
-
-    protected async Task WaitForEchoAndRefresh(string? id)
-    {
-        if (!string.IsNullOrEmpty(id))
-        {
-            if (_messages.Any(m => m.Id == id))
-            {
-                await RefreshMessages();
-                return;
-            }
-            var tcs = new TaskCompletionSource<bool>();
-            _pendingMessages[id] = tcs;
-            await Task.WhenAny(tcs.Task, Task.Delay(TimeSpan.FromSeconds(5)));
-            _pendingMessages.TryRemove(id, out _);
-        }
-        await RefreshMessages();
     }
 
     public virtual async Task RefreshMessages()
@@ -884,20 +868,6 @@ public class ChatWindow : IDisposable
                 foreach (var m in all)
                 {
                     _messages.Add(m);
-                    if (!string.IsNullOrEmpty(m.Author.AvatarUrl))
-                    {
-                        LoadTexture(m.Author.AvatarUrl, t => m.AvatarTexture = t);
-                    }
-                    if (m.Attachments != null)
-                    {
-                        foreach (var a in m.Attachments)
-                        {
-                            if (a.ContentType != null && a.ContentType.StartsWith("image"))
-                            {
-                                LoadTexture(a.Url, t => a.Texture = t);
-                            }
-                        }
-                    }
                 }
             });
         }
@@ -1057,10 +1027,6 @@ public class ChatWindow : IDisposable
                 var msg = document.RootElement.Deserialize<DiscordMessageDto>(JsonOpts);
                 if (msg != null)
                 {
-                    if (_pendingMessages.TryRemove(msg.Id, out var tcs))
-                    {
-                        tcs.TrySetResult(true);
-                    }
                     _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                     {
                         if (msg.ChannelId == _channelId)
@@ -1074,20 +1040,6 @@ public class ChatWindow : IDisposable
                             else
                             {
                                 _messages.Add(msg);
-                            }
-                            if (!string.IsNullOrEmpty(msg.Author.AvatarUrl))
-                            {
-                                LoadTexture(msg.Author.AvatarUrl, t => msg.AvatarTexture = t);
-                            }
-                            if (msg.Attachments != null)
-                            {
-                                foreach (var a in msg.Attachments)
-                                {
-                                    if (a.ContentType != null && a.ContentType.StartsWith("image"))
-                                    {
-                                        LoadTexture(a.Url, t => a.Texture = t);
-                                    }
-                                }
                             }
                         }
                     });
@@ -1104,6 +1056,7 @@ public class ChatWindow : IDisposable
     {
         _presence?.Reload();
         _ = _presence?.Refresh();
+        _bridge.Subscribe(_channelId);
     }
 
     private void HandleBridgeUnlinked()
