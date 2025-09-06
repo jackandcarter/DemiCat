@@ -55,11 +55,13 @@ public class Plugin : IDalamudPlugin
 
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
-        _presenceService = _config.EnableFcChat ? new DiscordPresenceService(_config, _httpClient) : null;
+        _presenceService = _config.SyncedChat && _config.EnableFcChat
+            ? new DiscordPresenceService(_config, _httpClient)
+            : null;
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager);
         _presenceSidebar = _presenceService != null ? new PresenceSidebar(_presenceService) : null;
-        if (_presenceSidebar != null)
+        if (_config.SyncedChat && _presenceSidebar != null)
         {
             _presenceSidebar.TextureLoader = _chatWindow.TextureLoader;
         }
@@ -119,14 +121,26 @@ public class Plugin : IDalamudPlugin
     {
         if (!_tokenManager.IsReady())
             return;
-        _requestWatcher.Start();
-        _ = _channelWatcher.Start();
-        if (_config.EnableFcChat)
+        if (_config.Requests)
+        {
+            _requestWatcher.Start();
+        }
+        if (_config.Events || _config.SyncedChat || _config.Officer)
+        {
+            _ = _channelWatcher.Start();
+        }
+        if (_config.SyncedChat && _config.EnableFcChat)
         {
             _chatWindow.StartNetworking();
         }
-        _officerChatWindow.StartNetworking();
-        _ = _ui.StartNetworking();
+        if (_config.Officer)
+        {
+            _officerChatWindow.StartNetworking();
+        }
+        if (_config.Events)
+        {
+            _ = _ui.StartNetworking();
+        }
     }
 
     private void StopWatchers()

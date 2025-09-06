@@ -1,5 +1,5 @@
 <template>
-  <div class="events">
+  <div v-if="settings.events" class="events">
     <div v-for="event in events" :key="event.id" class="event">
       <div class="attachments" v-if="event.attachments">
         <div v-for="(att, i) in event.attachments" :key="i">
@@ -16,20 +16,24 @@
       </div>
     </div>
   </div>
+  <p v-else>Feature disabled</p>
 </template>
 
 <script>
 import EmbedRenderer from '../components/EmbedRenderer.vue';
+import settings from '../utils/settings';
 
 export default {
   name: 'EventsPage',
   components: { EmbedRenderer },
   data() {
     return {
-      events: []
+      events: [],
+      settings
     };
   },
   async created() {
+    if (!this.settings.events) return;
     try {
       const res = await fetch('/api/events');
       if (res.ok) {

@@ -25,6 +25,10 @@ public class RequestWatcher : IDisposable
 
     public void Start()
     {
+        if (!_config.Requests)
+        {
+            return;
+        }
         _cts?.Cancel();
         _ws?.Dispose();
         _cts = new CancellationTokenSource();
@@ -46,7 +50,7 @@ public class RequestWatcher : IDisposable
         var delay = TimeSpan.FromSeconds(5);
         while (!token.IsCancellationRequested)
         {
-            if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady() || !_config.Enabled)
+            if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady() || !_config.Enabled || !_config.Requests)
             {
                 try { await Task.Delay(delay, token); } catch { }
                 delay = TimeSpan.FromSeconds(5);

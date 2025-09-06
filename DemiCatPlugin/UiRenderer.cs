@@ -94,7 +94,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             _webSocket = null;
         }
 
-        if (!TokenManager.Instance!.IsReady() || !_config.Enabled)
+        if (!TokenManager.Instance!.IsReady() || !_config.Enabled || !_config.Events)
         {
             return;
         }
@@ -130,7 +130,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             while (!token.IsCancellationRequested)
             {
                 await Task.Delay(delay, token);
-                if (!TokenManager.Instance!.IsReady() || !_config.Enabled)
+                if (!TokenManager.Instance!.IsReady() || !_config.Enabled || !_config.Events)
                 {
                     continue;
                 }
@@ -472,6 +472,12 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public void Draw()
     {
+        if (!_config.Events)
+        {
+            ImGui.TextUnformatted("Feature disabled");
+            return;
+        }
+
         if (!_presenceLoaded)
         {
             _ = LoadPresences();
