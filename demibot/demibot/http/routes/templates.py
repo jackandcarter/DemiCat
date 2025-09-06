@@ -11,7 +11,7 @@ from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import TemplateDto, TemplatePayload, CamelModel, EmbedDto, EmbedFieldDto
 from ..validation import validate_embed_payload
 from ..ws import manager
-from ...db.models import EventTemplate
+from ...db.models import EventTemplate, GuildChannel, ChannelKind
 from .events import create_event, CreateEventBody
 
 router = APIRouter(prefix="/api")
@@ -74,12 +74,29 @@ async def create_template(
     await db.commit()
     await db.refresh(tmpl)
     dto = _template_to_dto(tmpl)
+    channel_id = (
+        int(dto.payload.channel_id)
+        if dto.payload.channel_id.isdigit()
+        else None
+    )
+    kind = None
+    if channel_id is not None:
+        kind = (
+            await db.execute(
+                select(GuildChannel.kind).where(
+                    GuildChannel.guild_id == ctx.guild.id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == ChannelKind.OFFICER_CHAT,
+                )
+            )
+        ).scalar_one_or_none()
     await manager.broadcast_text(
         json.dumps({
             "topic": "templates.updated",
             "payload": dto.model_dump(mode="json", by_alias=True, exclude_none=True),
         }),
         ctx.guild.id,
+        officer_only=kind == ChannelKind.OFFICER_CHAT,
         path="/ws/templates",
     )
     return dto
@@ -144,12 +161,29 @@ async def update_template(
     await db.commit()
     await db.refresh(tmpl)
     dto = _template_to_dto(tmpl)
+    channel_id = (
+        int(dto.payload.channel_id)
+        if dto.payload.channel_id.isdigit()
+        else None
+    )
+    kind = None
+    if channel_id is not None:
+        kind = (
+            await db.execute(
+                select(GuildChannel.kind).where(
+                    GuildChannel.guild_id == ctx.guild.id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == ChannelKind.OFFICER_CHAT,
+                )
+            )
+        ).scalar_one_or_none()
     await manager.broadcast_text(
         json.dumps({
             "topic": "templates.updated",
             "payload": dto.model_dump(mode="json", by_alias=True, exclude_none=True),
         }),
         ctx.guild.id,
+        officer_only=kind == ChannelKind.OFFICER_CHAT,
         path="/ws/templates",
     )
     return dto
@@ -164,6 +198,21 @@ async def delete_template(
     tid = int(template_id)
     tmpl = await db.get(EventTemplate, tid)
     if tmpl and tmpl.guild_id == ctx.guild.id:
+        payload = TemplatePayload.model_validate(json.loads(tmpl.payload_json))
+        channel_id = (
+            int(payload.channel_id) if payload.channel_id.isdigit() else None
+        )
+        kind = None
+        if channel_id is not None:
+            kind = (
+                await db.execute(
+                    select(GuildChannel.kind).where(
+                        GuildChannel.guild_id == ctx.guild.id,
+                        GuildChannel.channel_id == channel_id,
+                        GuildChannel.kind == ChannelKind.OFFICER_CHAT,
+                    )
+                )
+            ).scalar_one_or_none()
         await db.delete(tmpl)
         await db.commit()
         await manager.broadcast_text(
@@ -172,6 +221,7 @@ async def delete_template(
                 "payload": {"id": str(tid), "deleted": True},
             }),
             ctx.guild.id,
+            officer_only=kind == ChannelKind.OFFICER_CHAT,
             path="/ws/templates",
         )
     return {"ok": True}

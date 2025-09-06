@@ -41,6 +41,7 @@ public class ChatBridge : IDisposable
     public event Action? Unlinked;
     public event Action<string>? StatusChanged;
     public event Action<string, long>? ResyncRequested;
+    public event Action? TemplatesUpdated;
 
     public ChatBridge(Config config, HttpClient httpClient, TokenManager tokenManager, Func<Uri> uriBuilder)
     {
@@ -219,6 +220,15 @@ public class ChatBridge : IDisposable
         {
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
+            if (root.TryGetProperty("topic", out var topicEl))
+            {
+                var topic = topicEl.GetString();
+                if (topic == "templates.updated")
+                {
+                    TemplatesUpdated?.Invoke();
+                }
+                return;
+            }
             var op = root.GetProperty("op").GetString();
             switch (op)
             {

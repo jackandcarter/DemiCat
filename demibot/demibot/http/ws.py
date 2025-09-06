@@ -63,13 +63,15 @@ class ConnectionManager:
         for ws, info in list(self.connections.items()):
             if info.guild_id != guild_id:
                 continue
-            if officer_only:
-                if "officer" not in info.roles or info.path != "/ws/officer-messages":
-                    continue
-            elif path is not None:
+            if path is not None:
                 if info.path != path:
                     continue
+            elif officer_only:
+                if info.path != "/ws/officer-messages":
+                    continue
             elif info.path == "/ws/officer-messages":
+                continue
+            if officer_only and "officer" not in info.roles:
                 continue
             targets.append(ws)
             coros.append(asyncio.wait_for(ws.send_text(message), SEND_TIMEOUT))

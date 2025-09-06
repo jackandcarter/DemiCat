@@ -413,6 +413,13 @@ class Mirror(commands.Cog):
                     officer_only=is_officer,
                     path="/ws/embeds",
                 )
+                await emit_event(
+                    {
+                        "channel": str(channel_id),
+                        "op": "eu",
+                        "d": dto.model_dump(mode="json", by_alias=True, exclude_none=True),
+                    }
+                )
             else:
                 msg = await db.get(Message, after.id)
                 if msg is None:
@@ -568,6 +575,13 @@ class Mirror(commands.Cog):
                         guild_id,
                         officer_only=is_officer,
                         path="/ws/embeds",
+                    )
+                    await emit_event(
+                        {
+                            "channel": str(channel_id),
+                            "op": "ed",
+                            "d": {"id": str(message.id)},
+                        }
                     )
                 else:
                     msg = await db.get(Message, message.id)
