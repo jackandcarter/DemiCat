@@ -9,9 +9,6 @@
     "ApplicableVersion": "any",
     "DalamudApiLevel": 13,
     "RepoUrl": "https://github.com/jackandcarter/DemiCat",
-    "IconUrl": "https://the-demiurge.com/DemiDevUnit/icon.png",
-
-    "DownloadLinkInstall": "https://github.com/jackandcarter/DemiCat/releases/DemiCat.zip",
-    "DownloadLinkUpdate":  "https://github.com/jackandcarter/DemiCat/releases/DemiCat.zip"
+    "IconUrl": "https://the-demiurge.com/DemiDevUnit/icon.png"
   }
 ]

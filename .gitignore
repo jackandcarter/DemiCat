@@ -7,6 +7,10 @@ database/*.db
 test*.db
 __pycache__/
 
+# Release artifacts
+DemiCat.zip
+latest.zip
+
 # Local development artifacts
 .venv/
 .dotnet/
