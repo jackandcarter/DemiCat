@@ -140,6 +140,7 @@ public class Plugin : IDalamudPlugin
         if (_config.Events)
         {
             _ = _ui.StartNetworking();
+            _mainWindow.EventCreateWindow.StartNetworking();
         }
     }
 
