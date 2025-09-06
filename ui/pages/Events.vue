@@ -12,7 +12,7 @@
         </div>
       </div>
       <div v-if="event.embeds">
-        <EmbedRenderer v-for="(emb, i) in event.embeds" :key="i" :embed="emb" />
+        <EmbedRenderer v-for="(emb, i) in event.embeds" :key="i" :embed="emb" :event-id="event.id" />
       </div>
     </div>
   </div>

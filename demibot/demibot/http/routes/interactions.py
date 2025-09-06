@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..ws import manager
-from ...db.models import Attendance, Embed, EventButton, GuildChannel, User, ChannelKind
+from ...db.models import EventSignup, Embed, EventButton, GuildChannel, User, ChannelKind
 
 router = APIRouter(prefix="/api")
 
@@ -58,40 +58,40 @@ async def post_interaction(
     if embed:
         payload = json.loads(embed.payload_json)
 
-    stmt = select(Attendance).where(
-        Attendance.discord_message_id == message_id,
-        Attendance.user_id == ctx.user.id,
+    stmt = select(EventSignup).where(
+        EventSignup.message_id == message_id,
+        EventSignup.user_id == ctx.user.id,
     )
     row = (await db.execute(stmt)).scalar_one_or_none()
-    if row and row.choice == choice:
+    if row and row.tag == choice:
         await db.delete(row)
     else:
-        if row and row.choice != choice:
+        if row and row.tag != choice:
             limit = limits.get(choice)
             if limit is not None:
                 count_stmt = select(func.count()).where(
-                    Attendance.discord_message_id == message_id,
-                    Attendance.choice == choice,
+                    EventSignup.message_id == message_id,
+                    EventSignup.tag == choice,
                 )
                 count = (await db.execute(count_stmt)).scalar_one()
                 if count >= limit:
                     return JSONResponse({"error": "Full"}, status_code=400)
-            row.choice = choice
+            row.tag = choice
         elif row is None:
             limit = limits.get(choice)
             if limit is not None:
                 count_stmt = select(func.count()).where(
-                    Attendance.discord_message_id == message_id,
-                    Attendance.choice == choice,
+                    EventSignup.message_id == message_id,
+                    EventSignup.tag == choice,
                 )
                 count = (await db.execute(count_stmt)).scalar_one()
                 if count >= limit:
                     return JSONResponse({"error": "Full"}, status_code=400)
             db.add(
-                Attendance(
-                    discord_message_id=message_id,
+                EventSignup(
+                    message_id=message_id,
                     user_id=ctx.user.id,
-                    choice=choice,
+                    tag=choice,
                 )
             )
     await db.commit()
@@ -99,13 +99,13 @@ async def post_interaction(
     # recompute attendance summary
     stmt = (
         select(
-            Attendance.choice,
+            EventSignup.tag,
             User.global_name,
             User.discriminator,
             User.discord_user_id,
         )
-        .join(User, Attendance.user_id == User.id)
-        .where(Attendance.discord_message_id == message_id)
+        .join(User, EventSignup.user_id == User.id)
+        .where(EventSignup.message_id == message_id)
     )
     rows = await db.execute(stmt)
     summary: Dict[str, List[str]] = {}
