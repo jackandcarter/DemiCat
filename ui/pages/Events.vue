@@ -1,6 +1,11 @@
 <template>
-  <div v-if="settings.events" class="events">
-    <div v-for="event in events" :key="event.id" class="event">
+
+  <div class="events">
+    <select v-model="selectedChannel">
+      <option value="">All Channels</option>
+      <option v-for="c in channels" :key="c.id" :value="c.id">{{ c.name }}</option>
+    </select>
+    <div v-for="event in filteredEvents" :key="event.id" class="event">
       <div class="attachments" v-if="event.attachments">
         <div v-for="(att, i) in event.attachments" :key="i">
           <img
@@ -21,11 +26,19 @@
 
 <script>
 import EmbedRenderer from '../components/EmbedRenderer.vue';
+
+import { useEventChannels } from '../utils/useEventChannels.js';
+
 import settings from '../utils/settings';
+
 
 export default {
   name: 'EventsPage',
   components: { EmbedRenderer },
+  setup() {
+    const { channels, selected } = useEventChannels('events');
+    return { channels, selectedChannel: selected };
+  },
   data() {
     return {
       events: [],
@@ -41,6 +54,12 @@ export default {
       }
     } catch (e) {
       console.error('Failed to load events', e);
+    }
+  },
+  computed: {
+    filteredEvents() {
+      if (!this.selectedChannel) return this.events;
+      return this.events.filter(ev => ev.channelId === this.selectedChannel);
     }
   }
 };

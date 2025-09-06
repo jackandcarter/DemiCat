@@ -4,7 +4,9 @@
     <div class="pane">
       <div class="editor">
         <div>
-          <label>Channel ID: <input v-model="channelId" required /></label>
+          <select v-model="selectedChannel">
+            <option v-for="c in channels" :key="c.id" :value="c.id">{{ c.name }}</option>
+          </select>
         </div>
         <textarea v-model="raw"></textarea>
         <div v-if="error" class="error">{{ error }}</div>
@@ -21,16 +23,26 @@
 <script>
 import EmbedRenderer from '../components/EmbedRenderer.vue';
 import { validateEmbed } from '../utils/embed.js';
+
+import { useEventChannels } from '../utils/useEventChannels.js';
+
 import settings from '../utils/settings';
+
 
 export default {
   name: 'CreatePage',
   components: { EmbedRenderer },
+  setup() {
+    const { channels, selected } = useEventChannels('create');
+    return { channels, selectedChannel: selected };
+  },
   data() {
     return {
+
       channelId: '',
       raw: '{"title":"","description":""}',
       settings
+
     };
   },
   computed: {
@@ -48,8 +60,9 @@ export default {
   },
   methods: {
     async submit() {
-      if (this.error || !this.settings.events) return;
-      const payload = Object.assign({ channelId: this.channelId }, this.preview);
+      if (this.error) return;
+      const payload = Object.assign({ channelId: this.selectedChannel }, this.preview);
+
       try {
         await fetch('/api/events', {
           method: 'POST',
