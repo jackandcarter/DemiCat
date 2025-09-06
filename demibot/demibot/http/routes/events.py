@@ -163,7 +163,10 @@ async def create_event(
             view: discord.ui.View | None = None
             if buttons:
                 view = discord.ui.View()
-                for b in buttons:
+                for idx, b in enumerate(buttons):
+                    row = idx // 5
+                    if row >= 5:
+                        raise HTTPException(422, "Too many buttons (max 25)")
                     style = (
                         discord.ButtonStyle(b.style)
                         if b.style is not None
@@ -176,6 +179,7 @@ async def create_event(
                                 url=b.url,
                                 emoji=b.emoji,
                                 style=style,
+                                row=row,
                             )
                         )
                     else:
@@ -185,6 +189,7 @@ async def create_event(
                                 custom_id=b.custom_id,
                                 emoji=b.emoji,
                                 style=style,
+                                row=row,
                             )
                         )
             from ...discordbot.utils import api_call_with_retries
