@@ -313,6 +313,23 @@ class SignupPreset(Base):
     buttons_json: Mapped[str] = mapped_column(Text)
 
 
+class EventTemplate(Base):
+    __tablename__ = "event_templates"
+    __table_args__ = (
+        UniqueConstraint("guild_id", "name", name="uq_event_templates_guild_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[Optional[str]] = mapped_column(Text)
+    payload_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
 class EventButton(Base):
     __tablename__ = "event_buttons"
 

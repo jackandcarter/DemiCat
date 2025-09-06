@@ -132,3 +132,28 @@ class PresenceDto(CamelModel):
     status: str
     avatar_url: str | None = Field(default=None, alias="avatarUrl")
     roles: List[str] = Field(default_factory=list)
+
+
+class TemplatePayload(CamelModel):
+    channel_id: str = Field(alias="channelId")
+    title: str
+    time: str | None = None
+    description: str
+    url: str | None = None
+    image_url: str | None = Field(default=None, alias="imageUrl")
+    thumbnail_url: str | None = Field(default=None, alias="thumbnailUrl")
+    color: int | None = None
+    fields: List[EmbedFieldDto] | None = None
+    buttons: List[EmbedButtonDto] | None = None
+    attendance: List[str] | None = None
+    mentions: List[str] | None = None
+    repeat: str | None = None
+    embeds: List[dict] | None = None
+    attachments: List[AttachmentDto] | None = None
+
+
+class TemplateDto(CamelModel):
+    id: str
+    name: str
+    description: str | None = None
+    payload: TemplatePayload
