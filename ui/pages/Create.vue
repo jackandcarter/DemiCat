@@ -1,73 +1,58 @@
 <template>
   <div class="create">
     <h2>Create Event</h2>
-    <form @submit.prevent="submit">
-      <div>
-        <label>Channel ID: <input v-model="form.channelId" required /></label>
+    <div class="pane">
+      <div class="editor">
+        <div>
+          <label>Channel ID: <input v-model="channelId" required /></label>
+        </div>
+        <textarea v-model="raw"></textarea>
+        <div v-if="error" class="error">{{ error }}</div>
+        <button @click="submit" :disabled="!!error">Create</button>
       </div>
-      <div>
-        <label>Title: <input v-model="form.title" required /></label>
+      <div class="preview" v-if="preview">
+        <EmbedRenderer :embed="preview" />
       </div>
-      <div>
-        <label>Description:</label>
-        <textarea v-model="form.description"></textarea>
-      </div>
-      <button type="submit">Create</button>
-    </form>
-    <div v-if="error" class="error">{{ error }}</div>
-    <div v-if="created">
-      <h3>Preview</h3>
-      <EmbedRenderer :embed="created" />
     </div>
   </div>
 </template>
 
 <script>
 import EmbedRenderer from '../components/EmbedRenderer.vue';
+import { validateEmbed } from '../utils/embed.js';
 
 export default {
   name: 'CreatePage',
   components: { EmbedRenderer },
   data() {
     return {
-      form: {
-        channelId: '',
-        title: '',
-        description: ''
-      },
-      created: null,
-      error: null
+      channelId: '',
+      raw: '{"title":"","description":""}'
     };
   },
-  methods: {
-    validate() {
-      if (this.form.title.length > 256) {
-        this.error = 'Title too long';
-        return false;
-      }
-      if (this.form.description.length > 4096) {
-        this.error = 'Description too long';
-        return false;
-      }
-      this.error = null;
-      return true;
-    },
-    async submit() {
-      if (!this.validate()) return;
+  computed: {
+    preview() {
       try {
-        const res = await fetch('/api/events', {
+        return JSON.parse(this.raw);
+      } catch (e) {
+        return null;
+      }
+    },
+    error() {
+      if (!this.preview) return 'Invalid JSON';
+      return validateEmbed(this.preview, this.preview.buttons || []);
+    }
+  },
+  methods: {
+    async submit() {
+      if (this.error) return;
+      const payload = Object.assign({ channelId: this.channelId }, this.preview);
+      try {
+        await fetch('/api/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            channelId: this.form.channelId,
-            title: this.form.title,
-            description: this.form.description,
-            time: new Date().toISOString()
-          })
+          body: JSON.stringify(payload)
         });
-        if (res.ok) {
-          this.created = await res.json();
-        }
       } catch (e) {
         console.error('Failed to create event', e);
       }
@@ -80,16 +65,19 @@ export default {
 .create {
   padding: 1rem;
 }
-form div {
-  margin-bottom: 0.5rem;
+.pane {
+  display: flex;
+  gap: 1rem;
+}
+.editor, .preview {
+  flex: 1;
 }
 textarea {
   width: 100%;
-  height: 80px;
+  height: 300px;
 }
 .error {
   color: red;
   margin-top: 0.5rem;
 }
 </style>
-
