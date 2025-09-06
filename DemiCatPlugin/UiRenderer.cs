@@ -155,6 +155,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task LoadPresences()
     {
+        if (!TokenManager.Instance!.IsReady()) return;
         if (_presenceLoadAttempted) return;
         _presenceLoadAttempted = true;
         if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
@@ -440,6 +441,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public async Task RefreshEmbeds()
     {
+        if (!TokenManager.Instance!.IsReady()) return;
         if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
 
         try
@@ -474,7 +476,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public void Draw()
     {
-        if (TokenManager.Instance?.IsReady() != true)
+        if (!TokenManager.Instance!.IsReady())
         {
             ImGui.TextUnformatted("Link DemiCat to view events");
             return;
@@ -539,6 +541,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task FetchChannels(bool refreshed = false)
     {
+        if (!TokenManager.Instance!.IsReady()) return;
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
