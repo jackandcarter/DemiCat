@@ -157,3 +157,4 @@ class TemplateDto(CamelModel):
     name: str
     description: str | None = None
     payload: TemplatePayload
+    updated_at: datetime = Field(alias="updatedAt")

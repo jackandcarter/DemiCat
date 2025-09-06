@@ -3,6 +3,7 @@ from pathlib import Path
 import types
 import asyncio
 from types import SimpleNamespace
+import json
 
 root = Path(__file__).resolve().parents[1] / "demibot"
 sys.path.append(str(root))
@@ -59,6 +60,9 @@ async def _run_test() -> None:
     ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
     async with get_session() as db:
         dto = await create_template(body=body, ctx=ctx, db=db)
+        dup = await create_template(body=body, ctx=ctx, db=db)
+        assert dup.status_code == 409
+        assert json.loads(dup.body.decode()) == {"error": "duplicate"}
         tid = dto.id
         lst = await list_templates(ctx=ctx, db=db)
         assert len(lst) == 1 and lst[0].id == tid

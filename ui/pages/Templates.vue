@@ -5,7 +5,8 @@
       <option v-for="c in channels" :key="c.id" :value="c.id">{{ c.name }}</option>
     </select>
     <div v-for="t in templates" :key="t.id" class="template">
-      <h3>{{ t.name }}</h3>
+      <input v-model="t.name" @input="scheduleUpdate(t)" />
+      <input v-model="t.description" @input="scheduleUpdate(t)" />
       <button @click="post(t.id)">Post</button>
       <button @click="remove(t.id)">Delete</button>
     </div>
@@ -27,7 +28,7 @@ export default {
     return { channels, selectedChannel: selected };
   },
   data() {
-    return { templates: [], ws: null, settings };
+    return { templates: [], ws: null, settings, patchTimers: {} };
   },
   async created() {
     if (!this.settings.templates) return;
@@ -43,7 +44,9 @@ export default {
       try {
         const res = await fetch('/api/templates');
         if (res.ok) {
-          this.templates = await res.json();
+          const data = await res.json();
+          this.templates.splice(0, this.templates.length, ...data);
+          this.sortTemplates();
         }
       } catch (e) {
         console.error('Failed to load templates', e);
@@ -60,14 +63,16 @@ export default {
           if (msg.topic === 'templates.updated') {
             const p = msg.payload || {};
             if (p.deleted) {
-              this.templates = this.templates.filter(t => t.id !== p.id);
+              const idx = this.templates.findIndex(t => t.id === p.id);
+              if (idx >= 0) this.templates.splice(idx, 1);
             } else if (p.id) {
               const idx = this.templates.findIndex(t => t.id === p.id);
               if (idx >= 0) {
-                this.templates.splice(idx, 1, p);
+                Object.assign(this.templates[idx], p);
               } else {
                 this.templates.push(p);
               }
+              this.sortTemplates();
             } else {
               this.load();
             }
@@ -95,6 +100,24 @@ export default {
     async remove(id) {
       if (this.settings.templates)
         await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+    },
+    sortTemplates() {
+      this.templates.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt));
+    },
+    scheduleUpdate(t) {
+      if (this.patchTimers[t.id]) clearTimeout(this.patchTimers[t.id]);
+      this.patchTimers[t.id] = setTimeout(() => this.save(t), 500);
+    },
+    async save(t) {
+      try {
+        await fetch(`/api/templates/${t.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: t.name, description: t.description })
+        });
+      } catch (e) {
+        console.error('Failed to update template', e);
+      }
     }
   }
 };
