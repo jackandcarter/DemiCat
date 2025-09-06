@@ -41,6 +41,13 @@ public class TemplatesWindow
             ImGui.TextUnformatted("Feature disabled");
             return;
         }
+
+        if (TokenManager.Instance?.IsReady() != true)
+        {
+            ImGui.TextUnformatted("Link DemiCat to manage templates");
+            return;
+        }
+
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
@@ -60,7 +67,6 @@ public class TemplatesWindow
             ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
         }
 
-        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
         ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
         var filteredTemplates = _config.TemplateData.Where(t => t.Type == TemplateType.Event).ToList();
         for (var i = 0; i < filteredTemplates.Count; i++)

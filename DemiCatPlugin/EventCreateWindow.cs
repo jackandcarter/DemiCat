@@ -57,6 +57,10 @@ public class EventCreateWindow
         _httpClient = httpClient;
         _channelId = config.EventChannelId;
         ResetDefaultButtons();
+    }
+
+    public void StartNetworking()
+    {
         if (_config.Events)
         {
             _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
@@ -70,6 +74,13 @@ public class EventCreateWindow
             ImGui.TextUnformatted("Feature disabled");
             return;
         }
+
+        if (TokenManager.Instance?.IsReady() != true)
+        {
+            ImGui.TextUnformatted("Link DemiCat to create events");
+            return;
+        }
+
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
