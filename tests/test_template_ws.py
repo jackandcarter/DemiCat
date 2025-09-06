@@ -1,5 +1,49 @@
 import types
 import asyncio
+import json
+import sys
+from pathlib import Path
+
+root = Path(__file__).resolve().parents[1] / "demibot"
+sys.path.append(str(root))
+
+demibot_pkg = types.ModuleType("demibot")
+demibot_pkg.__path__ = [str(root / "demibot")]
+sys.modules.setdefault("demibot", demibot_pkg)
+
+http_pkg = types.ModuleType("demibot.http")
+http_pkg.__path__ = [str(root / "demibot/http")]
+sys.modules.setdefault("demibot.http", http_pkg)
+
+sys.modules.setdefault("structlog", types.ModuleType("structlog"))
+
+db_pkg = types.ModuleType("demibot.db")
+db_pkg.__path__ = [str(root / "demibot/db")]
+session_pkg = types.ModuleType("demibot.db.session")
+async def get_session():
+    pass
+session_pkg.get_session = get_session
+sys.modules.setdefault("demibot.db", db_pkg)
+sys.modules.setdefault("demibot.db.session", session_pkg)
+
+deps_pkg = types.ModuleType("demibot.http.deps")
+class RequestContext:
+    def __init__(self, guild, roles):
+        self.guild = guild
+        self.roles = roles
+async def api_key_auth(*args, **kwargs):
+    pass
+deps_pkg.RequestContext = RequestContext
+deps_pkg.api_key_auth = api_key_auth
+sys.modules.setdefault("demibot.http.deps", deps_pkg)
+
+fastapi_stub = types.ModuleType("fastapi")
+class _WebSocket:  # minimal stub
+    pass
+fastapi_stub.WebSocket = _WebSocket
+fastapi_stub.WebSocketDisconnect = type("WebSocketDisconnect", (Exception,), {})
+fastapi_stub.HTTPException = type("HTTPException", (Exception,), {})
+sys.modules.setdefault("fastapi", fastapi_stub)
 
 from demibot.http.ws import ConnectionManager
 
@@ -25,7 +69,7 @@ class StubContext:
         self.roles = roles
 
 
-def test_officer_filter_on_templates_path():
+def test_templates_updates_broadcast_to_all():
     async def _run():
         manager = ConnectionManager()
         ws_officer = StubWebSocket("/ws/templates")
@@ -35,9 +79,10 @@ def test_officer_filter_on_templates_path():
         ctx_member = StubContext(1, [])
         await manager.connect(ws_member, ctx_member)
 
-        await manager.broadcast_text("hi", 1, officer_only=True, path="/ws/templates")
+        msg = json.dumps({"topic": "templates.updated"})
+        await manager.broadcast_text(msg, 1, path="/ws/templates")
 
-        assert ws_officer.sent == ["hi"]
-        assert ws_member.sent == []
+        assert ws_officer.sent == [msg]
+        assert ws_member.sent == [msg]
 
     asyncio.run(_run())
