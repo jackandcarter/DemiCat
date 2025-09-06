@@ -17,6 +17,7 @@ from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto, AttachmentDto
 from ..validation import validate_embed_payload
 from ..ws import manager
 from ..discord_client import discord_client
+from ...discordbot.utils import api_call_with_retries
 from ...db.models import (
     Embed,
     EventButton,
@@ -192,7 +193,6 @@ async def create_event(
                                 row=row,
                             )
                         )
-            from ...discordbot.utils import api_call_with_retries
             content = " ".join(f"<@&{m}>" for m in mention_ids) or None
             try:
                 sent = await api_call_with_retries(
