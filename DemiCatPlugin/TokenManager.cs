@@ -103,5 +103,15 @@ public class TokenManager
         State = LinkState.Unlinked;
         OnUnlinked?.Invoke();
     }
+
+    public void RegisterWatcher(Action start, Action stop)
+    {
+        OnLinked += start;
+        OnUnlinked += stop;
+        if (IsReady())
+        {
+            start();
+        }
+    }
 }
 

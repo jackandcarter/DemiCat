@@ -54,6 +54,15 @@ public class RequestWatcher : IDisposable
             }
             try
             {
+                var ping = new HttpRequestMessage(HttpMethod.Head, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping");
+                ApiHelpers.AddAuthHeader(ping, _tokenManager);
+                var pingResponse = await _httpClient.SendAsync(ping, token);
+                if (!pingResponse.IsSuccessStatusCode)
+                {
+                    try { await Task.Delay(delay, token); } catch { }
+                    delay = TimeSpan.FromSeconds(5);
+                    continue;
+                }
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);

@@ -103,6 +103,24 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         await ConnectWebSocket();
     }
 
+    public void StopNetworking()
+    {
+        StopPolling();
+        if (_webSocket != null)
+        {
+            try
+            {
+                if (_webSocket.State == WebSocketState.Open)
+                {
+                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).GetAwaiter().GetResult();
+                }
+            }
+            catch { }
+            _webSocket.Dispose();
+            _webSocket = null;
+        }
+    }
+
     private async Task PollLoop(CancellationToken token)
     {
         var baseInterval = TimeSpan.FromSeconds(_config.PollIntervalSeconds);
@@ -112,6 +130,10 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             while (!token.IsCancellationRequested)
             {
                 await Task.Delay(delay, token);
+                if (!TokenManager.Instance!.IsReady() || !_config.Enabled)
+                {
+                    continue;
+                }
                 var success = await PollEmbeds();
                 delay = success
                     ? baseInterval
@@ -198,7 +220,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task<bool> PollEmbeds()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return false;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true) return false;
 
         try
         {
@@ -251,13 +273,21 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 return;
             }
 
-            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true || !_config.Enabled)
             {
                 return;
             }
 
             try
             {
+                var ping = new HttpRequestMessage(HttpMethod.Head, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping");
+                ApiHelpers.AddAuthHeader(ping, TokenManager.Instance!);
+                var pingResponse = await _httpClient.SendAsync(ping);
+                if (!pingResponse.IsSuccessStatusCode)
+                {
+                    StartPolling();
+                    return;
+                }
                 _webSocket = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_webSocket, TokenManager.Instance!);
                 var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
