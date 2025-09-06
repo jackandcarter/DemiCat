@@ -4,6 +4,10 @@ import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
+from fastapi import HTTPException
+
+from ...http.schemas import EmbedDto
+from ...http.validation import validate_embed_payload
 
 from .setup_wizard import demi
 
@@ -26,6 +30,13 @@ async def create_event(
     if host == "0.0.0.0":
         host = "127.0.0.1"
     base_url = f"http://{host}:{interaction.client.cfg.server.port}"
+    try:
+        validate_embed_payload(EmbedDto(id="0", title=title, description=description), [])
+    except HTTPException as exc:
+        await interaction.response.send_message(
+            f"Invalid event: {exc.detail}", ephemeral=True
+        )
+        return
     body = {
         "channelId": str(interaction.channel_id or interaction.channel.id),
         "title": title,

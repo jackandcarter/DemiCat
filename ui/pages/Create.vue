@@ -14,6 +14,7 @@
       </div>
       <button type="submit">Create</button>
     </form>
+    <div v-if="error" class="error">{{ error }}</div>
     <div v-if="created">
       <h3>Preview</h3>
       <EmbedRenderer :embed="created" />
@@ -34,11 +35,25 @@ export default {
         title: '',
         description: ''
       },
-      created: null
+      created: null,
+      error: null
     };
   },
   methods: {
+    validate() {
+      if (this.form.title.length > 256) {
+        this.error = 'Title too long';
+        return false;
+      }
+      if (this.form.description.length > 4096) {
+        this.error = 'Description too long';
+        return false;
+      }
+      this.error = null;
+      return true;
+    },
     async submit() {
+      if (!this.validate()) return;
       try {
         const res = await fetch('/api/events', {
           method: 'POST',
@@ -71,6 +86,10 @@ form div {
 textarea {
   width: 100%;
   height: 80px;
+}
+.error {
+  color: red;
+  margin-top: 0.5rem;
 }
 </style>
 

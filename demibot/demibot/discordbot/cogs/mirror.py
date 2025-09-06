@@ -13,6 +13,8 @@ from sqlalchemy.exc import IntegrityError
 from ...db.models import Embed, Guild, GuildChannel, Message, ChannelKind
 from ...db.session import get_session
 from ...http.schemas import EmbedButtonDto, EmbedDto, MessageAuthor
+from ...http.validation import validate_embed_payload
+from fastapi import HTTPException
 from ...http.discord_helpers import (
     embed_to_dto,
     message_to_chat_message,
@@ -226,6 +228,14 @@ class Mirror(commands.Cog):
                     data = emb.to_dict()
                     try:
                         dto = embed_to_dto(message, emb, buttons)
+                        validate_embed_payload(dto, buttons or [])
+                    except HTTPException as exc:
+                        logging.warning(
+                            "Discarding embed %s due to validation error: %s",
+                            message.id,
+                            exc.detail,
+                        )
+                        continue
                     except Exception:
                         logging.exception(
                             "Embed parsing failed for guild %s channel %s message %s: %s",
@@ -360,6 +370,14 @@ class Mirror(commands.Cog):
 
                 try:
                     dto = embed_to_dto(after, emb, buttons)
+                    validate_embed_payload(dto, buttons or [])
+                except HTTPException as exc:
+                    logging.warning(
+                        "Discarding embed %s due to validation error: %s",
+                        after.id,
+                        exc.detail,
+                    )
+                    return
                 except Exception:
                     logging.exception(
                         "Embed parsing failed for guild %s channel %s message %s: %s",
