@@ -459,7 +459,7 @@ async def list_attendees(
     stmt = (
         select(EventSignup.choice, EventSignup.user_id)
         .where(EventSignup.discord_message_id == message_id)
-        .order_by(EventSignup.choice)
+        .order_by(EventSignup.choice, EventSignup.created_at.asc())
     )
     rows = await db.execute(stmt)
     return [
