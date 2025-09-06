@@ -127,7 +127,8 @@ internal static class RequestStateService
                 ? $"{baseUrl}/api/requests"
                 : $"{baseUrl}/api/requests/delta?since={Uri.EscapeDataString(config.RequestsDeltaToken)}";
             var msg = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(msg, config);
+            if (TokenManager.Instance != null)
+                ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
             var resp = await httpClient.SendAsync(msg);
             if (!resp.IsSuccessStatusCode) return;
             var stream = await resp.Content.ReadAsStreamAsync();
