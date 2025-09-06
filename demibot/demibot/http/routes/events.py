@@ -16,6 +16,7 @@ from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto, AttachmentDto
 from ..validation import validate_embed_payload
 from ..ws import manager
+from ..chat_events import emit_event
 from ..discord_client import discord_client
 from ...discordbot.utils import api_call_with_retries
 from ...db.models import (
@@ -296,7 +297,7 @@ async def create_event(
     if body.repeat in ("daily", "weekly"):
         interval = timedelta(days=1 if body.repeat == "daily" else 7)
         next_post = ts + interval
-        payload = body.model_dump(by_alias=True, exclude_none=True)
+        payload = body.model_dump(mode="json", by_alias=True, exclude_none=True)
         payload["repeat"] = None
         db.add(
             RecurringEvent(
@@ -318,12 +319,14 @@ async def create_event(
             )
         )
     ).scalar_one_or_none()
+    payload = dto.model_dump(mode="json", by_alias=True, exclude_none=True)
     await manager.broadcast_text(
-        json.dumps(dto.model_dump(mode="json", by_alias=True, exclude_none=True)),
+        json.dumps(payload),
         ctx.guild.id,
         officer_only=kind == ChannelKind.OFFICER_CHAT,
         path="/ws/embeds",
     )
+    await emit_event({"channel": channel_id, "op": "ec", "d": payload})
     return {"ok": True, "id": eid}
 
 
@@ -450,6 +453,7 @@ async def rsvp_event(
             officer_only=kind == ChannelKind.OFFICER_CHAT,
             path="/ws/embeds",
         )
+        await emit_event({"channel": embed.channel_id, "op": "eu", "d": payload})
 
     return {"ok": True}
 
@@ -562,6 +566,8 @@ async def delete_recurring_event(
     rid = int(event_id)
     ev = await db.get(RecurringEvent, rid)
     if ev and ev.guild_id == ctx.guild.id:
+        channel_id = ev.channel_id
         await db.delete(ev)
         await db.commit()
+        await emit_event({"channel": channel_id, "op": "ed", "d": {"id": event_id}})
     return {"ok": True}
