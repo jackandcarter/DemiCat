@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using DemiCatPlugin;
@@ -12,20 +15,100 @@ using System.Net.Http;
 public class ChatWindowWebSocketTests
 {
     [Fact]
-    public async Task RunWebSocket_RetriesAfterDrop()
+    public async Task WebSocket_SubAckSendResyncFlow()
     {
-        using var server = new MockWsServer();
+        using var server = new MockWsServer(async (ws, _, srv) =>
+        {
+            while (ws.State == WebSocketState.Open)
+            {
+                var msg = await srv.Receive(ws);
+                if (msg.Contains("\"op\":\"sub\""))
+                {
+                    await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"messages\":[{\"cursor\":1,\"op\":\"mc\",\"d\":{}}]}");
+                }
+            }
+        });
+
         SetupServices();
         var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
         using var client = new HttpClient();
-        var chat = new TestChatWindow(config, client, server.Uri);
-        chat.StartNetworking();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
 
-        await WaitUntil(() => server.ConnectionCount >= 1, TimeSpan.FromSeconds(5));
-        await WaitUntil(() => server.ConnectionCount >= 2, TimeSpan.FromSeconds(10));
-        await WaitUntil(() => chat.StatusMessage == string.Empty, TimeSpan.FromSeconds(5));
+        string? payload = null;
+        bridge.MessageReceived += p => payload = p;
+        bridge.Start();
+        bridge.Subscribe("1");
 
-        chat.StopNetworking();
+        await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
+        await WaitUntil(() => payload != null, TimeSpan.FromSeconds(5));
+
+        bridge.Ack("1");
+        await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"ack\"")), TimeSpan.FromSeconds(5));
+
+        await bridge.Send("1", new { text = "hi" });
+        await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"send\"")), TimeSpan.FromSeconds(5));
+
+        bridge.Resync("1");
+        await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"resync\"")), TimeSpan.FromSeconds(5));
+
+        bridge.Stop();
+    }
+
+    [Fact]
+    public async Task WebSocket_ReconnectPersistsCursor()
+    {
+        int firstSince = -1;
+        int secondSince = -1;
+        var firstBatchSent = false;
+
+        using var server = new MockWsServer(async (ws, idx, srv) =>
+        {
+            if (idx == 1)
+            {
+                var sub = await srv.Receive(ws);
+                firstSince = ExtractSince(sub);
+                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"messages\":[{\"cursor\":7,\"op\":\"mc\",\"d\":{}}]}");
+                firstBatchSent = true;
+                await srv.Receive(ws); // ack
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+            }
+            else
+            {
+                var sub = await srv.Receive(ws);
+                secondSince = ExtractSince(sub);
+                while (ws.State == WebSocketState.Open)
+                {
+                    await Task.Delay(50);
+                }
+            }
+        });
+
+        SetupServices();
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
+
+        bool received = false;
+        bridge.MessageReceived += _ => received = true;
+        bridge.Start();
+        bridge.Subscribe("1");
+
+        await WaitUntil(() => firstBatchSent && received, TimeSpan.FromSeconds(5));
+        bridge.Ack("1");
+
+        await WaitUntil(() => secondSince != -1, TimeSpan.FromSeconds(10));
+
+        bridge.Stop();
+
+        Assert.Equal(0, firstSince);
+        Assert.Equal(7, secondSince);
+    }
+
+    private static int ExtractSince(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var ch = doc.RootElement.GetProperty("channels")[0];
+        return ch.TryGetProperty("since", out var since) ? since.GetInt32() : 0;
     }
 
     private static async Task WaitUntil(Func<bool> cond, TimeSpan timeout)
@@ -71,27 +154,19 @@ public class ChatWindowWebSocketTests
         public void Fatal(string message, Exception exception) { }
     }
 
-    private class TestChatWindow : ChatWindow
-    {
-        private readonly Uri _uri;
-        public TestChatWindow(Config config, HttpClient httpClient, Uri uri) : base(config, httpClient, null, new TokenManager())
-        {
-            _uri = uri;
-        }
-        protected override Uri BuildWebSocketUri() => _uri;
-        public string StatusMessage => _statusMessage;
-    }
-
     private class MockWsServer : IDisposable
     {
         private readonly HttpListener _listener;
         private readonly CancellationTokenSource _cts = new();
+        private readonly Func<WebSocket, int, MockWsServer, Task> _handler;
         private int _connections;
-        public int ConnectionCount => _connections;
+        public List<string> Received { get; } = new();
         public Uri Uri { get; }
         public string HttpBase { get; }
-        public MockWsServer()
+
+        public MockWsServer(Func<WebSocket, int, MockWsServer, Task> handler)
         {
+            _handler = handler;
             var port = GetFreePort();
             _listener = new HttpListener();
             _listener.Prefixes.Add($"http://localhost:{port}/");
@@ -100,6 +175,7 @@ public class ChatWindowWebSocketTests
             HttpBase = $"http://localhost:{port}";
             _ = Task.Run(AcceptLoop);
         }
+
         private async Task AcceptLoop()
         {
             while (!_cts.Token.IsCancellationRequested)
@@ -118,21 +194,26 @@ public class ChatWindowWebSocketTests
                     continue;
                 }
                 var wsCtx = await ctx.AcceptWebSocketAsync(null);
-                Interlocked.Increment(ref _connections);
-                if (_connections == 1)
-                {
-                    await Task.Delay(100);
-                    await wsCtx.WebSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
-                }
-                else
-                {
-                    while (!_cts.Token.IsCancellationRequested && wsCtx.WebSocket.State == WebSocketState.Open)
-                    {
-                        await Task.Delay(50);
-                    }
-                }
+                var idx = Interlocked.Increment(ref _connections);
+                _ = Task.Run(() => _handler(wsCtx.WebSocket, idx, this));
             }
         }
+
+        public async Task<string> Receive(WebSocket ws)
+        {
+            var buffer = new byte[4096];
+            var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+            lock (Received) Received.Add(text);
+            return text;
+        }
+
+        public Task Send(WebSocket ws, string text)
+        {
+            var bytes = Encoding.UTF8.GetBytes(text);
+            return ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        }
+
         private static int GetFreePort()
         {
             var l = new TcpListener(IPAddress.Loopback, 0);
@@ -141,6 +222,7 @@ public class ChatWindowWebSocketTests
             l.Stop();
             return p;
         }
+
         public void Dispose()
         {
             _cts.Cancel();
@@ -148,3 +230,4 @@ public class ChatWindowWebSocketTests
         }
     }
 }
+
