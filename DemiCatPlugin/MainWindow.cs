@@ -79,26 +79,20 @@ public class MainWindow : IDisposable
 
         if (ImGui.BeginTabBar("MainTabs"))
         {
-            if (ImGui.BeginTabItem("Events"))
+            if (!linked)
+            {
+                ImGui.BeginDisabled();
+                ImGui.TabItemButton("Events");
+                ImGui.EndDisabled();
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                    ImGui.SetTooltip("Link DemiCat to view events.");
+            }
+            else if (ImGui.BeginTabItem("Events"))
             {
                 if (_config.SyncedChat && _presenceSidebar != null)
                 {
-                    if (!linked)
-                    {
-                        ImGui.BeginDisabled();
-                        ImGui.BeginChild("##presence", new Vector2(150, 0), true);
-                        ImGui.TextUnformatted("Presence");
-                        ImGui.EndChild();
-                        ImGui.EndDisabled();
-                        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                            ImGui.SetTooltip("Link DemiCat to show presence.");
-                        ImGui.SameLine();
-                    }
-                    else
-                    {
-                        _presenceSidebar.Draw();
-                        ImGui.SameLine();
-                    }
+                    _presenceSidebar.Draw();
+                    ImGui.SameLine();
                 }
                 ImGui.BeginChild("##eventsArea", ImGui.GetContentRegionAvail(), false);
                 _ui.Draw();
@@ -106,35 +100,63 @@ public class MainWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Create"))
+            if (!linked)
+            {
+                ImGui.BeginDisabled();
+                ImGui.TabItemButton("Create");
+                ImGui.EndDisabled();
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                    ImGui.SetTooltip("Link DemiCat to create events.");
+            }
+            else if (ImGui.BeginTabItem("Create"))
             {
                 _create.Draw();
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Templates"))
+            if (!linked)
+            {
+                ImGui.BeginDisabled();
+                ImGui.TabItemButton("Templates");
+                ImGui.EndDisabled();
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                    ImGui.SetTooltip("Link DemiCat to use templates.");
+            }
+            else if (ImGui.BeginTabItem("Templates"))
             {
                 _templates.Draw();
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Request Board"))
+            if (!linked)
+            {
+                ImGui.BeginDisabled();
+                ImGui.TabItemButton("Request Board");
+                ImGui.EndDisabled();
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                    ImGui.SetTooltip("Link DemiCat to use request board.");
+            }
+            else if (ImGui.BeginTabItem("Request Board"))
             {
                 _requestBoard.Draw();
                 ImGui.EndTabItem();
             }
 
-            if (ImGui.BeginTabItem("Syncshell"))
+            if (_config.FCSyncShell && _syncshell != null)
             {
-                if (_config.FCSyncShell && _syncshell != null)
+                if (!linked)
+                {
+                    ImGui.BeginDisabled();
+                    ImGui.TabItemButton("Syncshell");
+                    ImGui.EndDisabled();
+                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                        ImGui.SetTooltip("Link DemiCat to use syncshell.");
+                }
+                else if (ImGui.BeginTabItem("Syncshell"))
                 {
                     _syncshell.Draw();
+                    ImGui.EndTabItem();
                 }
-                else
-                {
-                    ImGui.TextUnformatted("Feature disabled");
-                }
-                ImGui.EndTabItem();
             }
 
             if (_chat != null)
