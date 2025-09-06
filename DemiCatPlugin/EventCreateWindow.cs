@@ -61,29 +61,27 @@ public class EventCreateWindow
 
     public void StartNetworking()
     {
-        if (_config.Events)
+        if (!_config.Events || TokenManager.Instance?.IsReady() != true)
         {
-            _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+            return;
         }
+
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+        _ = RefreshChannels();
     }
 
     public void Draw()
     {
-        if (!_config.Events)
-        {
-            ImGui.TextUnformatted("Feature disabled");
-            return;
-        }
-
         if (TokenManager.Instance?.IsReady() != true)
         {
             ImGui.TextUnformatted("Link DemiCat to create events");
             return;
         }
 
-        if (!_channelsLoaded)
+        if (!_config.Events)
         {
-            _ = FetchChannels();
+            ImGui.TextUnformatted("Feature disabled");
+            return;
         }
         if (_channels.Count > 0)
         {
