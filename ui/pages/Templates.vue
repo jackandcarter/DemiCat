@@ -1,6 +1,9 @@
 <template>
   <div class="templates">
     <h2>Templates</h2>
+    <select v-model="selectedChannel">
+      <option v-for="c in channels" :key="c.id" :value="c.id">{{ c.name }}</option>
+    </select>
     <div v-for="t in templates" :key="t.id" class="template">
       <h3>{{ t.name }}</h3>
       <button @click="post(t.id)">Post</button>
@@ -11,10 +14,15 @@
 
 <script>
 import EmbedRenderer from '../components/EmbedRenderer.vue';
+import { useEventChannels } from '../utils/useEventChannels.js';
 
 export default {
   name: 'TemplatesPage',
   components: { EmbedRenderer },
+  setup() {
+    const { channels, selected } = useEventChannels('templates');
+    return { channels, selectedChannel: selected };
+  },
   data() {
     return { templates: [], ws: null };
   },
@@ -64,7 +72,18 @@ export default {
       };
     },
     async post(id) {
-      await fetch(`/api/templates/${id}/post`, { method: 'POST' });
+      const tmpl = this.templates.find(t => t.id === id);
+      if (!tmpl) return;
+      const body = Object.assign({}, tmpl.payload, { channelId: this.selectedChannel });
+      try {
+        await fetch('/api/events', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+      } catch (e) {
+        console.error('Failed to post template', e);
+      }
     },
     async remove(id) {
       await fetch(`/api/templates/${id}`, { method: 'DELETE' });

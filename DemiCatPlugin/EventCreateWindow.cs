@@ -2,7 +2,6 @@ using System;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Numerics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -544,7 +543,7 @@ public class EventCreateWindow
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind=event");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
@@ -560,12 +559,12 @@ public class EventCreateWindow
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            if (await ChannelNameResolver.Resolve(dto.Event, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            var dto = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream) ?? new List<ChannelDto>();
+            if (await ChannelNameResolver.Resolve(dto, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
-                _channels.AddRange(dto.Event);
+                _channels.AddRange(dto);
                 if (!string.IsNullOrEmpty(_channelId))
                 {
                     _selectedIndex = _channels.FindIndex(c => c.Id == _channelId);
@@ -658,11 +657,6 @@ public class EventCreateWindow
         public string Name = string.Empty;
         public string Value = string.Empty;
         public bool Inline;
-    }
-
-    private class ChannelListDto
-    {
-        [JsonPropertyName(ChannelKind.Event)] public List<ChannelDto> Event { get; set; } = new();
     }
 
     private class RepeatSchedule

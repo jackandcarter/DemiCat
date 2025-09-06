@@ -32,9 +32,52 @@ class JSONResponse(FastAPIJSONResponse):
 
 @router.get("/channels")
 async def get_channels(
+    kind: str | None = None,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    if kind == ChannelKind.EVENT.value:
+        result = await db.execute(
+            select(GuildChannel.channel_id, GuildChannel.name).where(
+                GuildChannel.guild_id == ctx.guild.id,
+                GuildChannel.kind == ChannelKind.EVENT,
+            )
+        )
+        channels: list[dict[str, str]] = []
+        updated = False
+        for channel_id, name in result.all():
+            new_name = await ensure_channel_name(
+                db, ctx.guild.id, channel_id, ChannelKind.EVENT, name
+            )
+            if new_name is None:
+                logging.warning(
+                    "Channel name missing for %s (%s) in guild %s",
+                    channel_id,
+                    ChannelKind.EVENT.value,
+                    ctx.guild.id,
+                )
+                channels.append({"id": str(channel_id), "name": str(channel_id)})
+                if name is not None:
+                    await db.execute(
+                        update(GuildChannel)
+                        .where(
+                            GuildChannel.guild_id == ctx.guild.id,
+                            GuildChannel.channel_id == channel_id,
+                            GuildChannel.kind == ChannelKind.EVENT,
+                        )
+                        .values(name=None)
+                    )
+                    updated = True
+                continue
+            if new_name != name:
+                name = new_name
+                updated = True
+            channels.append({"id": str(channel_id), "name": name})
+        if updated:
+            await db.commit()
+            await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
+        return JSONResponse(content=channels, ensure_ascii=False)
+
     result = await db.execute(
         select(GuildChannel.kind, GuildChannel.channel_id, GuildChannel.name).where(
             GuildChannel.guild_id == ctx.guild.id

@@ -8,6 +8,7 @@ import asyncio
 
 from demibot.db.models import Guild, GuildChannel, ChannelKind
 from demibot.db.session import init_db, get_session
+from demibot.db import session as db_session
 from demibot.http.deps import RequestContext
 from demibot.http.routes import channels as channel_routes
 
@@ -16,6 +17,8 @@ def _setup_db(path: str) -> None:
     db_path = Path(path)
     if db_path.exists():
         db_path.unlink()
+    db_session._engine = None
+    db_session._Session = None
     url = f"sqlite+aiosqlite:///{db_path}"
     asyncio.run(init_db(url))
 
@@ -69,4 +72,32 @@ def test_get_channels_returns_placeholder_and_flags_retry(monkeypatch):
     data, name = asyncio.run(run())
     assert data[ChannelKind.EVENT.value][0]["name"] == "100"
     assert name is None
+
+
+def test_get_channels_kind_event(monkeypatch):
+    _setup_db("test_channels2.db")
+
+    async def fake_ensure_channel_name(*args, **kwargs):
+        return "chan"
+
+    monkeypatch.setattr(channel_routes, "ensure_channel_name", fake_ensure_channel_name)
+
+    async def dummy_broadcast(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(channel_routes.manager, "broadcast_text", dummy_broadcast)
+
+    class Dummy:
+        pass
+
+    async def run():
+        async with get_session() as db:
+            guild = (await db.execute(select(Guild).where(Guild.id == 1))).scalar_one()
+            ctx = RequestContext(user=Dummy(), guild=guild, key=Dummy(), roles=[])
+            resp = await channel_routes.get_channels(kind="event", ctx=ctx, db=db)
+            return json.loads(resp.body.decode())
+
+    data = asyncio.run(run())
+    assert isinstance(data, list)
+    assert data[0]["name"] == "chan"
 
