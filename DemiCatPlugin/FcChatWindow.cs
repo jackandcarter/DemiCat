@@ -16,8 +16,23 @@ public class FcChatWindow : ChatWindow
         _channelId = config.FcChannelId;
     }
 
+    public override void StartNetworking()
+    {
+        if (!_config.SyncedChat || !_config.EnableFcChat)
+        {
+            return;
+        }
+        base.StartNetworking();
+    }
+
     public override void Draw()
     {
+        if (!_config.SyncedChat)
+        {
+            ImGui.TextUnformatted("Feature disabled");
+            return;
+        }
+
         if (!_tokenManager.IsReady())
         {
             base.Draw();
@@ -101,7 +116,7 @@ public class FcChatWindow : ChatWindow
 
     public override Task RefreshMessages()
     {
-        if (!_config.EnableFcChat)
+        if (!_config.SyncedChat || !_config.EnableFcChat)
         {
             return Task.CompletedTask;
         }
@@ -110,7 +125,7 @@ public class FcChatWindow : ChatWindow
 
     protected override Task FetchChannels(bool refreshed = false)
     {
-        if (!_config.EnableFcChat)
+        if (!_config.SyncedChat || !_config.EnableFcChat)
         {
             return Task.CompletedTask;
         }

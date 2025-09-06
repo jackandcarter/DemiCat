@@ -15,8 +15,23 @@ public class OfficerChatWindow : ChatWindow
         _channelId = config.OfficerChannelId;
     }
 
+    public override void StartNetworking()
+    {
+        if (!_config.Officer)
+        {
+            return;
+        }
+        base.StartNetworking();
+    }
+
     public override void Draw()
     {
+        if (!_config.Officer)
+        {
+            ImGui.TextUnformatted("Feature disabled");
+            return;
+        }
+
         if (!_tokenManager.IsReady())
         {
             base.Draw();

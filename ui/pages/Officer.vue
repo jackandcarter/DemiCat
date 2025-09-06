@@ -1,5 +1,5 @@
 <template>
-  <div class="officer">
+  <div v-if="settings.officer" class="officer">
     <h2>Officer Chat</h2>
     <div class="controls">
       <input v-model="apiKey" placeholder="API Key" />
@@ -10,16 +10,18 @@
       <Message v-for="m in messages" :key="m.id" :message="m" />
     </div>
   </div>
+  <p v-else>Feature disabled</p>
 </template>
 
 <script>
 import Message from '../components/Message.vue';
+import settings from '../utils/settings';
 
 export default {
   name: 'OfficerPage',
   components: { Message },
   data() {
-    return { apiKey: '', channelId: '', messages: [], ws: null };
+    return { apiKey: '', channelId: '', messages: [], ws: null, settings };
   },
   beforeUnmount() {
     if (this.ws) this.ws.close();

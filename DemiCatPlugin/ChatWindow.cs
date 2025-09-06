@@ -101,12 +101,8 @@ public class ChatWindow : IDisposable
         });
     }
 
-    public void StartNetworking()
+    public virtual void StartNetworking()
     {
-        if (!_config.EnableFcChat)
-        {
-            return;
-        }
         _bridge.Start();
         _bridge.Subscribe(_channelId);
         _presence?.Reset();

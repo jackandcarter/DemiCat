@@ -58,11 +58,19 @@ public class EventCreateWindow
         _httpClient = httpClient;
         _channelId = config.EventChannelId;
         ResetDefaultButtons();
-        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+        if (_config.Events)
+        {
+            _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+        }
     }
 
     public void Draw()
     {
+        if (!_config.Events)
+        {
+            ImGui.TextUnformatted("Feature disabled");
+            return;
+        }
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
@@ -418,7 +426,7 @@ public class EventCreateWindow
             Mentions = _mentions.Select(ulong.Parse).ToList()
         };
 
-        _config.Templates.Add(tmpl);
+        _config.TemplateData.Add(tmpl);
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
         _lastResult = "Template saved";
     }
@@ -522,6 +530,11 @@ public class EventCreateWindow
 
     public Task RefreshChannels()
     {
+        if (!_config.Events)
+        {
+            _channelsLoaded = true;
+            return Task.CompletedTask;
+        }
         _channelsLoaded = false;
         _channelFetchFailed = false;
         _channelErrorMessage = string.Empty;
@@ -530,6 +543,11 @@ public class EventCreateWindow
 
     private async Task FetchChannels(bool refreshed = false)
     {
+        if (!_config.Events)
+        {
+            _channelsLoaded = true;
+            return;
+        }
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");

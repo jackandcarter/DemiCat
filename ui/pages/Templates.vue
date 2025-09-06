@@ -1,5 +1,5 @@
 <template>
-  <div class="templates">
+  <div v-if="settings.templates" class="templates">
     <h2>Templates</h2>
     <div v-for="t in templates" :key="t.id" class="template">
       <h3>{{ t.name }}</h3>
@@ -7,18 +7,21 @@
       <button @click="remove(t.id)">Delete</button>
     </div>
   </div>
+  <p v-else>Feature disabled</p>
 </template>
 
 <script>
 import EmbedRenderer from '../components/EmbedRenderer.vue';
+import settings from '../utils/settings';
 
 export default {
   name: 'TemplatesPage',
   components: { EmbedRenderer },
   data() {
-    return { templates: [], ws: null };
+    return { templates: [], ws: null, settings };
   },
   async created() {
+    if (!this.settings.templates) return;
     await this.load();
     this.connect();
   },
@@ -27,6 +30,7 @@ export default {
   },
   methods: {
     async load() {
+      if (!this.settings.templates) return;
       try {
         const res = await fetch('/api/templates');
         if (res.ok) {
@@ -37,6 +41,7 @@ export default {
       }
     },
     connect() {
+      if (!this.settings.templates) return;
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const url = `${proto}://${window.location.host}/ws/templates`;
       this.ws = new WebSocket(url);
@@ -64,10 +69,12 @@ export default {
       };
     },
     async post(id) {
-      await fetch(`/api/templates/${id}/post`, { method: 'POST' });
+      if (this.settings.templates)
+        await fetch(`/api/templates/${id}/post`, { method: 'POST' });
     },
     async remove(id) {
-      await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+      if (this.settings.templates)
+        await fetch(`/api/templates/${id}`, { method: 'DELETE' });
     }
   }
 };

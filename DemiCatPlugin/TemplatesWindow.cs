@@ -36,6 +36,11 @@ public class TemplatesWindow
 
     public void Draw()
     {
+        if (!_config.Templates)
+        {
+            ImGui.TextUnformatted("Feature disabled");
+            return;
+        }
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
@@ -57,7 +62,7 @@ public class TemplatesWindow
 
         _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
         ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
-        var filteredTemplates = _config.Templates.Where(t => t.Type == TemplateType.Event).ToList();
+        var filteredTemplates = _config.TemplateData.Where(t => t.Type == TemplateType.Event).ToList();
         for (var i = 0; i < filteredTemplates.Count; i++)
         {
             var name = filteredTemplates[i].Name;
@@ -115,12 +120,22 @@ public class TemplatesWindow
 
     public Task RefreshChannels()
     {
+        if (!_config.Templates)
+        {
+            _channelsLoaded = true;
+            return Task.CompletedTask;
+        }
         _channelsLoaded = false;
         return FetchChannels();
     }
 
     private async Task FetchChannels(bool refreshed = false)
     {
+        if (!_config.Templates)
+        {
+            _channelsLoaded = true;
+            return;
+        }
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");

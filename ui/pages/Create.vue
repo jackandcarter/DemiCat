@@ -1,5 +1,5 @@
 <template>
-  <div class="create">
+  <div v-if="settings.events" class="create">
     <h2>Create Event</h2>
     <div class="pane">
       <div class="editor">
@@ -15,11 +15,13 @@
       </div>
     </div>
   </div>
+  <p v-else>Feature disabled</p>
 </template>
 
 <script>
 import EmbedRenderer from '../components/EmbedRenderer.vue';
 import { validateEmbed } from '../utils/embed.js';
+import settings from '../utils/settings';
 
 export default {
   name: 'CreatePage',
@@ -27,7 +29,8 @@ export default {
   data() {
     return {
       channelId: '',
-      raw: '{"title":"","description":""}'
+      raw: '{"title":"","description":""}',
+      settings
     };
   },
   computed: {
@@ -45,7 +48,7 @@ export default {
   },
   methods: {
     async submit() {
-      if (this.error) return;
+      if (this.error || !this.settings.events) return;
       const payload = Object.assign({ channelId: this.channelId }, this.preview);
       try {
         await fetch('/api/events', {
