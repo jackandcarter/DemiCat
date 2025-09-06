@@ -61,6 +61,13 @@ public class DiscordPresenceService : IDisposable
         _wsTask = RunWebSocket(_wsCts.Token);
     }
 
+    public void Stop()
+    {
+        _wsCts?.Cancel();
+        _ws?.Dispose();
+        _ws = null;
+    }
+
     public void Dispose()
     {
         _wsCts?.Cancel();
@@ -69,9 +76,9 @@ public class DiscordPresenceService : IDisposable
 
     public async Task Refresh()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true)
         {
-            PluginServices.Instance!.Log.Warning("Cannot refresh presences: API base URL is not configured.");
+            PluginServices.Instance!.Log.Warning("Cannot refresh presences: API base URL is not configured or token missing.");
             _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Invalid API URL");
             return;
         }
@@ -104,7 +111,7 @@ public class DiscordPresenceService : IDisposable
     {
         while (!token.IsCancellationRequested)
         {
-            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true || !_config.Enabled)
             {
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                     _statusMessage = "Invalid API URL");
@@ -121,6 +128,14 @@ public class DiscordPresenceService : IDisposable
 
             try
             {
+                var ping = new HttpRequestMessage(HttpMethod.Head, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping");
+                ApiHelpers.AddAuthHeader(ping, TokenManager.Instance!);
+                var pingResponse = await _httpClient.SendAsync(ping, token);
+                if (!pingResponse.IsSuccessStatusCode)
+                {
+                    try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
+                    continue;
+                }
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_ws, TokenManager.Instance!);

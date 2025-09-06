@@ -115,7 +115,7 @@ public class ChatWindow : IDisposable
     public void StopNetworking()
     {
         _bridge.Stop();
-        _presence?.Reset();
+        _presence?.Stop();
     }
 
     public virtual void Draw()

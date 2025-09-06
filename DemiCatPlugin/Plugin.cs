@@ -65,7 +65,7 @@ public class Plugin : IDalamudPlugin
         }
         _presenceService?.Reset();
         _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _presenceSidebar, _httpClient);
-        _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow, _tokenManager);
+        _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
         _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
         _settings.MainWindow = _mainWindow;
         _settings.ChatWindow = _chatWindow;
@@ -85,12 +85,7 @@ public class Plugin : IDalamudPlugin
         _openConfigUi = () => _settings.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
-        _tokenManager.OnLinked += StartWatchers;
-        _tokenManager.OnUnlinked += StopWatchers;
-        if (_tokenManager.IsReady())
-        {
-            StartWatchers();
-        }
+        _tokenManager.RegisterWatcher(StartWatchers, StopWatchers);
         _services.Log.Info("DemiCat loaded.");
     }
 
@@ -126,12 +121,21 @@ public class Plugin : IDalamudPlugin
             return;
         _requestWatcher.Start();
         _ = _channelWatcher.Start();
+        if (_config.EnableFcChat)
+        {
+            _chatWindow.StartNetworking();
+        }
+        _officerChatWindow.StartNetworking();
+        _ = _ui.StartNetworking();
     }
 
     private void StopWatchers()
     {
         _requestWatcher.Stop();
         _channelWatcher.Stop();
+        _chatWindow.StopNetworking();
+        _officerChatWindow.StopNetworking();
+        _ui.StopNetworking();
     }
 
     private async Task<bool> RefreshRoles(IPluginLog log)

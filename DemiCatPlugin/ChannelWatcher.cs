@@ -1,4 +1,5 @@
 using System;
+using System.Net.Http;
 using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
@@ -10,6 +11,7 @@ namespace DemiCatPlugin;
 public class ChannelWatcher : IDisposable
 {
     private readonly Config _config;
+    private readonly HttpClient _httpClient;
     private readonly UiRenderer _ui;
     private readonly EventCreateWindow _eventCreateWindow;
     private readonly ChatWindow _chatWindow;
@@ -19,7 +21,7 @@ public class ChannelWatcher : IDisposable
     private Task? _task;
     private CancellationTokenSource? _cts;
 
-    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager)
+    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager, HttpClient httpClient)
     {
         _config = config;
         _ui = ui;
@@ -27,6 +29,7 @@ public class ChannelWatcher : IDisposable
         _chatWindow = chatWindow;
         _officerChatWindow = officerChatWindow;
         _tokenManager = tokenManager;
+        _httpClient = httpClient;
     }
 
     public async Task Start()
@@ -64,6 +67,15 @@ public class ChannelWatcher : IDisposable
             }
             try
             {
+                var ping = new HttpRequestMessage(HttpMethod.Head, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping");
+                ApiHelpers.AddAuthHeader(ping, _tokenManager);
+                var pingResponse = await _httpClient.SendAsync(ping, token);
+                if (!pingResponse.IsSuccessStatusCode)
+                {
+                    try { await Task.Delay(delay, token); } catch { }
+                    delay = TimeSpan.FromSeconds(5);
+                    continue;
+                }
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);
