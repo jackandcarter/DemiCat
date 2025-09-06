@@ -4,7 +4,7 @@
     <div class="pane">
       <div class="editor">
         <div>
-          <select v-model="selectedChannel">
+          <select v-model="channelId">
             <option v-for="c in channels" :key="c.id" :value="c.id">{{ c.name }}</option>
           </select>
         </div>
@@ -34,15 +34,13 @@ export default {
   components: { EmbedRenderer },
   setup() {
     const { channels, selected } = useEventChannels('create');
-    return { channels, selectedChannel: selected };
+    return { channels, channelId: selected };
   },
   data() {
     return {
-
-      channelId: '',
       raw: '{"title":"","description":""}',
-      settings
-
+      settings,
+      errorMsg: ''
     };
   },
   computed: {
@@ -54,14 +52,24 @@ export default {
       }
     },
     error() {
+      if (this.errorMsg) return this.errorMsg;
       if (!this.preview) return 'Invalid JSON';
-      return validateEmbed(this.preview, this.preview.buttons || []);
+      const err = validateEmbed(this.preview, this.preview.buttons || []);
+      if (err) return err;
+      if (!this.preview.title) return 'Missing title';
+      if (!this.preview.description) return 'Missing description';
+      return null;
     }
   },
   methods: {
     async submit() {
+      this.errorMsg = '';
+      if (!this.channelId) {
+        this.errorMsg = 'Missing channel';
+        return;
+      }
       if (this.error) return;
-      const payload = Object.assign({ channelId: this.selectedChannel }, this.preview);
+      const payload = Object.assign({ channelId: this.channelId }, this.preview);
 
       try {
         await fetch('/api/events', {
