@@ -23,10 +23,24 @@ public class Config : IPluginConfiguration
     public string OfficerChannelId { get; set; } = string.Empty;
     public bool EnableFcChat { get; set; } = true;
     public bool EnableFcChatUserSet { get; set; } = false;
+
+    [JsonPropertyName("syncedChat")]
+    public bool SyncedChat { get; set; } = true;
+    [JsonPropertyName("events")]
+    public bool Events { get; set; } = true;
+    [JsonPropertyName("templatesEnabled")]
+    public bool Templates { get; set; } = true;
+    [JsonPropertyName("requests")]
+    public bool Requests { get; set; } = true;
+    [JsonPropertyName("officer")]
+    public bool Officer { get; set; } = true;
+    [JsonPropertyName("fcSyncShell")]
+    public bool FCSyncShell { get; set; } = false;
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
     public List<RoleDto> GuildRoles { get; set; } = new();
-    public List<Template> Templates { get; set; } = new();
+    [JsonPropertyName("templates")]
+    public List<Template> TemplateData { get; set; } = new();
     public List<SignupPreset> SignupPresets { get; set; } = new();
 
     [JsonPropertyName("requestStates")]
@@ -35,8 +49,6 @@ public class Config : IPluginConfiguration
     [JsonPropertyName("requestsDeltaToken")]
     public string? RequestsDeltaToken { get; set; }
 
-    [JsonPropertyName("syncEnabled")]
-    public bool SyncEnabled { get; set; } = false;
 
     [JsonPropertyName("autoApply")]
     public Dictionary<string, bool> AutoApply { get; set; } = new();

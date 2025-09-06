@@ -1,5 +1,5 @@
 <template>
-  <div class="requests">
+  <div v-if="settings.requests" class="requests">
     <h2>Request Board</h2>
     <ul>
       <li v-for="r in requests" :key="r.id">
@@ -7,15 +7,19 @@
       </li>
     </ul>
   </div>
+  <p v-else>Feature disabled</p>
 </template>
 
 <script>
+import settings from '../utils/settings';
+
 export default {
   name: 'RequestsPage',
   data() {
-    return { requests: [], ws: null };
+    return { requests: [], ws: null, settings };
   },
   async created() {
+    if (!this.settings.requests) return;
     await this.load();
     this.connect();
   },
@@ -24,6 +28,7 @@ export default {
   },
   methods: {
     async load() {
+      if (!this.settings.requests) return;
       try {
         const res = await fetch('/api/requests');
         if (res.ok) {
@@ -34,6 +39,7 @@ export default {
       }
     },
     connect() {
+      if (!this.settings.requests) return;
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
       const url = `${proto}://${window.location.host}/ws/requests`;
       this.ws = new WebSocket(url);

@@ -49,6 +49,10 @@ public class SyncshellWindow : IDisposable
     {
         _config = config;
         _httpClient = httpClient;
+        if (!_config.FCSyncShell)
+        {
+            return;
+        }
 
         if (!_config.Categories.TryGetValue("syncshell", out var state))
         {
@@ -72,7 +76,7 @@ public class SyncshellWindow : IDisposable
 
     public void Draw()
     {
-        if (!_config.SyncEnabled)
+        if (!_config.FCSyncShell)
         {
             const string message = "SyncShell is under development";
             var size = ImGui.CalcTextSize(message);
@@ -212,7 +216,7 @@ public class SyncshellWindow : IDisposable
 
     private async Task Refresh()
     {
-        if (!_config.SyncEnabled || _loading || _syncPaused)
+        if (!_config.FCSyncShell || _loading || _syncPaused)
             return;
 
         try
@@ -394,7 +398,7 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
-            if (!_config.SyncEnabled)
+            if (!_config.FCSyncShell)
                 return (false, "Sync disabled");
             if (!ApiHelpers.ValidateApiBaseUrl(_config))
                 return (false, "Invalid API URL");
@@ -543,7 +547,7 @@ public class SyncshellWindow : IDisposable
 
     private void ApplyIpc(string channel, string payload)
     {
-        if (!_config.SyncEnabled)
+        if (!_config.FCSyncShell)
             return;
 
         try
@@ -781,7 +785,7 @@ public class SyncshellWindow : IDisposable
                 await Task.Delay(TimeSpan.FromMinutes(5), _cts.Token);
                 if (_cts.IsCancellationRequested)
                     break;
-                if (_config.SyncEnabled)
+                if (_config.FCSyncShell)
                     await Refresh();
             }
             catch (TaskCanceledException)

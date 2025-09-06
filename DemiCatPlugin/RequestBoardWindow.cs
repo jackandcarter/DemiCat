@@ -35,11 +35,19 @@ public class RequestBoardWindow
         _config = config;
         _httpClient = httpClient;
         _gameData = new GameDataCache(httpClient);
-        _ = RequestStateService.RefreshAll(httpClient, config);
+        if (config.Requests)
+        {
+            _ = RequestStateService.RefreshAll(httpClient, config);
+        }
     }
 
     public void Draw()
     {
+        if (!_config.Requests)
+        {
+            ImGui.TextUnformatted("Feature disabled");
+            return;
+        }
         var mode = (int)_sortMode;
         if (ImGui.Combo("Sort By", ref mode, SortLabels, SortLabels.Length))
             _sortMode = (SortMode)mode;

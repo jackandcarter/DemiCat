@@ -1,5 +1,5 @@
 <template>
-  <div class="syncshell">
+  <div v-if="settings.fcSyncShell" class="syncshell">
     <h2>SyncShell</h2>
     <div class="controls">
       <input v-model="apiKey" placeholder="API Key" />
@@ -10,27 +10,30 @@
       <Message v-for="m in messages" :key="m.id" :message="m" />
     </div>
   </div>
+  <p v-else>Feature disabled</p>
 </template>
 
 <script>
 import Message from '../components/Message.vue';
+import settings from '../utils/settings';
 
 export default {
   name: 'SyncShellPage',
   components: { Message },
   data() {
-    return { apiKey: '', channelId: '', messages: [], ws: null };
+    return { apiKey: '', channelId: '', messages: [], ws: null, settings };
   },
   beforeUnmount() {
     if (this.ws) this.ws.close();
   },
   methods: {
     async setup() {
-      if (!this.channelId) return;
+      if (!this.channelId || !this.settings.fcSyncShell) return;
       await this.load();
       this.connect();
     },
     async load() {
+      if (!this.settings.fcSyncShell) return;
       try {
         const res = await fetch(`/api/messages/${this.channelId}`);
         if (res.ok) {
@@ -41,6 +44,7 @@ export default {
       }
     },
     connect() {
+      if (!this.settings.fcSyncShell) return;
       if (this.ws) {
         this.ws.close();
         this.ws = null;

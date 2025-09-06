@@ -36,7 +36,7 @@ public class MainWindow : IDisposable
         _create = new EventCreateWindow(config, httpClient);
         _templates = new TemplatesWindow(config, httpClient);
         _requestBoard = new RequestBoardWindow(config, httpClient);
-        _syncshell = new SyncshellWindow(config, httpClient);
+        _syncshell = config.FCSyncShell ? new SyncshellWindow(config, httpClient) : null;
     }
 
     public void Draw()
@@ -81,7 +81,7 @@ public class MainWindow : IDisposable
         {
             if (ImGui.BeginTabItem("Events"))
             {
-                if (_config.EnableFcChat && _presenceSidebar != null)
+                if (_config.SyncedChat && _presenceSidebar != null)
                 {
                     if (!linked)
                     {
@@ -124,13 +124,20 @@ public class MainWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
-            if (_config.SyncEnabled && ImGui.BeginTabItem("Syncshell"))
+            if (ImGui.BeginTabItem("Syncshell"))
             {
-                _syncshell.Draw();
+                if (_config.FCSyncShell && _syncshell != null)
+                {
+                    _syncshell.Draw();
+                }
+                else
+                {
+                    ImGui.TextUnformatted("Feature disabled");
+                }
                 ImGui.EndTabItem();
             }
 
-            if (_config.EnableFcChat && _chat != null)
+            if (_chat != null)
             {
                 if (!linked)
                 {
@@ -161,7 +168,7 @@ public class MainWindow : IDisposable
                 }
                 else if (ImGui.BeginTabItem("Officer"))
                 {
-                    if (_config.EnableFcChat && _presenceSidebar != null)
+                    if (_config.SyncedChat && _presenceSidebar != null)
                     {
                         _presenceSidebar.Draw();
                         ImGui.SameLine();
@@ -176,10 +183,6 @@ public class MainWindow : IDisposable
             ImGui.EndTabBar();
         }
 
-        if (!_config.SyncEnabled)
-        {
-            ImGui.TextUnformatted("Feature in development");
-        }
 
         ImGui.End();
         ImGui.PopStyleColor(5);

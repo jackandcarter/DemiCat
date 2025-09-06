@@ -1,21 +1,25 @@
 <template>
   <div id="app">
     <nav class="nav">
-      <router-link to="/events">Events</router-link>
-      <router-link to="/create">Create</router-link>
-      <router-link to="/templates">Templates</router-link>
-      <router-link to="/requests">Requests</router-link>
-      <router-link to="/chat">Chat</router-link>
-      <router-link to="/syncshell">SyncShell</router-link>
-      <router-link to="/officer">Officer</router-link>
+      <router-link v-if="settings.events" to="/events">Events</router-link>
+      <router-link v-if="settings.events" to="/create">Create</router-link>
+      <router-link v-if="settings.templates" to="/templates">Templates</router-link>
+      <router-link v-if="settings.requests" to="/requests">Requests</router-link>
+      <router-link v-if="settings.syncedChat" to="/chat">Chat</router-link>
+      <router-link v-if="settings.fcSyncShell" to="/syncshell">SyncShell</router-link>
+      <router-link v-if="settings.officer" to="/officer">Officer</router-link>
     </nav>
     <router-view />
   </div>
 </template>
 
 <script>
+import settings from './utils/settings';
 export default {
-  name: 'App'
+  name: 'App',
+  data() {
+    return { settings };
+  }
 };
 </script>
 

@@ -34,6 +34,10 @@ public class ChannelWatcher : IDisposable
 
     public async Task Start()
     {
+        if (!_config.Events && !_config.SyncedChat && !_config.Officer)
+        {
+            return;
+        }
         _cts?.Cancel();
         if (_task != null)
         {
@@ -96,7 +100,7 @@ public class ChannelWatcher : IDisposable
                         {
                             _ = SafeRefresh(_ui.RefreshChannels);
                             _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
-                            if (_config.EnableFcChat)
+                            if (_config.SyncedChat && _config.EnableFcChat)
                                 _ = SafeRefresh(_chatWindow.RefreshChannels);
                             _ = SafeRefresh(_officerChatWindow.RefreshChannels);
                         });
@@ -133,7 +137,7 @@ public class ChannelWatcher : IDisposable
                 {
                     _ = SafeRefresh(_ui.RefreshChannels);
                     _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
-                    if (_config.EnableFcChat)
+                    if (_config.SyncedChat && _config.EnableFcChat)
                         _ = SafeRefresh(_chatWindow.RefreshChannels);
                     _ = SafeRefresh(_officerChatWindow.RefreshChannels);
                 });

@@ -115,10 +115,10 @@ public class SettingsWindow : IDisposable
                         ImGui.SetTooltip("Link DemiCat to enable chat and presence.");
                 }
 
-                var syncEnabled = _config.SyncEnabled;
+                var syncEnabled = _config.FCSyncShell;
                 if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
                 {
-                    _config.SyncEnabled = syncEnabled;
+                    _config.FCSyncShell = syncEnabled;
                     SaveConfig();
                     _ = Task.Run(PushSettings);
                 }
@@ -225,7 +225,7 @@ public class SettingsWindow : IDisposable
             using var doc = JsonDocument.Parse(body);
             if (doc.RootElement.TryGetProperty("consent_sync", out var consent))
             {
-                _config.SyncEnabled = consent.GetBoolean();
+                _config.FCSyncShell = consent.GetBoolean();
             }
 
             if (doc.RootElement.TryGetProperty("settings", out var settings) && settings.ValueKind == JsonValueKind.Object)
@@ -272,7 +272,7 @@ public class SettingsWindow : IDisposable
                     categories = _categoryToggles,
                     autoApply = _config.AutoApply
                 },
-                consent_sync = _config.SyncEnabled
+                consent_sync = _config.FCSyncShell
             };
 
             var request = new HttpRequestMessage(HttpMethod.Put, url)

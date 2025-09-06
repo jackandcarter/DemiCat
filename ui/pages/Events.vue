@@ -1,4 +1,5 @@
 <template>
+
   <div class="events">
     <select v-model="selectedChannel">
       <option value="">All Channels</option>
@@ -20,11 +21,16 @@
       </div>
     </div>
   </div>
+  <p v-else>Feature disabled</p>
 </template>
 
 <script>
 import EmbedRenderer from '../components/EmbedRenderer.vue';
+
 import { useEventChannels } from '../utils/useEventChannels.js';
+
+import settings from '../utils/settings';
+
 
 export default {
   name: 'EventsPage',
@@ -35,10 +41,12 @@ export default {
   },
   data() {
     return {
-      events: []
+      events: [],
+      settings
     };
   },
   async created() {
+    if (!this.settings.events) return;
     try {
       const res = await fetch('/api/events');
       if (res.ok) {
