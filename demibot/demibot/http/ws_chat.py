@@ -46,6 +46,11 @@ class ChatConnectionManager:
         self._channel_cursors: Dict[str, int] = {}
         self._send_count = 0
         self._resync_count = 0
+        self._connect_count = 0
+        self._disconnect_count = 0
+        self._sub_count = 0
+        self._backfill_total = 0
+        self._backfill_batches = 0
         self._ping_task: asyncio.Task | None = None
 
     async def connect(self, websocket: WebSocket, ctx: RequestContext) -> None:
@@ -53,6 +58,12 @@ class ChatConnectionManager:
             headers=[(b"sec-websocket-extensions", b"permessage-deflate")]
         )
         self.connections[websocket] = ChatConnection(ctx)
+        self._connect_count += 1
+        logger.info(
+            "chat.ws connect path=%s count=%s",
+            websocket.scope.get("path", ""),
+            self._connect_count,
+        )
         if self._ping_task is None:
             try:
                 loop = asyncio.get_running_loop()
@@ -63,6 +74,8 @@ class ChatConnectionManager:
 
     def disconnect(self, websocket: WebSocket) -> None:
         self.connections.pop(websocket, None)
+        self._disconnect_count += 1
+        logger.info("chat.ws disconnect count=%s", self._disconnect_count)
         if not self.connections and self._ping_task is not None:
             self._ping_task.cancel()
             self._ping_task = None
@@ -99,6 +112,12 @@ class ChatConnectionManager:
                 # Skip officer-only channels for non-officers.
                 continue
             info.channels.add(channel_id)
+            self._sub_count += 1
+            logger.info(
+                "chat.ws subscribe channel=%s count=%s",
+                channel_id,
+                self._sub_count,
+            )
             await self._send_resync(websocket, channel_id)
 
     def ack(self, websocket: WebSocket, data: dict) -> None:
@@ -126,6 +145,16 @@ class ChatConnectionManager:
         self._channel_tasks.pop(channel, None)
         if not queue:
             return
+        batch_size = len(queue)
+        self._backfill_total += batch_size
+        self._backfill_batches += 1
+        avg_backfill = self._backfill_total / self._backfill_batches
+        logger.info(
+            "chat.ws broadcast channel=%s size=%s avg_backfill=%.1f",
+            channel,
+            batch_size,
+            avg_backfill,
+        )
         message = json.dumps({"op": "batch", "channel": channel, "messages": queue})
         targets = [
             ws

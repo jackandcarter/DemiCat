@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Diagnostics;
 
 namespace DemiCatPlugin;
 
@@ -27,6 +28,13 @@ public class ChatBridge : IDisposable
     private readonly Dictionary<string, long> _cursors = new();
     private readonly Dictionary<string, long> _acked = new();
     private readonly HashSet<string> _subs = new();
+    private int _connectCount;
+    private int _reconnectCount;
+    private int _resyncCount;
+    private long _backfillTotal;
+    private long _backfillBatches;
+    private int _sendCount;
+    private double _sendLatencyTotal;
 
     public event Action<string>? MessageReceived;
     public event Action? Linked;
@@ -65,6 +73,7 @@ public class ChatBridge : IDisposable
     {
         if (string.IsNullOrEmpty(channel)) return;
         _subs.Add(channel);
+        PluginServices.Instance?.Log.Info($"chat.ws subscribe channel={channel}");
         _ = SendSubscriptions();
     }
 
@@ -82,6 +91,8 @@ public class ChatBridge : IDisposable
     public void Resync(string channel)
     {
         var json = JsonSerializer.Serialize(new { op = "resync", ch = channel });
+        PluginServices.Instance?.Log.Info($"chat.ws resync channel={channel}");
+        _resyncCount++;
         _ = SendRaw(json);
     }
 
@@ -117,6 +128,7 @@ public class ChatBridge : IDisposable
                 StatusChanged?.Invoke("Connecting...");
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
+                _ws.Options.DangerousDeflateOptions = new WebSocketDeflateOptions();
                 _ws.Options.SetRequestHeader("Sec-WebSocket-Extensions", "permessage-deflate");
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);
                 var uri = _uriBuilder();
@@ -126,6 +138,9 @@ public class ChatBridge : IDisposable
                 _tokenValid = true;
                 Linked?.Invoke();
                 StatusChanged?.Invoke(string.Empty);
+                _connectCount++;
+                if (_connectCount > 1) _reconnectCount++;
+                PluginServices.Instance?.Log.Info($"chat.ws connect count={_connectCount} reconnects={_reconnectCount}");
 
                 await SendSubscriptions();
 
@@ -141,6 +156,7 @@ public class ChatBridge : IDisposable
             {
                 _ws?.Dispose();
                 _ws = null;
+                PluginServices.Instance?.Log.Info("chat.ws disconnect");
             }
 
             if (token.IsCancellationRequested)
@@ -208,8 +224,11 @@ public class ChatBridge : IDisposable
             {
                 case "batch":
                     var channel = root.GetProperty("channel").GetString() ?? string.Empty;
-                    foreach (var msg in root.GetProperty("messages").EnumerateArray())
+                    var msgs = root.GetProperty("messages");
+                    var count = 0;
+                    foreach (var msg in msgs.EnumerateArray())
                     {
+                        count++;
                         var cursor = msg.GetProperty("cursor").GetInt64();
                         _cursors[channel] = cursor;
                         var mOp = msg.GetProperty("op").GetString();
@@ -227,10 +246,16 @@ public class ChatBridge : IDisposable
                             }
                         }
                     }
+                    _backfillTotal += count;
+                    _backfillBatches++;
+                    var avg = _backfillBatches == 0 ? 0 : (double)_backfillTotal / _backfillBatches;
+                    PluginServices.Instance?.Log.Info($"chat.ws batch channel={channel} size={count} avg_backfill={avg:F1}");
                     break;
                 case "resync":
                     var ch = root.GetProperty("channel").GetString() ?? string.Empty;
                     var cur = root.GetProperty("cursor").GetInt64();
+                    _resyncCount++;
+                    PluginServices.Instance?.Log.Info($"chat.ws resync channel={ch} count={_resyncCount}");
                     ResyncRequested?.Invoke(ch, cur);
                     break;
                 case "ping":
@@ -244,12 +269,18 @@ public class ChatBridge : IDisposable
         }
     }
 
-    private Task SendRaw(string json)
+    private async Task SendRaw(string json)
     {
         if (_ws == null || _ws.State != WebSocketState.Open)
-            return Task.CompletedTask;
+            return;
         var bytes = Encoding.UTF8.GetBytes(json);
-        return _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        var sw = Stopwatch.StartNew();
+        await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+        var ms = sw.Elapsed.TotalMilliseconds;
+        _sendCount++;
+        _sendLatencyTotal += ms;
+        var avg = _sendLatencyTotal / _sendCount;
+        PluginServices.Instance?.Log.Info($"chat.ws send latency_ms={ms:F1} avg_latency_ms={avg:F1} count={_sendCount}");
     }
 
     private Task AckAsync(string channel)
@@ -273,6 +304,7 @@ public class ChatBridge : IDisposable
             chans.Add(new { id = ch, since });
         }
         var json = JsonSerializer.Serialize(new { op = "sub", channels = chans });
+        PluginServices.Instance?.Log.Info($"chat.ws subscribe count={_subs.Count}");
         return SendRaw(json);
     }
 
