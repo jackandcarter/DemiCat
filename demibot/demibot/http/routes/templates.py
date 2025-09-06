@@ -4,7 +4,9 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -40,6 +42,7 @@ def _template_to_dto(t: EventTemplate) -> TemplateDto:
         name=t.name,
         description=t.description,
         payload=payload,
+        updated_at=t.updated_at,
     )
 
 
@@ -71,7 +74,11 @@ async def create_template(
         payload_json=_dump_payload(body.payload),
     )
     db.add(tmpl)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return JSONResponse({"error": "duplicate"}, status_code=409)
     await db.refresh(tmpl)
     dto = _template_to_dto(tmpl)
     await manager.broadcast_text(
@@ -95,7 +102,9 @@ async def list_templates(
     db: AsyncSession = Depends(get_db),
 ) -> list[TemplateDto]:
     result = await db.execute(
-        select(EventTemplate).where(EventTemplate.guild_id == ctx.guild.id)
+        select(EventTemplate)
+        .where(EventTemplate.guild_id == ctx.guild.id)
+        .order_by(EventTemplate.updated_at.desc())
     )
     return [_template_to_dto(t) for t in result.scalars()]
 
@@ -145,7 +154,11 @@ async def update_template(
         )
         validate_embed_payload(embed, body.payload.buttons or [])
         tmpl.payload_json = _dump_payload(body.payload)
-    await db.commit()
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        return JSONResponse({"error": "duplicate"}, status_code=409)
     await db.refresh(tmpl)
     dto = _template_to_dto(tmpl)
     await manager.broadcast_text(
