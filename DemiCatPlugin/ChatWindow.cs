@@ -95,6 +95,13 @@ public class ChatWindow : IDisposable
         _bridge.Linked += HandleBridgeLinked;
         _bridge.Unlinked += HandleBridgeUnlinked;
         _bridge.StatusChanged += s => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = s);
+        _bridge.ResyncRequested += (ch, _) => _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            if (ch == _channelId)
+            {
+                _ = RefreshMessages();
+            }
+        });
     }
 
     public void StartNetworking()
@@ -104,6 +111,7 @@ public class ChatWindow : IDisposable
             return;
         }
         _bridge.Start();
+        _bridge.Subscribe(_channelId);
         _presence?.Reset();
     }
 
@@ -135,6 +143,7 @@ public class ChatWindow : IDisposable
                 _config.ChatChannelId = _channelId;
                 ClearTextureCache();
                 SaveConfig();
+                _bridge.Subscribe(_channelId);
                 _ = RefreshMessages();
             }
         }
@@ -339,6 +348,8 @@ public class ChatWindow : IDisposable
             ImGui.EndGroup();
         }
         ImGui.EndChild();
+        _bridge.Ack(_channelId);
+        SaveConfig();
 
         if (_replyToId != null)
         {
@@ -1102,7 +1113,7 @@ public class ChatWindow : IDisposable
 
     protected virtual Uri BuildWebSocketUri()
     {
-        var baseUri = _config.ApiBaseUrl.TrimEnd('/') + "/ws/messages";
+        var baseUri = _config.ApiBaseUrl.TrimEnd('/') + "/ws/chat";
         var builder = new UriBuilder(baseUri);
         if (builder.Scheme == "https")
         {

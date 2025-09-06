@@ -16,6 +16,7 @@ public class Config : IPluginConfiguration
     public string WebSocketPath { get; set; } = "/ws/embeds";
     public int PollIntervalSeconds { get; set; } = 5;
     public string ChatChannelId { get; set; } = string.Empty;
+    public Dictionary<string, long> ChatCursors { get; set; } = new();
     public string EventChannelId { get; set; } = string.Empty;
     public string FcChannelId { get; set; } = string.Empty;
     public string FcChannelName { get; set; } = string.Empty;
