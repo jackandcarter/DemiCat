@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto, AttachmentDto
+from ..validation import validate_embed_payload
 from ..ws import manager
 from ..discord_client import discord_client
 from ...db.models import (
@@ -109,7 +110,29 @@ async def create_event(
     else:
         ts = datetime.now(timezone.utc)
 
+    channel_id = int(body.channel_id)
     mention_ids = [int(m) for m in body.mentions or []]
+
+    dto = EmbedDto(
+        id=eid,
+        timestamp=ts,
+        color=body.color,
+        author_name=None,
+        author_icon_url=None,
+        title=body.title,
+        description=body.description,
+        url=body.url,
+        fields=[
+            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
+            for f in (body.fields or [])
+        ],
+        thumbnail_url=body.thumbnail_url,
+        image_url=body.image_url,
+        buttons=buttons,
+        channel_id=channel_id,
+        mentions=mention_ids or None,
+    )
+    validate_embed_payload(dto, buttons)
 
     stored_embeds = body.embeds
     stored_attachments = (
@@ -119,7 +142,6 @@ async def create_event(
     )
 
     discord_msg_id: int | None = None
-    channel_id = int(body.channel_id)
     sent: discord.Message | None = None
     if discord_client:
         channel = discord_client.get_channel(channel_id)
@@ -181,26 +203,7 @@ async def create_event(
 
     if discord_msg_id is not None:
         eid = str(discord_msg_id)
-
-    dto = EmbedDto(
-        id=eid,
-        timestamp=ts,
-        color=body.color,
-        author_name=None,
-        author_icon_url=None,
-        title=body.title,
-        description=body.description,
-        url=body.url,
-        fields=[
-            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
-            for f in (body.fields or [])
-        ],
-        thumbnail_url=body.thumbnail_url,
-        image_url=body.image_url,
-        buttons=buttons,
-        channel_id=int(body.channel_id) if body.channel_id.isdigit() else None,
-        mentions=mention_ids or None,
-    )
+        dto.id = eid
     existing = await db.get(Embed, int(eid))
     if existing:
         existing.channel_id = channel_id

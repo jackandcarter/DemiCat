@@ -8,7 +8,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ..schemas import TemplateDto, TemplatePayload, CamelModel
+from ..schemas import TemplateDto, TemplatePayload, CamelModel, EmbedDto, EmbedFieldDto
+from ..validation import validate_embed_payload
 from ..ws import manager
 from ...db.models import EventTemplate
 from .events import create_event, CreateEventBody
@@ -48,6 +49,21 @@ async def create_template(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> TemplateDto:
+    embed = EmbedDto(
+        id="0",
+        title=body.payload.title,
+        description=body.payload.description,
+        url=body.payload.url,
+        image_url=body.payload.image_url,
+        thumbnail_url=body.payload.thumbnail_url,
+        color=body.payload.color,
+        fields=body.payload.fields,
+        buttons=body.payload.buttons,
+        channel_id=int(body.payload.channel_id)
+        if body.payload.channel_id.isdigit()
+        else None,
+    )
+    validate_embed_payload(embed, body.payload.buttons or [])
     tmpl = EventTemplate(
         guild_id=ctx.guild.id,
         name=body.name,
@@ -109,6 +125,21 @@ async def update_template(
     if body.description is not None:
         tmpl.description = body.description
     if body.payload is not None:
+        embed = EmbedDto(
+            id="0",
+            title=body.payload.title,
+            description=body.payload.description,
+            url=body.payload.url,
+            image_url=body.payload.image_url,
+            thumbnail_url=body.payload.thumbnail_url,
+            color=body.payload.color,
+            fields=body.payload.fields,
+            buttons=body.payload.buttons,
+            channel_id=int(body.payload.channel_id)
+            if body.payload.channel_id.isdigit()
+            else None,
+        )
+        validate_embed_payload(embed, body.payload.buttons or [])
         tmpl.payload_json = _dump_payload(body.payload)
     await db.commit()
     await db.refresh(tmpl)
@@ -158,4 +189,22 @@ async def post_template(
         raise HTTPException(status_code=404, detail="Template not found")
     payload_dict = json.loads(tmpl.payload_json)
     body = CreateEventBody.model_validate(payload_dict)
+    buttons = body.buttons or []
+    dto = EmbedDto(
+        id="0",
+        title=body.title,
+        description=body.description,
+        url=body.url,
+        fields=[
+            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
+            for f in (body.fields or [])
+        ],
+        image_url=body.image_url,
+        thumbnail_url=body.thumbnail_url,
+        color=body.color,
+        buttons=buttons,
+        channel_id=int(body.channel_id) if body.channel_id.isdigit() else None,
+        mentions=[int(m) for m in body.mentions or []] or None,
+    )
+    validate_embed_payload(dto, buttons)
     return await create_event(body=body, ctx=ctx, db=db)
