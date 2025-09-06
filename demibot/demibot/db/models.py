@@ -269,14 +269,20 @@ class Embed(Base):
     )
 
 
-class Attendance(Base):
-    __tablename__ = "attendance"
-
-    discord_message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
-    user_id: Mapped[int] = mapped_column(
-        BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
+class EventSignup(Base):
+    __tablename__ = "event_signups"
+    __table_args__ = (
+        UniqueConstraint("message_id", "user_id", name="uq_event_signups_message_user"),
+        Index("ix_event_signups_message_tag", "message_id", "tag"),
     )
-    choice: Mapped[str] = mapped_column(String(50))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), index=True
+    )
+    tag: Mapped[str] = mapped_column(String(50))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Presence(Base):

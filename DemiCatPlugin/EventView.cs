@@ -338,8 +338,9 @@ public class EventView : IDisposable
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/interactions");
-            var body = new { messageId = _dto.Id, channelId = _dto.ChannelId, customId = customId };
+            var tag = customId.Contains(':') ? customId.Split(':', 2)[1] : customId;
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/{_dto.Id}/rsvp");
+            var body = new { tag = tag };
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);

@@ -24,6 +24,15 @@
         </span>
         <span class="footer-text">{{ embed.footer.text }}</span>
       </div>
+      <div v-if="embed.buttons && embed.buttons.length" class="embed-buttons">
+        <button
+          v-for="(btn, i) in embed.buttons"
+          :key="i"
+          @click="rsvp(btn.customId)"
+        >
+          <span v-if="btn.emoji">{{ btn.emoji }} </span>{{ btn.label }}
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -35,6 +44,10 @@ export default {
     embed: {
       type: Object,
       required: true
+    },
+    eventId: {
+      type: String,
+      required: false
     }
   },
   computed: {
@@ -42,6 +55,20 @@ export default {
       if (!this.embed.color) return {};
       const color = `#${this.embed.color.toString(16).padStart(6, '0')}`;
       return { borderColor: color };
+    }
+  },
+  methods: {
+    async rsvp(customId) {
+      const tag = customId.includes(':') ? customId.split(':', 2)[1] : customId;
+      try {
+        await fetch(`/api/events/${this.eventId || this.embed.id}/rsvp`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tag })
+        });
+      } catch (e) {
+        console.error('RSVP failed', e);
+      }
     }
   }
 };
