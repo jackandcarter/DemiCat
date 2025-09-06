@@ -25,6 +25,7 @@ from ...http.discord_helpers import (
 
 from ...http.ws import manager
 from ...http.chat_events import emit_event
+from ..utils import api_call_with_retries
 
 
 class ApolloHelper:
@@ -97,7 +98,7 @@ class Mirror(commands.Cog):
                         }
 
                         try:
-                            channels = await guild.fetch_channels()
+                            channels = await api_call_with_retries(guild.fetch_channels)
                         except Exception:
                             logging.exception(
                                 "Failed to fetch channels for guild %s", guild.id

@@ -1,14 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Any, Dict
+from typing import Any, Dict, List, Optional
 
 import discord
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from sqlalchemy import select, delete, func
 from pydantic import BaseModel, Field, field_validator
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -186,8 +187,27 @@ async def create_event(
                                 style=style,
                             )
                         )
+            from ...discordbot.utils import api_call_with_retries
             content = " ".join(f"<@&{m}>" for m in mention_ids) or None
-            sent = await channel.send(content=content, embed=emb, view=view)
+            try:
+                sent = await api_call_with_retries(
+                    channel.send, content=content, embed=emb, view=view
+                )
+            except discord.HTTPException as exc:
+                if 500 <= getattr(exc, "status", 0) < 600:
+                    logging.error(
+                        "Discord API error",
+                        extra={"status": exc.status, "error": exc.text},
+                    )
+                    return JSONResponse(
+                        {
+                            "error": "discord_api_error",
+                            "status": exc.status,
+                            "message": exc.text,
+                        },
+                        status_code=502,
+                    )
+                raise
             discord_msg_id = sent.id
             if stored_embeds is None and sent.embeds:
                 stored_embeds = [e.to_dict() for e in sent.embeds]
