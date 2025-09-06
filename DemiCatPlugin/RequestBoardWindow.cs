@@ -28,17 +28,12 @@ public class RequestBoardWindow
 
     private SortMode _sortMode = SortMode.MostRecent;
     private static readonly string[] SortLabels = { "Type", "Name", "Most Recent" };
-    private bool _createOpen;
 
     public RequestBoardWindow(Config config, HttpClient httpClient)
     {
         _config = config;
         _httpClient = httpClient;
         _gameData = new GameDataCache(httpClient);
-        if (config.Requests)
-        {
-            _ = RequestStateService.RefreshAll(httpClient, config);
-        }
     }
 
     public void Draw()
@@ -46,6 +41,11 @@ public class RequestBoardWindow
         if (!_config.Requests)
         {
             ImGui.TextUnformatted("Feature disabled");
+            return;
+        }
+        if (TokenManager.Instance?.IsReady() != true)
+        {
+            ImGui.TextUnformatted("Link DemiCat to view requests");
             return;
         }
         var mode = (int)_sortMode;
@@ -66,44 +66,16 @@ public class RequestBoardWindow
                 break;
         }
 
-        ImGui.BeginChild("##requestList", new Vector2(0, -ImGui.GetFrameHeightWithSpacing() * 2), true);
+        ImGui.BeginChild("##requestList", new Vector2(0, 0), true);
         foreach (var req in requests)
         {
             ImGui.PushID(req.Id);
             ImGui.TextWrapped(string.IsNullOrEmpty(req.Description) ? req.Title : req.Description);
-            if (ImGui.Button("Message"))
-            {
-                // stub
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("Requirements"))
-            {
-                // stub
-            }
             ImGui.TextUnformatted($"Created By: {req.CreatedBy}");
             ImGui.Separator();
             ImGui.PopID();
         }
         ImGui.EndChild();
-
-        var padding = ImGui.GetStyle().FramePadding;
-        var textSize = ImGui.CalcTextSize("Create a Request");
-        var buttonSize = textSize + padding * 2;
-        var bottomRight = ImGui.GetWindowContentRegionMax();
-        ImGui.SetCursorPos(new Vector2(bottomRight.X - buttonSize.X, bottomRight.Y - buttonSize.Y));
-        if (ImGui.Button("Create a Request"))
-        {
-            _createOpen = true;
-        }
-
-        if (_createOpen)
-        {
-            if (ImGui.Begin("New Request", ref _createOpen))
-            {
-                ImGui.TextUnformatted("Request creation window stub.");
-                ImGui.End();
-            }
-        }
     }
 
     private async Task LoadItem(RequestState req)

@@ -67,6 +67,7 @@ public class RequestWatcher : IDisposable
                     delay = TimeSpan.FromSeconds(5);
                     continue;
                 }
+                try { await RequestStateService.RefreshAll(_httpClient, _config); } catch { }
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);
