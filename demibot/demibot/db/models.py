@@ -273,15 +273,21 @@ class EventSignup(Base):
     __tablename__ = "event_signups"
     __table_args__ = (
         UniqueConstraint("message_id", "user_id", name="uq_event_signups_message_user"),
-        Index("ix_event_signups_message_tag", "message_id", "tag"),
+        Index(
+            "ix_event_signups_discord_message_id_choice",
+            "message_id",
+            "tag",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
+    discord_message_id: Mapped[int] = mapped_column(
+        "message_id", BIGINT(unsigned=True), index=True
+    )
     user_id: Mapped[int] = mapped_column(
         BIGINT(unsigned=True), ForeignKey("users.id"), index=True
     )
-    tag: Mapped[str] = mapped_column(String(50))
+    choice: Mapped[str] = mapped_column("tag", String(50))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
