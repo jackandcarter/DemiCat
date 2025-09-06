@@ -114,6 +114,75 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_rest_ws_payload_parity(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=2, discord_guild_id=2, name="Guild"))
+            db.add(User(id=2, discord_user_id=20, global_name="Bob"))
+            db.add(
+                Membership(
+                    guild_id=2,
+                    user_id=2,
+                    nickname="BobNick",
+                    avatar_url="http://example.com/avatar.png",
+                )
+            )
+            await db.commit()
+            guild = await db.get(Guild, 2)
+            user = await db.get(User, 2)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def dummy_broadcast(message: str, guild_id: int, officer_only: bool = False, path: str | None = None):
+                pass
+
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    return types.SimpleNamespace(id=1, attachments=[])
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="123", content="hello")
+            await mc.save_message(body, ctx, db, is_officer=False)
+            rest_data = await mc.fetch_messages("123", ctx, db, is_officer=False)
+            assert len(rest_data) == 1
+            rest_msg = rest_data[0]
+            assert "channelId" in rest_msg and "channel_id" not in rest_msg
+
+            import demibot.http.ws_chat as wc
+
+            manager = wc.ChatConnectionManager()
+
+            async def fake_flush(self, channel: str) -> None:
+                return None
+
+            monkeypatch.setattr(wc.ChatConnectionManager, "_flush_channel", fake_flush)
+
+            await manager.send("123", {"op": "mc", "d": rest_msg})
+            ws_msg = manager._channel_queues["123"][0]
+            assert ws_msg["d"] == rest_msg
+            assert "cursor" in ws_msg
+
+    asyncio.run(_run())
+
 def test_multipart_message(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")

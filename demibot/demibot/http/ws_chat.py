@@ -222,7 +222,11 @@ class ChatConnectionManager:
             self._send_count,
         )
         dto, _ = serialize_message(sent)
-        await emit_event({"channel": str(channel_id), "op": "mc", "d": dto.model_dump()})
+        await emit_event({
+            "channel": str(channel_id),
+            "op": "mc",
+            "d": dto.model_dump(by_alias=True, exclude_none=True),
+        })
 
 
 manager = ChatConnectionManager()

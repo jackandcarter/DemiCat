@@ -95,7 +95,7 @@ async def create_event(
 
     stored_embeds = body.embeds
     stored_attachments = (
-        [a.model_dump(mode="json") for a in body.attachments]
+        [a.model_dump(mode="json", by_alias=True, exclude_none=True) for a in body.attachments]
         if body.attachments
         else None
     )
@@ -187,9 +187,13 @@ async def create_event(
     if existing:
         existing.channel_id = channel_id
         existing.guild_id = ctx.guild.id
-        existing.payload_json = json.dumps(dto.model_dump(mode="json"))
+        existing.payload_json = json.dumps(
+            dto.model_dump(mode="json", by_alias=True, exclude_none=True)
+        )
         existing.buttons_json = (
-            json.dumps([b.model_dump(mode="json") for b in buttons])
+            json.dumps(
+                [b.model_dump(mode="json", by_alias=True, exclude_none=True) for b in buttons]
+            )
             if buttons
             else None
         )
@@ -205,8 +209,15 @@ async def create_event(
                 discord_message_id=int(eid),
                 channel_id=channel_id,
                 guild_id=ctx.guild.id,
-                payload_json=json.dumps(dto.model_dump(mode="json")),
-                buttons_json=json.dumps([b.model_dump(mode="json") for b in buttons])
+                payload_json=json.dumps(
+                    dto.model_dump(mode="json", by_alias=True, exclude_none=True)
+                ),
+                buttons_json=json.dumps(
+                    [
+                        b.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        for b in buttons
+                    ]
+                )
                 if buttons
                 else None,
                 source="demibot",
@@ -239,7 +250,7 @@ async def create_event(
     if body.repeat in ("daily", "weekly"):
         interval = timedelta(days=1 if body.repeat == "daily" else 7)
         next_post = ts + interval
-        payload = body.model_dump()
+        payload = body.model_dump(by_alias=True, exclude_none=True)
         payload["repeat"] = None
         db.add(
             RecurringEvent(
@@ -262,7 +273,7 @@ async def create_event(
         )
     ).scalar_one_or_none()
     await manager.broadcast_text(
-        json.dumps(dto.model_dump(mode="json")),
+        json.dumps(dto.model_dump(mode="json", by_alias=True, exclude_none=True)),
         ctx.guild.id,
         officer_only=kind == ChannelKind.OFFICER_CHAT,
         path="/ws/embeds",

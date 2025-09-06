@@ -232,7 +232,9 @@ def serialize_message(
                 continue
         embeds = embeds_list or None
         if embeds:
-            embeds_json = json.dumps([e.model_dump(mode="json") for e in embeds])
+            embeds_json = json.dumps(
+                [e.model_dump(mode="json", by_alias=True, exclude_none=True) for e in embeds]
+            )
 
     reference = None
     reference_json = None
@@ -241,7 +243,7 @@ def serialize_message(
             message_id=str(message.reference.message_id),
             channel_id=str(message.reference.channel_id),
         )
-        reference_json = reference.model_dump_json()
+        reference_json = reference.model_dump_json(by_alias=True, exclude_none=True)
 
     components = None
     components_json = None
@@ -251,12 +253,16 @@ def serialize_message(
         except Exception:
             components = None
         if components:
-            components_json = json.dumps([c.model_dump() for c in components])
+            components_json = json.dumps(
+                [c.model_dump(by_alias=True, exclude_none=True) for c in components]
+            )
 
     reactions = [reaction_to_dto(r) for r in getattr(message, "reactions", [])] or None
     reactions_json = None
     if reactions:
-        reactions_json = json.dumps([r.model_dump() for r in reactions])
+        reactions_json = json.dumps(
+            [r.model_dump(by_alias=True, exclude_none=True) for r in reactions]
+        )
 
     dto = ChatMessage(
         id=str(message.id),
@@ -276,13 +282,17 @@ def serialize_message(
     )
 
     fragments: Dict[str, str | None] = {
-        "attachments_json": json.dumps([a.model_dump() for a in attachments])
+        "attachments_json": json.dumps(
+            [a.model_dump(by_alias=True, exclude_none=True) for a in attachments]
+        )
         if attachments
         else None,
-        "mentions_json": json.dumps([m.model_dump() for m in mentions])
+        "mentions_json": json.dumps(
+            [m.model_dump(by_alias=True, exclude_none=True) for m in mentions]
+        )
         if mentions
         else None,
-        "author_json": author.model_dump_json(),
+        "author_json": author.model_dump_json(by_alias=True, exclude_none=True),
         "embeds_json": embeds_json,
         "reference_json": reference_json,
         "components_json": components_json,
