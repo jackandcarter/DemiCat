@@ -352,52 +352,54 @@ async def rsvp_event(
         payload = json.loads(embed.payload_json)
 
     stmt = select(EventSignup).where(
-        EventSignup.message_id == message_id,
+        EventSignup.discord_message_id == message_id,
         EventSignup.user_id == ctx.user.id,
     )
     row = (await db.execute(stmt)).scalar_one_or_none()
-    if row and row.tag == tag:
+    if row and row.choice == tag:
         await db.delete(row)
     else:
-        if row and row.tag != tag:
+        if row and row.choice != tag:
             limit = limits.get(tag)
             if limit is not None:
                 count_stmt = select(func.count()).where(
-                    EventSignup.message_id == message_id,
-                    EventSignup.tag == tag,
+                    EventSignup.discord_message_id == message_id,
+                    EventSignup.choice == tag,
                 )
                 count = (await db.execute(count_stmt)).scalar_one()
                 if count >= limit:
                     return JSONResponse({"error": "Full"}, status_code=400)
-            row.tag = tag
+            row.choice = tag
+            row.created_at = datetime.utcnow()
         elif row is None:
             limit = limits.get(tag)
             if limit is not None:
                 count_stmt = select(func.count()).where(
-                    EventSignup.message_id == message_id,
-                    EventSignup.tag == tag,
+                    EventSignup.discord_message_id == message_id,
+                    EventSignup.choice == tag,
                 )
                 count = (await db.execute(count_stmt)).scalar_one()
                 if count >= limit:
                     return JSONResponse({"error": "Full"}, status_code=400)
             db.add(
                 EventSignup(
-                    message_id=message_id,
+                    discord_message_id=message_id,
                     user_id=ctx.user.id,
-                    tag=tag,
+                    choice=tag,
+                    created_at=datetime.utcnow(),
                 )
             )
     await db.commit()
 
     stmt = (
         select(
-            EventSignup.tag,
+            EventSignup.choice,
             User.global_name,
             User.discriminator,
             User.discord_user_id,
         )
         .join(User, EventSignup.user_id == User.id)
-        .where(EventSignup.message_id == message_id)
+        .where(EventSignup.discord_message_id == message_id)
     )
     rows = await db.execute(stmt)
     summary: Dict[str, List[str]] = {}
@@ -435,8 +437,9 @@ async def list_attendees(
 ):
     message_id = int(event_id)
     stmt = (
-        select(EventSignup.tag, EventSignup.user_id)
-        .where(EventSignup.message_id == message_id)
+        select(EventSignup.choice, EventSignup.user_id)
+        .where(EventSignup.discord_message_id == message_id)
+        .order_by(EventSignup.choice)
     )
     rows = await db.execute(stmt)
     return [

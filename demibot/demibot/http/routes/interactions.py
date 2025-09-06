@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from typing import Dict, List
 
 from fastapi import APIRouter, Depends
@@ -59,39 +60,41 @@ async def post_interaction(
         payload = json.loads(embed.payload_json)
 
     stmt = select(EventSignup).where(
-        EventSignup.message_id == message_id,
+        EventSignup.discord_message_id == message_id,
         EventSignup.user_id == ctx.user.id,
     )
     row = (await db.execute(stmt)).scalar_one_or_none()
-    if row and row.tag == choice:
+    if row and row.choice == choice:
         await db.delete(row)
     else:
-        if row and row.tag != choice:
+        if row and row.choice != choice:
             limit = limits.get(choice)
             if limit is not None:
                 count_stmt = select(func.count()).where(
-                    EventSignup.message_id == message_id,
-                    EventSignup.tag == choice,
+                    EventSignup.discord_message_id == message_id,
+                    EventSignup.choice == choice,
                 )
                 count = (await db.execute(count_stmt)).scalar_one()
                 if count >= limit:
                     return JSONResponse({"error": "Full"}, status_code=400)
-            row.tag = choice
+            row.choice = choice
+            row.created_at = datetime.utcnow()
         elif row is None:
             limit = limits.get(choice)
             if limit is not None:
                 count_stmt = select(func.count()).where(
-                    EventSignup.message_id == message_id,
-                    EventSignup.tag == choice,
+                    EventSignup.discord_message_id == message_id,
+                    EventSignup.choice == choice,
                 )
                 count = (await db.execute(count_stmt)).scalar_one()
                 if count >= limit:
                     return JSONResponse({"error": "Full"}, status_code=400)
             db.add(
                 EventSignup(
-                    message_id=message_id,
+                    discord_message_id=message_id,
                     user_id=ctx.user.id,
-                    tag=choice,
+                    choice=choice,
+                    created_at=datetime.utcnow(),
                 )
             )
     await db.commit()
@@ -99,13 +102,13 @@ async def post_interaction(
     # recompute attendance summary
     stmt = (
         select(
-            EventSignup.tag,
+            EventSignup.choice,
             User.global_name,
             User.discriminator,
             User.discord_user_id,
         )
         .join(User, EventSignup.user_id == User.id)
-        .where(EventSignup.message_id == message_id)
+        .where(EventSignup.discord_message_id == message_id)
     )
     rows = await db.execute(stmt)
     summary: Dict[str, List[str]] = {}
