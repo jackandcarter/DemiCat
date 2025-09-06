@@ -36,7 +36,8 @@ internal static class ChannelNameResolver
             {
                 var refreshReq = new HttpRequestMessage(HttpMethod.Post,
                     $"{config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
-                ApiHelpers.AddAuthHeader(refreshReq, config);
+                if (TokenManager.Instance != null)
+                    ApiHelpers.AddAuthHeader(refreshReq, TokenManager.Instance!);
                 await httpClient.SendAsync(refreshReq);
             }
             catch (Exception ex)
