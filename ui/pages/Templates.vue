@@ -44,7 +44,19 @@ export default {
         try {
           const msg = JSON.parse(ev.data);
           if (msg.topic === 'templates.updated') {
-            this.load();
+            const p = msg.payload || {};
+            if (p.deleted) {
+              this.templates = this.templates.filter(t => t.id !== p.id);
+            } else if (p.id) {
+              const idx = this.templates.findIndex(t => t.id === p.id);
+              if (idx >= 0) {
+                this.templates.splice(idx, 1, p);
+              } else {
+                this.templates.push(p);
+              }
+            } else {
+              this.load();
+            }
           }
         } catch (e) {
           console.error('Bad embed payload', e);
@@ -56,7 +68,6 @@ export default {
     },
     async remove(id) {
       await fetch(`/api/templates/${id}`, { method: 'DELETE' });
-      await this.load();
     }
   }
 };
