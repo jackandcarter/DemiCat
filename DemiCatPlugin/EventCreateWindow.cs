@@ -44,6 +44,13 @@ public class EventCreateWindow
     private string _channelErrorMessage = string.Empty;
     private int _selectedIndex;
     private string _channelId = string.Empty;
+    private EmbedDto? _preview;
+
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
 
     public EventCreateWindow(Config config, HttpClient httpClient)
     {
@@ -222,6 +229,9 @@ public class EventCreateWindow
             }
             ImGui.TreePop();
         }
+        _preview = BuildPreview();
+        ImGui.Separator();
+        EmbedRenderer.Draw(_preview, (_, __) => { });
         if (ImGui.Button("Create"))
         {
             _ = CreateEvent();
@@ -425,41 +435,26 @@ public class EventCreateWindow
         }
         try
         {
-            var buttons = _buttons
-                .Where(b => b.Include)
-                .Select(b => new
-                {
-                    label = b.Label,
-                    customId = $"rsvp:{b.Tag}",
-                    emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                    style = (int)b.Style,
-                    maxSignups = b.MaxSignups
-                })
-                .ToList();
-
+            var dto = BuildPreview();
+            var buttons = dto.Buttons ?? new List<EmbedButtonDto>();
             var body = new
             {
                 channelId = _channelId,
-                title = _title,
-                time = _time,
-                description = _description,
-                url = string.IsNullOrWhiteSpace(_url) ? null : _url,
-                imageUrl = string.IsNullOrWhiteSpace(_imageUrl) ? null : _imageUrl,
-                thumbnailUrl = string.IsNullOrWhiteSpace(_thumbnailUrl) ? null : _thumbnailUrl,
-                color = _color > 0 ? (uint?)_color : null,
-                fields = _fields.Count > 0
-                    ? _fields
-                        .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
-                        .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
-                        .ToList()
-                    : null,
-                buttons = buttons.Count > 0 ? buttons : null,
+                title = dto.Title,
+                time = dto.Timestamp?.ToString("O") ?? _time,
+                description = dto.Description,
+                url = dto.Url,
+                imageUrl = dto.ImageUrl,
+                thumbnailUrl = dto.ThumbnailUrl,
+                color = dto.Color,
+                fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
+                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, emoji = b.Emoji, style = b.Style.HasValue ? (int)b.Style : (int?)null, maxSignups = b.MaxSignups }).ToList(),
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null,
                 repeat = _repeat == RepeatOption.None ? null : _repeat.ToString().ToLowerInvariant()
             };
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
-            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
 
             var response = await _httpClient.SendAsync(request);
@@ -491,6 +486,38 @@ public class EventCreateWindow
     private void SaveConfig()
     {
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private EmbedDto BuildPreview()
+    {
+        var dto = new EmbedDto
+        {
+            Title = _title,
+            Description = _description,
+            Url = string.IsNullOrWhiteSpace(_url) ? null : _url,
+            ImageUrl = string.IsNullOrWhiteSpace(_imageUrl) ? null : _imageUrl,
+            ThumbnailUrl = string.IsNullOrWhiteSpace(_thumbnailUrl) ? null : _thumbnailUrl,
+            Color = _color > 0 ? (uint?)_color : null,
+            Timestamp = DateTime.TryParse(_time, null, DateTimeStyles.AdjustToUniversal, out var ts) ? ts : (DateTimeOffset?)null,
+            Fields = _fields
+                .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
+                .Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline })
+                .ToList(),
+            Buttons = _buttons
+                .Where(b => b.Include)
+                .Select(b => new EmbedButtonDto
+                {
+                    Label = b.Label,
+                    CustomId = $"rsvp:{b.Tag}",
+                    Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                    Style = b.Style,
+                    MaxSignups = b.MaxSignups
+                })
+                .ToList()
+        };
+        if (dto.Fields != null && dto.Fields.Count == 0) dto.Fields = null;
+        if (dto.Buttons != null && dto.Buttons.Count == 0) dto.Buttons = null;
+        return dto;
     }
 
     public Task RefreshChannels()
