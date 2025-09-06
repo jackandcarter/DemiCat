@@ -1,8 +1,10 @@
 <template>
   <div class="templates">
     <h2>Templates</h2>
-    <div v-for="(t, i) in templates" :key="i" class="template">
-      <EmbedRenderer :embed="t" />
+    <div v-for="t in templates" :key="t.id" class="template">
+      <h3>{{ t.name }}</h3>
+      <button @click="post(t.id)">Post</button>
+      <button @click="remove(t.id)">Delete</button>
     </div>
   </div>
 </template>
@@ -26,7 +28,7 @@ export default {
   methods: {
     async load() {
       try {
-        const res = await fetch('/api/embeds');
+        const res = await fetch('/api/templates');
         if (res.ok) {
           this.templates = await res.json();
         }
@@ -36,16 +38,25 @@ export default {
     },
     connect() {
       const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-      const url = `${proto}://${window.location.host}/ws/embeds`;
+      const url = `${proto}://${window.location.host}/ws/templates`;
       this.ws = new WebSocket(url);
       this.ws.onmessage = (ev) => {
         try {
-          const emb = JSON.parse(ev.data);
-          this.templates.unshift(emb);
+          const msg = JSON.parse(ev.data);
+          if (msg.topic === 'templates.updated') {
+            this.load();
+          }
         } catch (e) {
           console.error('Bad embed payload', e);
         }
       };
+    },
+    async post(id) {
+      await fetch(`/api/templates/${id}/post`, { method: 'POST' });
+    },
+    async remove(id) {
+      await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+      await this.load();
     }
   }
 };
