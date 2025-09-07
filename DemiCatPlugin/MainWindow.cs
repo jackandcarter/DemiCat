@@ -142,9 +142,9 @@ public class MainWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
-            if (_config.FCSyncShell && _syncshell != null)
+            if (!linked)
             {
-                if (!linked)
+                if (_config.FCSyncShell)
                 {
                     ImGui.BeginDisabled();
                     ImGui.TabItemButton("Syncshell");
@@ -152,11 +152,11 @@ public class MainWindow : IDisposable
                     if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
                         ImGui.SetTooltip("Link DemiCat to use syncshell.");
                 }
-                else if (ImGui.BeginTabItem("Syncshell"))
-                {
-                    _syncshell.Draw();
-                    ImGui.EndTabItem();
-                }
+            }
+            else if (_config.FCSyncShell && _syncshell != null && ImGui.BeginTabItem("Syncshell"))
+            {
+                _syncshell.Draw();
+                ImGui.EndTabItem();
             }
 
             if (_chat != null)

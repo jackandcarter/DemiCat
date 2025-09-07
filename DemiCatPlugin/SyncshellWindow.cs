@@ -47,12 +47,11 @@ public class SyncshellWindow : IDisposable
 
     public SyncshellWindow(Config config, HttpClient httpClient)
     {
+        if (!config.FCSyncShell)
+            throw new InvalidOperationException("Syncshell disabled");
+
         _config = config;
         _httpClient = httpClient;
-        if (!_config.FCSyncShell)
-        {
-            return;
-        }
 
         if (!_config.Categories.TryGetValue("syncshell", out var state))
         {

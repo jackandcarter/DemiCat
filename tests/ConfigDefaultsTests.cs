@@ -1,3 +1,4 @@
+using System;
 using System.Net.Http;
 using DemiCatPlugin;
 using Xunit;
@@ -21,7 +22,7 @@ public class ConfigDefaultsTests
     {
         SyncshellWindow.Instance?.Dispose();
         var cfg = new Config { FCSyncShell = false };
-        var window = new SyncshellWindow(cfg, new HttpClient());
+        Assert.Throws<InvalidOperationException>(() => new SyncshellWindow(cfg, new HttpClient()));
         Assert.Null(SyncshellWindow.Instance);
     }
 }
