@@ -102,7 +102,8 @@ public class ChannelWatcher : IDisposable
                             _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
                             if (_config.SyncedChat && _config.EnableFcChat)
                                 _ = SafeRefresh(_chatWindow.RefreshChannels);
-                            _ = SafeRefresh(_officerChatWindow.RefreshChannels);
+                            if (_config.Officer && _config.Roles.Contains("officer"))
+                                _ = SafeRefresh(_officerChatWindow.RefreshChannels);
                         });
                     }
                 }
@@ -139,7 +140,8 @@ public class ChannelWatcher : IDisposable
                     _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
                     if (_config.SyncedChat && _config.EnableFcChat)
                         _ = SafeRefresh(_chatWindow.RefreshChannels);
-                    _ = SafeRefresh(_officerChatWindow.RefreshChannels);
+                    if (_config.Officer && _config.Roles.Contains("officer"))
+                        _ = SafeRefresh(_officerChatWindow.RefreshChannels);
                 });
             }
             try { await Task.Delay(delay, token); } catch { }
