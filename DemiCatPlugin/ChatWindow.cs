@@ -259,9 +259,9 @@ public class ChatWindow : IDisposable
             ImGui.Spacing();
             if (msg.Reactions != null && msg.Reactions.Count > 0)
             {
-                for (int i = 0; i < msg.Reactions.Count; i++)
+                for (int j = 0; j < msg.Reactions.Count; j++)
                 {
-                    var reaction = msg.Reactions[i];
+                    var reaction = msg.Reactions[j];
                     ImGui.BeginGroup();
                     var handled = false;
 
@@ -295,7 +295,7 @@ public class ChatWindow : IDisposable
                     }
 
                     ImGui.EndGroup();
-                    if (i < msg.Reactions.Count - 1) ImGui.SameLine();
+                    if (j < msg.Reactions.Count - 1) ImGui.SameLine();
                 }
             }
             if (ImGui.SmallButton($"+##react{msg.Id}"))
