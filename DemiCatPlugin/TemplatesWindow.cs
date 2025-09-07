@@ -254,6 +254,11 @@ public class TemplatesWindow
             }
             return;
         }
+        if (!string.IsNullOrEmpty(tmpl.Description) && tmpl.Description.Length > 2000)
+        {
+            _lastResult = "Description exceeds 2000 characters";
+            return;
+        }
         try
         {
             var buttons = tmpl.Buttons?

@@ -23,6 +23,7 @@ public class RequestBoardWindow
     private string _newDescription = string.Empty;
     private RequestType _newType = RequestType.Item;
     private RequestUrgency _newUrgency = RequestUrgency.Low;
+    private string _createStatus = string.Empty;
 
     private enum SortMode
     {
@@ -97,10 +98,16 @@ public class RequestBoardWindow
             var urgLabels = Enum.GetNames<RequestUrgency>();
             if (ImGui.Combo("Urgency", ref urgIdx, urgLabels, urgLabels.Length))
                 _newUrgency = (RequestUrgency)urgIdx;
+            if (!string.IsNullOrEmpty(_createStatus))
+                ImGui.TextUnformatted(_createStatus);
             if (ImGui.Button("Create"))
             {
-                _ = CreateRequest();
-                ImGui.CloseCurrentPopup();
+                if (ValidateNewRequest())
+                {
+                    _ = CreateRequest();
+                    _createStatus = string.Empty;
+                    ImGui.CloseCurrentPopup();
+                }
             }
             ImGui.SameLine();
             if (ImGui.Button("Cancel"))
@@ -336,6 +343,17 @@ public class RequestBoardWindow
         "high" => RequestUrgency.High,
         _ => RequestUrgency.Low
     };
+
+    private bool ValidateNewRequest()
+    {
+        if (_newTitle.Length > 2000 || _newDescription.Length > 2000)
+        {
+            _createStatus = "Title or description exceeds 2000 characters";
+            return false;
+        }
+        _createStatus = string.Empty;
+        return true;
+    }
 
     private async Task CreateRequest()
     {
