@@ -18,8 +18,8 @@ DemiCat/
 - **Create** – Draft new events without leaving the game.
 - **Templates** – Save and reuse preset event layouts.
 - **Request Board** – Track signup requests and interest.
-- **Syncshell** – Cross-world chat integration powered by Discord (see `DemiCatPlugin/SyncshellWindow.cs`).
-- **Chat** – Mirror Discord conversations directly in game.
+- **SyncShell** – Work-in-progress replacement for the Mare Synchronos mod-sharing plugin. Syncs Penumbra mod lists to replicate player appearances and is disabled by default while under development (see `DemiCatPlugin/SyncshellWindow.cs`).
+- **FC Chat** – Mirror Discord conversations directly in game.
 - **Officer** – Administrative tools for event staff and moderators.
 
 ### DemiBot Services
