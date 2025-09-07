@@ -46,6 +46,12 @@ public class EventCreateWindow
     private string _channelId = string.Empty;
     private EmbedDto? _preview;
 
+    public bool ChannelsLoaded
+    {
+        get => _channelsLoaded;
+        set => _channelsLoaded = value;
+    }
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -83,6 +89,10 @@ public class EventCreateWindow
         {
             ImGui.TextUnformatted("Feature disabled");
             return;
+        }
+        if (!_channelsLoaded)
+        {
+            _ = RefreshChannels();
         }
         if (_channels.Count > 0)
         {
