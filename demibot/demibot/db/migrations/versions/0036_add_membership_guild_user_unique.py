@@ -2,7 +2,7 @@ from alembic import op
 import sqlalchemy as sa
 
 revision = '0036_add_membership_guild_user_unique'
-down_revision = '0035_rename_attendance_event_signups'
+down_revision = '0034_add_event_signup_timestamp'
 branch_labels = None
 depends_on = None
 
