@@ -56,12 +56,6 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         set => _channelId = value;
     }
 
-    public bool ChannelsLoaded
-    {
-        get => _channelsLoaded;
-        set => _channelsLoaded = value;
-    }
-
     private void StartPolling()
     {
         if (_pollCts != null)

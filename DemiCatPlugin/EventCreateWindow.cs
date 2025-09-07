@@ -46,12 +46,6 @@ public class EventCreateWindow
     private string _channelId = string.Empty;
     private EmbedDto? _preview;
 
-    public bool ChannelsLoaded
-    {
-        get => _channelsLoaded;
-        set => _channelsLoaded = value;
-    }
-
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,

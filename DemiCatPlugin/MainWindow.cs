@@ -16,7 +16,7 @@ public class MainWindow : IDisposable
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
-    private readonly SyncshellWindow _syncshell;
+    private readonly SyncshellWindow? _syncshell;
     private readonly HttpClient _httpClient;
 
     public bool IsOpen;
