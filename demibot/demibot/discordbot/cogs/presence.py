@@ -6,6 +6,7 @@ from datetime import datetime
 import discord
 from discord.ext import commands
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from ...db.models import Guild, Membership, Presence as DbPresence, User
 from ...db.session import get_session
@@ -48,7 +49,16 @@ class PresenceTracker(commands.Cog):
                     discord_guild_id=member.guild.id, name=member.guild.name
                 )
                 db.add(guild_row)
-                await db.flush()
+                try:
+                    await db.flush()
+                except IntegrityError:
+                    await db.rollback()
+                    guild_res = await db.execute(
+                        select(Guild).where(
+                            Guild.discord_guild_id == member.guild.id
+                        )
+                    )
+                    guild_row = guild_res.scalar_one()
 
             # Ensure we have an internal user record and use its database id for
             # memberships. Membership.user_id references users.id, not the
