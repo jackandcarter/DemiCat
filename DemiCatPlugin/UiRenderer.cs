@@ -57,6 +57,12 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         set => _channelId = value;
     }
 
+    public bool ChannelsLoaded
+    {
+        get => _channelsLoaded;
+        set => _channelsLoaded = value;
+    }
+
     private void StartPolling()
     {
         if (_pollCts != null)
@@ -486,6 +492,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         {
             ImGui.TextUnformatted("Feature disabled");
             return;
+        }
+
+        if (!_channelsLoaded)
+        {
+            _ = FetchChannels();
         }
 
         if (_channels.Count > 0)
