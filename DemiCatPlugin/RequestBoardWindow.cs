@@ -187,7 +187,7 @@ public class RequestBoardWindow
                     var id = payload.GetProperty("id").GetString() ?? req.Id;
                     var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? req.Title : req.Title;
                     var statusStr = payload.GetProperty("status").GetString() ?? StatusToString(newStatus);
-                    var typeStr = payload.TryGetProperty("type", out var tEl) ? tEl.GetString() ?? TypeToString(req.Type) : TypeToString(req.Type);
+                    var typeStr = payload.TryGetProperty("type", out var typeEl) ? typeEl.GetString() ?? TypeToString(req.Type) : TypeToString(req.Type);
                     var urgencyStr = payload.TryGetProperty("urgency", out var uEl) ? uEl.GetString() ?? UrgencyToString(req.Urgency) : UrgencyToString(req.Urgency);
                     var itemId = payload.TryGetProperty("item_id", out var iEl) ? iEl.GetUInt32() : (uint?)req.ItemId;
                     var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)req.DutyId;
