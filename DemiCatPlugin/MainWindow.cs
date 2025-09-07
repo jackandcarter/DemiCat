@@ -64,6 +64,11 @@ public class MainWindow : IDisposable
         if (!linked)
         {
             ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
+            ImGui.SameLine();
+            if (ImGui.Button("Open Settings"))
+            {
+                _settings.IsOpen = true;
+            }
             ImGui.Separator();
         }
 
