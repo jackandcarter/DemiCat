@@ -293,6 +293,61 @@ def test_multipart_message(monkeypatch):
     asyncio.run(_run())
 
 
+def test_attachment_validation(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=7, discord_guild_id=7, name="Guild"))
+            db.add(User(id=7, discord_user_id=70, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 7)
+            user = await db.get(User, 7)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def dummy_broadcast(message: str, guild_id: int, officer_only: bool = False, path: str | None = None):
+                pass
+
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+            monkeypatch.setattr(mc.AttachmentDto, "contentType", property(lambda self: self.content_type), raising=False)
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    return types.SimpleNamespace(id=1, attachments=[])
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            from fastapi import UploadFile
+            import io
+
+            body = mc.PostBody(channelId="123", content="hello")
+
+            uploads = [UploadFile(filename=f"{i}.txt", file=io.BytesIO(b"hi")) for i in range(11)]
+            with pytest.raises(HTTPException):
+                await mc.save_message(body, ctx, db, is_officer=False, files=uploads)
+
+            big = UploadFile(filename="big.txt", file=io.BytesIO(b"x" * (25 * 1024 * 1024 + 1)))
+            with pytest.raises(HTTPException):
+                await mc.save_message(body, ctx, db, is_officer=False, files=[big])
+
+    asyncio.run(_run())
+
+
 def test_officer_flow(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")

@@ -562,6 +562,36 @@ public class ChatWindow : IDisposable
             return;
         }
 
+        if (_input.Length > 2000)
+        {
+            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Message exceeds 2000 characters");
+            return;
+        }
+
+        const int maxAttachments = 10;
+        const long maxAttachmentSize = 25 * 1024 * 1024; // 25MB
+        if (_attachments.Count > maxAttachments)
+        {
+            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = $"Too many attachments (max {maxAttachments})");
+            return;
+        }
+        foreach (var att in _attachments)
+        {
+            try
+            {
+                var size = new FileInfo(att).Length;
+                if (size > maxAttachmentSize)
+                {
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = $"Attachment {Path.GetFileName(att)} too large (max 25MB)");
+                    return;
+                }
+            }
+            catch
+            {
+                // ignore file errors
+            }
+        }
+
         try
         {
             // Build request body (includes reply threading if set)
@@ -589,6 +619,15 @@ public class ChatWindow : IDisposable
             }
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
+            if (response.StatusCode == HttpStatusCode.TooManyRequests)
+            {
+                var retry = response.Headers.RetryAfter?.Delta?.TotalSeconds;
+                var msg = retry.HasValue
+                    ? $"Rate limited. Try again in {retry.Value:F0}s"
+                    : "Rate limited. Please try again later";
+                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = msg);
+                return;
+            }
             if (response.IsSuccessStatusCode)
             {
                 string? id = null;

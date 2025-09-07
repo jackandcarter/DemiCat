@@ -20,6 +20,8 @@ from .chat_events import emit_event
 from .deps import RequestContext, api_key_auth
 from .discord_client import discord_client
 from .discord_helpers import serialize_message
+from .schemas import EmbedDto, EmbedButtonDto
+from .validation import validate_embed_payload
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,9 @@ BATCH_MAX = 0.08
 
 PING_INTERVAL = 30.0
 PING_TIMEOUT = 60.0
+
+MAX_ATTACHMENTS = 10
+MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
 
 @dataclass
@@ -201,6 +206,8 @@ class ChatConnectionManager:
         payload = data.get("d") or data.get("payload") or {}
         content = payload.get("content", "")
         attachments = payload.get("attachments") or []
+        embeds_payload = payload.get("embeds") or []
+        buttons_payload = payload.get("buttons") or []
         avatar_url = payload.get("avatar_url")
         async with get_session() as db:
             webhook_url = await db.scalar(
@@ -212,6 +219,9 @@ class ChatConnectionManager:
         if not webhook_url:
             logger.warning("chat.ws missing webhook channel=%s", channel_id)
             return
+        if len(attachments) > MAX_ATTACHMENTS:
+            logger.warning("chat.ws too many attachments channel=%s", channel_id)
+            return
         files = []
         for a in attachments:
             b64 = a.get("data") or a.get("content")
@@ -221,9 +231,21 @@ class ChatConnectionManager:
                 file_bytes = base64.b64decode(b64)
             except Exception:
                 continue
+            if len(file_bytes) > MAX_ATTACHMENT_SIZE:
+                logger.warning("chat.ws attachment too large channel=%s", channel_id)
+                return
             files.append(
                 discord.File(io.BytesIO(file_bytes), filename=a.get("filename", "file"))
             )
+
+        try:
+            for e in embeds_payload:
+                dto = EmbedDto(**e)
+                btns = [EmbedButtonDto(**b) for b in buttons_payload]
+                validate_embed_payload(dto, btns)
+        except Exception:
+            logger.warning("chat.ws invalid embed payload channel=%s", channel_id)
+            return
         username = (
             f"{info.ctx.user.character_name} (DemiCat)"
             if info.ctx.user.character_name
