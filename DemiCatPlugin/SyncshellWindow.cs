@@ -29,7 +29,7 @@ public class SyncshellWindow : IDisposable
     private readonly HashSet<string> _seenAssetIds;
     private readonly string _assetsFile;
     private readonly string _installedFile;
-    private readonly CancellationTokenSource _cts = new();
+    private CancellationTokenSource? _refreshCts;
     private DateTimeOffset? _lastPullAt;
     private DateTimeOffset _lastRefresh;
     private string? _etag;
@@ -70,7 +70,7 @@ public class SyncshellWindow : IDisposable
 
         Instance = this;
 
-        _ = PeriodicRefresh();
+        TokenManager.Instance?.RegisterWatcher(StartPeriodicRefresh, StopPeriodicRefresh);
     }
 
     public void Draw()
@@ -216,6 +216,8 @@ public class SyncshellWindow : IDisposable
     private async Task Refresh()
     {
         if (!_config.FCSyncShell || _loading || _syncPaused)
+            return;
+        if (TokenManager.Instance?.IsReady() != true)
             return;
 
         try
@@ -775,14 +777,27 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private async Task PeriodicRefresh()
+    private void StartPeriodicRefresh()
     {
-        while (!_cts.IsCancellationRequested)
+        StopPeriodicRefresh();
+        _refreshCts = new CancellationTokenSource();
+        _ = PeriodicRefresh(_refreshCts.Token);
+    }
+
+    private void StopPeriodicRefresh()
+    {
+        _refreshCts?.Cancel();
+        _refreshCts = null;
+    }
+
+    private async Task PeriodicRefresh(CancellationToken token)
+    {
+        while (!token.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(TimeSpan.FromMinutes(5), _cts.Token);
-                if (_cts.IsCancellationRequested)
+                await Task.Delay(TimeSpan.FromMinutes(5), token);
+                if (token.IsCancellationRequested)
                     break;
                 if (_config.FCSyncShell)
                     await Refresh();
@@ -796,7 +811,7 @@ public class SyncshellWindow : IDisposable
 
     public void Dispose()
     {
-        _cts.Cancel();
+        StopPeriodicRefresh();
         if (Instance == this)
             Instance = null;
     }
