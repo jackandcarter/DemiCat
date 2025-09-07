@@ -160,6 +160,10 @@ class UserKey(Base):
 class Membership(Base):
     __tablename__ = "memberships"
 
+    __table_args__ = (
+        UniqueConstraint("guild_id", "user_id", name="uq_memberships_guild_user"),
+    )
+
     id: Mapped[int] = mapped_column(primary_key=True)
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), ForeignKey("users.id"))
