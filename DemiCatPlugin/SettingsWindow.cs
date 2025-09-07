@@ -116,11 +116,19 @@ public class SettingsWindow : IDisposable
                 }
 
                 var syncEnabled = _config.FCSyncShell;
+                if (!linked)
+                    ImGui.BeginDisabled();
                 if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
                 {
                     _config.FCSyncShell = syncEnabled;
                     SaveConfig();
                     _ = Task.Run(PushSettings);
+                }
+                if (!linked)
+                {
+                    ImGui.EndDisabled();
+                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                        ImGui.SetTooltip("Link DemiCat to enable Syncshell.");
                 }
 
                 var paused = !_config.Enabled;
