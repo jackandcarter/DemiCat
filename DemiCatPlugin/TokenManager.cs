@@ -55,10 +55,13 @@ public class TokenManager
                 _token = null;
                 return;
             }
-
+#if WINDOWS
             var encrypted = File.ReadAllBytes(path);
             var bytes = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
             _token = Encoding.UTF8.GetString(bytes);
+#else
+            _token = File.ReadAllText(path);
+#endif
             State = string.IsNullOrEmpty(_token) ? LinkState.Unlinked : LinkState.Linked;
         }
         catch
@@ -73,9 +76,13 @@ public class TokenManager
         try
         {
             var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
+#if WINDOWS
             var bytes = Encoding.UTF8.GetBytes(token);
             var encrypted = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
             File.WriteAllBytes(path, encrypted);
+#else
+            File.WriteAllText(path, token);
+#endif
             _token = token;
             State = LinkState.Linked;
             OnLinked?.Invoke();
