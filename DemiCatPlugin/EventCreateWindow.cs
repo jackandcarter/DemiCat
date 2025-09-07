@@ -449,6 +449,11 @@ public class EventCreateWindow
             }
             return;
         }
+        if (_description.Length > 2000)
+        {
+            _lastResult = "Description exceeds 2000 characters";
+            return;
+        }
         try
         {
             var dto = BuildPreview();
