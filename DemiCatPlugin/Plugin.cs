@@ -125,7 +125,8 @@ public class Plugin : IDalamudPlugin
         {
             _requestWatcher.Start();
         }
-        if (_config.Events || _config.SyncedChat || _config.Officer)
+        var hasOfficerRole = _config.Roles.Contains("officer");
+        if (_config.Events || _config.SyncedChat || (_config.Officer && hasOfficerRole))
         {
             _ = _channelWatcher.Start();
         }
@@ -133,7 +134,7 @@ public class Plugin : IDalamudPlugin
         {
             _chatWindow.StartNetworking();
         }
-        if (_config.Officer)
+        if (_config.Officer && hasOfficerRole)
         {
             _officerChatWindow.StartNetworking();
         }

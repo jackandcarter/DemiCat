@@ -17,7 +17,7 @@ public class OfficerChatWindow : ChatWindow
 
     public override void StartNetworking()
     {
-        if (!_config.Officer)
+        if (!_config.Officer || !_config.Roles.Contains("officer"))
         {
             return;
         }
