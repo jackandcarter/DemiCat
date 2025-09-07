@@ -151,6 +151,8 @@ internal static class RequestStateService
                 }
                 var title = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "Request" : "Request";
                 var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
+                var typeString = payload.TryGetProperty("type", out var typeEl) ? typeEl.GetString() : null;
+                var urgencyString = payload.TryGetProperty("urgency", out var urgEl) ? urgEl.GetString() : null;
                 var version = payload.TryGetProperty("version", out var verEl) ? verEl.GetInt32() : 0;
                 var itemId = payload.TryGetProperty("itemId", out var itemEl) ? itemEl.GetUInt32() : (uint?)null;
                 var dutyId = payload.TryGetProperty("dutyId", out var dutyEl) ? dutyEl.GetUInt32() : (uint?)null;
@@ -168,6 +170,8 @@ internal static class RequestStateService
                     Id = id,
                     Title = title,
                     Status = ParseStatus(statusString),
+                    Type = typeString != null ? ParseType(typeString) : RequestType.Item,
+                    Urgency = urgencyString != null ? ParseUrgency(urgencyString) : RequestUrgency.Low,
                     Version = version,
                     ItemId = itemId,
                     DutyId = dutyId,
@@ -200,5 +204,21 @@ internal static class RequestStateService
         "completed" => RequestStatus.Completed,
         "cancelled" => RequestStatus.Cancelled,
         _ => RequestStatus.Open
+    };
+
+    private static RequestType ParseType(string type) => type switch
+    {
+        "item" => RequestType.Item,
+        "run" => RequestType.Run,
+        "event" => RequestType.Event,
+        _ => RequestType.Item
+    };
+
+    private static RequestUrgency ParseUrgency(string urgency) => urgency switch
+    {
+        "low" => RequestUrgency.Low,
+        "medium" => RequestUrgency.Medium,
+        "high" => RequestUrgency.High,
+        _ => RequestUrgency.Low
     };
 }
