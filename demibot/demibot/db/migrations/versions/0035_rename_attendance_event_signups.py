@@ -1,6 +1,7 @@
 import sqlalchemy as sa
 from alembic import op
 from datetime import datetime
+from sqlalchemy.dialects import mysql
 
 # revision identifiers, used by Alembic.
 revision = "0035_rename_attendance_event_signups"
@@ -19,8 +20,13 @@ def upgrade() -> None:
         op.create_table(
             "event_signups",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column("message_id", sa.BigInteger(), nullable=False),
-            sa.Column("user_id", sa.BigInteger(), sa.ForeignKey("users.id"), nullable=False),
+            sa.Column("message_id", mysql.BIGINT(unsigned=True), nullable=False),
+            sa.Column(
+                "user_id",
+                mysql.BIGINT(unsigned=True),
+                sa.ForeignKey("users.id"),
+                nullable=False,
+            ),
             sa.Column("tag", sa.String(length=50), nullable=False),
             sa.Column("created_at", sa.DateTime(), nullable=False),
             sa.UniqueConstraint("message_id", "user_id", name="uq_event_signups_message_user"),
@@ -57,8 +63,13 @@ def upgrade() -> None:
         op.create_table(
             "event_signups",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column("message_id", sa.BigInteger(), nullable=False),
-            sa.Column("user_id", sa.BigInteger(), sa.ForeignKey("users.id"), nullable=False),
+            sa.Column("message_id", mysql.BIGINT(unsigned=True), nullable=False),
+            sa.Column(
+                "user_id",
+                mysql.BIGINT(unsigned=True),
+                sa.ForeignKey("users.id"),
+                nullable=False,
+            ),
             sa.Column("tag", sa.String(length=50), nullable=False),
             sa.Column("created_at", sa.DateTime(), nullable=False),
             sa.UniqueConstraint("message_id", "user_id", name="uq_event_signups_message_user"),
@@ -79,8 +90,13 @@ def downgrade() -> None:
 
         op.create_table(
             "attendance",
-            sa.Column("discord_message_id", sa.BigInteger(), nullable=False),
-            sa.Column("user_id", sa.BigInteger(), sa.ForeignKey("users.id"), nullable=False),
+            sa.Column("discord_message_id", mysql.BIGINT(unsigned=True), nullable=False),
+            sa.Column(
+                "user_id",
+                mysql.BIGINT(unsigned=True),
+                sa.ForeignKey("users.id"),
+                nullable=False,
+            ),
             sa.Column("choice", sa.String(length=10), nullable=False),
             sa.PrimaryKeyConstraint("discord_message_id", "user_id"),
         )
