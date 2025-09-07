@@ -33,6 +33,9 @@ from ..discord_client import discord_client
 # Cache webhook URLs per channel to avoid recreation
 _channel_webhooks: dict[int, str] = {}
 
+MAX_ATTACHMENTS = 10
+MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
+
 
 async def load_webhook_cache(db: AsyncSession) -> None:
     """Load webhook URLs from the database into the in-memory cache."""
@@ -247,9 +250,13 @@ async def save_message(
         if webhook:
             discord_files = None
             if files:
+                if len(files) > MAX_ATTACHMENTS:
+                    raise HTTPException(status_code=400, detail="Too many attachments")
                 discord_files = []
                 for f in files:
                     data = await f.read()
+                    if len(data) > MAX_ATTACHMENT_SIZE:
+                        raise HTTPException(status_code=400, detail=f"{f.filename} too large")
                     discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
             username_base = nickname or (
                 ctx.user.global_name or ("Officer" if is_officer else "Player")
