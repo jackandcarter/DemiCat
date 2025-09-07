@@ -92,13 +92,11 @@ public class ChatWindow : IDisposable
         _bridge.Linked += HandleBridgeLinked;
         _bridge.Unlinked += HandleBridgeUnlinked;
         _bridge.StatusChanged += s => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = s);
-        _bridge.ResyncRequested += (ch, _) => _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-        {
-            if (ch == _channelId)
+        _bridge.ResyncRequested += (ch, cur) =>
+            PluginServices.Instance!.Framework.RunOnTick(async () =>
             {
-                _ = RefreshMessages();
-            }
-        });
+                if (ch == _channelId) await RefreshMessages();
+            });
     }
 
     public virtual void StartNetworking()
