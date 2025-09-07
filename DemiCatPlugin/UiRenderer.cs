@@ -40,7 +40,6 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     };
 
     private readonly Dictionary<string, PresenceDto> _presences = new();
-    private bool _presenceLoaded;
     private bool _presenceLoadAttempted;
     private static readonly Regex MentionRegex = new("<@!?([0-9]+)>", RegexOptions.Compiled);
 
@@ -180,7 +179,6 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 {
                     _presences[p.Id] = p;
                 }
-                _presenceLoaded = true;
                 AnnotateEmbedsWithPresence();
             });
         }
