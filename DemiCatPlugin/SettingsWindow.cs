@@ -29,6 +29,7 @@ public class SettingsWindow : IDisposable
     private bool _syncInProgress;
     private readonly Dictionary<string, bool> _categoryToggles = new();
     private bool _settingsLoaded;
+    private bool _isLinked;
 
     public bool IsOpen;
 
@@ -49,6 +50,9 @@ public class SettingsWindow : IDisposable
         _apiBaseUrl = config.ApiBaseUrl;
         _devWindow = new DeveloperWindow(config, pluginInterface);
         _log = log;
+        _isLinked = _tokenManager.State == LinkState.Linked;
+        _tokenManager.OnLinked += OnLinked;
+        _tokenManager.OnUnlinked += OnUnlinked;
     }
 
     public void Draw()
@@ -63,7 +67,10 @@ public class SettingsWindow : IDisposable
                     _ = Task.Run(LoadSettings);
                 }
 
-                var linked = _tokenManager.State == LinkState.Linked;
+                DrawConnectionIndicator(_isLinked);
+                ImGui.Spacing();
+
+                var linked = _isLinked;
                 if (!linked)
                 {
                     ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
@@ -213,6 +220,22 @@ public class SettingsWindow : IDisposable
         }
 
         _devWindow.Draw();
+    }
+
+    private void OnLinked() => _isLinked = true;
+
+    private void OnUnlinked() => _isLinked = false;
+
+    private static void DrawConnectionIndicator(bool linked)
+    {
+        var color = linked ? new Vector4(0f, 1f, 0f, 1f) : new Vector4(1f, 0f, 0f, 1f);
+        var drawList = ImGui.GetWindowDrawList();
+        var pos = ImGui.GetCursorScreenPos();
+        var radius = ImGui.GetTextLineHeight() * 0.3f;
+        drawList.AddCircleFilled(pos + new Vector2(radius, radius), radius, ImGui.GetColorU32(color));
+        ImGui.Dummy(new Vector2(radius * 2, radius * 2));
+        ImGui.SameLine();
+        ImGui.TextColored(color, linked ? "Connected" : "Disconnected");
     }
 
     private async Task LoadSettings()
@@ -572,5 +595,7 @@ public class SettingsWindow : IDisposable
 
     public void Dispose()
     {
+        _tokenManager.OnLinked -= OnLinked;
+        _tokenManager.OnUnlinked -= OnUnlinked;
     }
 }
