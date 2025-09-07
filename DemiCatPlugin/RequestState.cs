@@ -2,6 +2,13 @@ using System;
 
 namespace DemiCatPlugin;
 
+public enum RequestType
+{
+    Item,
+    Run,
+    Event
+}
+
 public enum RequestStatus
 {
     Open,
@@ -12,12 +19,20 @@ public enum RequestStatus
     Cancelled
 }
 
+public enum RequestUrgency
+{
+    Low,
+    Medium,
+    High
+}
+
 public class RequestState
 {
     public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
-    public RequestStatus Status { get; set; }
-        = RequestStatus.Open;
+    public RequestStatus Status { get; set; } = RequestStatus.Open;
+    public RequestType Type { get; set; } = RequestType.Item;
+    public RequestUrgency Urgency { get; set; } = RequestUrgency.Low;
     public int Version { get; set; }
         = 0;
     public uint? ItemId { get; set; }

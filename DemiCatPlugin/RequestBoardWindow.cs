@@ -19,6 +19,11 @@ public class RequestBoardWindow
     private readonly HashSet<string> _itemLoads = new();
     private readonly HashSet<string> _dutyLoads = new();
 
+    private string _newTitle = string.Empty;
+    private string _newDescription = string.Empty;
+    private RequestType _newType = RequestType.Item;
+    private RequestUrgency _newUrgency = RequestUrgency.Low;
+
     private enum SortMode
     {
         Type,
@@ -48,6 +53,9 @@ public class RequestBoardWindow
             ImGui.TextUnformatted("Link DemiCat to view requests");
             return;
         }
+        if (ImGui.Button("Create Request"))
+            ImGui.OpenPopup("createRequest");
+
         var mode = (int)_sortMode;
         if (ImGui.Combo("Sort By", ref mode, SortLabels, SortLabels.Length))
             _sortMode = (SortMode)mode;
@@ -56,7 +64,7 @@ public class RequestBoardWindow
         switch (_sortMode)
         {
             case SortMode.Type:
-                requests = requests.OrderBy(r => r.ItemId.HasValue ? 0 : r.DutyId.HasValue ? 1 : 2);
+                requests = requests.OrderBy(r => r.Type);
                 break;
             case SortMode.Name:
                 requests = requests.OrderBy(r => r.Title);
@@ -76,6 +84,31 @@ public class RequestBoardWindow
             ImGui.PopID();
         }
         ImGui.EndChild();
+
+        if (ImGui.BeginPopup("createRequest"))
+        {
+            ImGui.InputText("Title", ref _newTitle, 100);
+            ImGui.InputTextMultiline("Description", ref _newDescription, 1000, new Vector2(300, 80));
+            var typeIdx = (int)_newType;
+            var typeLabels = Enum.GetNames<RequestType>();
+            if (ImGui.Combo("Type", ref typeIdx, typeLabels, typeLabels.Length))
+                _newType = (RequestType)typeIdx;
+            var urgIdx = (int)_newUrgency;
+            var urgLabels = Enum.GetNames<RequestUrgency>();
+            if (ImGui.Combo("Urgency", ref urgIdx, urgLabels, urgLabels.Length))
+                _newUrgency = (RequestUrgency)urgIdx;
+            if (ImGui.Button("Create"))
+            {
+                _ = CreateRequest();
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel"))
+            {
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
     }
 
     private async Task LoadItem(RequestState req)
@@ -147,6 +180,8 @@ public class RequestBoardWindow
                     var id = payload.GetProperty("id").GetString() ?? req.Id;
                     var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? req.Title : req.Title;
                     var statusStr = payload.GetProperty("status").GetString() ?? StatusToString(newStatus);
+                    var typeStr = payload.TryGetProperty("type", out var tEl) ? tEl.GetString() ?? TypeToString(req.Type) : TypeToString(req.Type);
+                    var urgencyStr = payload.TryGetProperty("urgency", out var uEl) ? uEl.GetString() ?? UrgencyToString(req.Urgency) : UrgencyToString(req.Urgency);
                     var itemId = payload.TryGetProperty("item_id", out var iEl) ? iEl.GetUInt32() : (uint?)req.ItemId;
                     var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)req.DutyId;
                     var hq = payload.TryGetProperty("hq", out var hEl) ? hEl.GetBoolean() : req.Hq;
@@ -162,6 +197,8 @@ public class RequestBoardWindow
                         Id = id,
                         Title = title,
                         Status = ParseStatus(statusStr),
+                        Type = ParseType(typeStr),
+                        Urgency = ParseUrgency(urgencyStr),
                         Version = version,
                         ItemId = itemId,
                         DutyId = dutyId,
@@ -208,6 +245,8 @@ public class RequestBoardWindow
                 var payload = doc.RootElement;
                 var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? "Request" : "Request";
                 var statusStr = payload.TryGetProperty("status", out var sEl) ? sEl.GetString() ?? "open" : "open";
+                var typeStr = payload.TryGetProperty("type", out var tType) ? tType.GetString() ?? "item" : "item";
+                var urgencyStr = payload.TryGetProperty("urgency", out var uEl) ? uEl.GetString() ?? "low" : "low";
                 var version = payload.TryGetProperty("version", out var vEl) ? vEl.GetInt32() : 0;
                 var itemId = payload.TryGetProperty("item_id", out var iEl) ? iEl.GetUInt32() : (uint?)null;
                 var dutyId = payload.TryGetProperty("duty_id", out var dEl) ? dEl.GetUInt32() : (uint?)null;
@@ -224,6 +263,8 @@ public class RequestBoardWindow
                     Id = id,
                     Title = title,
                     Status = ParseStatus(statusStr),
+                    Type = ParseType(typeStr),
+                    Urgency = ParseUrgency(urgencyStr),
                     Version = version,
                     ItemId = itemId,
                     DutyId = dutyId,
@@ -263,4 +304,77 @@ public class RequestBoardWindow
         "cancelled" => RequestStatus.Cancelled,
         _ => RequestStatus.Open
     };
+
+    private static string TypeToString(RequestType type) => type switch
+    {
+        RequestType.Item => "item",
+        RequestType.Run => "run",
+        RequestType.Event => "event",
+        _ => "item"
+    };
+
+    private static RequestType ParseType(string type) => type switch
+    {
+        "item" => RequestType.Item,
+        "run" => RequestType.Run,
+        "event" => RequestType.Event,
+        _ => RequestType.Item
+    };
+
+    private static string UrgencyToString(RequestUrgency urgency) => urgency switch
+    {
+        RequestUrgency.Low => "low",
+        RequestUrgency.Medium => "medium",
+        RequestUrgency.High => "high",
+        _ => "low"
+    };
+
+    private static RequestUrgency ParseUrgency(string urgency) => urgency switch
+    {
+        "low" => RequestUrgency.Low,
+        "medium" => RequestUrgency.Medium,
+        "high" => RequestUrgency.High,
+        _ => RequestUrgency.Low
+    };
+
+    private async Task CreateRequest()
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance == null)
+            return;
+        try
+        {
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests";
+            var body = new
+            {
+                title = _newTitle,
+                description = string.IsNullOrWhiteSpace(_newDescription) ? null : _newDescription,
+                type = TypeToString(_newType),
+                urgency = UrgencyToString(_newUrgency)
+            };
+            var json = JsonSerializer.Serialize(body);
+            var msg = new HttpRequestMessage(HttpMethod.Post, url);
+            ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
+            msg.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            var resp = await _httpClient.SendAsync(msg);
+            if (resp.IsSuccessStatusCode)
+            {
+                var stream = await resp.Content.ReadAsStreamAsync();
+                using var doc = await JsonDocument.ParseAsync(stream);
+                var id = doc.RootElement.GetProperty("id").GetString();
+                if (!string.IsNullOrEmpty(id))
+                    await Refresh(id!);
+            }
+        }
+        catch
+        {
+            // ignored
+        }
+        finally
+        {
+            _newTitle = string.Empty;
+            _newDescription = string.Empty;
+            _newType = RequestType.Item;
+            _newUrgency = RequestUrgency.Low;
+        }
+    }
 }
