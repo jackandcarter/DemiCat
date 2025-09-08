@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Threading;
@@ -71,11 +72,18 @@ public class ChannelWatcher : IDisposable
             }
             try
             {
-                var ping = new HttpRequestMessage(HttpMethod.Head, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping");
+                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping";
+                var ping = new HttpRequestMessage(HttpMethod.Head, url);
                 ApiHelpers.AddAuthHeader(ping, _tokenManager);
                 var pingResponse = await _httpClient.SendAsync(ping, token);
                 if (!pingResponse.IsSuccessStatusCode)
                 {
+                    var responseBody = await pingResponse.Content.ReadAsStringAsync();
+                    PluginServices.Instance!.Log.Warning($"Channel watcher ping failed. URL: {url}, Status: {pingResponse.StatusCode}. Response Body: {responseBody}");
+                    if (pingResponse.StatusCode == HttpStatusCode.Unauthorized || pingResponse.StatusCode == HttpStatusCode.Forbidden)
+                    {
+                        PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
+                    }
                     try { await Task.Delay(delay, token); } catch { }
                     delay = TimeSpan.FromSeconds(5);
                     continue;

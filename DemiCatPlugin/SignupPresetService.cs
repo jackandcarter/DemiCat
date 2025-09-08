@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -32,7 +33,8 @@ internal static class SignupPresetService
         if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
         try
         {
-            var req = new HttpRequestMessage(HttpMethod.Get, $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets");
+            var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets";
+            var req = new HttpRequestMessage(HttpMethod.Get, url);
             if (TokenManager.Instance != null)
                 ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             var resp = await httpClient.SendAsync(req);
@@ -42,6 +44,15 @@ internal static class SignupPresetService
                 var presets = await JsonSerializer.DeserializeAsync<List<SignupPreset>>(stream) ?? new();
                 _presets = presets;
                 _loaded = true;
+            }
+            else
+            {
+                var responseBody = await resp.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to refresh signup presets. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
+                if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    PluginServices.Instance?.ToastGui.ShowError("Signup presets auth failed");
+                }
             }
         }
         catch
@@ -55,7 +66,8 @@ internal static class SignupPresetService
         if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
         try
         {
-            var req = new HttpRequestMessage(HttpMethod.Post, $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets");
+            var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets";
+            var req = new HttpRequestMessage(HttpMethod.Post, url);
             if (TokenManager.Instance != null)
                 ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             req.Content = new StringContent(JsonSerializer.Serialize(preset), Encoding.UTF8, "application/json");
@@ -63,6 +75,15 @@ internal static class SignupPresetService
             if (resp.IsSuccessStatusCode)
             {
                 await Refresh(httpClient, config);
+            }
+            else
+            {
+                var responseBody = await resp.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to create signup preset. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
+                if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    PluginServices.Instance?.ToastGui.ShowError("Signup presets auth failed");
+                }
             }
         }
         catch
@@ -76,13 +97,23 @@ internal static class SignupPresetService
         if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
         try
         {
-            var req = new HttpRequestMessage(HttpMethod.Delete, $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets/{id}");
+            var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets/{id}";
+            var req = new HttpRequestMessage(HttpMethod.Delete, url);
             if (TokenManager.Instance != null)
                 ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
             {
                 await Refresh(httpClient, config);
+            }
+            else
+            {
+                var responseBody = await resp.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to delete signup preset. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
+                if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    PluginServices.Instance?.ToastGui.ShowError("Signup presets auth failed");
+                }
             }
         }
         catch
