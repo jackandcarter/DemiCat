@@ -53,6 +53,7 @@ public class ChatWindow : IDisposable
         PropertyNameCaseInsensitive = true
     };
     private const int TextureCacheCapacity = 100;
+    private const int MaxMessages = 100;
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
 
@@ -857,12 +858,18 @@ public class ChatWindow : IDisposable
             const int PageSize = 50;
             var all = new List<DiscordMessageDto>();
             string? before = null;
-            while (true)
+            _config.ChatCursors.TryGetValue(_channelId, out var since);
+            var after = since > 0 ? since.ToString() : null;
+            while (all.Count < MaxMessages)
             {
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{_channelId}?limit={PageSize}";
                 if (before != null)
                 {
                     url += $"&before={before}";
+                }
+                if (after != null)
+                {
+                    url += $"&after={after}";
                 }
 
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -891,25 +898,47 @@ public class ChatWindow : IDisposable
                 }
 
                 all.InsertRange(0, msgs);
-                if (msgs.Count < PageSize)
+                if (all.Count >= MaxMessages || msgs.Count < PageSize)
                 {
                     break;
                 }
                 before = msgs[0].Id;
             }
 
+            if (all.Count > MaxMessages)
+            {
+                all = all.Skip(all.Count - MaxMessages).ToList();
+            }
+
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                _messages.Clear();
+                if (since == 0)
+                {
+                    _messages.Clear();
+                }
                 foreach (var m in all)
                 {
                     _messages.Add(m);
                 }
+                TrimMessages();
             });
         }
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error refreshing messages");
+        }
+    }
+
+    private void TrimMessages()
+    {
+        while (_messages.Count > MaxMessages)
+        {
+            DisposeMessageTextures(_messages[0]);
+            _messages.RemoveAt(0);
+        }
+        if (_messages.Count > 0 && long.TryParse(_messages[^1].Id, out var last))
+        {
+            _config.ChatCursors[_channelId] = last;
         }
     }
 
@@ -1048,6 +1077,7 @@ public class ChatWindow : IDisposable
                         {
                             DisposeMessageTextures(_messages[index]);
                             _messages.RemoveAt(index);
+                            TrimMessages();
                         }
                     });
                 }
@@ -1071,6 +1101,7 @@ public class ChatWindow : IDisposable
                             {
                                 _messages.Add(msg);
                             }
+                            TrimMessages();
                         }
                     });
                 }
