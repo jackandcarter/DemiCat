@@ -6,7 +6,7 @@ public static class MarkdownFormatter
 {
     public static string Format(string text)
     {
-        text = Regex.Replace(text, "```([\n\s\S]+?)```", m => $"[CODEBLOCK]{m.Groups[1].Value}[/CODEBLOCK]");
+        text = Regex.Replace(text, @"```([\s\S]+?)```", m => $"[CODEBLOCK]{m.Groups[1].Value}[/CODEBLOCK]");
         text = Regex.Replace(text, "`([^`]+?)`", m => $"[CODE]{m.Groups[1].Value}[/CODE]");
         text = Regex.Replace(text, "^>\\s?(.*)$", m => $"[QUOTE]{m.Groups[1].Value}[/QUOTE]", RegexOptions.Multiline);
         text = Regex.Replace(text, "\\|\\|(.+?)\\|\\|", m => $"[SPOILER]{m.Groups[1].Value}[/SPOILER]");
