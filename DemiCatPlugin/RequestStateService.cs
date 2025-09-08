@@ -118,6 +118,10 @@ internal static class RequestStateService
                     using var tokenDoc = await JsonDocument.ParseAsync(tokenStream);
                     newToken = tokenDoc.RootElement.GetProperty("since").GetString();
                 }
+                else
+                {
+                    PluginServices.Instance!.Log.Warning($"Failed to retrieve delta token. URL: {tokenMsg.RequestUri}, Status: {tokenResp.StatusCode}");
+                }
             }
             catch
             {
@@ -129,10 +133,13 @@ internal static class RequestStateService
                 ? $"{baseUrl}/api/requests"
                 : $"{baseUrl}/api/requests/delta?since={Uri.EscapeDataString(config.RequestsDeltaToken)}";
             var msg = new HttpRequestMessage(HttpMethod.Get, url);
-            if (TokenManager.Instance != null)
-                ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
             var resp = await httpClient.SendAsync(msg);
-            if (!resp.IsSuccessStatusCode) return;
+            if (!resp.IsSuccessStatusCode)
+            {
+                PluginServices.Instance!.Log.Warning($"Failed to refresh request states. URL: {url}, Status: {resp.StatusCode}");
+                return;
+            }
             var stream = await resp.Content.ReadAsStreamAsync();
             using var doc = await JsonDocument.ParseAsync(stream);
             IEnumerable<JsonElement> list;
