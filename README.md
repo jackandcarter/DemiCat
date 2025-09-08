@@ -1,8 +1,6 @@
 # DemiCat Monorepo
 
-DemiCat connects Final Fantasy XIV with Discord by embedding Apollo event posts directly into the game.
-
-All public HTTP APIs now use **camelCase** for JSON field names. Python and C# code may use snake_case or PascalCase internally, but requests and responses over the wire are consistently camelCase.
+DemiCat connects Final Fantasy XIV with Discord by using DemiBot's Server Core and APIs.
 
 ```
 DemiCat/
@@ -71,6 +69,9 @@ export BOT_MIRROR_WHITELIST="123456789012345678,987654321098765432"
 
 Only bots with IDs in this whitelist are mirrored; all other bot messages
 continue to be ignored.
+
+All public HTTP APIs now use **camelCase** for JSON field names. Python and C# code may use snake_case or PascalCase internally, but requests and responses over the wire are consistently camelCase.
+
 
 ## Setup
 
