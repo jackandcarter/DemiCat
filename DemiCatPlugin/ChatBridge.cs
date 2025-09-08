@@ -118,7 +118,7 @@ public class ChatBridge : IDisposable
 
             if (!await ValidateToken(token))
             {
-                _tokenManager.Clear();
+                _tokenManager.Clear("Invalid API key");
                 Unlinked?.Invoke();
                 StatusChanged?.Invoke("Authentication failed");
                 await DelayWithJitter(5, token);
@@ -169,7 +169,7 @@ public class ChatBridge : IDisposable
 
             if (forbidden)
             {
-                _tokenManager.Clear();
+                _tokenManager.Clear("Invalid API key");
                 Unlinked?.Invoke();
                 _tokenValid = false;
             }
