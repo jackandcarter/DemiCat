@@ -151,7 +151,8 @@ public class ChatWindow : IDisposable
             SaveConfig();
         }
 
-        ImGui.BeginChild("##chatScroll", new Vector2(-1, -30), true);
+        var scrollRegionHeight = -ImGui.GetFrameHeightWithSpacing() * 2;
+        ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), true);
         var clipper = new ImGuiListClipper();
         clipper.Begin(_messages.Count);
         while (clipper.Step())

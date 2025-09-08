@@ -47,6 +47,7 @@ public class MainWindow : IDisposable
         }
 
         ImGui.SetNextWindowSize(new Vector2(800, 600), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSizeConstraints(new Vector2(600, 400), new Vector2(float.MaxValue, float.MaxValue));
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.11f, 0.11f, 0.12f, 1f));
         ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.09f, 0.09f, 0.1f, 1f));
         ImGui.PushStyleColor(ImGuiCol.Tab, new Vector4(0.15f, 0.15f, 0.16f, 1f));
@@ -176,6 +177,11 @@ public class MainWindow : IDisposable
                 }
                 else if (ImGui.BeginTabItem("Chat"))
                 {
+                    if (_config.SyncedChat && _presenceSidebar != null)
+                    {
+                        _presenceSidebar.Draw();
+                        ImGui.SameLine();
+                    }
                     ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
                     _chat.Draw();
                     ImGui.EndChild();
