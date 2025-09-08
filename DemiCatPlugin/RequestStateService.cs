@@ -109,7 +109,9 @@ internal static class RequestStateService
             string? newToken = null;
             try
             {
-                var tokenResp = await httpClient.GetAsync($"{config.ApiBaseUrl.TrimEnd('/')}/api/delta-token");
+                var tokenMsg = new HttpRequestMessage(HttpMethod.Get, $"{config.ApiBaseUrl.TrimEnd('/')}/api/delta-token");
+                ApiHelpers.AddAuthHeader(tokenMsg, TokenManager.Instance!);
+                var tokenResp = await httpClient.SendAsync(tokenMsg);
                 if (tokenResp.IsSuccessStatusCode)
                 {
                     var tokenStream = await tokenResp.Content.ReadAsStreamAsync();
