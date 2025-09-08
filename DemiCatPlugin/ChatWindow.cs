@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
@@ -36,6 +37,7 @@ public class ChatWindow : IDisposable
     protected readonly List<string> _attachments = new();
     protected string _newAttachmentPath = string.Empty;
     protected readonly TokenManager _tokenManager;
+    protected readonly ChannelService _channelService;
     protected string? _replyToId;
     protected string? _editingMessageId;
     protected string _editingChannelId = string.Empty;
@@ -77,12 +79,13 @@ public class ChatWindow : IDisposable
 
     protected virtual string MessagesPath => "/api/messages";
 
-    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager)
+    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
     {
         _config = config;
         _httpClient = httpClient;
         _presence = presence;
         _tokenManager = tokenManager;
+        _channelService = channelService;
         _emojiPicker = new EmojiPicker(config, httpClient) { TextureLoader = LoadTexture };
         _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
@@ -994,26 +997,7 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get,
-                $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind={ChannelKind.FcChat}");
-            ApiHelpers.AddAuthHeader(request, _tokenManager);
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    _channelFetchFailed = true;
-                    _channelErrorMessage = response.StatusCode == HttpStatusCode.Forbidden
-                        ? "Forbidden – check API key/roles"
-                        : "Failed to load channels";
-                    _channelsLoaded = true;
-                });
-                return;
-            }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var channels = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream) ?? new();
+            var channels = (await _channelService.FetchAsync(ChannelKind.FcChat, CancellationToken.None)).ToList();
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
@@ -1021,6 +1005,18 @@ public class ChatWindow : IDisposable
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
+            });
+        }
+        catch (HttpRequestException ex)
+        {
+            PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channelFetchFailed = true;
+                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Forbidden
+                    ? "Forbidden – check API key/roles"
+                    : "Failed to load channels";
+                _channelsLoaded = true;
             });
         }
         catch (Exception ex)

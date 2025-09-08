@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Net;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Numerics;
 
@@ -11,8 +12,8 @@ namespace DemiCatPlugin;
 
 public class OfficerChatWindow : ChatWindow
 {
-    public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager)
-        : base(config, httpClient, presence, tokenManager)
+    public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
+        : base(config, httpClient, presence, tokenManager, channelService)
     {
         _channelId = config.OfficerChannelId;
     }
@@ -78,26 +79,7 @@ public class OfficerChatWindow : ChatWindow
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get,
-                $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind={ChannelKind.OfficerChat}");
-            ApiHelpers.AddAuthHeader(request, _tokenManager);
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    _channelFetchFailed = true;
-                    _channelErrorMessage = response.StatusCode == HttpStatusCode.Forbidden
-                        ? "Forbidden – check API key/roles"
-                        : "Failed to load channels";
-                    _channelsLoaded = true;
-                });
-                return;
-            }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var channels = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream) ?? new();
+            var channels = (await _channelService.FetchAsync(ChannelKind.OfficerChat, CancellationToken.None)).ToList();
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
                 return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
@@ -106,6 +88,18 @@ public class OfficerChatWindow : ChatWindow
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
+            });
+        }
+        catch (HttpRequestException ex)
+        {
+            PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channelFetchFailed = true;
+                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Forbidden
+                    ? "Forbidden – check API key/roles"
+                    : "Failed to load channels";
+                _channelsLoaded = true;
             });
         }
         catch (Exception ex)

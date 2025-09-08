@@ -11,8 +11,8 @@ public class FcChatWindow : ChatWindow
     private readonly PresenceSidebar? _presenceSidebar;
     private float _presenceWidth = 150f;
 
-    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager)
-        : base(config, httpClient, presence, tokenManager)
+    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
+        : base(config, httpClient, presence, tokenManager, channelService)
     {
         _channelId = config.FcChannelId;
         if (presence != null)

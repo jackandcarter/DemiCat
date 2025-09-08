@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,6 +18,7 @@ public class EventCreateWindow
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
+    private readonly ChannelService _channelService;
 
     private string _title = string.Empty;
     private string _description = string.Empty;
@@ -53,10 +55,11 @@ public class EventCreateWindow
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public EventCreateWindow(Config config, HttpClient httpClient)
+    public EventCreateWindow(Config config, HttpClient httpClient, ChannelService channelService)
     {
         _config = config;
         _httpClient = httpClient;
+        _channelService = channelService;
         _channelId = config.EventChannelId;
         ResetDefaultButtons();
     }
@@ -605,23 +608,7 @@ public class EventCreateWindow
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind=event");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
-            {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    _channelFetchFailed = true;
-                    _channelErrorMessage = "Failed to load channels";
-                    _channelsLoaded = true;
-                });
-                return;
-            }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream) ?? new List<ChannelDto>();
+            var dto = (await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList();
             if (await ChannelNameResolver.Resolve(dto, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {

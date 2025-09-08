@@ -23,7 +23,7 @@ public class MainWindow : IDisposable
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient, ChannelService channelService)
     {
         _config = config;
         _ui = ui;
@@ -31,7 +31,7 @@ public class MainWindow : IDisposable
         _officer = officer;
         _settings = settings;
         _httpClient = httpClient;
-        _create = new EventCreateWindow(config, httpClient);
+        _create = new EventCreateWindow(config, httpClient, channelService);
         _templates = new TemplatesWindow(config, httpClient);
         _requestBoard = new RequestBoardWindow(config, httpClient);
         _syncshell = config.FCSyncShell ? new SyncshellWindow(config, httpClient) : null;
