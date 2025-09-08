@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using System.Numerics;
@@ -39,20 +40,73 @@ public class PresenceSidebar : IDisposable
         }
 
         var presences = _service.Presences;
-        var online = presences.Where(p => p.Status != "offline").OrderBy(p => p.Name).ToList();
+        var roles = RoleCache.Roles;
+
+        var online = presences.Where(p => p.Status != "offline").ToList();
         var offline = presences.Where(p => p.Status == "offline").OrderBy(p => p.Name).ToList();
 
-        ImGui.TextUnformatted($"Online - {online.Count}");
+        // Map online presences to their roles
+        var roleGroups = new Dictionary<string, List<PresenceDto>>();
+        foreach (var role in roles)
+        {
+            roleGroups[role.Id] = new List<PresenceDto>();
+        }
+        var noRole = new List<PresenceDto>();
+
         foreach (var p in online)
         {
-            DrawPresence(p);
+            var mapped = false;
+            foreach (var roleId in p.Roles)
+            {
+                if (roleGroups.TryGetValue(roleId, out var list))
+                {
+                    list.Add(p);
+                    mapped = true;
+                }
+            }
+            if (!mapped)
+            {
+                noRole.Add(p);
+            }
         }
 
-        ImGui.Spacing();
-        ImGui.TextUnformatted($"Offline - {offline.Count}");
-        foreach (var p in offline)
+        var anyOnline = false;
+        foreach (var role in roles)
         {
-            DrawPresence(p);
+            var members = roleGroups[role.Id].OrderBy(p => p.Name).ToList();
+            if (members.Count == 0)
+                continue;
+            anyOnline = true;
+            ImGui.TextUnformatted($"{role.Name} - {members.Count}");
+            foreach (var p in members)
+            {
+                DrawPresence(p);
+            }
+            ImGui.Spacing();
+        }
+
+        if (noRole.Count > 0)
+        {
+            anyOnline = true;
+            ImGui.TextUnformatted($"No Role - {noRole.Count}");
+            foreach (var p in noRole.OrderBy(p => p.Name))
+            {
+                DrawPresence(p);
+            }
+            ImGui.Spacing();
+        }
+
+        if (offline.Count > 0)
+        {
+            if (anyOnline)
+            {
+                ImGui.Spacing();
+            }
+            ImGui.TextUnformatted($"Offline - {offline.Count}");
+            foreach (var p in offline)
+            {
+                DrawPresence(p);
+            }
         }
 
         ImGui.EndChild();
