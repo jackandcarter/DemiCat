@@ -21,6 +21,8 @@ public class ChannelWatcher : IDisposable
     private ClientWebSocket? _ws;
     private Task? _task;
     private CancellationTokenSource? _cts;
+    private DateTime _lastRefresh = DateTime.MinValue;
+    private readonly TimeSpan _refreshCooldown = TimeSpan.FromSeconds(2);
 
     public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager, HttpClient httpClient)
     {
@@ -108,12 +110,7 @@ public class ChannelWatcher : IDisposable
                     {
                         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                         {
-                            _ = SafeRefresh(_ui.RefreshChannels);
-                            _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
-                            if (_config.SyncedChat && _config.EnableFcChat)
-                                _ = SafeRefresh(_chatWindow.RefreshChannels);
-                            if (_config.Officer && _config.Roles.Contains("officer"))
-                                _ = SafeRefresh(_officerChatWindow.RefreshChannels);
+                            RefreshChannelsIfNeeded();
                         });
                     }
                 }
@@ -146,12 +143,7 @@ public class ChannelWatcher : IDisposable
             {
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
-                    _ = SafeRefresh(_ui.RefreshChannels);
-                    _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
-                    if (_config.SyncedChat && _config.EnableFcChat)
-                        _ = SafeRefresh(_chatWindow.RefreshChannels);
-                    if (_config.Officer && _config.Roles.Contains("officer"))
-                        _ = SafeRefresh(_officerChatWindow.RefreshChannels);
+                    RefreshChannelsIfNeeded();
                 });
             }
             try { await Task.Delay(delay, token); } catch { }
@@ -191,6 +183,21 @@ public class ChannelWatcher : IDisposable
         {
             PluginServices.Instance!.Log.Error(ex, "Channel refresh failed");
         }
+    }
+
+    private void RefreshChannelsIfNeeded()
+    {
+        if (DateTime.UtcNow - _lastRefresh < _refreshCooldown)
+            return;
+
+        _ = SafeRefresh(_ui.RefreshChannels);
+        _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
+        if (_config.SyncedChat && _config.EnableFcChat)
+            _ = SafeRefresh(_chatWindow.RefreshChannels);
+        if (_config.Officer && _config.Roles.Contains("officer"))
+            _ = SafeRefresh(_officerChatWindow.RefreshChannels);
+
+        _lastRefresh = DateTime.UtcNow;
     }
 
     private Uri BuildWebSocketUri()
