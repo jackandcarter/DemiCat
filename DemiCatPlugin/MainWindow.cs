@@ -12,27 +12,24 @@ public class MainWindow : IDisposable
     private readonly ChatWindow? _chat;
     private readonly OfficerChatWindow _officer;
     private readonly SettingsWindow _settings;
-    private readonly PresenceSidebar? _presenceSidebar;
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
     private readonly SyncshellWindow? _syncshell;
     private readonly HttpClient _httpClient;
-    private float _presenceWidth = 150f;
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, PresenceSidebar? presenceSidebar, HttpClient httpClient)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient)
     {
         _config = config;
         _ui = ui;
         _chat = chat;
         _officer = officer;
         _settings = settings;
-        _presenceSidebar = presenceSidebar;
         _httpClient = httpClient;
         _create = new EventCreateWindow(config, httpClient);
         _templates = new TemplatesWindow(config, httpClient);
@@ -96,11 +93,6 @@ public class MainWindow : IDisposable
             }
             else if (ImGui.BeginTabItem("Events"))
             {
-                if (_config.SyncedChat && _presenceSidebar != null)
-                {
-                    _presenceSidebar.Draw(ref _presenceWidth);
-                    ImGui.SameLine();
-                }
                 ImGui.BeginChild("##eventsArea", ImGui.GetContentRegionAvail(), false);
                 _ui.Draw();
                 ImGui.EndChild();
@@ -178,11 +170,6 @@ public class MainWindow : IDisposable
                 }
                 else if (ImGui.BeginTabItem("Chat"))
                 {
-                    if (_config.SyncedChat && _presenceSidebar != null)
-                    {
-                        _presenceSidebar.Draw(ref _presenceWidth);
-                        ImGui.SameLine();
-                    }
                     ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
                     _chat.Draw();
                     ImGui.EndChild();
@@ -202,11 +189,6 @@ public class MainWindow : IDisposable
                 }
                 else if (ImGui.BeginTabItem("Officer"))
                 {
-                    if (_config.SyncedChat && _presenceSidebar != null)
-                    {
-                        _presenceSidebar.Draw(ref _presenceWidth);
-                        ImGui.SameLine();
-                    }
                     ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
                     _officer.Draw();
                     ImGui.EndChild();
