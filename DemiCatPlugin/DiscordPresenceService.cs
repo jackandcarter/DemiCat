@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
@@ -131,6 +132,10 @@ public class DiscordPresenceService : IDisposable
                 var pingResponse = await ApiHelpers.PingAsync(_httpClient, _config, TokenManager.Instance!, token);
                 if (pingResponse?.IsSuccessStatusCode != true)
                 {
+                    if (pingResponse?.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
+                    }
                     try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
                     continue;
                 }

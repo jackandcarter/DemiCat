@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text.Json;
@@ -61,6 +62,10 @@ public class RequestWatcher : IDisposable
                 var pingResponse = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, token);
                 if (pingResponse?.IsSuccessStatusCode != true)
                 {
+                    if (pingResponse?.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
+                    }
                     try { await Task.Delay(delay, token); } catch { }
                     delay = TimeSpan.FromSeconds(5);
                     continue;
