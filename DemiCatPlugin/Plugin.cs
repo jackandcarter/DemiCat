@@ -23,7 +23,6 @@ public class Plugin : IDalamudPlugin
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
     private readonly DiscordPresenceService? _presenceService;
-    private readonly PresenceSidebar? _presenceSidebar;
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
@@ -60,13 +59,8 @@ public class Plugin : IDalamudPlugin
             : null;
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager);
-        _presenceSidebar = _presenceService != null ? new PresenceSidebar(_presenceService) : null;
-        if (_config.SyncedChat && _presenceSidebar != null)
-        {
-            _presenceSidebar.TextureLoader = _chatWindow.TextureLoader;
-        }
         _presenceService?.Reset();
-        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _presenceSidebar, _httpClient);
+        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
         _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
         _settings.MainWindow = _mainWindow;
@@ -107,7 +101,6 @@ public class Plugin : IDalamudPlugin
 
         _channelWatcher.Dispose();
         _requestWatcher.Dispose();
-        _presenceSidebar?.Dispose();
         _presenceService?.Dispose();
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();
@@ -223,7 +216,6 @@ public class Plugin : IDalamudPlugin
                 if (!_config.EnableFcChat)
                 {
                     _chatWindow.StopNetworking();
-                    _presenceSidebar?.Dispose();
                     _presenceService?.Dispose();
                 }
                 _services.PluginInterface.SavePluginConfig(_config);
