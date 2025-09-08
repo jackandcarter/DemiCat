@@ -42,6 +42,9 @@ public class OfficerChatWindow : ChatWindow
         var originalChatChannel = _config.ChatChannelId;
         base.Draw();
 
+        // Reserved padded area beneath the standard chat input for upcoming officer tools.
+        ImGui.Dummy(new Vector2(0, ImGui.GetFrameHeightWithSpacing()));
+
         if (_config.ChatChannelId != originalChatChannel || _config.OfficerChannelId != _channelId)
         {
             _config.ChatChannelId = originalChatChannel;
