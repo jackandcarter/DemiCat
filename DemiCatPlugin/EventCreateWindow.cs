@@ -45,6 +45,7 @@ public class EventCreateWindow
     private int _selectedIndex;
     private string _channelId = string.Empty;
     private EmbedDto? _preview;
+    private bool _confirmCreate;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -255,8 +256,32 @@ public class EventCreateWindow
         EmbedRenderer.Draw(_preview, (_, __) => { });
         if (ImGui.Button("Create"))
         {
-            _ = CreateEvent();
+            _confirmCreate = true;
         }
+        if (_confirmCreate)
+            ImGui.OpenPopup("Confirm Event Create");
+        var openConfirm = _confirmCreate;
+        if (_confirmCreate && ImGui.BeginPopupModal("Confirm Event Create", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            var channelName = _channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? _channelId;
+            ImGui.TextUnformatted($"Channel: {channelName}");
+            var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
+            ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+            if (ImGui.Button("Confirm"))
+            {
+                _ = CreateEvent();
+                _confirmCreate = false;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel"))
+            {
+                _confirmCreate = false;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+        if (!_confirmCreate || !openConfirm) _confirmCreate = false;
         ImGui.SameLine();
         if (ImGui.Button("Save Template"))
         {
