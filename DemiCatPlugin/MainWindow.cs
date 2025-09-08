@@ -18,6 +18,7 @@ public class MainWindow : IDisposable
     private readonly RequestBoardWindow _requestBoard;
     private readonly SyncshellWindow? _syncshell;
     private readonly HttpClient _httpClient;
+    private float _presenceWidth = 150f;
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
@@ -97,7 +98,7 @@ public class MainWindow : IDisposable
             {
                 if (_config.SyncedChat && _presenceSidebar != null)
                 {
-                    _presenceSidebar.Draw();
+                    _presenceSidebar.Draw(ref _presenceWidth);
                     ImGui.SameLine();
                 }
                 ImGui.BeginChild("##eventsArea", ImGui.GetContentRegionAvail(), false);
@@ -179,7 +180,7 @@ public class MainWindow : IDisposable
                 {
                     if (_config.SyncedChat && _presenceSidebar != null)
                     {
-                        _presenceSidebar.Draw();
+                        _presenceSidebar.Draw(ref _presenceWidth);
                         ImGui.SameLine();
                     }
                     ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
@@ -203,7 +204,7 @@ public class MainWindow : IDisposable
                 {
                     if (_config.SyncedChat && _presenceSidebar != null)
                     {
-                        _presenceSidebar.Draw();
+                        _presenceSidebar.Draw(ref _presenceWidth);
                         ImGui.SameLine();
                     }
                     ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);

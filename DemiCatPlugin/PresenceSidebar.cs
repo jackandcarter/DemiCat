@@ -22,9 +22,10 @@ public class PresenceSidebar : IDisposable
         _service = service;
     }
 
-    public void Draw()
+    public void Draw(ref float width)
     {
-        ImGui.BeginChild("##presence", new Vector2(150, 0), true);
+        // Main presence list
+        ImGui.BeginChild("##presence", new Vector2(width, 0), true);
 
         if (!_service.Loaded)
         {
@@ -55,6 +56,15 @@ public class PresenceSidebar : IDisposable
         }
 
         ImGui.EndChild();
+
+        // Draw a draggable handle to allow the sidebar to be resized
+        ImGui.SameLine();
+        ImGui.InvisibleButton("##presence_resize", new Vector2(4, -1));
+        if (ImGui.IsItemActive())
+        {
+            width += ImGui.GetIO().MouseDelta.X;
+            if (width < 100) width = 100; // minimum width
+        }
     }
 
     private void DrawPresence(PresenceDto p)
