@@ -542,13 +542,65 @@ public class ChatWindow : IDisposable
                     ImGui.TextUnformatted($":{name}:");
                 }
             }
-            else
-            {
-                ImGui.TextUnformatted(part);
-            }
+                else
+                {
+                    RenderMarkdown(part);
+                }
             first = false;
         }
         ImGui.PopTextWrapPos();
+    }
+
+    private void RenderMarkdown(string text)
+    {
+        var codeBlock = Regex.Match(text, "^\\[CODEBLOCK\\](.+?)\\[/CODEBLOCK\\]$", RegexOptions.Singleline);
+        if (codeBlock.Success)
+        {
+            ImGui.BeginChild($"codeblock{GetHashCode()}{text.GetHashCode()}", new Vector2(0, 0), true);
+            ImGui.TextUnformatted(codeBlock.Groups[1].Value);
+            ImGui.EndChild();
+            return;
+        }
+
+        var inlineCode = Regex.Match(text, "^\\[CODE\\](.+?)\\[/CODE\\]$");
+        if (inlineCode.Success)
+        {
+            ImGui.TextUnformatted(inlineCode.Groups[1].Value);
+            return;
+        }
+
+        var quote = Regex.Match(text, "^\\[QUOTE\\](.+?)\\[/QUOTE\\]$", RegexOptions.Singleline);
+        if (quote.Success)
+        {
+            ImGui.Indent();
+            ImGui.TextUnformatted(quote.Groups[1].Value);
+            ImGui.Unindent();
+            return;
+        }
+
+        var spoiler = Regex.Match(text, "^\\[SPOILER\\](.+?)\\[/SPOILER\\]$", RegexOptions.Singleline);
+        if (spoiler.Success)
+        {
+            ImGui.TextUnformatted(spoiler.Groups[1].Value);
+            return;
+        }
+
+        var strike = Regex.Match(text, "^\\[S\\](.+?)\\[/S\\]$");
+        if (strike.Success)
+        {
+            var content = strike.Groups[1].Value;
+            var start = ImGui.GetCursorScreenPos();
+            ImGui.TextUnformatted(content);
+            var size = ImGui.CalcTextSize(content);
+            var dl = ImGui.GetWindowDrawList();
+            dl.AddLine(new Vector2(start.X, start.Y + size.Y / 2), new Vector2(start.X + size.X, start.Y + size.Y / 2), 0xFF000000);
+            return;
+        }
+
+        text = Regex.Replace(text, "\\[(?:B|I|U)\\]", "");
+        text = Regex.Replace(text, "\\[/(?:B|I|U)\\]", "");
+        text = Regex.Replace(text, "\\[LINK=([^\\]]+)\\](.+?)\\[/LINK\\]", "$2 ($1)");
+        ImGui.TextUnformatted(text);
     }
 
     protected virtual async Task SendMessage()

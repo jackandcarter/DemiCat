@@ -15,6 +15,23 @@ public class ChatWindowTests
     }
 
     [Fact]
+    public void FormatContent_HandlesExtendedMarkdown()
+    {
+        var input = "~~strike~~ `code`" +
+                    "\n```\nblock\n```" +
+                    "\n> quote" +
+                    "\n||secret||";
+        var expected = "[S]strike[/S] [CODE]code[/CODE]\n" +
+                        "[CODEBLOCK]\nblock\n[/CODEBLOCK]\n" +
+                        "[QUOTE]quote[/QUOTE]\n" +
+                        "[SPOILER]secret[/SPOILER]";
+
+        var result = MarkdownFormatter.Format(input);
+
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
     public void MentionResolver_ReplacesUserAndRoleMentions()
     {
         var presences = new[] { new PresenceDto { Id = "1", Name = "Alice" } };
