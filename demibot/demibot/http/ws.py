@@ -157,6 +157,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     )
     try:
         while True:
-            await websocket.receive()
-    except WebSocketDisconnect:
+            result = await websocket.receive()
+            if result["type"] == "websocket.disconnect":
+                break
+    except (WebSocketDisconnect, RuntimeError):
         manager.disconnect(websocket)
+        return
+    manager.disconnect(websocket)
