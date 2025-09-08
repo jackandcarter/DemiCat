@@ -36,9 +36,12 @@ internal static class ChannelNameResolver
             {
                 var refreshReq = new HttpRequestMessage(HttpMethod.Post,
                     $"{config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
-                if (TokenManager.Instance != null)
-                    ApiHelpers.AddAuthHeader(refreshReq, TokenManager.Instance!);
-                await httpClient.SendAsync(refreshReq);
+                ApiHelpers.AddAuthHeader(refreshReq, TokenManager.Instance!);
+                var resp = await httpClient.SendAsync(refreshReq);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    PluginServices.Instance!.Log.Warning($"Failed to refresh channel names. URL: {refreshReq.RequestUri}, Status: {resp.StatusCode}");
+                }
             }
             catch (Exception ex)
             {

@@ -35,8 +35,7 @@ internal static class SignupPresetService
         {
             var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets";
             var req = new HttpRequestMessage(HttpMethod.Get, url);
-            if (TokenManager.Instance != null)
-                ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
             {
@@ -68,8 +67,7 @@ internal static class SignupPresetService
         {
             var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets";
             var req = new HttpRequestMessage(HttpMethod.Post, url);
-            if (TokenManager.Instance != null)
-                ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             req.Content = new StringContent(JsonSerializer.Serialize(preset), Encoding.UTF8, "application/json");
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
@@ -99,8 +97,7 @@ internal static class SignupPresetService
         {
             var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets/{id}";
             var req = new HttpRequestMessage(HttpMethod.Delete, url);
-            if (TokenManager.Instance != null)
-                ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
             {
