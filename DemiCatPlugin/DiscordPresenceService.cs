@@ -128,10 +128,8 @@ public class DiscordPresenceService : IDisposable
 
             try
             {
-                var ping = new HttpRequestMessage(HttpMethod.Head, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping");
-                ApiHelpers.AddAuthHeader(ping, TokenManager.Instance!);
-                var pingResponse = await _httpClient.SendAsync(ping, token);
-                if (!pingResponse.IsSuccessStatusCode)
+                var pingResponse = await ApiHelpers.PingAsync(_httpClient, _config, TokenManager.Instance!, token);
+                if (pingResponse?.IsSuccessStatusCode != true)
                 {
                     try { await Task.Delay(TimeSpan.FromSeconds(5), token); } catch { }
                     continue;

@@ -320,17 +320,8 @@ public class ChatBridge : IDisposable
 
     private async Task<bool> ValidateToken(CancellationToken token)
     {
-        try
-        {
-            var request = new HttpRequestMessage(HttpMethod.Head, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping");
-            ApiHelpers.AddAuthHeader(request, _tokenManager);
-            var response = await _httpClient.SendAsync(request, token);
-            return response.IsSuccessStatusCode;
-        }
-        catch
-        {
-            return false;
-        }
+        var response = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, token);
+        return response?.IsSuccessStatusCode ?? false;
     }
 
     private async Task DelayWithJitter(int seconds, CancellationToken token)

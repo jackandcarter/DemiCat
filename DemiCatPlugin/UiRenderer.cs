@@ -281,10 +281,8 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
             try
             {
-                var ping = new HttpRequestMessage(HttpMethod.Head, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping");
-                ApiHelpers.AddAuthHeader(ping, TokenManager.Instance!);
-                var pingResponse = await _httpClient.SendAsync(ping);
-                if (!pingResponse.IsSuccessStatusCode)
+                var pingResponse = await ApiHelpers.PingAsync(_httpClient, _config, TokenManager.Instance!, CancellationToken.None);
+                if (pingResponse?.IsSuccessStatusCode != true)
                 {
                     StartPolling();
                     return;
