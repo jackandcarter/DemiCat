@@ -23,7 +23,7 @@ public class TokenManager
     public static TokenManager? Instance { get; private set; }
 
     public event Action? OnLinked;
-    public event Action? OnUnlinked;
+    public event Action<string?>? OnUnlinked;
 
     public TokenManager()
     {
@@ -94,7 +94,7 @@ public class TokenManager
         }
     }
 
-    public void Clear()
+    public void Clear(string? reason = null)
     {
         try
         {
@@ -108,13 +108,13 @@ public class TokenManager
         }
         _token = null;
         State = LinkState.Unlinked;
-        OnUnlinked?.Invoke();
+        OnUnlinked?.Invoke(reason);
     }
 
     public void RegisterWatcher(Action start, Action stop)
     {
         OnLinked += start;
-        OnUnlinked += stop;
+        OnUnlinked += _ => stop();
         if (IsReady())
         {
             start();

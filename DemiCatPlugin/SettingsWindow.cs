@@ -224,7 +224,11 @@ public class SettingsWindow : IDisposable
 
     private void OnLinked() => _isLinked = true;
 
-    private void OnUnlinked() => _isLinked = false;
+    private void OnUnlinked(string? reason)
+    {
+        _isLinked = false;
+        _syncStatus = reason ?? string.Empty;
+    }
 
     private static void DrawConnectionIndicator(bool linked)
     {
@@ -340,11 +344,9 @@ public class SettingsWindow : IDisposable
             var response = await _httpClient.SendAsync(request);
             if (response.IsSuccessStatusCode)
             {
-                _tokenManager.Clear();
+                _tokenManager.Clear("User forgotten");
                 _apiKey = string.Empty;
                 ClearCachedData();
-                if (framework != null)
-                    _ = framework.RunOnTick(() => _syncStatus = "User forgotten");
             }
         }
         catch (Exception ex)

@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Threading;
 using System.Threading.Tasks;
 using DiscordHelper;
 using Dalamud.Plugin;
@@ -33,6 +34,7 @@ public class Plugin : IDalamudPlugin
     private readonly Action _openMainUi;
     private readonly Action _openConfigUi;
     private readonly TokenManager _tokenManager;
+    private readonly Action<string?> _unlinkedHandler;
 
     public Plugin()
     {
@@ -93,7 +95,13 @@ public class Plugin : IDalamudPlugin
         _openConfigUi = () => _settings.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
-        _tokenManager.RegisterWatcher(StartWatchers, StopWatchers);
+        _unlinkedHandler = _ => StopWatchers();
+        _tokenManager.OnLinked += StartWatchers;
+        _tokenManager.OnUnlinked += _unlinkedHandler;
+        if (_tokenManager.IsReady())
+        {
+            StartWatchers();
+        }
         _services.Log.Info("DemiCat loaded.");
     }
 
@@ -109,7 +117,7 @@ public class Plugin : IDalamudPlugin
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
 
         _tokenManager.OnLinked -= StartWatchers;
-        _tokenManager.OnUnlinked -= StopWatchers;
+        _tokenManager.OnUnlinked -= _unlinkedHandler;
 
         _channelWatcher.Dispose();
         _requestWatcher.Dispose();
@@ -122,10 +130,24 @@ public class Plugin : IDalamudPlugin
         _httpClient.Dispose();
     }
 
-    private void StartWatchers()
+    private void StartWatchers() => _ = StartWatchersAsync();
+
+    private async Task StartWatchersAsync()
     {
-        if (!_tokenManager.IsReady())
+        if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
             return;
+
+        var response = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, CancellationToken.None);
+        if (response?.IsSuccessStatusCode != true)
+        {
+            var reason = response?.StatusCode == HttpStatusCode.Unauthorized ||
+                         response?.StatusCode == HttpStatusCode.Forbidden
+                ? "Invalid API key"
+                : "Network error";
+            _tokenManager.Clear(reason);
+            return;
+        }
+
         if (_config.Requests)
         {
             _requestWatcher.Start();
