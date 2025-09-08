@@ -19,6 +19,7 @@ pydantic = "^2.5.0"
 structlog = "^23.2.0"
 uvloop = {version = "^0.19.0", optional = true}
 websockets = "^15.0.1"
+python-multipart = "^0.0.20"
 
 [project.optional-dependencies]
 uvloop = ["uvloop"]
