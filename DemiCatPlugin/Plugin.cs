@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -27,7 +28,7 @@ public class Plugin : IDalamudPlugin
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
     private Config _config;
-    private readonly HttpClient _httpClient = new();
+    private readonly HttpClient _httpClient;
     private readonly ChannelService _channelService;
     private readonly Action _openMainUi;
     private readonly Action _openConfigUi;
@@ -52,6 +53,15 @@ public class Plugin : IDalamudPlugin
         }
 
         RequestStateService.Load(_config);
+
+        var handler = new SocketsHttpHandler
+        {
+            MaxConnectionsPerServer = 10,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            AutomaticDecompression = DecompressionMethods.All
+        };
+        _httpClient = new HttpClient(handler);
+        _httpClient.Timeout = TimeSpan.FromSeconds(10);
 
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
