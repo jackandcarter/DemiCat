@@ -195,6 +195,13 @@ public class Plugin : IDalamudPlugin
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             log.Info($"Requesting roles from {url}");
             var response = await _httpClient.SendAsync(request);
+            if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                log.Error($"Failed to fetch roles: {response.StatusCode}. Response Body: {responseBody}");
+                _tokenManager.Clear("Authentication failed");
+                return false;
+            }
             if (!response.IsSuccessStatusCode)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
@@ -212,6 +219,13 @@ public class Plugin : IDalamudPlugin
             try
             {
                 var channelResponse = await _httpClient.SendAsync(channelRequest);
+                if (channelResponse.StatusCode == HttpStatusCode.Unauthorized || channelResponse.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    var responseBody = await channelResponse.Content.ReadAsStringAsync();
+                    log.Error($"Failed to fetch channels: {channelResponse.StatusCode}. Response Body: {responseBody}");
+                    _tokenManager.Clear("Authentication failed");
+                    return false;
+                }
                 if (channelResponse.IsSuccessStatusCode)
                 {
                     var channelStream = await channelResponse.Content.ReadAsStreamAsync();

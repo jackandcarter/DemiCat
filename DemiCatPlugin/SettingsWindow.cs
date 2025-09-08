@@ -503,6 +503,8 @@ public class SettingsWindow : IDisposable
                             _ = ChatWindow?.RefreshChannels();
                         }
                         _ = OfficerChatWindow?.RefreshChannels();
+                        _ = MainWindow?.EventCreateWindow.RefreshChannels();
+                        _ = MainWindow?.TemplatesWindow.RefreshChannels();
                     }
                     catch (Exception ex)
                     {
@@ -526,6 +528,7 @@ public class SettingsWindow : IDisposable
                     {
                         MainWindow?.Ui.ResetChannels();
                         MainWindow?.ResetEventCreateRoles();
+                        MainWindow?.TemplatesWindow.ResetRoles();
                     }
                     catch (Exception ex)
                     {

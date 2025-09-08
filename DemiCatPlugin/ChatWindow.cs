@@ -1120,9 +1120,11 @@ public class ChatWindow : IDisposable
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channelFetchFailed = true;
-                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Forbidden
-                    ? "Forbidden – check API key/roles"
-                    : "Failed to load channels";
+                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Unauthorized
+                    ? "Authentication failed"
+                    : ex.StatusCode == HttpStatusCode.Forbidden
+                        ? "Forbidden – check API key/roles"
+                        : "Failed to load channels";
                 _channelsLoaded = true;
             });
         }
