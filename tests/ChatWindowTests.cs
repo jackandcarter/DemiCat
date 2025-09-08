@@ -25,4 +25,16 @@ public class ChatWindowTests
 
         Assert.Equal("Hello <@1> and <@&2>", result);
     }
+
+    [Fact]
+    public void MentionResolver_HandlesSpecialCaseInsensitiveAndEscapes()
+    {
+        var presences = new[] { new PresenceDto { Id = "1", Name = "Alice" } };
+        var roles = new[] { new RoleDto { Id = "2", Name = "Admin" } };
+        var input = "@ALICE @admin @Unknown @everyone @Here test@example.com";
+
+        var result = MentionResolver.Resolve(input, presences, roles);
+
+        Assert.Equal("<@1> <@&2> @​Unknown <@everyone> <@here> test@​example.com", result);
+    }
 }
