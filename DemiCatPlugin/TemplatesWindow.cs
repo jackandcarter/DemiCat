@@ -26,6 +26,8 @@ public class TemplatesWindow
     private string _channelErrorMessage = string.Empty;
     private int _channelIndex;
     private string _channelId = string.Empty;
+    private bool _confirmPost;
+    private Template? _pendingTemplate;
 
     public TemplatesWindow(Config config, HttpClient httpClient)
     {
@@ -95,7 +97,45 @@ public class TemplatesWindow
             ImGui.SameLine();
             if (ImGui.Button("Post"))
             {
-                _ = PostTemplate(tmpl);
+                _pendingTemplate = tmpl;
+                _confirmPost = true;
+            }
+            if (_confirmPost)
+                ImGui.OpenPopup("Confirm Template Post");
+            var openConfirm = _confirmPost;
+            if (_confirmPost && ImGui.BeginPopupModal("Confirm Template Post", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                var channelName = _channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? _channelId;
+                ImGui.TextUnformatted($"Channel: {channelName}");
+                _ = RoleCache.EnsureLoaded(_httpClient, _config);
+                var roleNames = new List<string>();
+                if (_pendingTemplate?.Mentions != null)
+                {
+                    var ids = _pendingTemplate.Mentions.Select(m => m.ToString()).ToHashSet();
+                    roleNames = RoleCache.Roles.Where(r => ids.Contains(r.Id)).Select(r => r.Name).ToList();
+                }
+                ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+                if (ImGui.Button("Confirm"))
+                {
+                    if (_pendingTemplate != null)
+                        _ = PostTemplate(_pendingTemplate);
+                    _confirmPost = false;
+                    _pendingTemplate = null;
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Cancel"))
+                {
+                    _confirmPost = false;
+                    _pendingTemplate = null;
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.EndPopup();
+            }
+            if (!_confirmPost || !openConfirm)
+            {
+                _confirmPost = false;
+                _pendingTemplate = null;
             }
         }
         else
