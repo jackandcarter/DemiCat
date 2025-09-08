@@ -28,6 +28,7 @@ public class Plugin : IDalamudPlugin
     private readonly RequestWatcher _requestWatcher;
     private Config _config;
     private readonly HttpClient _httpClient = new();
+    private readonly ChannelService _channelService;
     private readonly Action _openMainUi;
     private readonly Action _openConfigUi;
     private readonly TokenManager _tokenManager;
@@ -57,10 +58,11 @@ public class Plugin : IDalamudPlugin
         _presenceService = _config.SyncedChat && _config.EnableFcChat
             ? new DiscordPresenceService(_config, _httpClient)
             : null;
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager);
+        _channelService = new ChannelService(_config, _httpClient, _tokenManager);
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService);
         _presenceService?.Reset();
-        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient);
+        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient, _channelService);
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
         _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
         _settings.MainWindow = _mainWindow;
