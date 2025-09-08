@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -163,7 +164,8 @@ public class EventCreateWindow
             }
             else
             {
-                ImGui.TextUnformatted("No roles available");
+                var msg = RoleCache.LastErrorMessage ?? "No roles available";
+                ImGui.TextUnformatted(msg);
             }
         }
         for (var i = 0; i < _buttons.Count; i++)
@@ -626,6 +628,20 @@ public class EventCreateWindow
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
+            });
+        }
+        catch (HttpRequestException ex)
+        {
+            PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channelFetchFailed = true;
+                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Unauthorized
+                    ? "Authentication failed"
+                    : ex.StatusCode == HttpStatusCode.Forbidden
+                        ? "Forbidden – check API key/roles"
+                        : "Failed to load channels";
+                _channelsLoaded = true;
             });
         }
         catch (Exception ex)

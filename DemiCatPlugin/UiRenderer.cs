@@ -565,6 +565,20 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
+            if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = response.StatusCode == HttpStatusCode.Unauthorized
+                        ? "Authentication failed"
+                        : "Forbidden \u2013 check API key/roles";
+                    _channelsLoaded = true;
+                });
+                return;
+            }
             if (!response.IsSuccessStatusCode)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
@@ -596,6 +610,20 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
+            });
+        }
+        catch (HttpRequestException ex)
+        {
+            PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channelFetchFailed = true;
+                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Unauthorized
+                    ? "Authentication failed"
+                    : ex.StatusCode == HttpStatusCode.Forbidden
+                        ? "Forbidden \u2013 check API key/roles"
+                        : "Failed to load channels";
+                _channelsLoaded = true;
             });
         }
         catch (Exception ex)

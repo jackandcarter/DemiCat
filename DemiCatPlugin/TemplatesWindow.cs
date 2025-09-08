@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json;
@@ -134,7 +135,8 @@ public class TemplatesWindow
                 }
                 else
                 {
-                    ImGui.TextUnformatted("No roles available");
+                    var msg = RoleCache.LastErrorMessage ?? "No roles available";
+                    ImGui.TextUnformatted(msg);
                 }
             }
             if (_confirmPost)
@@ -203,6 +205,8 @@ public class TemplatesWindow
             return Task.CompletedTask;
         }
         _channelsLoaded = false;
+        _channelFetchFailed = false;
+        _channelErrorMessage = string.Empty;
         return FetchChannels();
     }
 
@@ -230,6 +234,20 @@ public class TemplatesWindow
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
+            if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = response.StatusCode == HttpStatusCode.Unauthorized
+                        ? "Authentication failed"
+                        : "Forbidden \u2013 check API key/roles";
+                    _channelsLoaded = true;
+                });
+                return;
+            }
             if (!response.IsSuccessStatusCode)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
@@ -251,6 +269,20 @@ public class TemplatesWindow
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
+            });
+        }
+        catch (HttpRequestException ex)
+        {
+            PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _channelFetchFailed = true;
+                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Unauthorized
+                    ? "Authentication failed"
+                    : ex.StatusCode == HttpStatusCode.Forbidden
+                        ? "Forbidden \u2013 check API key/roles"
+                        : "Failed to load channels";
+                _channelsLoaded = true;
             });
         }
         catch (Exception ex)
@@ -289,6 +321,13 @@ public class TemplatesWindow
             _roles.AddRange(RoleCache.Roles);
             _rolesLoaded = true;
         });
+    }
+
+    public void ResetRoles()
+    {
+        RoleCache.Reset();
+        _roles.Clear();
+        _rolesLoaded = false;
     }
 
     private class ChannelListDto
