@@ -201,9 +201,21 @@ async def save_message(
     )
     nickname = membership.nickname if membership else None
     avatar = membership.avatar_url if membership else None
+    error_details: list[str] = []
     if discord_client:
         channel = discord_client.get_channel(channel_id)
     if channel and isinstance(channel, discord.abc.Messageable):
+        discord_files = None
+        if files:
+            if len(files) > MAX_ATTACHMENTS:
+                raise HTTPException(status_code=400, detail="Too many attachments")
+            discord_files = []
+            for f in files:
+                data = await f.read()
+                if len(data) > MAX_ATTACHMENT_SIZE:
+                    raise HTTPException(status_code=400, detail=f"{f.filename} too large")
+                discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
+
         webhook_url = _channel_webhooks.get(channel_id)
         if not webhook_url:
             webhook_url = await db.scalar(
@@ -220,7 +232,9 @@ async def save_message(
                 webhook = discord.Webhook.from_url(webhook_url, client=discord_client)
             else:
                 raise Exception("no webhook")
-        except Exception:
+        except Exception as e:
+            logging.exception("failed to init webhook for channel %s", channel_id)
+            error_details.append(f"Webhook init failed: {e}")
             webhook = None
         if webhook is None:
             try:
@@ -245,19 +259,24 @@ async def save_message(
                         )
                     )
                 webhook = created
-            except Exception:
+            except Exception as e:
+                if isinstance(e, discord.HTTPException):
+                    logging.exception(
+                        "create_webhook failed for channel %s: %s %s",
+                        channel_id,
+                        e.status,
+                        e.text,
+                    )
+                    error_details.append(
+                        f"Webhook creation failed: {e.status} {e.text}"
+                    )
+                else:
+                    logging.exception(
+                        "create_webhook failed for channel %s", channel_id
+                    )
+                    error_details.append(f"Webhook creation failed: {e}")
                 webhook = None
         if webhook:
-            discord_files = None
-            if files:
-                if len(files) > MAX_ATTACHMENTS:
-                    raise HTTPException(status_code=400, detail="Too many attachments")
-                discord_files = []
-                for f in files:
-                    data = await f.read()
-                    if len(data) > MAX_ATTACHMENT_SIZE:
-                        raise HTTPException(status_code=400, detail=f"{f.filename} too large")
-                    discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
             username_base = nickname or (
                 ctx.user.global_name or ("Officer" if is_officer else "Player")
             )
@@ -274,11 +293,23 @@ async def save_message(
                     files=discord_files,
                     wait=True,
                 )
-            except Exception:
+            except Exception as e:
                 # Attempt to recreate webhook once if sending failed
-                logging.exception(
-                    "webhook.send failed for channel %s", channel_id
-                )
+                if isinstance(e, discord.HTTPException):
+                    logging.exception(
+                        "webhook.send failed for channel %s: %s %s",
+                        channel_id,
+                        e.status,
+                        e.text,
+                    )
+                    error_details.append(
+                        f"Webhook send failed: {e.status} {e.text}"
+                    )
+                else:
+                    logging.exception(
+                        "webhook.send failed for channel %s", channel_id
+                    )
+                    error_details.append(f"Webhook send failed: {e}")
                 webhook = None
             else:
                 discord_msg_id = getattr(sent, "id", None)
@@ -295,60 +326,112 @@ async def save_message(
                         )
                         for a in sent.attachments
                     ]
-            if webhook is None:
-                try:
-                    created = await channel.create_webhook(name="DemiCat Relay")
-                    webhook_url = created.url
-                    _channel_webhooks[channel_id] = webhook_url
-                    gc = await db.scalar(
-                        select(GuildChannel).where(
-                            GuildChannel.guild_id == ctx.guild.id,
-                            GuildChannel.channel_id == channel_id,
+        if webhook is None:
+            try:
+                created = await channel.create_webhook(name="DemiCat Relay")
+                webhook_url = created.url
+                _channel_webhooks[channel_id] = webhook_url
+                gc = await db.scalar(
+                    select(GuildChannel).where(
+                        GuildChannel.guild_id == ctx.guild.id,
+                        GuildChannel.channel_id == channel_id,
+                    )
+                )
+                if gc:
+                    gc.webhook_url = webhook_url
+                else:
+                    db.add(
+                        GuildChannel(
+                            guild_id=ctx.guild.id,
+                            channel_id=channel_id,
+                            kind=ChannelKind.CHAT,
+                            webhook_url=webhook_url,
                         )
                     )
-                    if gc:
-                        gc.webhook_url = webhook_url
-                    else:
-                        db.add(
-                            GuildChannel(
-                                guild_id=ctx.guild.id,
-                                channel_id=channel_id,
-                                kind=ChannelKind.CHAT,
-                                webhook_url=webhook_url,
-                            )
-                        )
-                    sent = await created.send(
-                        body.content,
-                        username=username,
-                        avatar_url=avatar,
-                        files=discord_files,
-                        wait=True,
+                sent = await created.send(
+                    body.content,
+                    username=username,
+                    avatar_url=avatar,
+                    files=discord_files,
+                    wait=True,
+                )
+                webhook = created
+                discord_msg_id = getattr(sent, "id", None)
+                if discord_msg_id is None:
+                    logging.warning(
+                        "webhook.send returned no id for channel %s", channel_id
                     )
-                    webhook = created
-                    discord_msg_id = getattr(sent, "id", None)
-                    if discord_msg_id is None:
-                        logging.warning(
-                            "webhook.send returned no id for channel %s", channel_id
+                elif sent.attachments:
+                    attachments = [
+                        AttachmentDto(
+                            url=a.url,
+                            filename=a.filename,
+                            contentType=a.content_type,
                         )
-                    elif sent.attachments:
-                        attachments = [
-                            AttachmentDto(
-                                url=a.url,
-                                filename=a.filename,
-                                contentType=a.content_type,
-                            )
-                            for a in sent.attachments
-                        ]
-                except Exception:
+                        for a in sent.attachments
+                    ]
+            except Exception as e:
+                if isinstance(e, discord.HTTPException):
+                    logging.exception(
+                        "webhook.send failed after retry for channel %s: %s %s",
+                        channel_id,
+                        e.status,
+                        e.text,
+                    )
+                    error_details.append(
+                        f"Webhook retry failed: {e.status} {e.text}"
+                    )
+                else:
                     logging.exception(
                         "webhook.send failed after retry for channel %s", channel_id
                     )
-                    discord_msg_id = None
+                    error_details.append(
+                        f"Webhook retry failed: {e}"
+                    )
+                discord_msg_id = None
+
+        if discord_msg_id is None:
+            try:
+                sent = await channel.send(body.content, files=discord_files)
+                discord_msg_id = getattr(sent, "id", None)
+                if discord_msg_id is None:
+                    logging.warning(
+                        "channel.send returned no id for channel %s", channel_id
+                    )
+                elif sent.attachments:
+                    attachments = [
+                        AttachmentDto(
+                            url=a.url,
+                            filename=a.filename,
+                            contentType=a.content_type,
+                        )
+                        for a in sent.attachments
+                    ]
+            except Exception as e:
+                if isinstance(e, discord.HTTPException):
+                    logging.exception(
+                        "channel.send failed for channel %s: %s %s",
+                        channel_id,
+                        e.status,
+                        e.text,
+                    )
+                    error_details.append(
+                        f"Direct send failed: {e.status} {e.text}"
+                    )
+                else:
+                    logging.exception(
+                        "channel.send failed for channel %s", channel_id
+                    )
+                    error_details.append(f"Direct send failed: {e}")
+
     if discord_msg_id is None:
         logging.warning(
             "Failed to relay message to Discord for channel %s", channel_id
         )
-        raise HTTPException(status_code=502, detail="Failed to relay message to Discord")
+        detail = "Failed to relay message to Discord"
+        if error_details:
+            detail = f"{detail}: {'; '.join(error_details)}"
+        raise HTTPException(status_code=502, detail=detail)
     display_name_base = nickname or (
         ctx.user.global_name or ("Officer" if is_officer else "Player")
     )
