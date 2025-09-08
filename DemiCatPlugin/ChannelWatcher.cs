@@ -72,15 +72,13 @@ public class ChannelWatcher : IDisposable
             }
             try
             {
-                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/ping";
-                var ping = new HttpRequestMessage(HttpMethod.Head, url);
-                ApiHelpers.AddAuthHeader(ping, _tokenManager);
-                var pingResponse = await _httpClient.SendAsync(ping, token);
-                if (!pingResponse.IsSuccessStatusCode)
+                var pingResponse = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, token);
+                if (pingResponse?.IsSuccessStatusCode != true)
                 {
-                    var responseBody = await pingResponse.Content.ReadAsStringAsync();
-                    PluginServices.Instance!.Log.Warning($"Channel watcher ping failed. URL: {url}, Status: {pingResponse.StatusCode}. Response Body: {responseBody}");
-                    if (pingResponse.StatusCode == HttpStatusCode.Unauthorized || pingResponse.StatusCode == HttpStatusCode.Forbidden)
+                    var responseBody = pingResponse == null ? string.Empty : await pingResponse.Content.ReadAsStringAsync();
+                    var status = pingResponse?.StatusCode;
+                    PluginServices.Instance!.Log.Warning($"Channel watcher ping failed. Status: {status}. Response Body: {responseBody}");
+                    if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden)
                     {
                         PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
                     }

@@ -1,6 +1,9 @@
 using System;
 using System.Net.Http;
 using System.Net.WebSockets;
+using System.Net;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace DemiCatPlugin;
 
@@ -36,6 +39,29 @@ internal static class ApiHelpers
         if (!string.IsNullOrEmpty(token))
         {
             socket.Options.SetRequestHeader("X-Api-Key", token);
+        }
+    }
+
+    internal static async Task<HttpResponseMessage?> PingAsync(HttpClient httpClient, Config config, TokenManager tokenManager, CancellationToken token)
+    {
+        try
+        {
+            var baseUrl = config.ApiBaseUrl.TrimEnd('/');
+            var ping = new HttpRequestMessage(HttpMethod.Head, $"{baseUrl}/api/ping");
+            AddAuthHeader(ping, tokenManager);
+            var response = await httpClient.SendAsync(ping, token);
+            if (response.StatusCode != HttpStatusCode.NotFound || response.IsSuccessStatusCode)
+            {
+                return response;
+            }
+
+            var health = new HttpRequestMessage(HttpMethod.Head, $"{baseUrl}/health");
+            AddAuthHeader(health, tokenManager);
+            return await httpClient.SendAsync(health, token);
+        }
+        catch
+        {
+            return null;
         }
     }
 }

@@ -104,6 +104,30 @@ public class ChatWindowWebSocketTests
         Assert.Equal(7, secondSince);
     }
 
+    [Fact]
+    public async Task WebSocket_Ping404FallsBackToHealth()
+    {
+        using var server = new MockWsServer(async (ws, _, srv) =>
+        {
+            while (ws.State == WebSocketState.Open)
+            {
+                await srv.Receive(ws);
+            }
+        }) { PingStatus = 404 };
+
+        SetupServices();
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
+
+        bridge.Start();
+        bridge.Subscribe("1");
+
+        await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
+
+        bridge.Stop();
+    }
+
     private static int ExtractSince(string json)
     {
         using var doc = JsonDocument.Parse(json);
@@ -163,6 +187,7 @@ public class ChatWindowWebSocketTests
         public List<string> Received { get; } = new();
         public Uri Uri { get; }
         public string HttpBase { get; }
+        public int PingStatus { get; set; } = 200;
 
         public MockWsServer(Func<WebSocket, int, MockWsServer, Task> handler)
         {
@@ -182,6 +207,12 @@ public class ChatWindowWebSocketTests
             {
                 var ctx = await _listener.GetContextAsync();
                 if (ctx.Request.HttpMethod == "HEAD" && ctx.Request.RawUrl == "/api/ping")
+                {
+                    ctx.Response.StatusCode = PingStatus;
+                    ctx.Response.Close();
+                    continue;
+                }
+                if (ctx.Request.HttpMethod == "HEAD" && ctx.Request.RawUrl == "/health")
                 {
                     ctx.Response.StatusCode = 200;
                     ctx.Response.Close();
