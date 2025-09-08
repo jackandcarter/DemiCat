@@ -78,6 +78,10 @@ public class ChannelWatcher : IDisposable
                     var responseBody = pingResponse == null ? string.Empty : await pingResponse.Content.ReadAsStringAsync();
                     var status = pingResponse?.StatusCode;
                     PluginServices.Instance!.Log.Warning($"Channel watcher ping failed. Status: {status}. Response Body: {responseBody}");
+                    if (status == HttpStatusCode.NotFound)
+                    {
+                        PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
+                    }
                     if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden)
                     {
                         PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");

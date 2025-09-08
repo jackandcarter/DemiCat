@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -284,6 +285,10 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 var pingResponse = await ApiHelpers.PingAsync(_httpClient, _config, TokenManager.Instance!, CancellationToken.None);
                 if (pingResponse?.IsSuccessStatusCode != true)
                 {
+                    if (pingResponse?.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
+                    }
                     StartPolling();
                     return;
                 }

@@ -50,14 +50,19 @@ internal static class ApiHelpers
             var ping = new HttpRequestMessage(HttpMethod.Head, $"{baseUrl}/api/ping");
             AddAuthHeader(ping, tokenManager);
             var response = await httpClient.SendAsync(ping, token);
-            if (response.StatusCode != HttpStatusCode.NotFound || response.IsSuccessStatusCode)
+            if (response.StatusCode != HttpStatusCode.NotFound)
             {
                 return response;
             }
 
             var health = new HttpRequestMessage(HttpMethod.Head, $"{baseUrl}/health");
             AddAuthHeader(health, tokenManager);
-            return await httpClient.SendAsync(health, token);
+            var healthResponse = await httpClient.SendAsync(health, token);
+            if (healthResponse.StatusCode == HttpStatusCode.NotFound)
+            {
+                PluginServices.Instance?.Log.Error("Backend missing /api/ping and /health endpoints. Please update or restart the backend.");
+            }
+            return healthResponse;
         }
         catch
         {
