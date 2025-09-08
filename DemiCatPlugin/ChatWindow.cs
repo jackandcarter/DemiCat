@@ -56,6 +56,7 @@ public class ChatWindow : IDisposable
     private const int MaxMessages = 100;
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
+    private readonly Dictionary<string, TypingUser> _typingUsers = new();
 
     private class TextureCacheEntry
     {
@@ -66,6 +67,18 @@ public class ChatWindow : IDisposable
         {
             Texture = texture;
             Node = node;
+        }
+    }
+
+    private class TypingUser
+    {
+        public string Name;
+        public DateTime Expires;
+
+        public TypingUser(string name, DateTime expires)
+        {
+            Name = name;
+            Expires = expires;
         }
     }
 
@@ -92,6 +105,7 @@ public class ChatWindow : IDisposable
         _useCharacterName = config.UseCharacterName;
         _bridge = new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri);
         _bridge.MessageReceived += HandleBridgeMessage;
+        _bridge.TypingReceived += HandleBridgeTyping;
         _bridge.Linked += HandleBridgeLinked;
         _bridge.Unlinked += HandleBridgeUnlinked;
         _bridge.StatusChanged += s => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = s);
@@ -416,6 +430,18 @@ public class ChatWindow : IDisposable
             {
                 _attachments.Remove(att);
             }
+        }
+
+        var now = DateTime.UtcNow;
+        foreach (var key in _typingUsers.Where(kvp => kvp.Value.Expires < now).Select(kvp => kvp.Key).ToList())
+        {
+            _typingUsers.Remove(key);
+        }
+        if (_typingUsers.Count > 0)
+        {
+            var names = string.Join(", ", _typingUsers.Values.Select(v => v.Name));
+            var verb = _typingUsers.Count > 1 ? "are" : "is";
+            ImGui.TextUnformatted($"{names} {verb} typing...");
         }
 
         var send = ImGui.InputText("##chatInput", ref _input, 512, ImGuiInputTextFlags.EnterReturnsTrue);
@@ -1111,6 +1137,14 @@ public class ChatWindow : IDisposable
         {
             // ignored
         }
+    }
+
+    private void HandleBridgeTyping(DiscordUserDto user)
+    {
+        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            _typingUsers[user.Id] = new TypingUser(user.Name, DateTime.UtcNow.AddSeconds(5));
+        });
     }
 
     private void HandleBridgeLinked()

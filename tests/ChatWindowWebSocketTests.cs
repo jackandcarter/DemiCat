@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections;
 using System.Net;
 using System.Net.Sockets;
 using System.Net.WebSockets;
@@ -11,6 +12,7 @@ using DemiCatPlugin;
 using Dalamud.Plugin.Services;
 using Xunit;
 using System.Net.Http;
+using System.Reflection;
 
 public class ChatWindowWebSocketTests
 {
@@ -105,6 +107,72 @@ public class ChatWindowWebSocketTests
     }
 
     [Fact]
+    public async Task WebSocket_TypingEventRaises()
+    {
+        using var server = new MockWsServer(async (ws, _, srv) =>
+        {
+            var msg = await srv.Receive(ws);
+            if (msg.Contains("\"op\":\"sub\""))
+            {
+                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"messages\":[{\"cursor\":1,\"op\":\"ty\",\"d\":{\"id\":\"u1\",\"name\":\"Alice\"}}]}");
+            }
+            while (ws.State == WebSocketState.Open)
+            {
+                await Task.Delay(50);
+            }
+        });
+
+        SetupServices();
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
+
+        DiscordUserDto? user = null;
+        bridge.TypingReceived += u => user = u;
+        bridge.Start();
+        bridge.Subscribe("1");
+
+        await WaitUntil(() => user != null, TimeSpan.FromSeconds(5));
+
+        bridge.Stop();
+
+        Assert.NotNull(user);
+        Assert.Equal("u1", user!.Id);
+    }
+
+    [Fact]
+    public async Task WebSocket_TypingEventUpdatesChatWindow()
+    {
+        using var server = new MockWsServer(async (ws, _, srv) =>
+        {
+            var msg = await srv.Receive(ws);
+            if (msg.Contains("\"op\":\"sub\""))
+            {
+                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"messages\":[{\"cursor\":1,\"op\":\"ty\",\"d\":{\"id\":\"u1\",\"name\":\"Alice\"}}]}");
+            }
+            while (ws.State == WebSocketState.Open)
+            {
+                await Task.Delay(50);
+            }
+        });
+
+        SetupServices();
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        using var client = new HttpClient();
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, client, tm);
+        var window = new ChatWindow(config, client, null, tm, channelService);
+        window.StartNetworking();
+
+        await WaitUntil(() => GetTypingUsers(window).Count > 0, TimeSpan.FromSeconds(5));
+
+        var names = GetTypingUsers(window);
+        window.StopNetworking();
+
+        Assert.Contains("Alice", names);
+    }
+
+    [Fact]
     public async Task WebSocket_Ping404FallsBackToHealth()
     {
         using var server = new MockWsServer(async (ws, _, srv) =>
@@ -133,6 +201,19 @@ public class ChatWindowWebSocketTests
         using var doc = JsonDocument.Parse(json);
         var ch = doc.RootElement.GetProperty("channels")[0];
         return ch.TryGetProperty("since", out var since) ? since.GetInt32() : 0;
+    }
+
+    private static List<string> GetTypingUsers(ChatWindow window)
+    {
+        var field = typeof(ChatWindow).GetField("_typingUsers", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var dict = (IDictionary)field.GetValue(window)!;
+        var list = new List<string>();
+        foreach (DictionaryEntry entry in dict)
+        {
+            var nameProp = entry.Value.GetType().GetProperty("Name")!;
+            list.Add((string)nameProp.GetValue(entry.Value)!);
+        }
+        return list;
     }
 
     private static async Task WaitUntil(Func<bool> cond, TimeSpan timeout)
