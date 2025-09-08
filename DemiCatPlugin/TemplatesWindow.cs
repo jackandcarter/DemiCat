@@ -28,6 +28,9 @@ public class TemplatesWindow
     private string _channelId = string.Empty;
     private bool _confirmPost;
     private Template? _pendingTemplate;
+    private readonly List<RoleDto> _roles = new();
+    private readonly HashSet<string> _mentions = new();
+    private bool _rolesLoaded;
 
     public TemplatesWindow(Config config, HttpClient httpClient)
     {
@@ -48,6 +51,11 @@ public class TemplatesWindow
         {
             ImGui.TextUnformatted("Link DemiCat to manage templates");
             return;
+        }
+
+        if (!_rolesLoaded)
+        {
+            _ = LoadRoles();
         }
 
         if (!_channelsLoaded)
@@ -73,11 +81,18 @@ public class TemplatesWindow
         var filteredTemplates = _config.TemplateData.Where(t => t.Type == TemplateType.Event).ToList();
         for (var i = 0; i < filteredTemplates.Count; i++)
         {
-            var name = filteredTemplates[i].Name;
+            var tmplItem = filteredTemplates[i];
+            var name = tmplItem.Name;
             if (ImGui.Selectable(name, _selectedIndex == i))
             {
                 _selectedIndex = i;
                 _showPreview = false;
+                _mentions.Clear();
+                if (tmplItem.Mentions != null)
+                {
+                    foreach (var m in tmplItem.Mentions)
+                        _mentions.Add(m.ToString());
+                }
             }
         }
         ImGui.EndChild();
@@ -100,6 +115,28 @@ public class TemplatesWindow
                 _pendingTemplate = tmpl;
                 _confirmPost = true;
             }
+
+            if (_rolesLoaded)
+            {
+                if (_roles.Count > 0)
+                {
+                    ImGui.Separator();
+                    ImGui.Text("Mention Roles");
+                    foreach (var role in _roles)
+                    {
+                        var roleId = role.Id;
+                        var sel = _mentions.Contains(roleId);
+                        if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
+                        {
+                            if (sel) _mentions.Add(roleId); else _mentions.Remove(roleId);
+                        }
+                    }
+                }
+                else
+                {
+                    ImGui.TextUnformatted("No roles available");
+                }
+            }
             if (_confirmPost)
                 ImGui.OpenPopup("Confirm Template Post");
             var openConfirm = _confirmPost;
@@ -107,13 +144,7 @@ public class TemplatesWindow
             {
                 var channelName = _channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? _channelId;
                 ImGui.TextUnformatted($"Channel: {channelName}");
-                _ = RoleCache.EnsureLoaded(_httpClient, _config);
-                var roleNames = new List<string>();
-                if (_pendingTemplate?.Mentions != null)
-                {
-                    var ids = _pendingTemplate.Mentions.Select(m => m.ToString()).ToHashSet();
-                    roleNames = RoleCache.Roles.Where(r => ids.Contains(r.Id)).Select(r => r.Name).ToList();
-                }
+                var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
                 ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
                 if (ImGui.Button("Confirm"))
                 {
@@ -249,6 +280,17 @@ public class TemplatesWindow
         }
     }
 
+    private async Task LoadRoles()
+    {
+        await RoleCache.EnsureLoaded(_httpClient, _config);
+        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            _roles.Clear();
+            _roles.AddRange(RoleCache.Roles);
+            _rolesLoaded = true;
+        });
+    }
+
     private class ChannelListDto
     {
         [JsonPropertyName(ChannelKind.Event)] public List<ChannelDto> Event { get; set; } = new();
@@ -280,7 +322,7 @@ public class TemplatesWindow
                 Style = b.Style,
                 MaxSignups = b.MaxSignups
             }).ToList(),
-            Mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
+            Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
     }
 
@@ -332,7 +374,7 @@ public class TemplatesWindow
                         .ToList()
                 : null,
                 buttons = buttons != null && buttons.Count > 0 ? buttons : null,
-                mentions = tmpl.Mentions != null && tmpl.Mentions.Count > 0 ? tmpl.Mentions : null
+                mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
             };
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
