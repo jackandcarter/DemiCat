@@ -35,6 +35,10 @@ PING_TIMEOUT = 60.0
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
+# Retry configuration for Discord webhook sends.
+RETRY_BASE = 1.0  # seconds
+MAX_SEND_ATTEMPTS = 5
+
 
 @dataclass
 class ChatConnection:
@@ -43,12 +47,26 @@ class ChatConnection:
     cursors: Dict[str, int] = field(default_factory=dict)
 
 
+@dataclass
+class PendingWebhookMessage:
+    channel_id: int
+    webhook_url: str
+    content: str
+    username: str
+    avatar_url: str | None
+    attachments: List[tuple[str, bytes]]
+    payload: dict
+    attempts: int = 0
+
+
 class ChatConnectionManager:
     def __init__(self) -> None:
         self.connections: Dict[WebSocket, ChatConnection] = {}
         self._channel_queues: Dict[str, List[dict]] = {}
         self._channel_tasks: Dict[str, asyncio.Task] = {}
         self._channel_cursors: Dict[str, int] = {}
+        self._webhook_queues: Dict[int, List[PendingWebhookMessage]] = {}
+        self._webhook_tasks: Dict[int, asyncio.Task] = {}
         self._send_count = 0
         self._resync_count = 0
         self._connect_count = 0
@@ -162,13 +180,101 @@ class ChatConnectionManager:
         )
         message = json.dumps({"op": "batch", "channel": channel, "messages": queue})
         targets = [
-            ws
-            for ws, info in self.connections.items()
-            if channel in info.channels
+            ws for ws, info in self.connections.items() if channel in info.channels
         ]
         send_coros = [ws.send_text(message) for ws in targets]
         if send_coros:
             await asyncio.gather(*send_coros, return_exceptions=True)
+
+    async def _queue_webhook(self, msg: PendingWebhookMessage) -> None:
+        queue = self._webhook_queues.setdefault(msg.channel_id, [])
+        queue.append(msg)
+        if msg.channel_id not in self._webhook_tasks:
+            self._webhook_tasks[msg.channel_id] = asyncio.create_task(
+                self._process_webhook_queue(msg.channel_id)
+            )
+
+    async def _process_webhook_queue(self, channel_id: int) -> None:
+        queue = self._webhook_queues.get(channel_id)
+        while queue:
+            msg = queue[0]
+            success, retry_after = await self._send_webhook(msg)
+            if success:
+                queue.pop(0)
+                continue
+            msg.attempts += 1
+            if msg.attempts >= MAX_SEND_ATTEMPTS:
+                logger.error(
+                    "chat.ws webhook give up channel=%s attempts=%s",
+                    channel_id,
+                    msg.attempts,
+                )
+                queue.pop(0)
+                await emit_event(
+                    {
+                        "channel": str(channel_id),
+                        "op": "mf",
+                        "d": msg.payload,
+                    }
+                )
+                continue
+            delay = max(RETRY_BASE * (2 ** (msg.attempts - 1)), retry_after)
+            await asyncio.sleep(delay)
+        self._webhook_tasks.pop(channel_id, None)
+        self._webhook_queues.pop(channel_id, None)
+
+    async def _send_webhook(self, msg: PendingWebhookMessage) -> tuple[bool, float]:
+        webhook = discord.Webhook.from_url(msg.webhook_url, client=discord_client)
+        files = [
+            discord.File(io.BytesIO(data), filename=name)
+            for name, data in msg.attachments
+        ]
+        start = time.perf_counter()
+        try:
+            sent = await webhook.send(
+                msg.content,
+                username=msg.username,
+                avatar_url=msg.avatar_url,
+                files=files or None,
+                wait=True,
+            )
+        except discord.HTTPException as e:
+            headers = getattr(getattr(e, "response", None), "headers", {}) or {}
+            retry_after = headers.get("Retry-After") or headers.get(
+                "X-RateLimit-Reset-After"
+            )
+            retry_after_s = float(retry_after) if retry_after is not None else 0.0
+            logger.warning(
+                "chat.ws webhook send error channel=%s status=%s attempt=%s",
+                msg.channel_id,
+                getattr(e, "status", None),
+                msg.attempts + 1,
+            )
+            return False, retry_after_s
+        except Exception:
+            logger.exception(
+                "chat.ws webhook send failed channel=%s attempt=%s",
+                msg.channel_id,
+                msg.attempts + 1,
+            )
+            return False, 0.0
+        latency_ms = (time.perf_counter() - start) * 1000
+        self._send_count += 1
+        logger.info(
+            "chat.ws send channel=%s latency_ms=%.1f count=%s",
+            msg.channel_id,
+            latency_ms,
+            self._send_count,
+        )
+        dto, _ = serialize_message(sent)
+        await emit_event(
+            {
+                "channel": str(msg.channel_id),
+                "op": "mc",
+                "d": dto.model_dump(by_alias=True, exclude_none=True),
+            }
+        )
+        return True, 0.0
 
     async def _send_resync(self, websocket: WebSocket, channel: str) -> None:
         cursor = self._channel_cursors.get(channel, 0)
@@ -222,7 +328,7 @@ class ChatConnectionManager:
         if len(attachments) > MAX_ATTACHMENTS:
             logger.warning("chat.ws too many attachments channel=%s", channel_id)
             return
-        files = []
+        file_data: List[tuple[str, bytes]] = []
         for a in attachments:
             b64 = a.get("data") or a.get("content")
             if not b64:
@@ -234,9 +340,7 @@ class ChatConnectionManager:
             if len(file_bytes) > MAX_ATTACHMENT_SIZE:
                 logger.warning("chat.ws attachment too large channel=%s", channel_id)
                 return
-            files.append(
-                discord.File(io.BytesIO(file_bytes), filename=a.get("filename", "file"))
-            )
+            file_data.append((a.get("filename", "file"), file_bytes))
 
         try:
             for e in embeds_payload:
@@ -251,33 +355,16 @@ class ChatConnectionManager:
             if info.ctx.user.character_name
             else "DemiCat"
         )
-        start = time.perf_counter()
-        try:
-            webhook = discord.Webhook.from_url(webhook_url, client=discord_client)
-            sent = await webhook.send(
-                content,
-                username=username,
-                avatar_url=avatar_url,
-                files=files or None,
-                wait=True,
-            )
-        except Exception:
-            logger.exception("chat.ws webhook send failed channel=%s", channel_id)
-            return
-        latency_ms = (time.perf_counter() - start) * 1000
-        self._send_count += 1
-        logger.info(
-            "chat.ws send channel=%s latency_ms=%.1f count=%s",
-            channel_id,
-            latency_ms,
-            self._send_count,
+        msg = PendingWebhookMessage(
+            channel_id=channel_id,
+            webhook_url=webhook_url,
+            content=content,
+            username=username,
+            avatar_url=avatar_url,
+            attachments=file_data,
+            payload=payload,
         )
-        dto, _ = serialize_message(sent)
-        await emit_event({
-            "channel": str(channel_id),
-            "op": "mc",
-            "d": dto.model_dump(by_alias=True, exclude_none=True),
-        })
+        await self._queue_webhook(msg)
 
 
 manager = ChatConnectionManager()
