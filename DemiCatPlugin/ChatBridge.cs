@@ -35,8 +35,10 @@ public class ChatBridge : IDisposable
     private long _backfillBatches;
     private int _sendCount;
     private double _sendLatencyTotal;
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public event Action<string>? MessageReceived;
+    public event Action<DiscordUserDto>? TypingReceived;
     public event Action? Linked;
     public event Action? Unlinked;
     public event Action<string>? StatusChanged;
@@ -253,6 +255,15 @@ public class ChatBridge : IDisposable
                             if (id != null)
                             {
                                 MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}");
+                            }
+                        }
+                        else if (mOp == "ty")
+                        {
+                            var payload = msg.GetProperty("d").GetRawText();
+                            var author = JsonSerializer.Deserialize<DiscordUserDto>(payload, JsonOpts);
+                            if (author != null)
+                            {
+                                TypingReceived?.Invoke(author);
                             }
                         }
                     }
