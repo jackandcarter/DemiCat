@@ -36,24 +36,31 @@ async def get_channels(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    if kind == ChannelKind.EVENT.value:
+    # Allow fetching a single channel kind for plugin convenience
+    single_kinds = {
+        ChannelKind.EVENT.value: ChannelKind.EVENT,
+        ChannelKind.FC_CHAT.value: ChannelKind.FC_CHAT,
+        ChannelKind.OFFICER_CHAT.value: ChannelKind.OFFICER_CHAT,
+    }
+    if kind in single_kinds:
+        channel_kind = single_kinds[kind]
         result = await db.execute(
             select(GuildChannel.channel_id, GuildChannel.name).where(
                 GuildChannel.guild_id == ctx.guild.id,
-                GuildChannel.kind == ChannelKind.EVENT,
+                GuildChannel.kind == channel_kind,
             )
         )
         channels: list[dict[str, str]] = []
         updated = False
         for channel_id, name in result.all():
             new_name = await ensure_channel_name(
-                db, ctx.guild.id, channel_id, ChannelKind.EVENT, name
+                db, ctx.guild.id, channel_id, channel_kind, name
             )
             if new_name is None:
                 logging.warning(
                     "Channel name missing for %s (%s) in guild %s",
                     channel_id,
-                    ChannelKind.EVENT.value,
+                    channel_kind.value,
                     ctx.guild.id,
                 )
                 channels.append({"id": str(channel_id), "name": str(channel_id)})
@@ -63,7 +70,7 @@ async def get_channels(
                         .where(
                             GuildChannel.guild_id == ctx.guild.id,
                             GuildChannel.channel_id == channel_id,
-                            GuildChannel.kind == ChannelKind.EVENT,
+                            GuildChannel.kind == channel_kind,
                         )
                         .values(name=None)
                     )
@@ -90,25 +97,29 @@ async def get_channels(
         kind.value: [] for kind in plugin_kinds
     }
     updated = False
-    for kind, channel_id, name in result.all():
-        if kind not in plugin_kinds:
+    for chan_kind, channel_id, name in result.all():
+        if chan_kind not in plugin_kinds:
             continue
-        new_name = await ensure_channel_name(db, ctx.guild.id, channel_id, kind, name)
+        new_name = await ensure_channel_name(
+            db, ctx.guild.id, channel_id, chan_kind, name
+        )
         if new_name is None:
             logging.warning(
                 "Channel name missing for %s (%s) in guild %s",
                 channel_id,
-                kind.value,
+                chan_kind.value,
                 ctx.guild.id,
             )
-            by_kind[kind.value].append({"id": str(channel_id), "name": str(channel_id)})
+            by_kind[chan_kind.value].append(
+                {"id": str(channel_id), "name": str(channel_id)}
+            )
             if name is not None:
                 await db.execute(
                     update(GuildChannel)
                     .where(
                         GuildChannel.guild_id == ctx.guild.id,
                         GuildChannel.channel_id == channel_id,
-                        GuildChannel.kind == kind,
+                        GuildChannel.kind == chan_kind,
                     )
                     .values(name=None)
                 )
@@ -117,7 +128,7 @@ async def get_channels(
         if new_name != name:
             name = new_name
             updated = True
-        by_kind[kind.value].append({"id": str(channel_id), "name": name})
+        by_kind[chan_kind.value].append({"id": str(channel_id), "name": name})
     if updated:
         await db.commit()
         await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
