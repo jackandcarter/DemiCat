@@ -19,6 +19,7 @@ DemiCat/
 - **SyncShell** – Work-in-progress replacement for the Mare Synchronos mod-sharing plugin. Syncs Penumbra mod lists to replicate player appearances and is disabled by default while under development (see `DemiCatPlugin/SyncshellWindow.cs`).
 - **FC Chat** – Mirror Discord conversations directly in game.
 - **Officer** – Administrative tools for event staff and moderators.
+  - Officer chat window now includes a padded area beneath the input box reserved for future features.
 
 ### DemiBot Services
 
