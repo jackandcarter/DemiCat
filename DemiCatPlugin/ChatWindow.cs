@@ -5,7 +5,6 @@ using System.Net.Http.Headers;
 using System.Net;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Numerics;
 using System.Threading.Tasks;
@@ -994,7 +993,8 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+            var request = new HttpRequestMessage(HttpMethod.Get,
+                $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind={ChannelKind.FcChat}");
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
@@ -1012,11 +1012,11 @@ public class ChatWindow : IDisposable
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            if (await ChannelNameResolver.Resolve(dto.Chat, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            var channels = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream) ?? new();
+            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                SetChannels(dto.Chat);
+                SetChannels(channels);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
@@ -1170,8 +1170,4 @@ public class ChatWindow : IDisposable
         });
     }
 
-    protected class ChannelListDto
-    {
-        [JsonPropertyName(ChannelKind.FcChat)] public List<ChannelDto> Chat { get; set; } = new();
-    }
 }

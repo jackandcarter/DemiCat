@@ -2,8 +2,8 @@ using Dalamud.Bindings.ImGui;
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
+using System.Net;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 
 namespace DemiCatPlugin;
@@ -74,7 +74,8 @@ public class OfficerChatWindow : ChatWindow
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+            var request = new HttpRequestMessage(HttpMethod.Get,
+                $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind={ChannelKind.OfficerChat}");
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
@@ -84,18 +85,20 @@ public class OfficerChatWindow : ChatWindow
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _channelFetchFailed = true;
-                    _channelErrorMessage = "Failed to load channels";
+                    _channelErrorMessage = response.StatusCode == HttpStatusCode.Forbidden
+                        ? "Forbidden – check API key/roles"
+                        : "Failed to load channels";
                     _channelsLoaded = true;
                 });
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<OfficerChannelListDto>(stream) ?? new();
-            if (await ChannelNameResolver.Resolve(dto.Officer, _httpClient, _config, refreshed, () => FetchChannels(true)))
+            var channels = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream) ?? new();
+            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
                 return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                SetChannels(dto.Officer);
+                SetChannels(channels);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
@@ -128,10 +131,5 @@ public class OfficerChatWindow : ChatWindow
         return builder.Uri;
     }
 
-    private class OfficerChannelListDto
-    {
-        [JsonPropertyName(ChannelKind.OfficerChat)]
-        public List<ChannelDto> Officer { get; set; } = new();
-    }
 }
 
