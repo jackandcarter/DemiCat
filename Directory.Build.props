@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <DalamudLibPath>/root/.xlcore/dalamud/Hooks/dev</DalamudLibPath>
+  </PropertyGroup>
+</Project>

@@ -6,9 +6,9 @@ namespace DemiCat.UI;
 
 public sealed class ButtonRowEditor
 {
-    private const int MaxRows = 5;
+    private const int MaxRows   = 5;
     private const int MaxPerRow = 5;
-    private const int MaxTotal = 25;
+    private const int MaxTotal  = 25;
 
     // Represents a row of button labels (or IDs) the plugin will later map to actual actions.
     private readonly List<List<string>> _rows;
@@ -96,8 +96,12 @@ public sealed class ButtonRowEditor
     {
         // Ensure at least one row, and each row <= MaxPerRow, total <= MaxTotal.
         if (_rows.Count == 0) _rows.Add(new List<string>());
+
+        // Cap total rows
         if (_rows.Count > MaxRows)
             _rows.RemoveRange(MaxRows, _rows.Count - MaxRows);
+
+        // Cap each row
         for (int r = 0; r < _rows.Count; r++)
         {
             if (_rows[r].Count > MaxPerRow)

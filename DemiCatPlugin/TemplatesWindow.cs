@@ -101,12 +101,13 @@ public class TemplatesWindow
                         _mentions.Add(m.ToString());
                 }
 
-                var rowsInit = tmplItem.Buttons
+                var rowsInit = (tmplItem.Buttons ?? Enumerable.Empty<TemplateButton>())
                     .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
                     .Select(b => b.Label)
                     .Chunk(5)
                     .Select(chunk => chunk.ToList())
                     .ToList();
+
                 _buttonRows = new ButtonRowEditor(
                     rowsInit.Count > 0
                         ? rowsInit
@@ -374,12 +375,13 @@ public class TemplatesWindow
             ts = parsed;
         }
 
+
         var rowsForDto = _buttonRows.Value
             .Select((row, rIdx) => row
                 .Where(label => !string.IsNullOrWhiteSpace(label))
                 .Select((label, cIdx) =>
                 {
-                    var lbl = Truncate(label.Trim(), 80);
+                    var lbl = Truncate(label.Trim(), 80); // Discord label limit
                     return new EmbedButtonDto
                     {
                         Label = lbl,
@@ -403,6 +405,7 @@ public class TemplatesWindow
             Buttons = rowsForDto.Count > 0 ? rowsForDto.SelectMany(r => r).ToList() : null,
             Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
+
     }
 
     private async Task PostTemplate(Template tmpl)
@@ -428,18 +431,19 @@ public class TemplatesWindow
         }
         try
         {
+
             var buttonsFlat = _buttonRows.Value
                 .SelectMany((row, rIdx) => row
                     .Where(label => !string.IsNullOrWhiteSpace(label))
                     .Select((label, cIdx) =>
                     {
-                        var lbl = Truncate(label.Trim(), 80);
+                        var lbl = Truncate(label.Trim(), 80); // Discord label limit
                         return new
                         {
                             label = lbl,
                             customId = MakeCustomId(lbl, rIdx, cIdx),
                             rowIndex = rIdx,
-                            style = 1,
+                            style = 1,             // Primary
                             emoji = (string?)null,
                             maxSignups = (int?)null,
                             width = (int?)null,
@@ -452,23 +456,21 @@ public class TemplatesWindow
             {
                 channelId = _channelId,
                 title = tmpl.Title,
-                time = string.IsNullOrWhiteSpace(tmpl.Time)
-                    ? DateTime.UtcNow.ToString("O")
-                    : tmpl.Time,
+                time = string.IsNullOrWhiteSpace(tmpl.Time) ? DateTime.UtcNow.ToString("O") : tmpl.Time,
                 description = tmpl.Description,
                 url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
                 imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
                 thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
                 color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
                 fields = tmpl.Fields != null && tmpl.Fields.Count > 0
-                    ? tmpl.Fields
-                        .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
-                        .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
-                        .ToList()
+                    ? tmpl.Fields.Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
+                                 .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
+                                 .ToList()
                     : null,
                 buttons = buttonsFlat.Count > 0 ? buttonsFlat : null,
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
             };
+
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
@@ -488,7 +490,7 @@ public class TemplatesWindow
         if (string.IsNullOrWhiteSpace(slug)) slug = $"btn-{row}-{col}";
         var h = Hash8(label);
         var id = $"rsvp:{slug}:{h}";
-        return Truncate(id, 100);
+        return Truncate(id, 100); // Discord custom_id limit
     }
 
     private static string Sanitize(string s) =>
