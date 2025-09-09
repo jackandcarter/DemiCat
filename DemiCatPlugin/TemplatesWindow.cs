@@ -93,54 +93,7 @@ public class TemplatesWindow
             var name = tmplItem.Name;
             if (ImGui.Selectable(name, _selectedIndex == i))
             {
-                _selectedIndex = i;
-                _showPreview = false;
-                _mentions.Clear();
-                if (tmplItem.Mentions != null)
-                {
-                    foreach (var m in tmplItem.Mentions)
-                        _mentions.Add(m.ToString());
-                }
-
-                var buttonsList = tmplItem.Buttons ?? new List<Template.TemplateButton>();
-                var changed = false;
-                foreach (var btn in buttonsList)
-                {
-                    if (string.IsNullOrWhiteSpace(btn.Tag))
-                    {
-                        btn.Tag = Guid.NewGuid().ToString();
-                        changed = true;
-                    }
-                }
-
-                List<List<ButtonData>> rowsInit = buttonsList
-                    .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
-                    .Chunk(5)
-                    .Select(chunk => chunk.Select(b => new ButtonData
-                    {
-                        Tag = b.Tag,
-                        Label = b.Label,
-                        Style = b.Style,
-                        Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                        MaxSignups = b.MaxSignups,
-                        Width = b.Width,
-                        Height = b.Height
-                    }).ToList())
-                    .ToList();
-
-                if (changed)
-                {
-                    SaveConfig();
-                }
-
-                _buttonRows = new ButtonRows(
-                    rowsInit.Count != 0
-                        ? rowsInit
-                        : new()
-                        {
-                            new() { new ButtonData { Label = "RSVP: Yes" }, new ButtonData { Label = "RSVP: Maybe" } },
-                            new() { new ButtonData { Label = "RSVP: No" } }
-                        });
+                SelectTemplate(i, tmplItem);
             }
         }
         ImGui.EndChild();
@@ -153,9 +106,7 @@ public class TemplatesWindow
             var tmpl = filteredTemplates[_selectedIndex];
             if (ImGui.Button("Preview"))
             {
-                _previewEvent?.Dispose();
-                _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask);
-                _showPreview = true;
+                OpenPreview(tmpl);
             }
             ImGui.SameLine();
             if (ImGui.Button("Post"))
@@ -238,14 +189,76 @@ public class TemplatesWindow
             ImGui.TextUnformatted(_lastResult);
         }
 
-        if (_showPreview)
+        if (_showPreview && _previewEvent != null)
         {
             if (ImGui.Begin("Template Preview", ref _showPreview))
             {
-                _previewEvent?.Draw();
+                _previewEvent.Draw();
             }
             ImGui.End();
         }
+    }
+
+    internal void SelectTemplate(int index, Template tmplItem)
+    {
+        _previewEvent?.Dispose();
+        _previewEvent = null;
+
+        _selectedIndex = index;
+        _showPreview = false;
+        _mentions.Clear();
+        if (tmplItem.Mentions != null)
+        {
+            foreach (var m in tmplItem.Mentions)
+                _mentions.Add(m.ToString());
+        }
+
+        var buttonsList = tmplItem.Buttons ?? new List<Template.TemplateButton>();
+        var changed = false;
+        foreach (var btn in buttonsList)
+        {
+            if (string.IsNullOrWhiteSpace(btn.Tag))
+            {
+                btn.Tag = Guid.NewGuid().ToString();
+                changed = true;
+            }
+        }
+
+        List<List<ButtonData>> rowsInit = buttonsList
+            .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
+            .Chunk(5)
+            .Select(chunk => chunk.Select(b => new ButtonData
+            {
+                Tag = b.Tag,
+                Label = b.Label,
+                Style = b.Style,
+                Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                MaxSignups = b.MaxSignups,
+                Width = b.Width,
+                Height = b.Height
+            }).ToList())
+            .ToList();
+
+        if (changed)
+        {
+            SaveConfig();
+        }
+
+        _buttonRows = new ButtonRows(
+            rowsInit.Count != 0
+                ? rowsInit
+                : new()
+                {
+                    new() { new ButtonData { Label = "RSVP: Yes" }, new ButtonData { Label = "RSVP: Maybe" } },
+                    new() { new ButtonData { Label = "RSVP: No" } }
+                });
+    }
+
+    internal void OpenPreview(Template tmpl)
+    {
+        _previewEvent?.Dispose();
+        _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask);
+        _showPreview = true;
     }
 
     private void SaveConfig()
