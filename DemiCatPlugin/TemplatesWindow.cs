@@ -376,19 +376,38 @@ public class TemplatesWindow
         int? width,
         int? height);
 
-    internal List<ButtonPayload> BuildButtonsPayload()
+    internal List<ButtonPayload> BuildButtonsPayload(Template tmpl)
     {
+        var srcButtons = (tmpl.Buttons ?? new List<Template.TemplateButton>())
+            .Where(b => !string.IsNullOrWhiteSpace(b.Label))
+            .ToDictionary(b => b.Label);
         return _buttonRows.FlattenNonEmpty()
-            .Select(x => new ButtonPayload(
-                Truncate(x.Label.Trim(), 80),
-                MakeCustomId(x.Label.Trim(), x.RowIndex, x.ColIndex),
-                x.RowIndex,
-                (int)ButtonStyle.Primary,
-                null,
-                null,
-                null,
-                null))
+            .Select(x =>
+            {
+                srcButtons.TryGetValue(x.Label, out var b);
+                return new ButtonPayload(
+                    Truncate(x.Label.Trim(), 80),
+                    MakeCustomId(x.Label.Trim(), x.RowIndex, x.ColIndex),
+                    x.RowIndex,
+                    (int)(b?.Style ?? ButtonStyle.Primary),
+                    NormalizeEmoji(b?.Emoji),
+                    b?.MaxSignups,
+                    b?.Width,
+                    b?.Height);
+            })
             .ToList();
+    }
+
+    private static string? NormalizeEmoji(string? emoji)
+    {
+        if (string.IsNullOrWhiteSpace(emoji)) return null;
+        if (emoji.StartsWith("custom:", StringComparison.OrdinalIgnoreCase))
+        {
+            var id = emoji.Substring("custom:".Length);
+            var name = EmojiPopup.LookupGuildName(id) ?? "emoji";
+            return $"<:{name}:{id}>";
+        }
+        return emoji;
     }
 
 
@@ -400,7 +419,7 @@ public class TemplatesWindow
             ts = parsed;
         }
 
-        var buttons = BuildButtonsPayload()
+        var buttons = BuildButtonsPayload(tmpl)
             .Select(b => new EmbedButtonDto
             {
                 Label = b.label,
@@ -453,7 +472,7 @@ public class TemplatesWindow
         try
         {
 
-            var buttonsFlat = BuildButtonsPayload();
+            var buttonsFlat = BuildButtonsPayload(tmpl);
             if (buttonsFlat.Count == 0)
             {
                 _lastResult = "Add at least one button";
