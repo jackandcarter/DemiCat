@@ -28,7 +28,7 @@ public class TemplateButtonRoundTripTests
     [Fact]
     public void ToEmbedDto_UsesButtonLabels()
     {
-        var rows = new ButtonRows(new() { new() { "Join" } });
+        var rows = new ButtonRows(new() { new() { new ButtonData { Label = "Join" } } });
         rows.SetLabel(0, 0, "Signup");
 
         var window = CreateWindow(rows);
@@ -47,13 +47,14 @@ public class TemplateButtonRoundTripTests
     [Fact]
     public void BuildButtonsPayload_ProducesMetadata()
     {
-        var rows = new ButtonRows(new() { new() { "Join" } });
+        var rows = new ButtonRows(new() { new() { new ButtonData { Label = "Join" } } });
         var window = CreateWindow(rows);
 
-        var payload = window.BuildButtonsPayload();
+        var payload = window.BuildButtonsPayload(new Template());
         var btn = Assert.Single(payload);
         Assert.Equal("Join", btn.label);
         Assert.Equal((int)ButtonStyle.Primary, btn.style);
+        Assert.Equal(0, btn.rowIndex);
 
         Assert.Null(btn.emoji);
         Assert.Null(btn.maxSignups);

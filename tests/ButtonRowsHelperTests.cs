@@ -9,7 +9,7 @@ public class ButtonRowsHelperTests
     public void NormalizesMaxPerRowAndTotal()
     {
         var data = Enumerable.Range(0, 10)
-            .Select(_ => Enumerable.Range(0, 10).Select(i => $"Btn {i}").ToList())
+            .Select(_ => Enumerable.Range(0, 10).Select(i => new ButtonData { Label = $"Btn {i}" }).ToList())
             .ToList();
         var rows = new ButtonRows(data);
         Assert.Equal(ButtonRows.MaxRows, rows.Rows.Count);

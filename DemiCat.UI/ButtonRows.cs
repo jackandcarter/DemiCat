@@ -10,16 +10,16 @@ public sealed class ButtonRows
     public const int MaxPerRow = 5;
     public const int MaxTotal  = 25;
 
-    private readonly List<List<string>> _rows;
+    private readonly List<List<ButtonData>> _rows;
 
-    public ButtonRows(List<List<string>> initial)
+    public ButtonRows(List<List<ButtonData>> initial)
     {
         _rows = initial ?? new();
         if (_rows.Count == 0) _rows.Add(new());
         Normalize();
     }
 
-    public IReadOnlyList<IReadOnlyList<string>> Rows => _rows;
+    public IReadOnlyList<IReadOnlyList<ButtonData>> Rows => _rows;
 
     public int TotalCount => _rows.Sum(r => r.Count);
 
@@ -45,10 +45,10 @@ public sealed class ButtonRows
         Normalize();
     }
 
-    public void AddButton(int row, string label = "New Button")
+    public void AddButton(int row, ButtonData? data = null)
     {
         if (!CanAddToRow(row)) return;
-        _rows[row].Add(label);
+        _rows[row].Add(data ?? new ButtonData { Label = "New Button" });
         Normalize();
     }
 
@@ -64,13 +64,13 @@ public sealed class ButtonRows
     {
         if (row < 0 || row >= _rows.Count) return;
         if (col < 0 || col >= _rows[row].Count) return;
-        _rows[row][col] = newLabel ?? string.Empty;
+        _rows[row][col].Label = newLabel ?? string.Empty;
     }
 
-    public IEnumerable<(int RowIndex, int ColIndex, string Label)> FlattenNonEmpty() =>
+    public IEnumerable<(int RowIndex, int ColIndex, ButtonData Data)> FlattenNonEmpty() =>
         _rows.SelectMany((row, r) => row
-            .Select((label, c) => (RowIndex: r, ColIndex: c, Label: label))
-            .Where(x => !string.IsNullOrWhiteSpace(x.Label)));
+            .Select((data, c) => (RowIndex: r, ColIndex: c, Data: data))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Data.Label)));
 
     private void Normalize()
     {

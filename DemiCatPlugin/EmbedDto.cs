@@ -55,12 +55,3 @@ public class EmbedAuthorDto
     public string? Url { get; set; }
     public string? IconUrl { get; set; }
 }
-
-public enum ButtonStyle
-{
-    Primary = 1,
-    Secondary = 2,
-    Success = 3,
-    Danger = 4,
-    Link = 5,
-}

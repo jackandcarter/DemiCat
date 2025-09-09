@@ -1,5 +1,4 @@
 using ImGuiNET;
-using System.Linq;
 using DemiCat.UI;
 
 namespace DemiCatPlugin;
@@ -25,7 +24,7 @@ public static class ButtonRowsImGui
             for (int c = 0; c < state.Rows[r].Count; c++)
             {
                 ImGui.PushID(c);
-                var buf = state.Rows[r][c];
+                var buf = state.Rows[r][c].Label;
                 if (ImGui.InputText("##label", ref buf, 128))
                     state.SetLabel(r, c, buf);
 
