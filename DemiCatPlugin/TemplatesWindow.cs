@@ -10,6 +10,7 @@ using System.Linq;
 using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
+using DemiCat.UI;
 
 namespace DemiCatPlugin;
 
@@ -32,6 +33,11 @@ public class TemplatesWindow
     private readonly List<RoleDto> _roles = new();
     private readonly HashSet<string> _mentions = new();
     private bool _rolesLoaded;
+    private ButtonRowEditor _buttonRows = new(new()
+    {
+        new() { "RSVP: Yes", "RSVP: Maybe" },
+        new() { "RSVP: No" }
+    });
 
     public TemplatesWindow(Config config, HttpClient httpClient)
     {
@@ -94,6 +100,21 @@ public class TemplatesWindow
                     foreach (var m in tmplItem.Mentions)
                         _mentions.Add(m.ToString());
                 }
+
+                var rowsInit = tmplItem.Buttons
+                    .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
+                    .Select(b => b.Label)
+                    .Chunk(5)
+                    .Select(chunk => chunk.ToList())
+                    .ToList();
+                _buttonRows = new ButtonRowEditor(
+                    rowsInit.Count > 0
+                        ? rowsInit
+                        : new()
+                        {
+                            new() { "RSVP: Yes", "RSVP: Maybe" },
+                            new() { "RSVP: No" }
+                        });
             }
         }
         ImGui.EndChild();
@@ -139,6 +160,8 @@ public class TemplatesWindow
                     ImGui.TextUnformatted(msg);
                 }
             }
+
+            _buttonRows.Draw("template-button-rows");
             if (_confirmPost)
                 ImGui.OpenPopup("Confirm Template Post");
             var openConfirm = _confirmPost;
@@ -343,6 +366,18 @@ public class TemplatesWindow
             ts = parsed;
         }
 
+        var rowsForDto = _buttonRows.Value
+            .Select((row, rIdx) => row
+                .Where(label => !string.IsNullOrWhiteSpace(label))
+                .Select((label, cIdx) => new EmbedButtonDto
+                {
+                    Label = label,
+                    CustomId = MakeCustomId(label, rIdx, cIdx),
+                    Style = ButtonStyle.Primary
+                }).ToList())
+            .Where(r => r.Count > 0)
+            .ToList();
+
         return new EmbedDto
         {
             Title = tmpl.Title,
@@ -353,16 +388,7 @@ public class TemplatesWindow
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
             Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
             Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
-            Buttons = tmpl.Buttons?.Where(b => b.Include).Select(b => new EmbedButtonDto
-            {
-                Label = b.Label,
-                CustomId = $"rsvp:{b.Tag}",
-                Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                Style = b.Style,
-                MaxSignups = b.MaxSignups,
-                Width = b.Width,
-                Height = b.Height
-            }).ToList(),
+            Buttons = rowsForDto.Count > 0 ? rowsForDto.SelectMany(r => r).ToList() : null,
             Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
     }
@@ -382,20 +408,28 @@ public class TemplatesWindow
             _lastResult = "Description exceeds 2000 characters";
             return;
         }
+        if (!DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl) ||
+            !DiscordValidation.IsImageUrlAllowed(tmpl.ThumbnailUrl))
+        {
+            _lastResult = "Invalid image or thumbnail URL";
+            return;
+        }
         try
         {
-            var buttons = tmpl.Buttons?
-                .Where(b => b.Include)
-                .Select(b => new
-                {
-                    label = b.Label,
-                    customId = $"rsvp:{b.Tag}",
-                    emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                    style = (int)b.Style,
-                    maxSignups = b.MaxSignups,
-                    width = b.Width,
-                    height = b.Height
-                })
+            var buttonsFlat = _buttonRows.Value
+                .SelectMany((row, rIdx) => row
+                    .Where(label => !string.IsNullOrWhiteSpace(label))
+                    .Select((label, cIdx) => new
+                    {
+                        label,
+                        customId = MakeCustomId(label, rIdx, cIdx),
+                        rowIndex = rIdx,
+                        style = 1,
+                        emoji = (string?)null,
+                        maxSignups = (int?)null,
+                        width = (int?)null,
+                        height = (int?)null
+                    }))
                 .ToList();
 
             var body = new
@@ -415,8 +449,8 @@ public class TemplatesWindow
                         .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
                         .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
                         .ToList()
-                : null,
-                buttons = buttons != null && buttons.Count > 0 ? buttons : null,
+                    : null,
+                buttons = buttonsFlat.Count > 0 ? buttonsFlat : null,
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
             };
 
@@ -429,6 +463,30 @@ public class TemplatesWindow
         catch
         {
             _lastResult = "Failed to post template";
+        }
+    }
+
+    private static string MakeCustomId(string label, int row, int col)
+    {
+        var slug = Sanitize(label);
+        if (string.IsNullOrWhiteSpace(slug)) slug = $"btn-{row}-{col}";
+        var h = Hash8(label);
+        return $"rsvp:{slug}:{h}";
+    }
+
+    private static string Sanitize(string s) =>
+        new string(s.ToLowerInvariant()
+            .Where(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_')
+            .ToArray());
+
+    private static string Hash8(string s)
+    {
+        unchecked
+        {
+            uint hash = 2166136261;
+            foreach (var ch in s)
+                hash = (hash ^ ch) * 16777619;
+            return hash.ToString("x8");
         }
     }
 
