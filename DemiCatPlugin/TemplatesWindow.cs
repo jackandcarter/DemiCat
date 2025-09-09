@@ -359,7 +359,9 @@ public class TemplatesWindow
                 CustomId = $"rsvp:{b.Tag}",
                 Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
                 Style = b.Style,
-                MaxSignups = b.MaxSignups
+                MaxSignups = b.MaxSignups,
+                Width = b.Width,
+                Height = b.Height
             }).ToList(),
             Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
@@ -390,7 +392,9 @@ public class TemplatesWindow
                     customId = $"rsvp:{b.Tag}",
                     emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
                     style = (int)b.Style,
-                    maxSignups = b.MaxSignups
+                    maxSignups = b.MaxSignups,
+                    width = b.Width,
+                    height = b.Height
                 })
                 .ToList();
 

@@ -14,6 +14,8 @@ AUTHOR_NAME_LIMIT = 256
 TOTAL_CHAR_LIMIT = 6000
 BUTTON_LABEL_LIMIT = 80
 BUTTON_COUNT_LIMIT = 25
+BUTTON_WIDTH_LIMIT = 5
+BUTTON_HEIGHT_LIMIT = 5
 
 
 def _check_url(name: str, url: str | None) -> None:
@@ -88,6 +90,7 @@ def validate_embed_payload(dto: EmbedDto, buttons: List[EmbedButtonDto]) -> None
 
     # Buttons
     if buttons:
+        total_slots = 0
         if len(buttons) > BUTTON_COUNT_LIMIT:
             logging.warning("Embed has %d buttons, limit is %d", len(buttons), BUTTON_COUNT_LIMIT)
             raise HTTPException(422, detail="Too many buttons")
@@ -96,3 +99,17 @@ def validate_embed_payload(dto: EmbedDto, buttons: List[EmbedButtonDto]) -> None
                 logging.warning("Button label exceeds %d characters", BUTTON_LABEL_LIMIT)
                 raise HTTPException(422, detail="Button label too long")
             _check_url("button url", btn.url)
+            width = btn.width or 1
+            height = btn.height or 1
+            if width < 1 or width > BUTTON_WIDTH_LIMIT:
+                logging.warning("Button width %d out of range", width)
+                raise HTTPException(422, detail="Invalid button width")
+            if height < 1 or height > BUTTON_HEIGHT_LIMIT:
+                logging.warning("Button height %d out of range", height)
+                raise HTTPException(422, detail="Invalid button height")
+            total_slots += width * height
+        if total_slots > BUTTON_COUNT_LIMIT:
+            logging.warning(
+                "Embed has %d button slots, limit is %d", total_slots, BUTTON_COUNT_LIMIT
+            )
+            raise HTTPException(422, detail="Too many buttons")
