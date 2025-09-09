@@ -568,7 +568,7 @@ public class EventCreateWindow
                 .ToList(),
             Buttons = _buttons
                 .Where(b => b.Include)
-                .Select(b => new EmbedButtonDto
+                .Select((b, i) => new EmbedButtonDto
                 {
                     Label = b.Label,
                     CustomId = $"rsvp:{b.Tag}",
@@ -577,7 +577,7 @@ public class EventCreateWindow
                     MaxSignups = b.MaxSignups,
                     Width = b.Width,
                     Height = b.Height,
-                    RowIndex = b.RowIndex
+                    RowIndex = i / 5
                 })
                 .ToList()
         };
