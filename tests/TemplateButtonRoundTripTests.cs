@@ -54,6 +54,7 @@ public class TemplateButtonRoundTripTests
         var btn = Assert.Single(payload);
         Assert.Equal("Join", btn.label);
         Assert.Equal((int)ButtonStyle.Primary, btn.style);
+
         Assert.Null(btn.emoji);
         Assert.Null(btn.maxSignups);
         Assert.Null(btn.width);

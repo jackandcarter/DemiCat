@@ -379,8 +379,8 @@ public class TemplatesWindow
     {
         return _buttonRows.FlattenNonEmpty()
             .Select(x => new ButtonPayload(
-                IdHelpers.Truncate(x.Label.Trim(), 80),
-                IdHelpers.MakeCustomId(x.Label.Trim(), x.RowIndex, x.ColIndex),
+                Truncate(x.Label.Trim(), 80),
+                MakeCustomId(x.Label.Trim(), x.RowIndex, x.ColIndex),
                 x.RowIndex,
                 (int)ButtonStyle.Primary,
                 null,
@@ -389,6 +389,7 @@ public class TemplatesWindow
                 null))
             .ToList();
     }
+
 
     internal EmbedDto ToEmbedDto(Template tmpl)
     {
