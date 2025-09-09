@@ -80,4 +80,21 @@ public class TemplateButtonRoundTripTests
         var btn = Assert.Single(payload);
         Assert.Equal("Join", btn.label);
     }
+
+    [Fact]
+    public void BuildButtonsPayload_AssignsDistinctIdsForDuplicateLabels()
+    {
+        var rows = new ButtonRows(new()
+        {
+            new() { new ButtonData { Label = "Join" }, new ButtonData { Label = "Join" } },
+            new() { new ButtonData { Label = "Join" } }
+        });
+        var window = CreateWindow(rows);
+
+        var payload = window.BuildButtonsPayload(new Template());
+        Assert.Equal(3, payload.Count);
+        Assert.NotEqual(payload[0].customId, payload[1].customId);
+        Assert.NotEqual(payload[0].customId, payload[2].customId);
+        Assert.NotEqual(payload[1].customId, payload[2].customId);
+    }
 }

@@ -13,7 +13,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto, AttachmentDto
+from ..schemas import EmbedDto, EmbedFieldDto, EmbedButtonDto, AttachmentDto, ButtonStyle
 from ..validation import validate_embed_payload
 from ..ws import manager
 from ..chat_events import emit_event
@@ -178,6 +178,14 @@ async def create_event(
                     if len(row_buttons) > 5:
                         raise HTTPException(422, "Too many buttons in row (max 5)")
                     for b in row_buttons:
+                        if b.style == ButtonStyle.link:
+                            if not b.url:
+                                raise HTTPException(422, "Link buttons require a URL")
+                            b.custom_id = None
+                        else:
+                            if not b.custom_id:
+                                raise HTTPException(422, "Non-link buttons require customId")
+                            b.url = None
                         style = (
                             discord.ButtonStyle(b.style)
                             if b.style is not None
