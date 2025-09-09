@@ -36,8 +36,8 @@ public class TemplatesWindow
     private bool _rolesLoaded;
     private ButtonRows _buttonRows = new(new()
     {
-        new() { "RSVP: Yes", "RSVP: Maybe" },
-        new() { "RSVP: No" }
+        new() { new ButtonData { Label = "RSVP: Yes" }, new ButtonData { Label = "RSVP: Maybe" } },
+        new() { new ButtonData { Label = "RSVP: No" } }
     });
 
     public TemplatesWindow(Config config, HttpClient httpClient)
@@ -105,7 +105,15 @@ public class TemplatesWindow
                 var rowsInit = (tmplItem.Buttons ?? Enumerable.Empty<TemplateButton>())
                     .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
                     .Chunk(5)
-                    .Select(chunk => chunk.Select(b => b.Label).ToList())
+                    .Select(chunk => chunk.Select(b => new ButtonData
+                    {
+                        Label = b.Label,
+                        Style = b.Style,
+                        Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                        MaxSignups = b.MaxSignups,
+                        Width = b.Width,
+                        Height = b.Height
+                    }).ToList())
                     .ToList();
 
                 _buttonRows = new ButtonRows(
@@ -113,8 +121,8 @@ public class TemplatesWindow
                         ? rowsInit
                         : new()
                         {
-                            new() { "RSVP: Yes", "RSVP: Maybe" },
-                            new() { "RSVP: No" }
+                            new() { new ButtonData { Label = "RSVP: Yes" }, new ButtonData { Label = "RSVP: Maybe" } },
+                            new() { new ButtonData { Label = "RSVP: No" } }
                         });
             }
         }
@@ -384,16 +392,17 @@ public class TemplatesWindow
         return _buttonRows.FlattenNonEmpty()
             .Select(x =>
             {
-                srcButtons.TryGetValue(x.Label, out var b);
+                var label = x.Data.Label.Trim();
+                srcButtons.TryGetValue(label, out var b);
                 return new ButtonPayload(
-                    Truncate(x.Label.Trim(), 80),
-                    MakeCustomId(x.Label.Trim(), x.RowIndex, x.ColIndex),
+                    Truncate(label, 80),
+                    MakeCustomId(label, x.RowIndex, x.ColIndex),
                     x.RowIndex,
-                    (int)(b?.Style ?? ButtonStyle.Primary),
-                    NormalizeEmoji(b?.Emoji),
-                    b?.MaxSignups,
-                    b?.Width,
-                    b?.Height);
+                    (int)(b?.Style ?? x.Data.Style),
+                    NormalizeEmoji(b?.Emoji ?? x.Data.Emoji),
+                    b?.MaxSignups ?? x.Data.MaxSignups,
+                    b?.Width ?? x.Data.Width,
+                    b?.Height ?? x.Data.Height);
             })
             .ToList();
     }
@@ -429,7 +438,7 @@ public class TemplatesWindow
                 MaxSignups = b.maxSignups,
                 Width = b.width,
                 Height = b.height,
-                RowIndex = b.row
+                RowIndex = b.rowIndex
             })
             .ToList();
 
