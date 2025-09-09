@@ -100,6 +100,21 @@ public class TemplatesWindow
                     foreach (var m in tmplItem.Mentions)
                         _mentions.Add(m.ToString());
                 }
+
+                var rowsInit = tmplItem.Buttons
+                    .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
+                    .Select(b => b.Label)
+                    .Chunk(5)
+                    .Select(chunk => chunk.ToList())
+                    .ToList();
+                _buttonRows = new ButtonRowEditor(
+                    rowsInit.Count > 0
+                        ? rowsInit
+                        : new()
+                        {
+                            new() { "RSVP: Yes", "RSVP: Maybe" },
+                            new() { "RSVP: No" }
+                        });
             }
         }
         ImGui.EndChild();
@@ -351,7 +366,19 @@ public class TemplatesWindow
             ts = parsed;
         }
 
-        var flatButtons = _buttonRows.Value.SelectMany(r => r).ToList();
+
+        var rowsForDto = _buttonRows.Value
+            .Select((row, rIdx) => row
+                .Where(label => !string.IsNullOrWhiteSpace(label))
+                .Select((label, cIdx) => new EmbedButtonDto
+                {
+                    Label = label,
+                    CustomId = MakeCustomId(label, rIdx, cIdx),
+                    Style = ButtonStyle.Primary
+                }).ToList())
+            .Where(r => r.Count > 0)
+            .ToList();
+
 
         return new EmbedDto
         {
@@ -363,6 +390,7 @@ public class TemplatesWindow
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
             Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
             Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
+
             Buttons = flatButtons.Count > 0
                 ? flatButtons.Select((label, idx) => new EmbedButtonDto
                 {
@@ -370,6 +398,7 @@ public class TemplatesWindow
                     CustomId = $"btn{idx}"
                 }).ToList()
                 : null,
+
             Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
     }
@@ -397,6 +426,7 @@ public class TemplatesWindow
         }
         try
         {
+
             var buttonLabels = _buttonRows.Value.SelectMany(r => r).ToList();
             var buttons = buttonLabels.Count > 0
                 ? buttonLabels.Select((label, idx) => new
@@ -405,6 +435,7 @@ public class TemplatesWindow
                     customId = $"btn{idx}"
                 }).ToList()
                 : null;
+
 
             var body = new
             {
@@ -423,8 +454,8 @@ public class TemplatesWindow
                         .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
                         .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
                         .ToList()
-                : null,
-                buttons = buttons != null && buttons.Count > 0 ? buttons : null,
+                    : null,
+                buttons = buttonsFlat.Count > 0 ? buttonsFlat : null,
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
             };
 
@@ -437,6 +468,30 @@ public class TemplatesWindow
         catch
         {
             _lastResult = "Failed to post template";
+        }
+    }
+
+    private static string MakeCustomId(string label, int row, int col)
+    {
+        var slug = Sanitize(label);
+        if (string.IsNullOrWhiteSpace(slug)) slug = $"btn-{row}-{col}";
+        var h = Hash8(label);
+        return $"rsvp:{slug}:{h}";
+    }
+
+    private static string Sanitize(string s) =>
+        new string(s.ToLowerInvariant()
+            .Where(ch => char.IsLetterOrDigit(ch) || ch == '-' || ch == '_')
+            .ToArray());
+
+    private static string Hash8(string s)
+    {
+        unchecked
+        {
+            uint hash = 2166136261;
+            foreach (var ch in s)
+                hash = (hash ^ ch) * 16777619;
+            return hash.ToString("x8");
         }
     }
 
