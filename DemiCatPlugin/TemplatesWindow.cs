@@ -453,6 +453,11 @@ public class TemplatesWindow
         {
 
             var buttonsFlat = BuildButtonsPayload();
+            if (buttonsFlat.Count == 0)
+            {
+                _lastResult = "Add at least one button";
+                return;
+            }
 
             var body = new
             {
@@ -469,7 +474,7 @@ public class TemplatesWindow
                                  .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
                                  .ToList()
                     : null,
-                buttons = buttonsFlat.Count > 0 ? buttonsFlat : null,
+                buttons = buttonsFlat,
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
             };
 
