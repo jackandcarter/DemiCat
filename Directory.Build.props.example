@@ -1,0 +1,5 @@
+<Project>
+  <PropertyGroup>
+    <DalamudLibPath>/path/to/Dalamud/Dependencies</DalamudLibPath>
+  </PropertyGroup>
+</Project>

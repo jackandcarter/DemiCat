@@ -101,12 +101,13 @@ public class TemplatesWindow
                         _mentions.Add(m.ToString());
                 }
 
-                var rowsInit = tmplItem.Buttons
+                var rowsInit = (tmplItem.Buttons ?? Enumerable.Empty<TemplateButton>())
                     .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
                     .Select(b => b.Label)
                     .Chunk(5)
                     .Select(chunk => chunk.ToList())
                     .ToList();
+
                 _buttonRows = new ButtonRowEditor(
                     rowsInit.Count > 0
                         ? rowsInit
@@ -171,6 +172,13 @@ public class TemplatesWindow
                 ImGui.TextUnformatted($"Channel: {channelName}");
                 var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
                 ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+                var buttonsCount = _buttonRows.Value
+                    .SelectMany(row => row.Where(label => !string.IsNullOrWhiteSpace(label))).Count();
+                bool canConfirm = !string.IsNullOrWhiteSpace(_channelId)
+                    && DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl)
+                    && DiscordValidation.IsImageUrlAllowed(tmpl.ThumbnailUrl)
+                    && buttonsCount > 0;
+                ImGui.BeginDisabled(!canConfirm);
                 if (ImGui.Button("Confirm"))
                 {
                     if (_pendingTemplate != null)
@@ -179,6 +187,7 @@ public class TemplatesWindow
                     _pendingTemplate = null;
                     ImGui.CloseCurrentPopup();
                 }
+                ImGui.EndDisabled();
                 ImGui.SameLine();
                 if (ImGui.Button("Cancel"))
                 {
@@ -370,15 +379,18 @@ public class TemplatesWindow
         var rowsForDto = _buttonRows.Value
             .Select((row, rIdx) => row
                 .Where(label => !string.IsNullOrWhiteSpace(label))
-                .Select((label, cIdx) => new EmbedButtonDto
+                .Select((label, cIdx) =>
                 {
-                    Label = label,
-                    CustomId = MakeCustomId(label, rIdx, cIdx),
-                    Style = ButtonStyle.Primary
+                    var lbl = Truncate(label.Trim(), 80); // Discord label limit
+                    return new EmbedButtonDto
+                    {
+                        Label = lbl,
+                        CustomId = MakeCustomId(lbl, rIdx, cIdx),
+                        Style = ButtonStyle.Primary
+                    };
                 }).ToList())
             .Where(r => r.Count > 0)
             .ToList();
-
 
         return new EmbedDto
         {
@@ -390,17 +402,10 @@ public class TemplatesWindow
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
             Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
             Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
-
-            Buttons = flatButtons.Count > 0
-                ? flatButtons.Select((label, idx) => new EmbedButtonDto
-                {
-                    Label = label,
-                    CustomId = $"btn{idx}"
-                }).ToList()
-                : null,
-
+            Buttons = rowsForDto.Count > 0 ? rowsForDto.SelectMany(r => r).ToList() : null,
             Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
+
     }
 
     private async Task PostTemplate(Template tmpl)
@@ -427,37 +432,45 @@ public class TemplatesWindow
         try
         {
 
-            var buttonLabels = _buttonRows.Value.SelectMany(r => r).ToList();
-            var buttons = buttonLabels.Count > 0
-                ? buttonLabels.Select((label, idx) => new
-                {
-                    label = label,
-                    customId = $"btn{idx}"
-                }).ToList()
-                : null;
-
+            var buttonsFlat = _buttonRows.Value
+                .SelectMany((row, rIdx) => row
+                    .Where(label => !string.IsNullOrWhiteSpace(label))
+                    .Select((label, cIdx) =>
+                    {
+                        var lbl = Truncate(label.Trim(), 80); // Discord label limit
+                        return new
+                        {
+                            label = lbl,
+                            customId = MakeCustomId(lbl, rIdx, cIdx),
+                            rowIndex = rIdx,
+                            style = 1,             // Primary
+                            emoji = (string?)null,
+                            maxSignups = (int?)null,
+                            width = (int?)null,
+                            height = (int?)null
+                        };
+                    }))
+                .ToList();
 
             var body = new
             {
                 channelId = _channelId,
                 title = tmpl.Title,
-                time = string.IsNullOrWhiteSpace(tmpl.Time)
-                    ? DateTime.UtcNow.ToString("O")
-                    : tmpl.Time,
+                time = string.IsNullOrWhiteSpace(tmpl.Time) ? DateTime.UtcNow.ToString("O") : tmpl.Time,
                 description = tmpl.Description,
                 url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
                 imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
                 thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
                 color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
                 fields = tmpl.Fields != null && tmpl.Fields.Count > 0
-                    ? tmpl.Fields
-                        .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
-                        .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
-                        .ToList()
+                    ? tmpl.Fields.Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
+                                 .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
+                                 .ToList()
                     : null,
                 buttons = buttonsFlat.Count > 0 ? buttonsFlat : null,
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
             };
+
 
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
@@ -476,7 +489,8 @@ public class TemplatesWindow
         var slug = Sanitize(label);
         if (string.IsNullOrWhiteSpace(slug)) slug = $"btn-{row}-{col}";
         var h = Hash8(label);
-        return $"rsvp:{slug}:{h}";
+        var id = $"rsvp:{slug}:{h}";
+        return Truncate(id, 100); // Discord custom_id limit
     }
 
     private static string Sanitize(string s) =>
@@ -494,6 +508,9 @@ public class TemplatesWindow
             return hash.ToString("x8");
         }
     }
+
+    private static string Truncate(string s, int max) =>
+        s.Length <= max ? s : s.Substring(0, max);
 
 }
 
