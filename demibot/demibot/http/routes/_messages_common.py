@@ -37,6 +37,23 @@ MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
 
+def _discord_error(exc: discord.HTTPException) -> str:
+    """Return a human friendly discord error message."""
+    txt = exc.text or ""
+    try:
+        data = json.loads(txt)
+        if isinstance(data, dict):
+            msg = data.get("message") or ""
+            code = data.get("code")
+            if code is not None:
+                return f"{msg} (code {code})" if msg else f"code {code}"
+            if msg:
+                return msg
+    except Exception:
+        pass
+    return txt or str(exc)
+
+
 async def load_webhook_cache(db: AsyncSession) -> None:
     """Load webhook URLs from the database into the in-memory cache."""
     result = await db.execute(
@@ -268,7 +285,7 @@ async def save_message(
                         e.text,
                     )
                     error_details.append(
-                        f"Webhook creation failed: {e.status} {e.text}"
+                        f"Webhook creation failed: {e.status} {_discord_error(e)}"
                     )
                 else:
                     logging.exception(
@@ -303,7 +320,7 @@ async def save_message(
                         e.text,
                     )
                     error_details.append(
-                        f"Webhook send failed: {e.status} {e.text}"
+                        f"Webhook send failed: {e.status} {_discord_error(e)}"
                     )
                 else:
                     logging.exception(
@@ -379,7 +396,7 @@ async def save_message(
                         e.text,
                     )
                     error_details.append(
-                        f"Webhook retry failed: {e.status} {e.text}"
+                        f"Webhook retry failed: {e.status} {_discord_error(e)}"
                     )
                 else:
                     logging.exception(
@@ -416,7 +433,7 @@ async def save_message(
                         e.text,
                     )
                     error_details.append(
-                        f"Direct send failed: {e.status} {e.text}"
+                        f"Direct send failed: {e.status} {_discord_error(e)}"
                     )
                 else:
                     logging.exception(
@@ -428,9 +445,9 @@ async def save_message(
         logging.warning(
             "Failed to relay message to Discord for channel %s", channel_id
         )
-        detail = "Failed to relay message to Discord"
+        detail: dict[str, object] = {"message": "Failed to relay message to Discord"}
         if error_details:
-            detail = f"{detail}: {'; '.join(error_details)}"
+            detail["discord"] = error_details
         raise HTTPException(status_code=502, detail=detail)
     display_name_base = nickname or (
         ctx.user.global_name or ("Officer" if is_officer else "Player")

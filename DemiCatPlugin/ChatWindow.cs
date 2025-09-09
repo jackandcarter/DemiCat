@@ -752,7 +752,26 @@ public class ChatWindow : IDisposable
                 {
                     using var doc = JsonDocument.Parse(responseBody);
                     if (doc.RootElement.TryGetProperty("detail", out var detail))
-                        msg = detail.GetString() ?? msg;
+                    {
+                        if (detail.ValueKind == JsonValueKind.String)
+                        {
+                            msg = detail.GetString() ?? msg;
+                        }
+                        else if (detail.ValueKind == JsonValueKind.Object)
+                        {
+                            if (detail.TryGetProperty("message", out var m))
+                                msg = m.GetString() ?? msg;
+                            if (detail.TryGetProperty("discord", out var discord) && discord.ValueKind == JsonValueKind.Array)
+                            {
+                                var parts = discord.EnumerateArray()
+                                    .Select(e => e.GetString())
+                                    .Where(s => !string.IsNullOrEmpty(s));
+                                var extra = string.Join("; ", parts);
+                                if (!string.IsNullOrEmpty(extra))
+                                    msg = $"{msg}: {extra}";
+                            }
+                        }
+                    }
                 }
                 catch
                 {
