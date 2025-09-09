@@ -102,7 +102,7 @@ public class TemplatesWindow
                         _mentions.Add(m.ToString());
                 }
 
-                var buttonsList = tmplItem.Buttons ?? new List<TemplateButton>();
+                var buttonsList = tmplItem.Buttons ?? new List<Template.TemplateButton>();
                 var changed = false;
                 foreach (var btn in buttonsList)
                 {
@@ -113,7 +113,7 @@ public class TemplatesWindow
                     }
                 }
 
-                var rowsInit = buttonsList
+                List<List<ButtonData>> rowsInit = buttonsList
                     .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
                     .Chunk(5)
                     .Select(chunk => chunk.Select(b => new ButtonData
@@ -134,7 +134,7 @@ public class TemplatesWindow
                 }
 
                 _buttonRows = new ButtonRows(
-                    rowsInit.Count > 0
+                    rowsInit.Count != 0
                         ? rowsInit
                         : new()
                         {
