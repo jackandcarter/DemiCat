@@ -409,7 +409,8 @@ public class TemplatesWindow
                 Emoji = b.emoji,
                 MaxSignups = b.maxSignups,
                 Width = b.width,
-                Height = b.height
+                Height = b.height,
+                RowIndex = b.row
             })
             .ToList();
 
