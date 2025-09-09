@@ -107,6 +107,7 @@ public class TemplatesWindow
                     .Chunk(5)
                     .Select(chunk => chunk.Select(b => new ButtonData
                     {
+                        Tag = string.IsNullOrWhiteSpace(b.Tag) ? Guid.NewGuid().ToString() : b.Tag,
                         Label = b.Label,
                         Style = b.Style,
                         Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
@@ -388,12 +389,12 @@ public class TemplatesWindow
     {
         var srcButtons = (tmpl.Buttons ?? new List<Template.TemplateButton>())
             .Where(b => !string.IsNullOrWhiteSpace(b.Label))
-            .ToDictionary(b => b.Label);
+            .ToDictionary(b => b.Tag);
         return _buttonRows.FlattenNonEmpty()
             .Select(x =>
             {
                 var label = x.Data.Label.Trim();
-                srcButtons.TryGetValue(label, out var b);
+                srcButtons.TryGetValue(x.Data.Tag, out var b);
                 return new ButtonPayload(
                     Truncate(label, 80),
                     MakeCustomId(label, x.RowIndex, x.ColIndex),
@@ -414,7 +415,8 @@ public class TemplatesWindow
         {
             var id = emoji.Substring("custom:".Length);
             var name = EmojiPopup.LookupGuildName(id) ?? "emoji";
-            return $"<:{name}:{id}>";
+            var animated = EmojiPopup.IsGuildEmojiAnimated(id);
+            return $"<{(animated ? "a" : string.Empty)}:{name}:{id}>";
         }
         return emoji;
     }

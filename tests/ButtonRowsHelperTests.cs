@@ -29,4 +29,16 @@ public class ButtonRowsHelperTests
         Assert.True(id2.Length <= 100);
         Assert.NotEqual(id1, id2);
     }
+
+    [Fact]
+    public void MakeCustomId_IncludesRowAndColInHash()
+    {
+        var label = "Click";
+        var id1 = IdHelpers.MakeCustomId(label, 0, 0);
+        var id2 = IdHelpers.MakeCustomId(label, 0, 1);
+        var id3 = IdHelpers.MakeCustomId(label, 1, 0);
+        Assert.NotEqual(id1, id2);
+        Assert.NotEqual(id1, id3);
+        Assert.NotEqual(id2, id3);
+    }
 }

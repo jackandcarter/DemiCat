@@ -73,7 +73,7 @@ public class EmojiPopup
         {
             if (ImGui.Button($":{e.Name}:##g{e.Id}"))
             {
-                GuildEmojiNames[e.Id] = e.Name;
+                GuildEmojiInfos[e.Id] = (e.Name, e.IsAnimated);
                 _onSelected?.Invoke($"custom:{e.Id}");
                 ImGui.CloseCurrentPopup();
             }
@@ -122,7 +122,7 @@ public class EmojiPopup
                 _guild.Clear();
                 _guild.AddRange(list);
                 foreach (var g in list)
-                    GuildEmojiNames[g.Id] = g.Name;
+                    GuildEmojiInfos[g.Id] = (g.Name, g.IsAnimated);
                 _guildLoaded = true;
             });
         }
@@ -132,12 +132,13 @@ public class EmojiPopup
         }
     }
 
-    public static string? LookupGuildName(string id)
-    {
-        return GuildEmojiNames.TryGetValue(id, out var name) ? name : null;
-    }
+    public static string? LookupGuildName(string id) =>
+        GuildEmojiInfos.TryGetValue(id, out var info) ? info.Name : null;
 
-    private static readonly Dictionary<string, string> GuildEmojiNames = new();
+    public static bool IsGuildEmojiAnimated(string id) =>
+        GuildEmojiInfos.TryGetValue(id, out var info) && info.IsAnimated;
+
+    private static readonly Dictionary<string, (string Name, bool IsAnimated)> GuildEmojiInfos = new();
 
     public class UnicodeEmoji
     {
