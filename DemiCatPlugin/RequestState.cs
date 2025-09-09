@@ -16,7 +16,9 @@ public enum RequestStatus
     InProgress,
     AwaitingConfirm,
     Completed,
-    Cancelled
+    Cancelled,
+    Approved, // legacy
+    Denied // legacy
 }
 
 public enum RequestUrgency

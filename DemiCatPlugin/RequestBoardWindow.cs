@@ -81,6 +81,14 @@ public class RequestBoardWindow
             ImGui.PushID(req.Id);
             ImGui.TextWrapped(string.IsNullOrEmpty(req.Description) ? req.Title : req.Description);
             ImGui.TextUnformatted($"Created By: {req.CreatedBy}");
+            if (req.Status == RequestStatus.Approved)
+            {
+                ImGui.TextUnformatted("[Legacy Status: Approved]");
+            }
+            else if (req.Status == RequestStatus.Denied)
+            {
+                ImGui.TextUnformatted("[Legacy Status: Denied]");
+            }
             ImGui.Separator();
             ImGui.PopID();
         }
@@ -298,6 +306,8 @@ public class RequestBoardWindow
         RequestStatus.AwaitingConfirm => "awaiting_confirm",
         RequestStatus.Completed => "completed",
         RequestStatus.Cancelled => "cancelled",
+        RequestStatus.Approved => "approved",
+        RequestStatus.Denied => "denied",
         _ => "open"
     };
 
@@ -309,6 +319,8 @@ public class RequestBoardWindow
         "awaiting_confirm" => RequestStatus.AwaitingConfirm,
         "completed" => RequestStatus.Completed,
         "cancelled" => RequestStatus.Cancelled,
+        "approved" => RequestStatus.Approved,
+        "denied" => RequestStatus.Denied,
         _ => RequestStatus.Open
     };
 
