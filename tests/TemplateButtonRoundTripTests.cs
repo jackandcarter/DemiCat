@@ -61,4 +61,23 @@ public class TemplateButtonRoundTripTests
         Assert.Null(btn.width);
         Assert.Null(btn.height);
     }
+
+    [Fact]
+    public void BuildButtonsPayload_IgnoresEmptyTemplateTags()
+    {
+        var rows = new ButtonRows(new() { new() { new ButtonData { Label = "Join" } } });
+        var window = CreateWindow(rows);
+
+        var tmpl = new Template
+        {
+            Buttons = new List<Template.TemplateButton>
+            {
+                new Template.TemplateButton { Label = "Join", Tag = string.Empty }
+            }
+        };
+
+        var payload = window.BuildButtonsPayload(tmpl);
+        var btn = Assert.Single(payload);
+        Assert.Equal("Join", btn.label);
+    }
 }
