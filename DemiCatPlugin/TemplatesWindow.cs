@@ -10,6 +10,7 @@ using System.Linq;
 using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
+using DemiCat.UI;
 
 namespace DemiCatPlugin;
 
@@ -32,6 +33,11 @@ public class TemplatesWindow
     private readonly List<RoleDto> _roles = new();
     private readonly HashSet<string> _mentions = new();
     private bool _rolesLoaded;
+    private ButtonRowEditor _buttonRows = new(new()
+    {
+        new() { "RSVP: Yes", "RSVP: Maybe" },
+        new() { "RSVP: No" }
+    });
 
     public TemplatesWindow(Config config, HttpClient httpClient)
     {
@@ -139,6 +145,8 @@ public class TemplatesWindow
                     ImGui.TextUnformatted(msg);
                 }
             }
+
+            _buttonRows.Draw("template-button-rows");
             if (_confirmPost)
                 ImGui.OpenPopup("Confirm Template Post");
             var openConfirm = _confirmPost;
@@ -343,6 +351,8 @@ public class TemplatesWindow
             ts = parsed;
         }
 
+        var flatButtons = _buttonRows.Value.SelectMany(r => r).ToList();
+
         return new EmbedDto
         {
             Title = tmpl.Title,
@@ -353,16 +363,13 @@ public class TemplatesWindow
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
             Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
             Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
-            Buttons = tmpl.Buttons?.Where(b => b.Include).Select(b => new EmbedButtonDto
-            {
-                Label = b.Label,
-                CustomId = $"rsvp:{b.Tag}",
-                Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                Style = b.Style,
-                MaxSignups = b.MaxSignups,
-                Width = b.Width,
-                Height = b.Height
-            }).ToList(),
+            Buttons = flatButtons.Count > 0
+                ? flatButtons.Select((label, idx) => new EmbedButtonDto
+                {
+                    Label = label,
+                    CustomId = $"btn{idx}"
+                }).ToList()
+                : null,
             Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
     }
@@ -382,21 +389,22 @@ public class TemplatesWindow
             _lastResult = "Description exceeds 2000 characters";
             return;
         }
+        if (!DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl) ||
+            !DiscordValidation.IsImageUrlAllowed(tmpl.ThumbnailUrl))
+        {
+            _lastResult = "Invalid image or thumbnail URL";
+            return;
+        }
         try
         {
-            var buttons = tmpl.Buttons?
-                .Where(b => b.Include)
-                .Select(b => new
+            var buttonLabels = _buttonRows.Value.SelectMany(r => r).ToList();
+            var buttons = buttonLabels.Count > 0
+                ? buttonLabels.Select((label, idx) => new
                 {
-                    label = b.Label,
-                    customId = $"rsvp:{b.Tag}",
-                    emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                    style = (int)b.Style,
-                    maxSignups = b.MaxSignups,
-                    width = b.Width,
-                    height = b.Height
-                })
-                .ToList();
+                    label = label,
+                    customId = $"btn{idx}"
+                }).ToList()
+                : null;
 
             var body = new
             {
