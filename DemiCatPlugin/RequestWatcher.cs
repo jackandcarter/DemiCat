@@ -155,6 +155,8 @@ public class RequestWatcher : IDisposable
                 "awaiting_confirm" => RequestStatus.AwaitingConfirm,
                 "completed" => RequestStatus.Completed,
                 "cancelled" => RequestStatus.Cancelled,
+                "approved" => RequestStatus.Approved,
+                "denied" => RequestStatus.Denied,
                 _ => RequestStatus.Open
             };
 
@@ -182,6 +184,14 @@ public class RequestWatcher : IDisposable
             else if (status == RequestStatus.Cancelled)
             {
                 PluginServices.Instance?.ToastGui.ShowNormal("Request cancelled");
+            }
+            else if (status == RequestStatus.Approved)
+            {
+                PluginServices.Instance?.ToastGui.ShowNormal("Request approved (legacy)");
+            }
+            else if (status == RequestStatus.Denied)
+            {
+                PluginServices.Instance?.ToastGui.ShowNormal("Request denied (legacy)");
             }
         }
         catch (Exception ex)

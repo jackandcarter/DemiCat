@@ -33,7 +33,23 @@ public class RequestStateServiceTests
             Status = RequestStatus.Completed,
             CreatedAt = DateTime.UtcNow.AddDays(-30)
         });
+        RequestStateService.Upsert(new RequestState
+        {
+            Id = "oldApproved",
+            Title = "OldApproved",
+            Status = RequestStatus.Approved,
+            CreatedAt = DateTime.UtcNow.AddDays(-30)
+        });
+        RequestStateService.Upsert(new RequestState
+        {
+            Id = "oldDenied",
+            Title = "OldDenied",
+            Status = RequestStatus.Denied,
+            CreatedAt = DateTime.UtcNow.AddDays(-30)
+        });
         RequestStateService.Prune();
         Assert.DoesNotContain(RequestStateService.All, r => r.Id == "old");
+        Assert.DoesNotContain(RequestStateService.All, r => r.Id == "oldApproved");
+        Assert.DoesNotContain(RequestStateService.All, r => r.Id == "oldDenied");
     }
 }

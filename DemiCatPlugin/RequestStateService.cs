@@ -52,7 +52,10 @@ internal static class RequestStateService
             var cutoff = DateTime.UtcNow.AddDays(-14);
             var remove = RequestsMap
                 .Where(kvp =>
-                    (kvp.Value.Status == RequestStatus.Completed || kvp.Value.Status == RequestStatus.Cancelled) &&
+                    (kvp.Value.Status == RequestStatus.Completed ||
+                     kvp.Value.Status == RequestStatus.Cancelled ||
+                     kvp.Value.Status == RequestStatus.Approved ||
+                     kvp.Value.Status == RequestStatus.Denied) &&
                     kvp.Value.CreatedAt < cutoff)
                 .Select(kvp => kvp.Key)
                 .ToList();
@@ -212,6 +215,8 @@ internal static class RequestStateService
         "awaiting_confirm" => RequestStatus.AwaitingConfirm,
         "completed" => RequestStatus.Completed,
         "cancelled" => RequestStatus.Cancelled,
+        "approved" => RequestStatus.Approved,
+        "denied" => RequestStatus.Denied,
         _ => RequestStatus.Open
     };
 
