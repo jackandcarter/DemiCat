@@ -227,8 +227,8 @@ def test_multipart_message(monkeypatch):
                     components=[],
                     reactions=[],
                     edited_timestamp=None,
-                    model_dump=lambda: {},
-                    model_dump_json=lambda: "{}",
+                    model_dump=lambda **kwargs: {},
+                    model_dump_json=lambda **kwargs: "{}",
                 )
                 fragments = {
                     "author_json": "{}",
@@ -289,6 +289,59 @@ def test_multipart_message(monkeypatch):
 
             msg = (await db.execute(select(Message))).scalar_one()
             assert "a.txt" in (msg.attachments_json or "")
+
+    asyncio.run(_run())
+
+
+def test_discord_failure_details(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=3, discord_guild_id=3, name="Guild"))
+            db.add(User(id=3, discord_user_id=30, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 3)
+            user = await db.get(User, 3)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            class DummyResponse:
+                status = 403
+                reason = "Forbidden"
+
+            class FailingWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    raise mc.discord.HTTPException(DummyResponse(), {"message": "Missing Access", "code": 50001})
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    return FailingWebhook()
+
+                async def send(self, *args, **kwargs):
+                    raise mc.discord.HTTPException(DummyResponse(), {"message": "Forbidden", "code": 50013})
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="123", content="oops")
+            with pytest.raises(HTTPException) as ex:
+                await mc.save_message(body, ctx, db, is_officer=False)
+            assert ex.value.status_code == 502
+            detail = ex.value.detail
+            assert isinstance(detail, dict)
+            assert detail.get("message") == "Failed to relay message to Discord"
+            disc = detail.get("discord")
+            assert isinstance(disc, list) and any("Direct send failed" in d for d in disc)
 
     asyncio.run(_run())
 
@@ -540,8 +593,8 @@ def test_webhook_cache_persist_and_load(monkeypatch):
                     components=[],
                     reactions=[],
                     edited_timestamp=None,
-                    model_dump=lambda: {},
-                    model_dump_json=lambda: "{}",
+                    model_dump=lambda **kwargs: {},
+                    model_dump_json=lambda **kwargs: "{}",
                 )
                 fragments = {
                     "author_json": "{}",
