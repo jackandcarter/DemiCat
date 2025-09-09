@@ -2,6 +2,7 @@ using System;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 using System.Numerics;
+using System.Net.Http;
 
 namespace DemiCatPlugin;
 
@@ -10,6 +11,12 @@ public class SignupOptionEditor
     private bool _open;
     private Template.TemplateButton _working = new();
     private Action<Template.TemplateButton>? _onSave;
+    private readonly EmojiPopup _emojiPopup;
+
+    public SignupOptionEditor(Config config, HttpClient httpClient)
+    {
+        _emojiPopup = new EmojiPopup(config, httpClient);
+    }
 
     public void Open(Template.TemplateButton button, Action<Template.TemplateButton> onSave)
     {
@@ -44,6 +51,11 @@ public class SignupOptionEditor
             var emoji = _working.Emoji;
             if (ImGui.InputText("Emoji", ref emoji, 16))
                 _working.Emoji = emoji;
+            ImGui.SameLine();
+            if (ImGui.Button("Pick"))
+            {
+                _emojiPopup.Open(e => _working.Emoji = e);
+            }
             var max = _working.MaxSignups ?? 0;
             if (ImGui.InputInt("Max Signups", ref max))
             {
@@ -71,6 +83,8 @@ public class SignupOptionEditor
                 }
                 ImGui.EndCombo();
             }
+            _emojiPopup.Draw();
+
             if (ImGui.Button("Save"))
             {
                 _onSave?.Invoke(new Template.TemplateButton

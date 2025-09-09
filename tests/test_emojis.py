@@ -59,6 +59,11 @@ async def _run_test():
     res2 = await emojis.get_emojis(ctx=ctx)
     assert res2 == res1
 
+    emojis._emoji_cache.clear()
+    emojis.discord_client = DummyClient(guild)
+    res3 = await emojis.get_guild_emojis(100, ctx=ctx)
+    assert res3 == res1
+
 
 def test_get_emojis():
     asyncio.run(_run_test())

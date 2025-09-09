@@ -31,7 +31,7 @@ public class EventCreateWindow
     private readonly List<Field> _fields = new();
     private string? _lastResult;
     private readonly List<Template.TemplateButton> _buttons = new();
-    private readonly SignupOptionEditor _optionEditor = new();
+    private readonly SignupOptionEditor _optionEditor;
     private int _editingButtonIndex = -1;
     private int _selectedPreset = -1;
     private string _presetName = string.Empty;
@@ -62,6 +62,7 @@ public class EventCreateWindow
         _httpClient = httpClient;
         _channelService = channelService;
         _channelId = config.EventChannelId;
+        _optionEditor = new SignupOptionEditor(config, httpClient);
         ResetDefaultButtons();
     }
 
