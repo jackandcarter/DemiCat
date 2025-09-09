@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 using DemiCat.UI;
+using static DemiCat.UI.IdHelpers;
 
 namespace DemiCatPlugin;
 
