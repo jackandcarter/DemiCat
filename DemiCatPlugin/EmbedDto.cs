@@ -46,6 +46,7 @@ public class EmbedButtonDto
     public int? MaxSignups { get; set; }
     public int? Width { get; set; }
     public int? Height { get; set; }
+    public int? RowIndex { get; set; }
 }
 
 public class EmbedAuthorDto

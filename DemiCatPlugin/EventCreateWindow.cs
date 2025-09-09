@@ -575,7 +575,8 @@ public class EventCreateWindow
                     Style = b.Style,
                     MaxSignups = b.MaxSignups,
                     Width = b.Width,
-                    Height = b.Height
+                    Height = b.Height,
+                    RowIndex = b.RowIndex
                 })
                 .ToList()
         };

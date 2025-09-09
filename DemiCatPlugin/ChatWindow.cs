@@ -269,7 +269,8 @@ public class ChatWindow : IDisposable
                     CustomId = c.CustomId,
                     Url = c.Url,
                     Emoji = c.Emoji,
-                    Style = c.Style
+                    Style = c.Style,
+                    RowIndex = c.RowIndex
                 }).ToList();
                 var pseudo = new EmbedDto { Id = msg.Id + "_components", Buttons = buttons };
                 EmbedRenderer.Draw(pseudo, LoadTexture, cid => _ = Interact(msg.Id, msg.ChannelId, cid));

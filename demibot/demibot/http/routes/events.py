@@ -165,35 +165,42 @@ async def create_event(
             view: discord.ui.View | None = None
             if buttons:
                 view = discord.ui.View()
-                for idx, b in enumerate(buttons):
-                    row = idx // 5
-                    if row >= 5:
-                        raise HTTPException(422, "Too many buttons (max 25)")
-                    style = (
-                        discord.ButtonStyle(b.style)
-                        if b.style is not None
-                        else discord.ButtonStyle.secondary
-                    )
-                    if b.url:
-                        view.add_item(
-                            discord.ui.Button(
-                                label=b.label,
-                                url=b.url,
-                                emoji=b.emoji,
-                                style=style,
-                                row=row,
-                            )
+                rows: Dict[int, List[EmbedButtonDto]] = {}
+                for b in buttons:
+                    row = b.row_index or 0
+                    rows.setdefault(row, []).append(b)
+                if len(rows) > 5 or any(r >= 5 for r in rows):
+                    raise HTTPException(422, "Too many button rows (max 5)")
+                for row_index in sorted(rows):
+                    row_buttons = rows[row_index]
+                    if len(row_buttons) > 5:
+                        raise HTTPException(422, "Too many buttons in row (max 5)")
+                    for b in row_buttons:
+                        style = (
+                            discord.ButtonStyle(b.style)
+                            if b.style is not None
+                            else discord.ButtonStyle.secondary
                         )
-                    else:
-                        view.add_item(
-                            discord.ui.Button(
-                                label=b.label,
-                                custom_id=b.custom_id,
-                                emoji=b.emoji,
-                                style=style,
-                                row=row,
+                        if b.url:
+                            view.add_item(
+                                discord.ui.Button(
+                                    label=b.label,
+                                    url=b.url,
+                                    emoji=b.emoji,
+                                    style=style,
+                                    row=row_index,
+                                )
                             )
-                        )
+                        else:
+                            view.add_item(
+                                discord.ui.Button(
+                                    label=b.label,
+                                    custom_id=b.custom_id,
+                                    emoji=b.emoji,
+                                    style=style,
+                                    row=row_index,
+                                )
+                            )
             content = " ".join(f"<@&{m}>" for m in mention_ids) or None
             try:
                 sent = await api_call_with_retries(

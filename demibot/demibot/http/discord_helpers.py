@@ -138,7 +138,7 @@ def components_to_dtos(message: discord.Message) -> List[ButtonComponentDto] | N
     """
 
     components: list[ButtonComponentDto] = []
-    for row in getattr(message, "components", []) or []:
+    for row_index, row in enumerate(getattr(message, "components", []) or []):
         children = getattr(row, "children", None) or getattr(row, "components", [])
         for comp in children or []:
             if getattr(comp, "type", None) != 2:  # 2 == button
@@ -154,6 +154,7 @@ def components_to_dtos(message: discord.Message) -> List[ButtonComponentDto] | N
                     url=getattr(comp, "url", None),
                     style=style_val,
                     emoji=emoji_str,
+                    row_index=row_index,
                 )
             )
     return components or None
@@ -170,7 +171,7 @@ def extract_embed_buttons(message: discord.Message) -> List[EmbedButtonDto]:
 
     buttons: list[EmbedButtonDto] = []
     try:
-        for row in getattr(message, "components", []) or []:
+        for row_index, row in enumerate(getattr(message, "components", []) or []):
             children = getattr(row, "children", None) or getattr(row, "components", [])
             for comp in children or []:
                 if getattr(comp, "type", None) != 2:  # 2 == button
@@ -186,6 +187,7 @@ def extract_embed_buttons(message: discord.Message) -> List[EmbedButtonDto]:
                         style=style_val,
                         emoji=emoji_str,
                         url=getattr(comp, "url", None),
+                        row_index=row_index,
                     )
                 )
     except Exception:

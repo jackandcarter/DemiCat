@@ -68,4 +68,5 @@ public class ButtonComponentDto
     public string? Url { get; set; }
     public ButtonStyle Style { get; set; } = ButtonStyle.Primary;
     public string? Emoji { get; set; }
+    public int? RowIndex { get; set; }
 }
