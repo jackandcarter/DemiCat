@@ -41,11 +41,17 @@ public class EmojiPopup
                 DrawUnicode();
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Guild"))
+            var guildEnabled = !string.IsNullOrWhiteSpace(_config.GuildId);
+            if (!guildEnabled) ImGui.BeginDisabled();
+            var guildTab = ImGui.BeginTabItem("Guild");
+            if (!guildEnabled && ImGui.IsItemHovered())
+                ImGui.SetTooltip("Set GuildId in config to enable guild emojis");
+            if (guildTab)
             {
                 DrawGuild();
                 ImGui.EndTabItem();
             }
+            if (!guildEnabled) ImGui.EndDisabled();
             ImGui.EndTabBar();
         }
         ImGui.EndPopup();
