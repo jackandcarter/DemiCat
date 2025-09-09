@@ -38,6 +38,9 @@
   <ItemGroup>
     <EmbeddedResource Include="icon.png" />
   </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="../DemiCat.UI/DemiCat.UI.csproj" />
+  </ItemGroup>
   <PropertyGroup>
     <DalamudIcon>icon.png</DalamudIcon>
   </PropertyGroup>
