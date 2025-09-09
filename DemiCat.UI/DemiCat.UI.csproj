@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+
     <Reference Include="ImGui.NET">
       <HintPath>$(DalamudLibPath)/ImGui.NET.dll</HintPath>
     </Reference>

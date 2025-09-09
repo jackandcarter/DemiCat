@@ -366,6 +366,7 @@ public class TemplatesWindow
             ts = parsed;
         }
 
+
         var rowsForDto = _buttonRows.Value
             .Select((row, rIdx) => row
                 .Where(label => !string.IsNullOrWhiteSpace(label))
@@ -378,6 +379,7 @@ public class TemplatesWindow
             .Where(r => r.Count > 0)
             .ToList();
 
+
         return new EmbedDto
         {
             Title = tmpl.Title,
@@ -388,7 +390,15 @@ public class TemplatesWindow
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
             Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
             Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
-            Buttons = rowsForDto.Count > 0 ? rowsForDto.SelectMany(r => r).ToList() : null,
+
+            Buttons = flatButtons.Count > 0
+                ? flatButtons.Select((label, idx) => new EmbedButtonDto
+                {
+                    Label = label,
+                    CustomId = $"btn{idx}"
+                }).ToList()
+                : null,
+
             Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
     }
@@ -416,21 +426,16 @@ public class TemplatesWindow
         }
         try
         {
-            var buttonsFlat = _buttonRows.Value
-                .SelectMany((row, rIdx) => row
-                    .Where(label => !string.IsNullOrWhiteSpace(label))
-                    .Select((label, cIdx) => new
-                    {
-                        label,
-                        customId = MakeCustomId(label, rIdx, cIdx),
-                        rowIndex = rIdx,
-                        style = 1,
-                        emoji = (string?)null,
-                        maxSignups = (int?)null,
-                        width = (int?)null,
-                        height = (int?)null
-                    }))
-                .ToList();
+
+            var buttonLabels = _buttonRows.Value.SelectMany(r => r).ToList();
+            var buttons = buttonLabels.Count > 0
+                ? buttonLabels.Select((label, idx) => new
+                {
+                    label = label,
+                    customId = $"btn{idx}"
+                }).ToList()
+                : null;
+
 
             var body = new
             {
