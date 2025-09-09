@@ -164,6 +164,8 @@ async def create_event(
 
             view: discord.ui.View | None = None
             if buttons:
+                if len(buttons) > 25:
+                    raise HTTPException(422, "Too many buttons (max 25)")
                 view = discord.ui.View()
                 rows: Dict[int, List[EmbedButtonDto]] = {}
                 for b in buttons:

@@ -36,7 +36,8 @@ public static class IdHelpers
             .ToArray());
 
     /// <summary>
-    /// Make a Discord custom_id of the form "rsvp:{slug}:{hash}" and cap to 100 graphemes.
+    /// Make a Discord custom_id of the form "rsvp:{slug}:{hash}" and cap to 100 characters.
+    /// Include row/col in the hash seed to avoid collisions for duplicate labels.
     /// </summary>
     public static string MakeCustomId(string label, int row, int col)
     {
@@ -44,22 +45,17 @@ public static class IdHelpers
         if (string.IsNullOrWhiteSpace(slug))
             slug = $"btn-{row}-{col}";
 
-        var h = Hash8(label);
-        const string prefix = "rsvp:";
-        string suffix = ":" + h;
-
-        // Compute remaining grapheme budget for slug so total ≤ 100 graphemes.
-        int maxTotal = 100;
-        int used = GraphemeCount(prefix) + GraphemeCount(suffix);
-        int maxSlugGraphemes = maxTotal - used;
-        if (maxSlugGraphemes < 0) maxSlugGraphemes = 0;
-
-        slug = Truncate(slug, maxSlugGraphemes);
-        return $"{prefix}{slug}{suffix}";
+        var h = Hash8($"{label}#{row}:{col}");
+        var id = $"rsvp:{slug}:{h}";
+        return TruncateSimple(id, 100);
     }
 
-    private static int GraphemeCount(string s) =>
-        string.IsNullOrEmpty(s) ? 0 : StringInfo.ParseCombiningCharacters(s).Length;
+    public static string TruncateSimple(string s, int maxChars)
+    {
+        if (string.IsNullOrEmpty(s)) return s;
+        if (maxChars <= 0) return string.Empty;
+        return s.Length <= maxChars ? s : s.Substring(0, maxChars);
+    }
 
     private static string Hash8(string s)
     {
