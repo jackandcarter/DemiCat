@@ -157,6 +157,7 @@ fi
 
 "$DOTNET_CMD" restore DemiCatPlugin/DemiCatPlugin.csproj
 "$DOTNET_CMD" build DemiCatPlugin/DemiCatPlugin.csproj -c Release
+cp DemiCatPlugin/DemiCatPlugin.json DemiCatPlugin/bin/Release/net9.0/
 
 # Run .NET tests
 find tests -name '*Tests.csproj' -print0 | while IFS= read -r -d '' testproj; do
