@@ -102,12 +102,23 @@ public class TemplatesWindow
                         _mentions.Add(m.ToString());
                 }
 
-                var rowsInit = (tmplItem.Buttons ?? Enumerable.Empty<TemplateButton>())
+                var buttonsList = tmplItem.Buttons ?? new List<TemplateButton>();
+                var changed = false;
+                foreach (var btn in buttonsList)
+                {
+                    if (string.IsNullOrWhiteSpace(btn.Tag))
+                    {
+                        btn.Tag = Guid.NewGuid().ToString();
+                        changed = true;
+                    }
+                }
+
+                var rowsInit = buttonsList
                     .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
                     .Chunk(5)
                     .Select(chunk => chunk.Select(b => new ButtonData
                     {
-                        Tag = string.IsNullOrWhiteSpace(b.Tag) ? Guid.NewGuid().ToString() : b.Tag,
+                        Tag = b.Tag,
                         Label = b.Label,
                         Style = b.Style,
                         Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
@@ -116,6 +127,11 @@ public class TemplatesWindow
                         Height = b.Height
                     }).ToList())
                     .ToList();
+
+                if (changed)
+                {
+                    SaveConfig();
+                }
 
                 _buttonRows = new ButtonRows(
                     rowsInit.Count > 0
@@ -388,8 +404,8 @@ public class TemplatesWindow
     internal List<ButtonPayload> BuildButtonsPayload(Template tmpl)
     {
         var srcButtons = (tmpl.Buttons ?? new List<Template.TemplateButton>())
-            .Where(b => !string.IsNullOrWhiteSpace(b.Label))
-            .ToDictionary(b => b.Tag);
+            .Where(b => !string.IsNullOrWhiteSpace(b.Label) && !string.IsNullOrWhiteSpace(b.Tag))
+            .ToDictionary(b => b.Tag!);
         return _buttonRows.FlattenNonEmpty()
             .Select(x =>
             {
