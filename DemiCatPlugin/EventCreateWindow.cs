@@ -258,7 +258,7 @@ public class EventCreateWindow
         }
         _preview = BuildPreview();
         ImGui.Separator();
-        EmbedRenderer.Draw(_preview, (_, __) => { });
+        EmbedPreviewRenderer.Draw(_preview, (_, __) => { });
         if (ImGui.Button("Create"))
         {
             _confirmCreate = true;
