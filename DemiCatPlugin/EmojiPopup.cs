@@ -108,10 +108,10 @@ public class EmojiPopup
 
     private async Task FetchGuild()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_config.GuildId)) return;
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis/guilds/0");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis/guilds/{_config.GuildId}");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return;

@@ -15,6 +15,8 @@ public class Config : IPluginConfiguration
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
     public string WebSocketPath { get; set; } = "/ws/embeds";
     public int PollIntervalSeconds { get; set; } = 5;
+    [JsonPropertyName("guildId")]
+    public string GuildId { get; set; } = string.Empty;
     public string ChatChannelId { get; set; } = string.Empty;
     public Dictionary<string, long> ChatCursors { get; set; } = new();
     public string EventChannelId { get; set; } = string.Empty;
