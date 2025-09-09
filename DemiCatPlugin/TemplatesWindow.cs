@@ -11,6 +11,8 @@ using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 using DemiCat.UI;
+using ButtonData = DemiCat.UI.ButtonRowEditor.ButtonData;
+using UiButtonStyle = DemiCat.UI.ButtonRowEditor.ButtonStyle;
 
 namespace DemiCatPlugin;
 
@@ -35,8 +37,12 @@ public class TemplatesWindow
     private bool _rolesLoaded;
     private ButtonRowEditor _buttonRows = new(new()
     {
-        new() { "RSVP: Yes", "RSVP: Maybe" },
-        new() { "RSVP: No" }
+        new()
+        {
+            new ButtonData { Label = "RSVP: Yes", Style = UiButtonStyle.Primary },
+            new ButtonData { Label = "RSVP: Maybe", Style = UiButtonStyle.Primary }
+        },
+        new() { new ButtonData { Label = "RSVP: No", Style = UiButtonStyle.Primary } }
     });
 
     public TemplatesWindow(Config config, HttpClient httpClient)
@@ -103,9 +109,16 @@ public class TemplatesWindow
 
                 var rowsInit = (tmplItem.Buttons ?? Enumerable.Empty<TemplateButton>())
                     .Where(b => b.Include && !string.IsNullOrWhiteSpace(b.Label))
-                    .Select(b => b.Label)
                     .Chunk(5)
-                    .Select(chunk => chunk.ToList())
+                    .Select(chunk => chunk.Select(b => new ButtonData
+                    {
+                        Label = b.Label,
+                        Emoji = b.Emoji,
+                        Style = (UiButtonStyle)(int)b.Style,
+                        MaxSignups = b.MaxSignups,
+                        Width = b.Width,
+                        Height = b.Height
+                    }).ToList())
                     .ToList();
 
                 _buttonRows = new ButtonRowEditor(
@@ -113,8 +126,12 @@ public class TemplatesWindow
                         ? rowsInit
                         : new()
                         {
-                            new() { "RSVP: Yes", "RSVP: Maybe" },
-                            new() { "RSVP: No" }
+                            new()
+                            {
+                                new ButtonData { Label = "RSVP: Yes", Style = UiButtonStyle.Primary },
+                                new ButtonData { Label = "RSVP: Maybe", Style = UiButtonStyle.Primary }
+                            },
+                            new() { new ButtonData { Label = "RSVP: No", Style = UiButtonStyle.Primary } }
                         });
             }
         }
@@ -173,7 +190,7 @@ public class TemplatesWindow
                 var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
                 ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
                 var buttonsCount = _buttonRows.Value
-                    .SelectMany(row => row.Where(label => !string.IsNullOrWhiteSpace(label))).Count();
+                    .SelectMany(row => row.Where(btn => !string.IsNullOrWhiteSpace(btn.Label))).Count();
                 bool canConfirm = !string.IsNullOrWhiteSpace(_channelId)
                     && DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl)
                     && DiscordValidation.IsImageUrlAllowed(tmpl.ThumbnailUrl)
@@ -367,7 +384,34 @@ public class TemplatesWindow
         [JsonPropertyName(ChannelKind.Event)] public List<ChannelDto> Event { get; set; } = new();
     }
 
-    private EmbedDto ToEmbedDto(Template tmpl)
+    internal record ButtonPayload(
+        string label,
+        string customId,
+        int rowIndex,
+        int style,
+        string? emoji,
+        int? maxSignups,
+        int? width,
+        int? height);
+
+    internal List<ButtonPayload> BuildButtonsPayload()
+    {
+        return _buttonRows.Value
+            .SelectMany((row, rIdx) => row
+                .Where(btn => !string.IsNullOrWhiteSpace(btn.Label))
+                .Select((btn, cIdx) => new ButtonPayload(
+                    Truncate(btn.Label.Trim(), 80),
+                    MakeCustomId(btn.Label.Trim(), rIdx, cIdx),
+                    rIdx,
+                    (int)btn.Style,
+                    string.IsNullOrWhiteSpace(btn.Emoji) ? null : btn.Emoji,
+                    btn.MaxSignups,
+                    btn.Width,
+                    btn.Height)))
+            .ToList();
+    }
+
+    internal EmbedDto ToEmbedDto(Template tmpl)
     {
         DateTimeOffset? ts = null;
         if (!string.IsNullOrWhiteSpace(tmpl.Time) && DateTimeOffset.TryParse(tmpl.Time, out var parsed))
@@ -375,21 +419,17 @@ public class TemplatesWindow
             ts = parsed;
         }
 
-
-        var rowsForDto = _buttonRows.Value
-            .Select((row, rIdx) => row
-                .Where(label => !string.IsNullOrWhiteSpace(label))
-                .Select((label, cIdx) =>
-                {
-                    var lbl = Truncate(label.Trim(), 80); // Discord label limit
-                    return new EmbedButtonDto
-                    {
-                        Label = lbl,
-                        CustomId = MakeCustomId(lbl, rIdx, cIdx),
-                        Style = ButtonStyle.Primary
-                    };
-                }).ToList())
-            .Where(r => r.Count > 0)
+        var buttons = BuildButtonsPayload()
+            .Select(b => new EmbedButtonDto
+            {
+                Label = b.label,
+                CustomId = b.customId,
+                Style = (ButtonStyle)b.style,
+                Emoji = b.emoji,
+                MaxSignups = b.maxSignups,
+                Width = b.width,
+                Height = b.height
+            })
             .ToList();
 
         return new EmbedDto
@@ -402,10 +442,9 @@ public class TemplatesWindow
             ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
             Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
             Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
-            Buttons = rowsForDto.Count > 0 ? rowsForDto.SelectMany(r => r).ToList() : null,
+            Buttons = buttons.Count > 0 ? buttons : null,
             Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
         };
-
     }
 
     private async Task PostTemplate(Template tmpl)
@@ -432,25 +471,7 @@ public class TemplatesWindow
         try
         {
 
-            var buttonsFlat = _buttonRows.Value
-                .SelectMany((row, rIdx) => row
-                    .Where(label => !string.IsNullOrWhiteSpace(label))
-                    .Select((label, cIdx) =>
-                    {
-                        var lbl = Truncate(label.Trim(), 80); // Discord label limit
-                        return new
-                        {
-                            label = lbl,
-                            customId = MakeCustomId(lbl, rIdx, cIdx),
-                            rowIndex = rIdx,
-                            style = 1,             // Primary
-                            emoji = (string?)null,
-                            maxSignups = (int?)null,
-                            width = (int?)null,
-                            height = (int?)null
-                        };
-                    }))
-                .ToList();
+            var buttonsFlat = BuildButtonsPayload();
 
             var body = new
             {

@@ -10,17 +10,36 @@ public sealed class ButtonRowEditor
     private const int MaxPerRow = 5;
     private const int MaxTotal  = 25;
 
-    // Represents a row of button labels (or IDs) the plugin will later map to actual actions.
-    private readonly List<List<string>> _rows;
-
-    public ButtonRowEditor(List<List<string>> initial)
+    public class ButtonData
     {
-        _rows = initial ?? new List<List<string>>();
-        if (_rows.Count == 0) _rows.Add(new List<string>());
+        public string Label { get; set; } = string.Empty;
+        public ButtonStyle Style { get; set; } = ButtonStyle.Secondary;
+        public string Emoji { get; set; } = string.Empty;
+        public int? MaxSignups { get; set; }
+        public int? Width { get; set; }
+        public int? Height { get; set; }
+    }
+
+    public enum ButtonStyle
+    {
+        Primary = 1,
+        Secondary = 2,
+        Success = 3,
+        Danger = 4,
+        Link = 5,
+    }
+
+    // Represents a row of buttons with metadata the plugin will later map to actual actions.
+    private readonly List<List<ButtonData>> _rows;
+
+    public ButtonRowEditor(List<List<ButtonData>> initial)
+    {
+        _rows = initial ?? new List<List<ButtonData>>();
+        if (_rows.Count == 0) _rows.Add(new List<ButtonData>());
         Normalize();
     }
 
-    public IReadOnlyList<IReadOnlyList<string>> Value => _rows;
+    public IReadOnlyList<IReadOnlyList<ButtonData>> Value => _rows;
 
     public void Draw(string id)
     {
@@ -39,17 +58,17 @@ public sealed class ButtonRowEditor
             ImGui.SameLine();
             if (CanAddAny() && _rows[r].Count < MaxPerRow && ImGui.Button("+ Add"))
             {
-                _rows[r].Add("New Button");
+                _rows[r].Add(new ButtonData { Label = "New Button" });
             }
 
             // Render each button as an editable input
             for (int i = 0; i < _rows[r].Count; i++)
             {
                 ImGui.PushID(i);
-                var label = _rows[r][i];
-                var buf = label;
+                var button = _rows[r][i];
+                var buf = button.Label;
                 if (ImGui.InputText("##label", ref buf, 128))
-                    _rows[r][i] = buf;
+                    button.Label = buf;
 
                 ImGui.SameLine();
                 if (ImGui.Button("Remove"))
@@ -73,7 +92,7 @@ public sealed class ButtonRowEditor
             ImGui.SameLine();
             if (_rows.Count < MaxRows && CanAddAny() && ImGui.Button("Add Row"))
             {
-                _rows.Insert(r + 1, new List<string>());
+                _rows.Insert(r + 1, new List<ButtonData>());
             }
 
             ImGui.PopID();
@@ -95,7 +114,7 @@ public sealed class ButtonRowEditor
     private void Normalize()
     {
         // Ensure at least one row, and each row <= MaxPerRow, total <= MaxTotal.
-        if (_rows.Count == 0) _rows.Add(new List<string>());
+        if (_rows.Count == 0) _rows.Add(new List<ButtonData>());
 
         // Cap total rows
         if (_rows.Count > MaxRows)
