@@ -15,7 +15,8 @@ public class MainWindow : IDisposable
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
-    private readonly SyncshellWindow? _syncshell;
+    private SyncshellWindow? _syncshell;
+    private bool _syncshellEnabled;
     private readonly HttpClient _httpClient;
 
     public bool IsOpen;
@@ -35,16 +36,37 @@ public class MainWindow : IDisposable
         _create = new EventCreateWindow(config, httpClient, channelService);
         _templates = new TemplatesWindow(config, httpClient);
         _requestBoard = new RequestBoardWindow(config, httpClient);
-        _syncshell = config.FCSyncShell ? new SyncshellWindow(config, httpClient) : null;
+        _syncshellEnabled = config.FCSyncShell;
+        _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
+    }
+
+    internal void UpdateSyncshell()
+    {
+        if (_syncshellEnabled == _config.FCSyncShell)
+            return;
+
+        _syncshellEnabled = _config.FCSyncShell;
+        if (_syncshellEnabled)
+        {
+            _syncshell = new SyncshellWindow(_config, _httpClient);
+            PluginServices.Instance?.Framework.RunOnTick(() => { });
+        }
+        else
+        {
+            _syncshell?.Dispose();
+            _syncshell = null;
+            PluginServices.Instance?.Framework.RunOnTick(() => ImGui.SetTabItemClosed("Syncshell"));
+        }
     }
 
     public void Draw()
     {
+        UpdateSyncshell();
+
         if (!IsOpen)
         {
             return;
         }
-
         ImGui.SetNextWindowSize(new Vector2(800, 600), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(600, 400), new Vector2(float.MaxValue, float.MaxValue));
         ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.11f, 0.11f, 0.12f, 1f));
