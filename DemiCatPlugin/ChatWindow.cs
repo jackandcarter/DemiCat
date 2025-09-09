@@ -12,6 +12,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Utility;
 using StbImageSharp;
 using System.IO;
 using DiscordHelper;
@@ -35,7 +36,8 @@ public class ChatWindow : IDisposable
     protected string _statusMessage = string.Empty;
     protected readonly DiscordPresenceService? _presence;
     protected readonly List<string> _attachments = new();
-    protected string _newAttachmentPath = string.Empty;
+    private readonly FileDialogManager _fileDialog = new();
+    private string _attachmentError = string.Empty;
     protected readonly TokenManager _tokenManager;
     protected readonly ChannelService _channelService;
     protected string? _replyToId;
@@ -131,6 +133,7 @@ public class ChatWindow : IDisposable
 
     public virtual void Draw()
     {
+        _fileDialog.Draw();
         if (!_bridge.IsReady())
         {
             ImGui.TextUnformatted("Link DemiCat…");
@@ -411,17 +414,34 @@ public class ChatWindow : IDisposable
 
         if (ImGui.Button("Attach"))
         {
-            ImGui.OpenPopup("attachFile");
-        }
-        if (ImGui.BeginPopup("attachFile"))
-        {
-            ImGui.InputText("Path", ref _newAttachmentPath, 260);
-            if (ImGui.Button("Add") && File.Exists(_newAttachmentPath))
+            _fileDialog.OpenFileDialog("Select Attachment", "All files{.*}", (bool ok, IReadOnlyList<string> files) =>
             {
-                _attachments.Add(_newAttachmentPath);
-                _newAttachmentPath = string.Empty;
+                if (!ok)
+                    return;
+                foreach (var file in files)
+                {
+                    try
+                    {
+                        using var stream = File.OpenRead(file);
+                        _attachments.Add(file);
+                    }
+                    catch (Exception)
+                    {
+                        _attachmentError = $"Unable to open {Path.GetFileName(file)}";
+                    }
+                }
+            }, 1, true);
+        }
+        if (!string.IsNullOrEmpty(_attachmentError))
+        {
+            ImGui.SameLine();
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0f, 0f, 1f));
+            ImGui.TextUnformatted("!");
+            ImGui.PopStyleColor();
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(_attachmentError);
             }
-            ImGui.EndPopup();
         }
         foreach (var att in _attachments.ToArray())
         {
