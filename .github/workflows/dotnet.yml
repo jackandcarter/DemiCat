@@ -18,6 +18,8 @@ jobs:
         run: dotnet restore DemiCatPlugin/DemiCatPlugin.csproj
       - name: Build
         run: dotnet build DemiCatPlugin/DemiCatPlugin.csproj --configuration Release
+      - name: Copy manifest
+        run: cp DemiCatPlugin/DemiCatPlugin.json DemiCatPlugin/bin/Release/net9.0/
       - name: Test
         if: ${{ hashFiles('**/*Tests.csproj') != '' }}
         run: dotnet test tests --configuration Release

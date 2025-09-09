@@ -1,9 +1,9 @@
 {
-  "Author": "DemiCat",
+  "Author": "Demi Dev Studio",
   "Name": "DemiCat",
   "InternalName": "DemiCatPlugin",
-  "AssemblyVersion": "1.1.1.0",
-  "Description": "DemiCat Dalamud plugin.",
+  "AssemblyVersion": "1.2.2.1",
+  "Description": "DemiCat Dalamud plugin. =Mew=",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/jackandcarter/DemiCat",
   "DalamudApiLevel": 13,
