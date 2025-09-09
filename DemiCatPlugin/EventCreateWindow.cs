@@ -428,7 +428,9 @@ public class EventCreateWindow
                     Label = b.Label,
                     Emoji = b.Emoji,
                     Style = b.Style,
-                    MaxSignups = b.MaxSignups
+                    MaxSignups = b.MaxSignups,
+                    Width = b.Width,
+                    Height = b.Height
                 });
             }
         }
@@ -464,7 +466,9 @@ public class EventCreateWindow
                 Label = b.Label,
                 Emoji = b.Emoji,
                 Style = b.Style,
-                MaxSignups = b.MaxSignups
+                MaxSignups = b.MaxSignups,
+                Width = b.Width,
+                Height = b.Height
             }).ToList(),
             Mentions = _mentions.Select(ulong.Parse).ToList()
         };
@@ -504,7 +508,7 @@ public class EventCreateWindow
                 thumbnailUrl = dto.ThumbnailUrl,
                 color = dto.Color,
                 fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
-                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, emoji = b.Emoji, style = b.Style.HasValue ? (int)b.Style : (int?)null, maxSignups = b.MaxSignups }).ToList(),
+                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, emoji = b.Emoji, style = b.Style.HasValue ? (int)b.Style : (int?)null, maxSignups = b.MaxSignups, width = b.Width, height = b.Height }).ToList(),
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null,
                 repeat = _repeat == RepeatOption.None ? null : _repeat.ToString().ToLowerInvariant()
             };
@@ -534,7 +538,9 @@ public class EventCreateWindow
                 Label = b.Label,
                 Emoji = b.Emoji,
                 Style = b.Style,
-                MaxSignups = b.MaxSignups
+                MaxSignups = b.MaxSignups,
+                Width = b.Width,
+                Height = b.Height
             });
         }
     }
@@ -567,7 +573,9 @@ public class EventCreateWindow
                     CustomId = $"rsvp:{b.Tag}",
                     Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
                     Style = b.Style,
-                    MaxSignups = b.MaxSignups
+                    MaxSignups = b.MaxSignups,
+                    Width = b.Width,
+                    Height = b.Height
                 })
                 .ToList()
         };
@@ -669,7 +677,9 @@ public class EventCreateWindow
                 Label = b.Label,
                 Emoji = b.Emoji,
                 Style = b.Style,
-                MaxSignups = b.MaxSignups
+                MaxSignups = b.MaxSignups,
+                Width = b.Width,
+                Height = b.Height
             }).ToList()
         };
         _ = SignupPresetService.Create(preset, _httpClient, _config);

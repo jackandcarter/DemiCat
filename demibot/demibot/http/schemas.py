@@ -32,6 +32,8 @@ class EmbedButtonDto(CamelModel):
     emoji: Optional[str] = None
     style: Optional[ButtonStyle] = None
     max_signups: Optional[int] = Field(default=None, alias="maxSignups")
+    width: Optional[int] = None
+    height: Optional[int] = None
 
 
 class EmbedAuthorDto(CamelModel):

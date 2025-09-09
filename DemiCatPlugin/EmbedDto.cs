@@ -44,6 +44,8 @@ public class EmbedButtonDto
     public string? Emoji { get; set; }
     public ButtonStyle? Style { get; set; }
     public int? MaxSignups { get; set; }
+    public int? Width { get; set; }
+    public int? Height { get; set; }
 }
 
 public class EmbedAuthorDto

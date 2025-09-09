@@ -94,7 +94,9 @@ public static class EmbedRenderer
                     ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Lighten(color, 1.1f));
                     ImGui.PushStyleColor(ImGuiCol.ButtonActive, Lighten(color, 1.2f));
                 }
-                if (ImGui.Button($"{text}##{id}{dto.Id}", new Vector2(-1, 0)))
+                var w = button.Width ?? -1;
+                var h = button.Height ?? 0;
+                if (ImGui.Button($"{text}##{id}{dto.Id}", new Vector2(w, h)))
                 {
                     if (!string.IsNullOrEmpty(button.Url))
                     {

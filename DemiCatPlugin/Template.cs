@@ -37,6 +37,8 @@ public class Template
         public string Emoji { get; set; } = string.Empty;
         public ButtonStyle Style { get; set; } = ButtonStyle.Secondary;
         public int? MaxSignups { get; set; }
+        public int? Width { get; set; }
+        public int? Height { get; set; }
     }
 }
 
