@@ -2,8 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
+using System.Numerics;
 
 namespace DemiCatPlugin;
 
@@ -16,6 +19,8 @@ public class EmojiPopup
     private bool _unicodeLoaded;
     private bool _guildLoaded;
     private Action<string>? _onSelected;
+
+    public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
 
     private const string PopupId = "PickEmoji";
 
@@ -75,9 +80,21 @@ public class EmojiPopup
     private void DrawGuild()
     {
         if (!_guildLoaded) _ = FetchGuild();
+        LoadGuildTextures();
+        var size = 24f;
         foreach (var e in _guild)
         {
-            if (ImGui.Button($":{e.Name}:##g{e.Id}"))
+            bool clicked;
+            if (e.Texture != null)
+            {
+                var wrap = e.Texture.GetWrapOrEmpty();
+                clicked = ImGui.ImageButton(wrap.Handle, new Vector2(size, size));
+            }
+            else
+            {
+                clicked = ImGui.Button($":{e.Name}:##g{e.Id}");
+            }
+            if (clicked)
             {
                 GuildEmojiInfos[e.Id] = (e.Name, e.IsAnimated);
                 _onSelected?.Invoke($"custom:{e.Id}");
@@ -86,6 +103,18 @@ public class EmojiPopup
             ImGui.SameLine();
         }
         ImGui.NewLine();
+    }
+
+    internal void LoadGuildTextures()
+    {
+        if (TextureLoader == null) return;
+        foreach (var e in _guild)
+        {
+            if (e.Texture == null)
+            {
+                TextureLoader(e.ImageUrl, t => e.Texture = t);
+            }
+        }
     }
 
     private async Task FetchUnicode()
@@ -159,5 +188,7 @@ public class EmojiPopup
         public string Name { get; set; } = string.Empty;
         public bool IsAnimated { get; set; }
         public string ImageUrl { get; set; } = string.Empty;
+        [JsonIgnore]
+        public ISharedImmediateTexture? Texture { get; set; }
     }
 }
