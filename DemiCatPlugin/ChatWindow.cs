@@ -17,6 +17,7 @@ using StbImageSharp;
 using System.IO;
 using DiscordHelper;
 using System.Diagnostics;
+using Dalamud.Interface.ImGuiFileDialog;
 
 namespace DemiCatPlugin;
 
