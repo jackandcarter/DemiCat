@@ -517,8 +517,13 @@ public class ChatWindow : IDisposable
             FormatContent(preview);
         }
 
-        var inputBuf = MakeUtf8Buffer(_input, 512);
-        var send = ImGui.InputText("##chatInput", inputBuf, ImGuiInputTextFlags.EnterReturnsTrue);
+        var inputBuf = MakeUtf8Buffer(_input, 2048);
+        var send = ImGui.InputText(
+            "##chatInput",
+            inputBuf,
+            ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
+            new ImGui.ImGuiInputTextCallbackDelegate(OnInputEdited)
+        );
         _input = ReadUtf8Buffer(inputBuf);
 
         ImGui.SameLine();
@@ -702,6 +707,14 @@ public class ChatWindow : IDisposable
         text = Regex.Replace(text, "\\[/(?:B|I|U)\\]", "");
         text = Regex.Replace(text, "\\[LINK=([^\\]]+)\\](.+?)\\[/LINK\\]", "$2 ($1)");
         ImGui.TextUnformatted(text);
+    }
+
+    private unsafe nint OnInputEdited(ImGuiInputTextCallbackData* data)
+    {
+        if (data == null) return 0;
+        _selectionStart = data->SelectionStart;
+        _selectionEnd = data->SelectionEnd;
+        return 0;
     }
 
     private void WrapSelection(string prefix, string suffix)
