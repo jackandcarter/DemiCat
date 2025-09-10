@@ -119,6 +119,8 @@ public class ChatWindow : IDisposable
             {
                 if (ch == _channelId) await RefreshMessages();
             });
+
+        EnsureEmojiCatalog();
     }
 
     public virtual void StartNetworking()
@@ -586,6 +588,7 @@ public class ChatWindow : IDisposable
                     _emojiCatalog.Clear();
                     foreach (var e in list)
                     {
+                        _emojiCatalog[e.Id] = e;
                         _emojiCatalog[e.Name] = e;
                         LoadTexture(e.ImageUrl, t => e.Texture = t);
                     }
@@ -611,11 +614,8 @@ public class ChatWindow : IDisposable
                 text = text.Replace($"<@{m.Id}>", $"@{m.Name}");
             }
         }
-        text = Regex.Replace(text, "<a?:([a-zA-Z0-9_]+):\\d+>", ":$1:");
-
         text = MarkdownFormatter.Format(text);
-
-        var parts = Regex.Split(text, "(:[a-zA-Z0-9_]+:)");
+        var parts = Regex.Split(text, "(<a?:[a-zA-Z0-9_]+:\\d+>|:[a-zA-Z0-9_]+:)");
         ImGui.PushTextWrapPos();
         var first = true;
         foreach (var part in parts)
@@ -625,25 +625,36 @@ public class ChatWindow : IDisposable
             {
                 ImGui.SameLine(0, 0);
             }
-            var match = Regex.Match(part, "^:([a-zA-Z0-9_]+):$");
-            if (match.Success)
+            var guildMatch = Regex.Match(part, "^<a?:([a-zA-Z0-9_]+):(\\d+)>$");
+            if (guildMatch.Success)
             {
-                var name = match.Groups[1].Value;
-                if (_emojiCatalog.TryGetValue(name, out var emoji))
+                var name = guildMatch.Groups[1].Value;
+                var id = guildMatch.Groups[2].Value;
+                var animated = part.StartsWith("<a:");
+                if (!_emojiCatalog.TryGetValue(id, out var emoji))
                 {
-                    if (emoji.Texture == null)
+                    if (!_emojiCatalog.TryGetValue(name, out emoji))
                     {
-                        LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
+                        var ext = animated ? "gif" : "png";
+                        emoji = new EmojiPicker.EmojiDto
+                        {
+                            Id = id,
+                            Name = name,
+                            IsAnimated = animated,
+                            ImageUrl = $"https://cdn.discordapp.com/emojis/{id}.{ext}"
+                        };
                     }
-                    if (emoji.Texture != null)
-                    {
-                        var wrap = emoji.Texture.GetWrapOrEmpty();
-                        ImGui.Image(wrap.Handle, new Vector2(20, 20));
-                    }
-                    else
-                    {
-                        ImGui.TextUnformatted($":{name}:");
-                    }
+                    _emojiCatalog[id] = emoji;
+                    _emojiCatalog[name] = emoji;
+                }
+                if (emoji.Texture == null)
+                {
+                    LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
+                }
+                if (emoji.Texture != null)
+                {
+                    var wrap = emoji.Texture.GetWrapOrEmpty();
+                    ImGui.Image(wrap.Handle, new Vector2(20, 20));
                 }
                 else
                 {
@@ -652,7 +663,35 @@ public class ChatWindow : IDisposable
             }
             else
             {
-                RenderMarkdown(part);
+                var match = Regex.Match(part, "^:([a-zA-Z0-9_]+):$");
+                if (match.Success)
+                {
+                    var name = match.Groups[1].Value;
+                    if (_emojiCatalog.TryGetValue(name, out var emoji))
+                    {
+                        if (emoji.Texture == null)
+                        {
+                            LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
+                        }
+                        if (emoji.Texture != null)
+                        {
+                            var wrap = emoji.Texture.GetWrapOrEmpty();
+                            ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                        }
+                        else
+                        {
+                            ImGui.TextUnformatted($":{name}:");
+                        }
+                    }
+                    else
+                    {
+                        ImGui.TextUnformatted($":{name}:");
+                    }
+                }
+                else
+                {
+                    RenderMarkdown(part);
+                }
             }
             first = false;
         }
