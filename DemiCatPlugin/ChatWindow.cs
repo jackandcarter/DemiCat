@@ -59,6 +59,9 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
     private readonly Dictionary<string, TypingUser> _typingUsers = new();
+    private int _selectionStart;
+    private int _selectionEnd;
+    private readonly ImGuiInputTextCallback _inputCallback;
 
     private class TextureCacheEntry
     {
@@ -116,6 +119,7 @@ public class ChatWindow : IDisposable
             {
                 if (ch == _channelId) await RefreshMessages();
             });
+        _inputCallback = OnInputEdited;
     }
 
     public virtual void StartNetworking()
@@ -465,7 +469,23 @@ public class ChatWindow : IDisposable
             ImGui.TextUnformatted($"{names} {verb} typing...");
         }
 
-        var send = ImGui.InputText("##chatInput", ref _input, 512, ImGuiInputTextFlags.EnterReturnsTrue);
+        if (ImGui.SmallButton("B")) WrapSelection("**", "**");
+        ImGui.SameLine();
+        if (ImGui.SmallButton("I")) WrapSelection("*", "*");
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Code")) WrapSelection("`", "`");
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Spoiler")) WrapSelection("||", "||");
+        ImGui.SameLine();
+        if (ImGui.SmallButton("Link")) WrapSelection("[", "](url)");
+
+        if (!string.IsNullOrEmpty(_input))
+        {
+            var preview = new DiscordMessageDto { Content = _input };
+            FormatContent(preview);
+        }
+
+        var send = ImGui.InputText("##chatInput", ref _input, 512, ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways, _inputCallback);
         ImGui.SameLine();
         if (ImGui.Button("Send") || send)
         {
@@ -648,6 +668,23 @@ public class ChatWindow : IDisposable
         text = Regex.Replace(text, "\\[/(?:B|I|U)\\]", "");
         text = Regex.Replace(text, "\\[LINK=([^\\]]+)\\](.+?)\\[/LINK\\]", "$2 ($1)");
         ImGui.TextUnformatted(text);
+    }
+
+    private void WrapSelection(string prefix, string suffix)
+    {
+        var start = Math.Min(_selectionStart, _selectionEnd);
+        var end = Math.Max(_selectionStart, _selectionEnd);
+        var selected = _input.Substring(start, end - start);
+        _input = _input[..start] + prefix + selected + suffix + _input[end..];
+        var cursor = start + prefix.Length + selected.Length + suffix.Length;
+        _selectionStart = _selectionEnd = cursor;
+    }
+
+    private unsafe int OnInputEdited(ImGuiInputTextCallbackData* data)
+    {
+        _selectionStart = data->SelectionStart;
+        _selectionEnd = data->SelectionEnd;
+        return 0;
     }
 
     protected virtual async Task SendMessage()
