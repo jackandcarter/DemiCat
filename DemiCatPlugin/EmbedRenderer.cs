@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
+using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using DiscordHelper;
@@ -82,34 +83,49 @@ public static class EmbedRenderer
 
         if (dto.Buttons != null)
         {
-            foreach (var button in dto.Buttons)
+            foreach (var group in dto.Buttons
+                         .GroupBy(b => b.RowIndex ?? 0)
+                         .OrderBy(g => g.Key))
             {
-                var id = button.CustomId ?? button.Label;
-                var text = string.IsNullOrEmpty(button.Emoji) ? button.Label : $"{button.Emoji} {button.Label}";
-                var styled = button.Style.HasValue && button.Style.Value != ButtonStyle.Link;
-                if (styled)
+                var i = 0;
+                foreach (var button in group)
                 {
-                    var color = GetStyleColor(button.Style!.Value);
-                    ImGui.PushStyleColor(ImGuiCol.Button, color);
-                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Lighten(color, 1.1f));
-                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, Lighten(color, 1.2f));
-                }
-                var w = button.Width ?? -1;
-                var h = button.Height ?? 0;
-                if (ImGui.Button($"{text}##{id}{dto.Id}", new Vector2(w, h)))
-                {
-                    if (!string.IsNullOrEmpty(button.Url))
+                    if (i > 0 && i % 5 != 0)
                     {
-                        try { Process.Start(new ProcessStartInfo(button.Url) { UseShellExecute = true }); } catch { }
+                        ImGui.SameLine();
                     }
-                    else if (!string.IsNullOrEmpty(button.CustomId))
+
+                    var id = button.CustomId ?? button.Label;
+                    var text = string.IsNullOrEmpty(button.Emoji) ? button.Label : $"{button.Emoji} {button.Label}";
+                    var styled = button.Style.HasValue && button.Style.Value != ButtonStyle.Link;
+                    if (styled)
                     {
-                        onButtonClick?.Invoke(button.CustomId);
+                        var color = GetStyleColor(button.Style!.Value);
+                        ImGui.PushStyleColor(ImGuiCol.Button, color);
+                        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Lighten(color, 1.1f));
+                        ImGui.PushStyleColor(ImGuiCol.ButtonActive, Lighten(color, 1.2f));
                     }
-                }
-                if (styled)
-                {
-                    ImGui.PopStyleColor(3);
+
+                    var w = button.Width ?? -1;
+                    var h = button.Height ?? 0;
+                    if (ImGui.Button($"{text}##{id}{dto.Id}", new Vector2(w, h)))
+                    {
+                        if (!string.IsNullOrEmpty(button.Url))
+                        {
+                            try { Process.Start(new ProcessStartInfo(button.Url) { UseShellExecute = true }); } catch { }
+                        }
+                        else if (!string.IsNullOrEmpty(button.CustomId))
+                        {
+                            onButtonClick?.Invoke(button.CustomId);
+                        }
+                    }
+
+                    if (styled)
+                    {
+                        ImGui.PopStyleColor(3);
+                    }
+
+                    i++;
                 }
             }
         }
