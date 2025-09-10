@@ -465,8 +465,7 @@ public class ChatWindow : IDisposable
                     }
                 },
                 1,
-                "."); // <- start directory (was a bool before)
-
+                "."); // start directory
         }
         if (!string.IsNullOrEmpty(_attachmentError))
         {
@@ -517,9 +516,7 @@ public class ChatWindow : IDisposable
             FormatContent(preview);
         }
 
-
         var inputBuf = MakeUtf8Buffer(_input, 2048);
-
         var send = ImGui.InputText(
             "##chatInput",
             inputBuf,
@@ -711,12 +708,11 @@ public class ChatWindow : IDisposable
         ImGui.TextUnformatted(text);
     }
 
-    private unsafe int OnInputEdited(ImGuiInputTextCallbackData* data)
+    // Correct signature for Dalamud's callback: ref struct, returns int
+    private int OnInputEdited(ref ImGuiInputTextCallbackData data)
     {
-
-        if (data == null) return 0;
-        _selectionStart = data->SelectionStart;
-        _selectionEnd = data->SelectionEnd;
+        _selectionStart = data.SelectionStart;
+        _selectionEnd = data.SelectionEnd;
         return 0;
     }
 
@@ -789,7 +785,6 @@ public class ChatWindow : IDisposable
 
         try
         {
-            // Build request body (includes reply threading if set)
             var presences = _presence?.Presences ?? new List<PresenceDto>();
             var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles);
 
@@ -853,7 +848,7 @@ public class ChatWindow : IDisposable
                     _messages.Add(optimistic);
                     _input = string.Empty;
                     _statusMessage = string.Empty;
-                    _replyToId = null; // <-- clear reply state after a successful send
+                    _replyToId = null;
                     _attachments.Clear();
                 });
             }
