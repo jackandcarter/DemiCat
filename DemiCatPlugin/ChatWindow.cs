@@ -688,8 +688,9 @@ public class ChatWindow : IDisposable
 
     private unsafe int OnInputEdited(ImGuiInputTextCallbackData* data)
     {
+        if (data == null) return 0;
         _selectionStart = data->SelectionStart;
-        _selectionEnd = data->SelectionEnd;
+        _selectionEnd   = data->SelectionEnd;
         return 0;
     }
 
