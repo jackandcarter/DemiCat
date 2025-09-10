@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
+using System.Numerics;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -11,13 +13,16 @@ public class EmojiPopup
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
+
     private readonly List<UnicodeEmoji> _unicode = new();
     private readonly List<GuildEmoji> _guild = new();
     private bool _unicodeLoaded;
     private bool _guildLoaded;
+
     private Action<string>? _onSelected;
 
     private const string PopupId = "PickEmoji";
+    private string _search = string.Empty;
 
     public EmojiPopup(Config config, HttpClient httpClient)
     {
@@ -34,117 +39,209 @@ public class EmojiPopup
     public void Draw()
     {
         if (!ImGui.BeginPopup(PopupId)) return;
+
+        ImGui.SetNextItemWidth(240);
+        ImGui.InputText("Search", ref _search, 64);
+
         if (ImGui.BeginTabBar("emoji-tabs"))
         {
-            if (ImGui.BeginTabItem("Unicode"))
+            if (ImGui.BeginTabItem("Emoji"))
             {
-                DrawUnicode();
+                DrawUnicodeGrid();
                 ImGui.EndTabItem();
             }
+
             var guildEnabled = !string.IsNullOrWhiteSpace(_config.GuildId);
             if (!guildEnabled) ImGui.BeginDisabled();
-            var guildTab = ImGui.BeginTabItem("Guild");
+            var guildTab = ImGui.BeginTabItem("Server");
             if (!guildEnabled && ImGui.IsItemHovered())
-                ImGui.SetTooltip("Set GuildId in config to enable guild emojis");
+                ImGui.SetTooltip("Set GuildId in config to enable server emojis");
             if (guildTab)
             {
-                DrawGuild();
+                DrawGuildGrid();
                 ImGui.EndTabItem();
             }
             if (!guildEnabled) ImGui.EndDisabled();
+
             ImGui.EndTabBar();
         }
+
         ImGui.EndPopup();
     }
 
-    private void DrawUnicode()
+    private void DrawUnicodeGrid()
     {
         if (!_unicodeLoaded) _ = FetchUnicode();
-        foreach (var e in _unicode)
-        {
-            if (ImGui.Button($"{e.Emoji}##u{e.Emoji}"))
-            {
-                _onSelected?.Invoke(e.Emoji);
-                ImGui.CloseCurrentPopup();
-            }
-            ImGui.SameLine();
-        }
-        ImGui.NewLine();
+
+        var items = string.IsNullOrWhiteSpace(_search)
+            ? _unicode
+            : _unicode.Where(u =>
+                   u.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                   u.Emoji.Contains(_search, StringComparison.OrdinalIgnoreCase)
+               ).ToList();
+
+        DrawGrid(
+            items.Count,
+            i => items[i].ImageUrl,
+            i => items[i].Name,
+            i => items[i].Emoji,
+            _ => false
+        );
     }
 
-    private void DrawGuild()
+    private void DrawGuildGrid()
     {
         if (!_guildLoaded) _ = FetchGuild();
-        foreach (var e in _guild)
+
+        var items = string.IsNullOrWhiteSpace(_search)
+            ? _guild
+            : _guild.Where(g => g.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        DrawGrid(
+            items.Count,
+            i => items[i].ImageUrl,
+            i => items[i].Name,
+            i => $"custom:{items[i].Id}",
+            i => items[i].IsAnimated
+        );
+    }
+
+    private void DrawGrid(
+        int count,
+        Func<int, string> getUrl,
+        Func<int, string> getName,
+        Func<int, string> getReturnValue,
+        Func<int, bool> isDisabled,
+        int columns = 8,
+        float cellSize = 28f)
+    {
+        int col = 0;
+
+        for (int i = 0; i < count; i++)
         {
-            if (ImGui.Button($":{e.Name}:##g{e.Id}"))
+            if (col == 0) ImGui.BeginGroup();
+
+            var url = getUrl(i);
+            var name = getName(i);
+            var disabled = isDisabled(i);
+
+            if (disabled) ImGui.BeginDisabled();
+
+            WebTextureCache.Get(url, tex =>
             {
-                GuildEmojiInfos[e.Id] = (e.Name, e.IsAnimated);
-                _onSelected?.Invoke($"custom:{e.Id}");
-                ImGui.CloseCurrentPopup();
-            }
+                if (tex != null)
+                {
+                    ImGui.PushID(i);
+                    var ret = getReturnValue(i);
+
+                    if (ImGui.ImageButton(tex.GetWrapOrEmpty().Handle, new Vector2(cellSize, cellSize)))
+                    {
+                        if (!disabled)
+                        {
+                            var markerPrefix = "custom:";
+                            if (ret.StartsWith(markerPrefix, StringComparison.OrdinalIgnoreCase))
+                            {
+                                var id = ret.Substring(markerPrefix.Length);
+                                EmojiAssets.SetGuildEmoji(id, name, false);
+                            }
+                            else
+                            {
+                                if (EmojiAssets.LookupUnicodeUrl(ret) == null)
+                                    EmojiAssets.SetUnicodeEmoji(ret, url);
+                            }
+
+                            _onSelected?.Invoke(ret);
+                            ImGui.CloseCurrentPopup();
+                        }
+                    }
+
+                    if (ImGui.IsItemHovered())
+                        ImGui.SetTooltip(name);
+
+                    ImGui.PopID();
+                }
+            });
+
+            if (disabled) ImGui.EndDisabled();
+
             ImGui.SameLine();
+
+            col++;
+            if (col >= columns)
+            {
+                ImGui.NewLine();
+                ImGui.EndGroup();
+                col = 0;
+            }
         }
-        ImGui.NewLine();
+
+        if (col != 0) { ImGui.NewLine(); ImGui.EndGroup(); }
+    }
+
+    // For tests to load textures without UI
+    internal void PreloadGuildTextures()
+    {
+        foreach (var g in _guild)
+        {
+            WebTextureCache.Get(g.ImageUrl, _ => { });
+        }
     }
 
     private async Task FetchUnicode()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis/unicode");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode) return;
-            var stream = await response.Content.ReadAsStreamAsync();
+            var req = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis/unicode");
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            var res = await _httpClient.SendAsync(req);
+            if (!res.IsSuccessStatusCode) return;
+
+            var stream = await res.Content.ReadAsStreamAsync();
             var list = await JsonSerializer.DeserializeAsync<List<UnicodeEmoji>>(stream) ?? new();
+
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _unicode.Clear();
                 _unicode.AddRange(list);
+
+                foreach (var u in list) EmojiAssets.SetUnicodeEmoji(u.Emoji, u.ImageUrl);
+
                 _unicodeLoaded = true;
             });
         }
-        catch
-        {
-            // ignore
-        }
+        catch { }
     }
 
     private async Task FetchGuild()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_config.GuildId)) return;
+
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis/guilds/{_config.GuildId}");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode) return;
-            var stream = await response.Content.ReadAsStreamAsync();
+            var req = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis/guilds/{_config.GuildId}");
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            var res = await _httpClient.SendAsync(req);
+            if (!res.IsSuccessStatusCode) return;
+
+            var stream = await res.Content.ReadAsStreamAsync();
             var list = await JsonSerializer.DeserializeAsync<List<GuildEmoji>>(stream) ?? new();
+
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _guild.Clear();
                 _guild.AddRange(list);
-                foreach (var g in list)
-                    GuildEmojiInfos[g.Id] = (g.Name, g.IsAnimated);
+                foreach (var g in list) EmojiAssets.SetGuildEmoji(g.Id, g.Name, g.IsAnimated);
                 _guildLoaded = true;
             });
         }
-        catch
-        {
-            // ignore
-        }
+        catch { }
     }
 
-    public static string? LookupGuildName(string id) =>
-        GuildEmojiInfos.TryGetValue(id, out var info) ? info.Name : null;
-
-    public static bool IsGuildEmojiAnimated(string id) =>
-        GuildEmojiInfos.TryGetValue(id, out var info) && info.IsAnimated;
-
-    private static readonly Dictionary<string, (string Name, bool IsAnimated)> GuildEmojiInfos = new();
+    // Static lookups used elsewhere
+    public static string? LookupGuildName(string id) => EmojiAssets.LookupGuildName(id);
+    public static bool IsGuildEmojiAnimated(string id) => EmojiAssets.IsGuildEmojiAnimated(id);
 
     public class UnicodeEmoji
     {
@@ -161,3 +258,4 @@ public class EmojiPopup
         public string ImageUrl { get; set; } = string.Empty;
     }
 }
+
