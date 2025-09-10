@@ -201,7 +201,10 @@ public class ChatWindow : IDisposable
             SaveConfig();
         }
 
-        var scrollRegionHeight = -ImGui.GetFrameHeightWithSpacing() * 2;
+        // Calculate available space and reserve room for the input section so it remains visible
+        var availableHeight = ImGui.GetContentRegionAvail().Y;
+        var inputSectionHeight = ImGui.GetFrameHeightWithSpacing() * 8;
+        var scrollRegionHeight = MathF.Max(1f, availableHeight - inputSectionHeight);
         ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), true);
         var clipper = new ImGuiListClipper();
         clipper.Begin(_messages.Count);
