@@ -139,7 +139,7 @@ public class EmojiPopup
                     {
                         if (!disabled)
                         {
-                            var markerPrefix = "custom:";
+                            const string markerPrefix = "custom:";
                             if (ret.StartsWith(markerPrefix, StringComparison.OrdinalIgnoreCase))
                             {
                                 var id = ret.Substring(markerPrefix.Length);
@@ -179,13 +179,11 @@ public class EmojiPopup
         if (col != 0) { ImGui.NewLine(); ImGui.EndGroup(); }
     }
 
-    // For tests to load textures without UI
+    // For tests to warm the cache without UI
     internal void PreloadGuildTextures()
     {
         foreach (var g in _guild)
-        {
             WebTextureCache.Get(g.ImageUrl, _ => { });
-        }
     }
 
     private async Task FetchUnicode()
@@ -247,16 +245,15 @@ public class EmojiPopup
     public class UnicodeEmoji
     {
         public string Emoji { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
+        public string Name   { get; set; } = string.Empty;
         public string ImageUrl { get; set; } = string.Empty;
     }
 
     public class GuildEmoji
     {
-        public string Id { get; set; } = string.Empty;
-        public string Name { get; set; } = string.Empty;
-        public bool IsAnimated { get; set; }
-        public string ImageUrl { get; set; } = string.Empty;
+        public string Id        { get; set; } = string.Empty;
+        public string Name      { get; set; } = string.Empty;
+        public bool   IsAnimated{ get; set; }
+        public string ImageUrl  { get; set; } = string.Empty;
     }
 }
-

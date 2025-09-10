@@ -14,6 +14,7 @@ public class EmojiPopupGuildTests
     {
         private readonly string _response;
         public StubHandler(string response) => _response = response;
+
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -23,7 +24,7 @@ public class EmojiPopupGuildTests
 
     private class TestFramework : Dalamud.Plugin.Services.IFramework
     {
-        public event Dalamud.Plugin.Services.FrameworkUpdateDelegate? Update { add { } remove { } }
+        public event Dalamud.Plugin.Services.FrameworkUpdateDelegate? Update { add { } remove {}} 
         public Dalamud.Plugin.Services.FrameworkUpdateType CurrentUpdateType => Dalamud.Plugin.Services.FrameworkUpdateType.None;
         public void RunOnTick(System.Action action, Dalamud.Plugin.Services.FrameworkUpdatePriority priority = Dalamud.Plugin.Services.FrameworkUpdatePriority.Normal) => action();
     }
@@ -52,6 +53,7 @@ public class EmojiPopupGuildTests
         var http = new HttpClient(new StubHandler(json));
         var popup = new EmojiPopup(config, http);
 
+        // Make PluginServices ready for RunOnTick
         var ps = new PluginServices();
         var framework = new TestFramework();
         var log = new TestLog();
@@ -76,4 +78,3 @@ public class EmojiPopupGuildTests
         WebTextureCache.FetchOverride = null;
     }
 }
-
