@@ -41,4 +41,16 @@ public class ButtonRowsHelperTests
         Assert.NotEqual(id1, id3);
         Assert.NotEqual(id2, id3);
     }
+
+    [Fact]
+    public void ButtonsWrapAfterFive()
+    {
+        var rows = new ButtonRows(new() { new() });
+        for (var i = 0; i < 6; i++)
+            rows.AddButton(rows.Rows.Count - 1, new ButtonData { Label = i.ToString() });
+
+        Assert.Equal(2, rows.Rows.Count);
+        Assert.Equal(5, rows.Rows[0].Count);
+        Assert.Single(rows.Rows[1]);
+    }
 }

@@ -485,8 +485,8 @@ public class TemplatesWindow
                     (int)(b?.Style ?? x.Data.Style),
                     NormalizeEmoji(b?.Emoji ?? x.Data.Emoji),
                     b?.MaxSignups ?? x.Data.MaxSignups,
-                    b?.Width ?? x.Data.Width,
-                    b?.Height ?? x.Data.Height);
+                    Math.Min(b?.Width ?? x.Data.Width ?? ButtonSizeHelper.ComputeWidth(label), ButtonSizeHelper.Max),
+                    Math.Min(b?.Height ?? x.Data.Height ?? ButtonSizeHelper.DefaultHeight, ButtonSizeHelper.Max));
             })
             .ToList();
     }
