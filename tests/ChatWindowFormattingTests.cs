@@ -54,6 +54,51 @@ public class ChatWindowFormattingTests
         Assert.Equal("[click](url)", GetInput(window));
     }
 
+    [Fact]
+    public void BoldButton_WrapsWord_WhenNoSelection()
+    {
+        var window = CreateWindow();
+        SetInput(window, "hello world", 8, 8);
+        InvokeWrap(window, "**", "**");
+        Assert.Equal("hello **world**", GetInput(window));
+    }
+
+    [Fact]
+    public void ItalicButton_WrapsWord_WhenNoSelection()
+    {
+        var window = CreateWindow();
+        SetInput(window, "hello world", 2, 2);
+        InvokeWrap(window, "*", "*");
+        Assert.Equal("*hello* world", GetInput(window));
+    }
+
+    [Fact]
+    public void CodeButton_WrapsWord_WhenNoSelection()
+    {
+        var window = CreateWindow();
+        SetInput(window, "test", 2, 2);
+        InvokeWrap(window, "`", "`");
+        Assert.Equal("`test`", GetInput(window));
+    }
+
+    [Fact]
+    public void SpoilerButton_WrapsWord_WhenNoSelection()
+    {
+        var window = CreateWindow();
+        SetInput(window, "secret", 3, 3);
+        InvokeWrap(window, "||", "||");
+        Assert.Equal("||secret||", GetInput(window));
+    }
+
+    [Fact]
+    public void LinkButton_WrapsWord_WhenNoSelection()
+    {
+        var window = CreateWindow();
+        SetInput(window, "click", 2, 2);
+        InvokeWrap(window, "[", "](url)");
+        Assert.Equal("[click](url)", GetInput(window));
+    }
+
     private static ChatWindow CreateWindow()
     {
         SetupServices();
