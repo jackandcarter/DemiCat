@@ -95,9 +95,10 @@ public class MainWindow : IDisposable
         }
 
         var padding = ImGui.GetStyle().FramePadding;
+        ImGui.Dummy(new Vector2(0f, padding.Y));
         var buttonSize = ImGui.GetFrameHeight();
         var cursor = ImGui.GetCursorPos();
-        ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - buttonSize - padding.X, padding.Y));
+        ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - buttonSize - padding.X, cursor.Y));
         if (ImGui.Button("\u2699"))
         {
             _settings.IsOpen = true;
