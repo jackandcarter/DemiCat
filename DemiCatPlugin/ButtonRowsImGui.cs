@@ -28,6 +28,19 @@ public static class ButtonRowsImGui
                 if (ImGui.InputText("##label", ref buf, 128))
                     state.SetLabel(r, c, buf);
 
+                var width = state.Rows[r][c].Width ?? 0;
+                if (ImGui.InputInt("Width", ref width))
+                    state.Rows[r][c].Width = width > 0 ? Math.Min(width, ButtonSizeHelper.Max) : null;
+                ImGui.SameLine();
+                var autoW = ButtonSizeHelper.ComputeWidth(state.Rows[r][c].Label);
+                ImGui.Text($"Auto: {autoW}");
+
+                var height = state.Rows[r][c].Height ?? 0;
+                if (ImGui.InputInt("Height", ref height))
+                    state.Rows[r][c].Height = height > 0 ? Math.Min(height, ButtonSizeHelper.Max) : null;
+                ImGui.SameLine();
+                ImGui.Text($"Auto: {ButtonSizeHelper.DefaultHeight}");
+
                 ImGui.SameLine();
                 if (ImGui.Button("Remove"))
                 {

@@ -49,6 +49,10 @@ public sealed class ButtonRows
     {
         if (!CanAddToRow(row)) return;
         _rows[row].Add(data ?? new ButtonData { Label = "New Button" });
+
+        if (_rows[row].Count == MaxPerRow && _rows.Count < MaxRows && TotalCount < MaxTotal)
+            _rows.Insert(row + 1, new());
+
         Normalize();
     }
 

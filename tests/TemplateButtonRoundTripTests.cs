@@ -40,8 +40,8 @@ public class TemplateButtonRoundTripTests
         Assert.Equal(ButtonStyle.Primary, btn.Style);
         Assert.Null(btn.Emoji);
         Assert.Null(btn.MaxSignups);
-        Assert.Null(btn.Width);
-        Assert.Null(btn.Height);
+        Assert.Equal(ButtonSizeHelper.ComputeWidth("Signup"), btn.Width);
+        Assert.Equal(ButtonSizeHelper.DefaultHeight, btn.Height);
     }
 
     [Fact]
@@ -58,8 +58,8 @@ public class TemplateButtonRoundTripTests
 
         Assert.Null(btn.emoji);
         Assert.Null(btn.maxSignups);
-        Assert.Null(btn.width);
-        Assert.Null(btn.height);
+        Assert.Equal(ButtonSizeHelper.ComputeWidth("Join"), btn.width);
+        Assert.Equal(ButtonSizeHelper.DefaultHeight, btn.height);
     }
 
     [Fact]
@@ -96,5 +96,17 @@ public class TemplateButtonRoundTripTests
         Assert.NotEqual(payload[0].customId, payload[1].customId);
         Assert.NotEqual(payload[0].customId, payload[2].customId);
         Assert.NotEqual(payload[1].customId, payload[2].customId);
+    }
+
+    [Fact]
+    public void BuildButtonsPayload_ComputesWidthFromLabel()
+    {
+        var rows = new ButtonRows(new() { new() { new ButtonData { Label = "Short" }, new ButtonData { Label = "Much Longer Label" } } });
+        var window = CreateWindow(rows);
+
+        var payload = window.BuildButtonsPayload(new Template());
+        Assert.Equal(ButtonSizeHelper.ComputeWidth("Short"), payload[0].width);
+        Assert.Equal(ButtonSizeHelper.ComputeWidth("Much Longer Label"), payload[1].width);
+        Assert.True(payload[1].width > payload[0].width);
     }
 }

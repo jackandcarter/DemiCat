@@ -12,6 +12,7 @@ using System.Linq;
 using System.Globalization;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
+using DemiCat.UI;
 
 namespace DemiCatPlugin;
 
@@ -580,8 +581,8 @@ public class EventCreateWindow
                     Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
                     Style = b.Style,
                     MaxSignups = b.MaxSignups,
-                    Width = b.Width,
-                    Height = b.Height,
+                    Width = Math.Min(b.Width ?? ButtonSizeHelper.ComputeWidth(b.Label), ButtonSizeHelper.Max),
+                    Height = Math.Min(b.Height ?? ButtonSizeHelper.DefaultHeight, ButtonSizeHelper.Max),
                     RowIndex = i / 5
                 })
                 .ToList()

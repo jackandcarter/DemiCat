@@ -3,6 +3,7 @@ using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 using System.Numerics;
 using System.Net.Http;
+using DemiCat.UI;
 
 namespace DemiCatPlugin;
 
@@ -88,13 +89,17 @@ public class SignupOptionEditor
             var width = _working.Width ?? 0;
             if (ImGui.InputInt("Width", ref width))
             {
-                _working.Width = width > 0 ? width : null;
+                _working.Width = width > 0 ? Math.Min(width, ButtonSizeHelper.Max) : null;
             }
+            ImGui.SameLine();
+            ImGui.Text($"Auto: {ButtonSizeHelper.ComputeWidth(_working.Label)}");
             var height = _working.Height ?? 0;
             if (ImGui.InputInt("Height", ref height))
             {
-                _working.Height = height > 0 ? height : null;
+                _working.Height = height > 0 ? Math.Min(height, ButtonSizeHelper.Max) : null;
             }
+            ImGui.SameLine();
+            ImGui.Text($"Auto: {ButtonSizeHelper.DefaultHeight}");
             var style = _working.Style.ToString();
             if (ImGui.BeginCombo("Style", style))
             {
@@ -119,8 +124,8 @@ public class SignupOptionEditor
                     Emoji = _working.Emoji,
                     Style = _working.Style,
                     MaxSignups = _working.MaxSignups,
-                    Width = _working.Width,
-                    Height = _working.Height
+                    Width = _working.Width ?? ButtonSizeHelper.ComputeWidth(_working.Label),
+                    Height = _working.Height ?? ButtonSizeHelper.DefaultHeight
                 });
                 _open = false;
                 ImGui.CloseCurrentPopup();
