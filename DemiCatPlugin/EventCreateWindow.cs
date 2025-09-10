@@ -708,21 +708,18 @@ public class EventCreateWindow
         {
             Tag = "yes",
             Label = "Yes",
-            Emoji = "✅",
             Style = ButtonStyle.Success
         });
         _buttons.Add(new Template.TemplateButton
         {
             Tag = "maybe",
             Label = "Maybe",
-            Emoji = "❔",
             Style = ButtonStyle.Secondary
         });
         _buttons.Add(new Template.TemplateButton
         {
             Tag = "no",
             Label = "No",
-            Emoji = "❌",
             Style = ButtonStyle.Danger
         });
     }

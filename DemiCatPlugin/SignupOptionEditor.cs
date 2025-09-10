@@ -29,8 +29,7 @@ public class SignupOptionEditor
             Emoji = button.Emoji,
             Style = button.Style,
             MaxSignups = button.MaxSignups,
-            Width = button.Width,
-            Height = button.Height
+            Width = button.Width
         };
         _onSave = onSave;
         _open = true;
@@ -93,13 +92,6 @@ public class SignupOptionEditor
             }
             ImGui.SameLine();
             ImGui.Text($"Auto: {ButtonSizeHelper.ComputeWidth(_working.Label)}");
-            var height = _working.Height ?? 0;
-            if (ImGui.InputInt("Height", ref height))
-            {
-                _working.Height = height > 0 ? Math.Min(height, ButtonSizeHelper.Max) : null;
-            }
-            ImGui.SameLine();
-            ImGui.Text($"Auto: {ButtonSizeHelper.DefaultHeight}");
             var style = _working.Style.ToString();
             if (ImGui.BeginCombo("Style", style))
             {
@@ -125,7 +117,7 @@ public class SignupOptionEditor
                     Style = _working.Style,
                     MaxSignups = _working.MaxSignups,
                     Width = _working.Width ?? ButtonSizeHelper.ComputeWidth(_working.Label),
-                    Height = _working.Height ?? ButtonSizeHelper.DefaultHeight
+                    Height = ButtonSizeHelper.DefaultHeight
                 });
                 _open = false;
                 ImGui.CloseCurrentPopup();

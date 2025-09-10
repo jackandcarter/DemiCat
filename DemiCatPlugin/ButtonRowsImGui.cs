@@ -35,12 +35,6 @@ public static class ButtonRowsImGui
                 var autoW = ButtonSizeHelper.ComputeWidth(state.Rows[r][c].Label);
                 ImGui.Text($"Auto: {autoW}");
 
-                var height = state.Rows[r][c].Height ?? 0;
-                if (ImGui.InputInt("Height", ref height))
-                    state.Rows[r][c].Height = height > 0 ? Math.Min(height, ButtonSizeHelper.Max) : null;
-                ImGui.SameLine();
-                ImGui.Text($"Auto: {ButtonSizeHelper.DefaultHeight}");
-
                 ImGui.SameLine();
                 if (ImGui.Button("Remove"))
                 {
