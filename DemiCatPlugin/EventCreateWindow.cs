@@ -291,7 +291,7 @@ public class EventCreateWindow
         ImGui.SameLine();
         if (ImGui.Button("Save Template"))
         {
-            SaveTemplate();
+            _ = SaveTemplate();
         }
 
         if (!_schedulesLoaded)
@@ -441,42 +441,47 @@ public class EventCreateWindow
         }
     }
 
-    private void SaveTemplate()
+    private async Task SaveTemplate()
     {
-        var tmpl = new Template
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
-            Name = _title,
-            Type = TemplateType.Event,
-            Title = _title,
-            Description = _description,
-            Time = _time,
-            Url = _url,
-            ImageUrl = _imageUrl,
-            ThumbnailUrl = _thumbnailUrl,
-            Color = ColorUtils.AbgrToRgb(_color),
-            Fields = _fields.Select(f => new Template.TemplateField
+            _lastResult = "Invalid API URL";
+            return;
+        }
+        try
+        {
+            var dto = BuildPreview();
+            var buttons = dto.Buttons ?? new List<EmbedButtonDto>();
+            var payload = new
             {
-                Name = f.Name,
-                Value = f.Value,
-                Inline = f.Inline
-            }).ToList(),
-            Buttons = _buttons.Select(b => new Template.TemplateButton
+                channelId = _channelId,
+                title = dto.Title,
+                time = _time,
+                description = dto.Description,
+                url = dto.Url,
+                imageUrl = dto.ImageUrl,
+                thumbnailUrl = dto.ThumbnailUrl,
+                color = dto.Color,
+                fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
+                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, style = b.Style.HasValue ? (int?)b.Style : null, emoji = b.Emoji, maxSignups = b.MaxSignups, width = b.Width, height = b.Height, rowIndex = b.RowIndex }).ToList(),
+                mentions = _mentions.Count > 0 ? _mentions.ToList() : null
+            };
+            var body = new
             {
-                Tag = b.Tag,
-                Include = b.Include,
-                Label = b.Label,
-                Emoji = b.Emoji,
-                Style = b.Style,
-                MaxSignups = b.MaxSignups,
-                Width = b.Width,
-                Height = b.Height
-            }).ToList(),
-            Mentions = _mentions.Select(ulong.Parse).ToList()
-        };
-
-        _config.TemplateData.Add(tmpl);
-        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
-        _lastResult = "Template saved";
+                name = _title,
+                description = _description,
+                payload
+            };
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates");
+            request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            var response = await _httpClient.SendAsync(request);
+            _lastResult = response.IsSuccessStatusCode ? "Template saved" : "Failed to save template";
+        }
+        catch
+        {
+            _lastResult = "Failed to save template";
+        }
     }
 
     private async Task CreateEvent()
