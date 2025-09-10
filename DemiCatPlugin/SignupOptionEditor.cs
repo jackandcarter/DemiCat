@@ -116,8 +116,7 @@ public class SignupOptionEditor
                     Emoji = _working.Emoji,
                     Style = _working.Style,
                     MaxSignups = _working.MaxSignups,
-                    Width = _working.Width ?? ButtonSizeHelper.ComputeWidth(_working.Label),
-                    Height = ButtonSizeHelper.DefaultHeight
+                    Width = _working.Width ?? ButtonSizeHelper.ComputeWidth(_working.Label)
                 });
                 _open = false;
                 ImGui.CloseCurrentPopup();

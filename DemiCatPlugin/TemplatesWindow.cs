@@ -265,8 +265,7 @@ public class TemplatesWindow
                 Style = b.Style,
                 Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
                 MaxSignups = b.MaxSignups,
-                Width = b.Width,
-                Height = b.Height
+                Width = b.Width
             }).ToList())
             .ToList();
 
@@ -465,8 +464,7 @@ public class TemplatesWindow
         int style,
         string? emoji,
         int? maxSignups,
-        int? width,
-        int? height);
+        int? width);
 
     internal List<ButtonPayload> BuildButtonsPayload(Template tmpl)
     {
@@ -485,8 +483,7 @@ public class TemplatesWindow
                     (int)(b?.Style ?? x.Data.Style),
                     NormalizeEmoji(b?.Emoji ?? x.Data.Emoji),
                     b?.MaxSignups ?? x.Data.MaxSignups,
-                    Math.Min(b?.Width ?? x.Data.Width ?? ButtonSizeHelper.ComputeWidth(label), ButtonSizeHelper.Max),
-                    Math.Min(b?.Height ?? x.Data.Height ?? ButtonSizeHelper.DefaultHeight, ButtonSizeHelper.Max));
+                    Math.Min(b?.Width ?? x.Data.Width ?? ButtonSizeHelper.ComputeWidth(label), ButtonSizeHelper.Max));
             })
             .ToList();
     }
@@ -522,7 +519,6 @@ public class TemplatesWindow
                 Emoji = b.emoji,
                 MaxSignups = b.maxSignups,
                 Width = b.width,
-                Height = b.height,
                 RowIndex = b.rowIndex
             })
             .ToList();
@@ -683,8 +679,7 @@ public class TemplatesWindow
                 Emoji = b.Emoji ?? string.Empty,
                 Style = b.Style ?? ButtonStyle.Secondary,
                 MaxSignups = b.MaxSignups,
-                Width = b.Width,
-                Height = b.Height
+                Width = b.Width
             }).ToList() ?? new List<Template.TemplateButton>(),
             Mentions = payload.Mentions?.Select(ulong.Parse).ToList() ?? new List<ulong>()
         };

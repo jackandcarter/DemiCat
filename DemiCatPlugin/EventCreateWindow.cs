@@ -426,8 +426,7 @@ public class EventCreateWindow
                     Emoji = b.Emoji,
                     Style = b.Style,
                     MaxSignups = b.MaxSignups,
-                    Width = b.Width,
-                    Height = b.Height
+                    Width = b.Width
                 });
             }
         }
@@ -459,7 +458,7 @@ public class EventCreateWindow
                 thumbnailUrl = dto.ThumbnailUrl,
                 color = dto.Color,
                 fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
-                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, style = b.Style.HasValue ? (int?)b.Style : null, emoji = b.Emoji, maxSignups = b.MaxSignups, width = b.Width, height = b.Height, rowIndex = b.RowIndex }).ToList(),
+                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, style = b.Style.HasValue ? (int?)b.Style : null, emoji = b.Emoji, maxSignups = b.MaxSignups, width = b.Width, rowIndex = b.RowIndex }).ToList(),
                 mentions = _mentions.Count > 0 ? _mentions.ToList() : null
             };
             var body = new
@@ -510,7 +509,7 @@ public class EventCreateWindow
                 thumbnailUrl = dto.ThumbnailUrl,
                 color = dto.Color,
                 fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
-                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, emoji = b.Emoji, style = b.Style.HasValue ? (int)b.Style : (int?)null, maxSignups = b.MaxSignups, width = b.Width, height = b.Height }).ToList(),
+                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, emoji = b.Emoji, style = b.Style.HasValue ? (int)b.Style : (int?)null, maxSignups = b.MaxSignups, width = b.Width }).ToList(),
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null,
                 repeat = _repeat == RepeatOption.None ? null : _repeat.ToString().ToLowerInvariant()
             };
@@ -533,19 +532,18 @@ public class EventCreateWindow
         _buttons.Clear();
         foreach (var b in preset.Buttons)
         {
-            _buttons.Add(new Template.TemplateButton
-            {
-                Tag = b.Tag,
-                Include = b.Include,
-                Label = b.Label,
-                Emoji = b.Emoji,
-                Style = b.Style,
-                MaxSignups = b.MaxSignups,
-                Width = b.Width,
-                Height = b.Height
-            });
+                _buttons.Add(new Template.TemplateButton
+                {
+                    Tag = b.Tag,
+                    Include = b.Include,
+                    Label = b.Label,
+                    Emoji = b.Emoji,
+                    Style = b.Style,
+                    MaxSignups = b.MaxSignups,
+                    Width = b.Width
+                });
+            }
         }
-    }
 
     private void SaveConfig()
     {
@@ -577,7 +575,6 @@ public class EventCreateWindow
                     Style = b.Style,
                     MaxSignups = b.MaxSignups,
                     Width = Math.Min(b.Width ?? ButtonSizeHelper.ComputeWidth(b.Label), ButtonSizeHelper.Max),
-                    Height = Math.Min(b.Height ?? ButtonSizeHelper.DefaultHeight, ButtonSizeHelper.Max),
                     RowIndex = i / 5
                 })
                 .ToList()
@@ -681,8 +678,7 @@ public class EventCreateWindow
                 Emoji = b.Emoji,
                 Style = b.Style,
                 MaxSignups = b.MaxSignups,
-                Width = b.Width,
-                Height = b.Height
+                Width = b.Width
             }).ToList()
         };
         _ = SignupPresetService.Create(preset, _httpClient, _config);

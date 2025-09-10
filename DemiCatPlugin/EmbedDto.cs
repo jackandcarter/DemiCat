@@ -45,7 +45,6 @@ public class EmbedButtonDto
     public ButtonStyle? Style { get; set; }
     public int? MaxSignups { get; set; }
     public int? Width { get; set; }
-    public int? Height { get; set; }
     public int? RowIndex { get; set; }
 }
 

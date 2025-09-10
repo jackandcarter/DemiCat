@@ -41,7 +41,6 @@ public class TemplateButtonRoundTripTests
         Assert.Null(btn.Emoji);
         Assert.Null(btn.MaxSignups);
         Assert.Equal(ButtonSizeHelper.ComputeWidth("Signup"), btn.Width);
-        Assert.Equal(ButtonSizeHelper.DefaultHeight, btn.Height);
     }
 
     [Fact]
@@ -59,7 +58,6 @@ public class TemplateButtonRoundTripTests
         Assert.Null(btn.emoji);
         Assert.Null(btn.maxSignups);
         Assert.Equal(ButtonSizeHelper.ComputeWidth("Join"), btn.width);
-        Assert.Equal(ButtonSizeHelper.DefaultHeight, btn.height);
     }
 
     [Fact]

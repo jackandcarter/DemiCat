@@ -33,7 +33,6 @@ class EmbedButtonDto(CamelModel):
     style: Optional[ButtonStyle] = None
     max_signups: Optional[int] = Field(default=None, alias="maxSignups")
     width: Optional[int] = None
-    height: Optional[int] = None
     row_index: Optional[int] = Field(default=None, alias="rowIndex")
 
 
