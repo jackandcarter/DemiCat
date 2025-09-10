@@ -49,7 +49,7 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, EmojiPicker.EmojiDto> _emojiCatalog = new();
     private bool _emojiCatalogLoaded;
     private bool _emojiFetchInProgress;
-    private readonly ChatBridge _bridge;
+    protected readonly ChatBridge _bridge;
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true

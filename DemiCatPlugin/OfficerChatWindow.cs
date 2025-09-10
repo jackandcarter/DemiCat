@@ -3,10 +3,13 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Net;
+using System.Text;
 using System.Text.Json;
+using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Numerics;
+using System.IO;
 
 namespace DemiCatPlugin;
 
@@ -20,24 +23,19 @@ public class OfficerChatWindow : ChatWindow
 
     public override void StartNetworking()
     {
-        if (!_config.Officer || !_config.Roles.Contains("officer"))
+        _bridge.Start();
+        if (_config.Officer && _config.Roles.Contains("officer"))
         {
-            return;
+            _bridge.Subscribe(_channelId);
+            _presence?.Reset();
+            _ = RefreshMessages();
         }
-        base.StartNetworking();
     }
 
     public override void Draw()
     {
-        if (!_config.Officer)
+        if (!_config.Officer || !_config.Roles.Contains("officer"))
         {
-            ImGui.TextUnformatted("Feature disabled");
-            return;
-        }
-
-        if (!_tokenManager.IsReady())
-        {
-            base.Draw();
             return;
         }
 
@@ -56,6 +54,99 @@ public class OfficerChatWindow : ChatWindow
     }
 
     protected override string MessagesPath => "/api/officer-messages";
+
+    protected override async Task<HttpRequestMessage> BuildMultipartRequest(string content)
+    {
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}";
+        var form = new MultipartFormDataContent();
+        form.Add(new StringContent(_channelId), "channelId");
+        form.Add(new StringContent(content), "content");
+        form.Add(new StringContent(_useCharacterName ? "true" : "false"), "useCharacterName");
+        if (!string.IsNullOrEmpty(_replyToId))
+        {
+            var refJson = JsonSerializer.Serialize(new { messageId = _replyToId, channelId = _channelId });
+            form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
+        }
+        foreach (var path in _attachments)
+        {
+            try
+            {
+                var bytes = await File.ReadAllBytesAsync(path);
+                var part = new ByteArrayContent(bytes);
+                part.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+                form.Add(part, "files", Path.GetFileName(path));
+            }
+            catch
+            {
+                // ignore individual file errors
+            }
+        }
+        return new HttpRequestMessage(HttpMethod.Post, url) { Content = form };
+    }
+
+    protected override async Task EditMessage(string messageId, string channelId, string content)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot edit: API base URL is not configured.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(content))
+        {
+            return;
+        }
+
+        try
+        {
+            var body = new { content };
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{messageId}";
+            var request = new HttpRequestMessage(HttpMethod.Patch, url)
+            {
+                Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json")
+            };
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to edit message. Status: {response.StatusCode}. Response Body: {responseBody}");
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error editing message");
+        }
+    }
+
+    protected override async Task DeleteMessage(string messageId, string channelId)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot delete: API base URL is not configured.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(messageId))
+        {
+            return;
+        }
+
+        try
+        {
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{messageId}";
+            var request = new HttpRequestMessage(HttpMethod.Delete, url);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning($"Failed to delete message. Status: {response.StatusCode}. Response Body: {responseBody}");
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error deleting message");
+        }
+    }
 
     protected override async Task FetchChannels(bool refreshed = false)
     {
