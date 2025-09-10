@@ -69,9 +69,10 @@ public class ChannelWatcher : IDisposable
             if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady() || !_config.Enabled)
             {
                 try { await Task.Delay(delay, token); } catch { }
-                delay = TimeSpan.FromSeconds(5);
+                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
                 continue;
             }
+
             try
             {
                 var pingResponse = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, token);
@@ -79,7 +80,7 @@ public class ChannelWatcher : IDisposable
                 {
                     var responseBody = pingResponse == null ? string.Empty : await pingResponse.Content.ReadAsStringAsync();
                     var status = pingResponse?.StatusCode;
-                    PluginServices.Instance!.Log.Warning($"Channel watcher ping failed. Status: {status}. Response Body: {responseBody}");
+                    PluginServices.Instance!.Log.Warning("Channel watcher ping failed. Status: {Status}. Response Body: {ResponseBody}", status, responseBody);
                     if (status == HttpStatusCode.NotFound)
                     {
                         PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
@@ -89,15 +90,19 @@ public class ChannelWatcher : IDisposable
                         PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
                     }
                     try { await Task.Delay(delay, token); } catch { }
-                    delay = TimeSpan.FromSeconds(5);
+                    delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
                     continue;
                 }
+
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);
                 var uri = BuildWebSocketUri();
+                PluginServices.Instance!.Log.Information("Connecting to channel watcher at {Uri}", uri);
                 await _ws.ConnectAsync(uri, token);
+                PluginServices.Instance!.Log.Information("Channel watcher connected to {Uri}", uri);
                 delay = TimeSpan.FromSeconds(5);
+
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
@@ -114,6 +119,7 @@ public class ChannelWatcher : IDisposable
                         });
                     }
                 }
+
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
                     PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
@@ -133,9 +139,16 @@ public class ChannelWatcher : IDisposable
             }
             finally
             {
+                var status = _ws?.CloseStatus;
+                var description = _ws?.CloseStatusDescription;
+                if (status != null)
+                {
+                    PluginServices.Instance!.Log.Information("Channel watcher disconnected. Status: {Status}, Description: {Description}", status, description);
+                }
                 _ws?.Dispose();
                 _ws = null;
             }
+
             if (token.IsCancellationRequested)
                 break;
 
@@ -146,6 +159,7 @@ public class ChannelWatcher : IDisposable
                     RefreshChannelsIfNeeded();
                 });
             }
+
             try { await Task.Delay(delay, token); } catch { }
             delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
         }
