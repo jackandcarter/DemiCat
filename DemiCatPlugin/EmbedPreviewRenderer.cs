@@ -149,7 +149,8 @@ public static class EmbedPreviewRenderer
         {
             var min = ImGui.GetItemRectMin();
             var max = ImGui.GetItemRectMax();
-            ImGui.GetWindowDrawList().AddRectFilled(min, new Vector2(min.X + stripeWidth, max.Y), dto.Color.Value | 0xFF000000);
+            var color = ColorUtils.RgbToImGui(dto.Color.Value);
+            ImGui.GetWindowDrawList().AddRectFilled(min, new Vector2(min.X + stripeWidth, max.Y), color);
         }
     }
 

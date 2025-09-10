@@ -40,6 +40,20 @@ public class ColorConversionTests
         Assert.Equal(rgb, back);
     }
 
+    [Theory]
+    [InlineData(0xFF0000)]
+    [InlineData(0x00FF00)]
+    [InlineData(0x0000FF)]
+    [InlineData(0x123456)]
+    [InlineData(0xABCDEF)]
+    public void ImGuiVectorRoundTrip(uint rgb)
+    {
+        var imGui = ColorUtils.RgbToImGui(rgb);
+        var vec = ColorUtils.ImGuiToVector(imGui);
+        var back = ColorUtils.ImGuiToRgb(ColorUtils.VectorToImGui(vec));
+        Assert.Equal(rgb, back);
+    }
+
     private class StubHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
@@ -58,7 +72,7 @@ public class ColorConversionTests
         var channelService = new ChannelService(config, http, new TokenManager());
         var window = new EventCreateWindow(config, http, channelService);
         typeof(EventCreateWindow).GetField("_color", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(window, ColorUtils.RgbToAbgr(rgb));
+            .SetValue(window, ColorUtils.RgbToImGui(rgb));
         var preview = (EmbedDto)typeof(EventCreateWindow).GetMethod("BuildPreview", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(window, Array.Empty<object>())!;
         Assert.Equal(rgb, preview.Color);
