@@ -517,7 +517,9 @@ public class ChatWindow : IDisposable
             FormatContent(preview);
         }
 
+
         var inputBuf = MakeUtf8Buffer(_input, 2048);
+
         var send = ImGui.InputText(
             "##chatInput",
             inputBuf,
@@ -711,6 +713,7 @@ public class ChatWindow : IDisposable
 
     private unsafe int OnInputEdited(ImGuiInputTextCallbackData* data)
     {
+
         if (data == null) return 0;
         _selectionStart = data->SelectionStart;
         _selectionEnd = data->SelectionEnd;
