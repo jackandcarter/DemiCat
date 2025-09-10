@@ -679,6 +679,18 @@ public class ChatWindow : IDisposable
         var start = Math.Min(s, e);
         var end = Math.Max(s, e);
 
+        if (start == end)
+        {
+            while (start > 0 && char.IsLetterOrDigit(_input[start - 1]))
+            {
+                start--;
+            }
+            while (end < len && char.IsLetterOrDigit(_input[end]))
+            {
+                end++;
+            }
+        }
+
         var selected = _input.Substring(start, end - start);
         _input = _input[..start] + prefix + selected + suffix + _input[end..];
 
