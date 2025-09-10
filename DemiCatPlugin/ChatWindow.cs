@@ -672,10 +672,16 @@ public class ChatWindow : IDisposable
 
     private void WrapSelection(string prefix, string suffix)
     {
-        var start = Math.Min(_selectionStart, _selectionEnd);
-        var end = Math.Max(_selectionStart, _selectionEnd);
+        _input ??= string.Empty;
+        var len = _input.Length;
+        var s = Math.Clamp(_selectionStart, 0, len);
+        var e = Math.Clamp(_selectionEnd, 0, len);
+        var start = Math.Min(s, e);
+        var end = Math.Max(s, e);
+
         var selected = _input.Substring(start, end - start);
         _input = _input[..start] + prefix + selected + suffix + _input[end..];
+
         var cursor = start + prefix.Length + selected.Length + suffix.Length;
         _selectionStart = _selectionEnd = cursor;
     }
