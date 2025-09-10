@@ -26,6 +26,7 @@ class Events(commands.Cog):
 async def create_event(
     interaction: discord.Interaction, title: str, time: str, description: str
 ) -> None:
+    await interaction.response.defer(ephemeral=True, thinking=True)
     host = interaction.client.cfg.server.host
     if host == "0.0.0.0":
         host = "127.0.0.1"
@@ -33,7 +34,7 @@ async def create_event(
     try:
         validate_embed_payload(EmbedDto(id="0", title=title, description=description), [])
     except HTTPException as exc:
-        await interaction.response.send_message(
+        await interaction.followup.send(
             f"Invalid event: {exc.detail}", ephemeral=True
         )
         return
@@ -53,12 +54,11 @@ async def create_event(
         ) as resp:
             if resp.status != 200:
                 text = await resp.text()
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"Failed to create event: {resp.status} {text}", ephemeral=True
                 )
                 return
-
-    await interaction.response.send_message("Event created", ephemeral=True)
+    await interaction.followup.send("Event created", ephemeral=True)
 
 
 @app_commands.command(name="createevent", description="Create a simple event")

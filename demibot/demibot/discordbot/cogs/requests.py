@@ -33,15 +33,16 @@ async def _create_request(
         "X-Api-Key": interaction.client.cfg.security.api_key,
         "X-Discord-Id": str(interaction.user.id),
     }
+    await interaction.response.defer(ephemeral=True, thinking=True)
     async with aiohttp.ClientSession() as session:
         async with session.post(f"{base_url}/api/requests", json=body, headers=headers) as resp:
             if resp.status != 200:
                 text = await resp.text()
-                await interaction.response.send_message(
+                await interaction.followup.send(
                     f"Failed to create request: {resp.status} {text}", ephemeral=True
                 )
                 return
-    await interaction.response.send_message("Request submitted", ephemeral=True)
+    await interaction.followup.send("Request submitted", ephemeral=True)
 
 request_group = app_commands.Group(name="request", description="Create requests")
 
