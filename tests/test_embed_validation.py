@@ -33,17 +33,17 @@ def test_button_limit():
         validate_embed_payload(dto, buttons)
 
 
-def test_button_width_height_limits():
+def test_button_width_limit():
     dto = EmbedDto(id="1", title="t", description="d")
     buttons = [EmbedButtonDto(label="b", custom_id="1", width=6)]
     with pytest.raises(HTTPException):
         validate_embed_payload(dto, buttons)
 
 
-def test_button_area_limit():
+def test_button_total_width_limit():
     dto = EmbedDto(id="1", title="t", description="d")
     buttons = [
-        EmbedButtonDto(label="b1", custom_id="1", width=5, height=5),
+        EmbedButtonDto(label="b1", custom_id="1", width=25),
         EmbedButtonDto(label="b2", custom_id="2")
     ]
     with pytest.raises(HTTPException):

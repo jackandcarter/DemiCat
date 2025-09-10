@@ -11,5 +11,4 @@ public class ButtonData
     public string? Emoji { get; set; }
     public int? MaxSignups { get; set; }
     public int? Width { get; set; }
-    public int? Height { get; set; }
 }

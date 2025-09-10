@@ -137,8 +137,7 @@ public static class EmbedPreviewRenderer
                     }
 
                     var w = button.Width ?? -1;
-                    var h = button.Height ?? 0;
-                    if (ImGui.Button($"{text}##{id}{dto.Id}", new Vector2(w, h)))
+                    if (ImGui.Button($"{text}##{id}{dto.Id}", new Vector2(w, 0)))
                     {
                         if (!string.IsNullOrEmpty(button.Url))
                         {
