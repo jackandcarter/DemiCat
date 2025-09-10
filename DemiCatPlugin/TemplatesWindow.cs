@@ -19,6 +19,8 @@ public class TemplatesWindow
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
+    private readonly List<TemplateItem> _templates = new();
+    private bool _templatesLoaded;
     private int _selectedIndex = -1;
     private bool _showPreview;
     private EventView? _previewEvent;
@@ -40,11 +42,31 @@ public class TemplatesWindow
         new() { new ButtonData { Label = "RSVP: No" } }
     });
 
+    private readonly ChatBridge? _bridge;
+    private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+
     public TemplatesWindow(Config config, HttpClient httpClient)
     {
         _config = config;
         _httpClient = httpClient;
         _channelId = config.EventChannelId;
+        var token = TokenManager.Instance;
+        if (token != null)
+        {
+            _bridge = new ChatBridge(config, httpClient, token, BuildWebSocketUri);
+            _bridge.TemplatesUpdated += () => _ = LoadTemplates();
+        }
+    }
+
+    public void StartNetworking()
+    {
+        _bridge?.Start();
+        _templatesLoaded = false;
+    }
+
+    public void StopNetworking()
+    {
+        _bridge?.Stop();
     }
 
     public void Draw()
@@ -70,6 +92,10 @@ public class TemplatesWindow
         {
             _ = FetchChannels();
         }
+        if (!_templatesLoaded)
+        {
+            _ = LoadTemplates();
+        }
         if (_channels.Count > 0)
         {
             var channelNames = _channels.Select(c => c.Name).ToArray();
@@ -86,14 +112,13 @@ public class TemplatesWindow
         }
 
         ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
-        var filteredTemplates = _config.TemplateData.Where(t => t.Type == TemplateType.Event).ToList();
-        for (var i = 0; i < filteredTemplates.Count; i++)
+        for (var i = 0; i < _templates.Count; i++)
         {
-            var tmplItem = filteredTemplates[i];
-            var name = tmplItem.Name;
+            var tmplItem = _templates[i];
+            var name = tmplItem.Template.Name;
             if (ImGui.Selectable(name, _selectedIndex == i))
             {
-                SelectTemplate(i, tmplItem);
+                SelectTemplate(i, tmplItem.Template);
             }
         }
         ImGui.EndChild();
@@ -101,9 +126,9 @@ public class TemplatesWindow
         ImGui.SameLine();
 
         ImGui.BeginChild("TemplateContent", ImGui.GetContentRegionAvail(), false);
-        if (_selectedIndex >= 0 && _selectedIndex < filteredTemplates.Count)
+        if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)
         {
-            var tmpl = filteredTemplates[_selectedIndex];
+            var tmpl = _templates[_selectedIndex].Template;
             if (ImGui.Button("Preview"))
             {
                 OpenPreview(tmpl);
@@ -113,6 +138,12 @@ public class TemplatesWindow
             {
                 _pendingTemplate = tmpl;
                 _confirmPost = true;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Delete"))
+            {
+                var id = _templates[_selectedIndex].Id;
+                _ = DeleteTemplate(id);
             }
 
             if (_rolesLoaded)
@@ -404,6 +435,29 @@ public class TemplatesWindow
         [JsonPropertyName(ChannelKind.Event)] public List<ChannelDto> Event { get; set; } = new();
     }
 
+    private record TemplateItem(string Id, Template Template);
+
+    private class TemplateDto
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Name { get; set; } = string.Empty;
+        public TemplatePayloadDto Payload { get; set; } = new();
+    }
+
+    private class TemplatePayloadDto
+    {
+        public string Title { get; set; } = string.Empty;
+        public string? Description { get; set; }
+        public string? Time { get; set; }
+        public string? Url { get; set; }
+        public string? ImageUrl { get; set; }
+        public string? ThumbnailUrl { get; set; }
+        public uint? Color { get; set; }
+        public List<EmbedFieldDto>? Fields { get; set; }
+        public List<EmbedButtonDto>? Buttons { get; set; }
+        public List<string>? Mentions { get; set; }
+    }
+
     internal record ButtonPayload(
         string label,
         string customId,
@@ -549,6 +603,130 @@ public class TemplatesWindow
         {
             _lastResult = "Failed to post template";
         }
+    }
+
+    private async Task LoadTemplates()
+    {
+        if (!_config.Templates)
+        {
+            _templatesLoaded = true;
+            return;
+        }
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _templatesLoaded = true;
+                _lastResult = "Invalid API URL";
+            });
+            return;
+        }
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates");
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _templatesLoaded = true;
+                    _lastResult = "Failed to load templates";
+                });
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dtoList = await JsonSerializer.DeserializeAsync<List<TemplateDto>>(stream, JsonOpts) ?? new();
+            var items = dtoList.Select(d => new TemplateItem(d.Id, ConvertTemplate(d))).ToList();
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _templates.Clear();
+                _templates.AddRange(items);
+                _templatesLoaded = true;
+            });
+        }
+        catch
+        {
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _templatesLoaded = true;
+                _lastResult = "Failed to load templates";
+            });
+        }
+    }
+
+    private Template ConvertTemplate(TemplateDto dto)
+    {
+        var payload = dto.Payload;
+        return new Template
+        {
+            Name = dto.Name,
+            Type = TemplateType.Event,
+            Title = payload.Title,
+            Description = payload.Description ?? string.Empty,
+            Time = payload.Time ?? string.Empty,
+            Url = payload.Url ?? string.Empty,
+            ImageUrl = payload.ImageUrl ?? string.Empty,
+            ThumbnailUrl = payload.ThumbnailUrl ?? string.Empty,
+            Color = payload.Color ?? 0,
+            Fields = payload.Fields?.Select(f => new Template.TemplateField
+            {
+                Name = f.Name,
+                Value = f.Value,
+                Inline = f.Inline ?? false
+            }).ToList() ?? new List<Template.TemplateField>(),
+            Buttons = payload.Buttons?.Select(b => new Template.TemplateButton
+            {
+                Tag = Guid.NewGuid().ToString(),
+                Include = true,
+                Label = b.Label,
+                Emoji = b.Emoji ?? string.Empty,
+                Style = b.Style ?? ButtonStyle.Secondary,
+                MaxSignups = b.MaxSignups,
+                Width = b.Width,
+                Height = b.Height
+            }).ToList() ?? new List<Template.TemplateButton>(),
+            Mentions = payload.Mentions?.Select(ulong.Parse).ToList() ?? new List<ulong>()
+        };
+    }
+
+    private async Task DeleteTemplate(string id)
+    {
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            _lastResult = "Invalid API URL";
+            return;
+        }
+        try
+        {
+            var request = new HttpRequestMessage(HttpMethod.Delete, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}");
+            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            var response = await _httpClient.SendAsync(request);
+            if (response.IsSuccessStatusCode)
+            {
+                _lastResult = "Template deleted";
+                _ = LoadTemplates();
+            }
+            else
+            {
+                _lastResult = "Failed to delete template";
+            }
+        }
+        catch
+        {
+            _lastResult = "Failed to delete template";
+        }
+    }
+
+    private Uri BuildWebSocketUri()
+    {
+        var baseUri = _config.ApiBaseUrl.TrimEnd('/') + "/ws/templates";
+        var builder = new UriBuilder(baseUri);
+        if (builder.Scheme == "https")
+            builder.Scheme = "wss";
+        else if (builder.Scheme == "http")
+            builder.Scheme = "ws";
+        return builder.Uri;
     }
 
 }

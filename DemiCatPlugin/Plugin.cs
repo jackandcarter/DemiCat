@@ -169,6 +169,7 @@ public class Plugin : IDalamudPlugin
         {
             _ = _ui.StartNetworking();
             _mainWindow.EventCreateWindow.StartNetworking();
+            _mainWindow.TemplatesWindow.StartNetworking();
         }
     }
 
@@ -179,6 +180,7 @@ public class Plugin : IDalamudPlugin
         _chatWindow.StopNetworking();
         _officerChatWindow.StopNetworking();
         _ui.StopNetworking();
+        _mainWindow.TemplatesWindow.StopNetworking();
     }
 
     private async Task<bool> RefreshRoles(IPluginLog log)

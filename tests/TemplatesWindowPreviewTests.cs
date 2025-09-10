@@ -32,13 +32,10 @@ public class TemplatesWindowPreviewTests
     public void Preview_Reopens_After_Close_And_Selection_Disposes()
     {
         var config = new Config();
-        config.TemplateData.Add(new Template { Name = "One", Title = "T1", Description = "D1" });
-        config.TemplateData.Add(new Template { Name = "Two", Title = "T2", Description = "D2" });
-
         var http = new HttpClient(new StubHandler());
         var window = new TemplatesWindow(config, http);
 
-        var firstTmpl = config.TemplateData[0];
+        var firstTmpl = new Template { Name = "One", Title = "T1", Description = "D1" };
         window.SelectTemplate(0, firstTmpl);
         window.OpenPreview(firstTmpl);
         var first = GetPreviewEvent(window);
@@ -52,7 +49,7 @@ public class TemplatesWindowPreviewTests
         Assert.NotNull(second);
         Assert.NotSame(first, second);
 
-        var secondTmpl = config.TemplateData[1];
+        var secondTmpl = new Template { Name = "Two", Title = "T2", Description = "D2" };
         window.SelectTemplate(1, secondTmpl);
         Assert.False(GetShowPreview(window));
         Assert.Null(GetPreviewEvent(window));
