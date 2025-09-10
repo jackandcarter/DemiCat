@@ -1068,8 +1068,8 @@ public class ChatWindow : IDisposable
             const int PageSize = 50;
             var all = new List<DiscordMessageDto>();
             string? before = null;
-            _config.ChatCursors.TryGetValue(_channelId, out var since);
-            var after = since > 0 ? since.ToString() : null;
+            var hasCursor = _config.ChatCursors.TryGetValue(_channelId, out var since);
+            var after = hasCursor ? since.ToString() : null;
             while (all.Count < MaxMessages)
             {
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{_channelId}?limit={PageSize}";
