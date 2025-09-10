@@ -124,6 +124,7 @@ public class EmojiPopup
             var url = getUrl(i);
             var name = getName(i);
             var disabled = isDisabled(i);
+            var index = i; // capture stable index for async callback
 
             if (disabled) ImGui.BeginDisabled();
 
@@ -131,8 +132,8 @@ public class EmojiPopup
             {
                 if (tex != null)
                 {
-                    ImGui.PushID(i);
-                    var ret = getReturnValue(i);
+                    ImGui.PushID(index);
+                    var ret = getReturnValue(index);
 
                     if (ImGui.ImageButton(tex.GetWrapOrEmpty().Handle, new Vector2(cellSize, cellSize)))
                     {
@@ -175,11 +176,7 @@ public class EmojiPopup
             }
         }
 
-        if (col != 0)
-        {
-            ImGui.NewLine();
-            ImGui.EndGroup();
-        }
+        if (col != 0) { ImGui.NewLine(); ImGui.EndGroup(); }
     }
 
     // For tests to warm the cache without UI

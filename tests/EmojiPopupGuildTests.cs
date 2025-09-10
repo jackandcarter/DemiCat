@@ -24,7 +24,7 @@ public class EmojiPopupGuildTests
 
     private class TestFramework : Dalamud.Plugin.Services.IFramework
     {
-        public event Dalamud.Plugin.Services.FrameworkUpdateDelegate? Update { add { } remove { } }
+        public event Dalamud.Plugin.Services.FrameworkUpdateDelegate? Update { add { } remove {}} 
         public Dalamud.Plugin.Services.FrameworkUpdateType CurrentUpdateType => Dalamud.Plugin.Services.FrameworkUpdateType.None;
         public void RunOnTick(System.Action action, Dalamud.Plugin.Services.FrameworkUpdatePriority priority = Dalamud.Plugin.Services.FrameworkUpdatePriority.Normal) => action();
     }
