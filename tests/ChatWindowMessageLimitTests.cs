@@ -49,6 +49,25 @@ public class ChatWindowMessageLimitTests
     }
 
     [Fact]
+    public async Task RefreshMessages_NoCursorRequestsLatest()
+    {
+        SetupServices();
+        var config = new Config { ApiBaseUrl = "http://localhost", ChatChannelId = "1" };
+        var handler = new SequenceHandler();
+        using var client = new HttpClient(handler);
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, client, tm);
+        var window = new ChatWindow(config, client, null, tm, channelService);
+
+        handler.EnqueueResponse(SerializeMessages(1, 20));
+        await window.RefreshMessages();
+
+        Assert.Single(handler.Requests);
+        Assert.DoesNotContain("after=", handler.Requests[0].Query);
+        Assert.Equal(20, config.ChatCursors["1"]);
+    }
+
+    [Fact]
     public void HandleBridgeMessage_TrimsOldMessages()
     {
         SetupServices();
