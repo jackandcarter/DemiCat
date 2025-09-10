@@ -1,18 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 
 namespace DemiCatPlugin;
 
-// Simple cache around Dalamud web textures.
-// You already call t.GetWrapOrEmpty() elsewhere; we stick to that pattern.
+// Minimal web texture cache used by the emoji picker & tests.
+// NOTE: In production we rely on the caller's texture loader; here we only
+// provide a cache shim + test override. If no override is set, we just
+// invoke the callback with null so callers can fall back gracefully.
 public static class WebTextureCache
 {
     private static readonly Dictionary<string, ISharedImmediateTexture> _map = new();
 
-    // Allow tests to override texture fetching behaviour
+    // Tests set this to intercept fetches and provide mocked textures.
     public static Func<string, Action<ISharedImmediateTexture?>, object?>? FetchOverride { get; set; }
 
     public static void Get(string url, Action<ISharedImmediateTexture?> onReady)
@@ -35,26 +37,21 @@ public static class WebTextureCache
             return;
         }
 
-        try
-        {
-            PluginServices.Instance!.TextureProvider.GetFromUrl(new Uri(url), tex =>
-            {
-                if (tex != null) _map[url] = tex;
-                onReady(tex);
-            });
-        }
-        catch
-        {
-            onReady(null);
-        }
+        // No engine-level URL loader available here; allow caller to render fallback.
+        onReady(null);
     }
 
     public static void DrawImageButton(string id, ISharedImmediateTexture? tex, Vector2 size, Action onClick)
     {
         if (tex == null) return;
         var wrap = tex.GetWrapOrEmpty();
-        if (ImGui.ImageButton(id, wrap.Handle, size))
-            onClick();
-    }
-}
 
+        // In this binding, ImageButton takes (ImTextureID, Vector2) and
+        // IDs are provided via PushID/PopID (not a string label param).
+        ImGui.PushID(id);
+        if (ImGui.ImageButton(wrap.Handle, size))
+            onClick();
+        ImGui.PopID();
+    }
+
+}
