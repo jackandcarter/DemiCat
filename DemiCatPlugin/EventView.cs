@@ -71,7 +71,7 @@ public class EventView : IDisposable
 
         if (dto.Color.HasValue)
         {
-            var color = ColorUtils.RgbToAbgr(dto.Color.Value) | 0xFF000000;
+            var color = ColorUtils.RgbToImGui(dto.Color.Value);
             var dl = ImGui.GetWindowDrawList();
             var p = ImGui.GetCursorScreenPos();
             var end = new Vector2(p.X + 4, p.Y + ImGui.GetTextLineHeightWithSpacing() * 3);

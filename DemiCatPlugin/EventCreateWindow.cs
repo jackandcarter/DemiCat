@@ -134,15 +134,10 @@ public class EventCreateWindow
         ImGui.InputText("URL", ref _url, 260);
         ImGui.InputText("Image URL", ref _imageUrl, 260);
         ImGui.InputText("Thumbnail URL", ref _thumbnailUrl, 260);
-        var colorVec = new Vector3(
-            (_color & 0xFF) / 255f,
-            ((_color >> 8) & 0xFF) / 255f,
-            ((_color >> 16) & 0xFF) / 255f);
+        var colorVec = ColorUtils.ImGuiToVector(_color);
         if (ImGui.ColorEdit3("Color", ref colorVec))
         {
-            _color = ((uint)(colorVec.X * 255)) |
-                     ((uint)(colorVec.Y * 255) << 8) |
-                     ((uint)(colorVec.Z * 255) << 16);
+            _color = ColorUtils.VectorToImGui(colorVec);
         }
 
         if (!_rolesLoaded)
@@ -399,7 +394,7 @@ public class EventCreateWindow
         _url = template.Url;
         _imageUrl = template.ImageUrl;
         _thumbnailUrl = template.ThumbnailUrl;
-        _color = ColorUtils.RgbToAbgr(template.Color);
+        _color = ColorUtils.RgbToImGui(template.Color);
         _mentions.Clear();
         if (template.Mentions != null)
         {
@@ -566,7 +561,7 @@ public class EventCreateWindow
             Url = string.IsNullOrWhiteSpace(_url) ? null : _url,
             ImageUrl = string.IsNullOrWhiteSpace(_imageUrl) ? null : _imageUrl,
             ThumbnailUrl = string.IsNullOrWhiteSpace(_thumbnailUrl) ? null : _thumbnailUrl,
-            Color = _color > 0 ? (uint?)ColorUtils.AbgrToRgb(_color) : null,
+            Color = _color > 0 ? (uint?)ColorUtils.ImGuiToRgb(_color) : null,
             Timestamp = DateTime.TryParse(_time, null, DateTimeStyles.AdjustToUniversal, out var ts) ? ts : (DateTimeOffset?)null,
             Fields = _fields
                 .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
