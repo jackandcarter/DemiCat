@@ -180,7 +180,7 @@ public static class EmbedPreviewRenderer
         return tex;
     }
 
-    private static Vector4 GetStyleColor(ButtonStyle style) => style switch
+    internal static Vector4 GetStyleColor(ButtonStyle style) => style switch
     {
         ButtonStyle.Primary => new Vector4(0.345f, 0.396f, 0.949f, 1f),
         ButtonStyle.Secondary => new Vector4(0.31f, 0.329f, 0.361f, 1f),
@@ -189,7 +189,7 @@ public static class EmbedPreviewRenderer
         _ => new Vector4(0.345f, 0.396f, 0.949f, 1f),
     };
 
-    private static Vector4 Lighten(Vector4 color, float amount)
+    internal static Vector4 Lighten(Vector4 color, float amount)
         => new(MathF.Min(color.X * amount, 1f), MathF.Min(color.Y * amount, 1f), MathF.Min(color.Z * amount, 1f), color.W);
 
     public static void ClearCache()
