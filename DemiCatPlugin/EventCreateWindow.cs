@@ -91,6 +91,10 @@ public class EventCreateWindow
             ImGui.TextUnformatted("Feature disabled");
             return;
         }
+        var footer = ImGui.GetFrameHeightWithSpacing() * 2;
+        var avail = ImGui.GetContentRegionAvail();
+        ImGui.BeginChild("eventCreateScroll", new Vector2(avail.X, avail.Y - footer), true);
+
         if (!_channelsLoaded)
         {
             _ = RefreshChannels();
@@ -256,39 +260,6 @@ public class EventCreateWindow
         _preview = BuildPreview();
         ImGui.Separator();
         EmbedPreviewRenderer.Draw(_preview, (_, __) => { });
-        if (ImGui.Button("Create"))
-        {
-            _confirmCreate = true;
-        }
-        if (_confirmCreate)
-            ImGui.OpenPopup("Confirm Event Create");
-        var openConfirm = _confirmCreate;
-        if (_confirmCreate && ImGui.BeginPopupModal("Confirm Event Create", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
-        {
-            var channelName = _channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? _channelId;
-            ImGui.TextUnformatted($"Channel: {channelName}");
-            var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
-            ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
-            if (ImGui.Button("Confirm"))
-            {
-                _ = CreateEvent();
-                _confirmCreate = false;
-                ImGui.CloseCurrentPopup();
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("Cancel"))
-            {
-                _confirmCreate = false;
-                ImGui.CloseCurrentPopup();
-            }
-            ImGui.EndPopup();
-        }
-        if (!_confirmCreate || !openConfirm) _confirmCreate = false;
-        ImGui.SameLine();
-        if (ImGui.Button("Save Template"))
-        {
-            _ = SaveTemplate();
-        }
 
         if (!_schedulesLoaded)
         {
@@ -314,6 +285,43 @@ public class EventCreateWindow
         {
             ImGui.TextUnformatted(_lastResult);
         }
+
+        ImGui.EndChild();
+
+        if (ImGui.Button("Create"))
+        {
+            _confirmCreate = true;
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Save Template"))
+        {
+            _ = SaveTemplate();
+        }
+
+        if (_confirmCreate)
+            ImGui.OpenPopup("Confirm Event Create");
+        var openConfirm = _confirmCreate;
+        if (_confirmCreate && ImGui.BeginPopupModal("Confirm Event Create", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
+        {
+            var channelName = _channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? _channelId;
+            ImGui.TextUnformatted($"Channel: {channelName}");
+            var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
+            ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+            if (ImGui.Button("Confirm"))
+            {
+                _ = CreateEvent();
+                _confirmCreate = false;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel"))
+            {
+                _confirmCreate = false;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
+        }
+        if (!_confirmCreate || !openConfirm) _confirmCreate = false;
     }
 
     private async Task LoadRoles()
