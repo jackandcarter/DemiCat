@@ -24,7 +24,7 @@ public class OfficerChatWindow : ChatWindow
     public override void StartNetworking()
     {
         _bridge.Start();
-        if (_config.Officer && _config.Roles.Contains("officer"))
+        if (_config.Roles.Contains("officer"))
         {
             _bridge.Subscribe(_channelId);
             _presence?.Reset();
@@ -34,7 +34,7 @@ public class OfficerChatWindow : ChatWindow
 
     public override void Draw()
     {
-        if (!_config.Officer || !_config.Roles.Contains("officer"))
+        if (!_config.Roles.Contains("officer"))
         {
             return;
         }

@@ -37,7 +37,7 @@ public class ChannelWatcher : IDisposable
 
     public async Task Start()
     {
-        if (!_config.Events && !_config.SyncedChat && !_config.Officer)
+        if (!_config.Events && !_config.SyncedChat && !_config.Roles.Contains("officer"))
         {
             return;
         }
@@ -208,7 +208,7 @@ public class ChannelWatcher : IDisposable
         _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
         if (_config.SyncedChat && _config.EnableFcChat)
             _ = SafeRefresh(_chatWindow.RefreshChannels);
-        if (_config.Officer && _config.Roles.Contains("officer"))
+        if (_config.Roles.Contains("officer"))
             _ = SafeRefresh(_officerChatWindow.RefreshChannels);
 
         _lastRefresh = DateTime.UtcNow;
