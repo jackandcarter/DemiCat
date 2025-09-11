@@ -332,7 +332,17 @@ public class TemplatesWindow
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
+            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            if (response == null)
+            {
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Failed to load channels";
+                    _channelsLoaded = true;
+                });
+                return;
+            }
             if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
@@ -592,8 +602,20 @@ public class TemplatesWindow
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            await _httpClient.SendAsync(request);
-            _lastResult = "Template posted";
+            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            if (response?.IsSuccessStatusCode == true)
+            {
+                _lastResult = "Template posted";
+            }
+            else if (response != null)
+            {
+                var bodyText = await response.Content.ReadAsStringAsync();
+                _lastResult = $"Failed to post template: {(int)response.StatusCode} {bodyText}";
+            }
+            else
+            {
+                _lastResult = "Failed to post template";
+            }
         }
         catch
         {
@@ -621,13 +643,16 @@ public class TemplatesWindow
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
+            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            if (response == null || !response.IsSuccessStatusCode)
             {
+                var bodyText = response != null ? await response.Content.ReadAsStringAsync() : string.Empty;
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _templatesLoaded = true;
-                    _lastResult = "Failed to load templates";
+                    _lastResult = string.IsNullOrEmpty(bodyText)
+                        ? "Failed to load templates"
+                        : $"Failed to load templates: {(int)response!.StatusCode} {bodyText}";
                 });
                 return;
             }
@@ -696,11 +721,16 @@ public class TemplatesWindow
         {
             var request = new HttpRequestMessage(HttpMethod.Delete, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
+            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            if (response?.IsSuccessStatusCode == true)
             {
                 _lastResult = "Template deleted";
                 _ = LoadTemplates();
+            }
+            else if (response != null)
+            {
+                var bodyText = await response.Content.ReadAsStringAsync();
+                _lastResult = $"Failed to delete template: {(int)response.StatusCode} {bodyText}";
             }
             else
             {
