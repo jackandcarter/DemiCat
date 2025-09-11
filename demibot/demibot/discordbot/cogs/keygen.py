@@ -79,12 +79,16 @@ async def key_command(interaction: discord.Interaction) -> None:
                 select(GuildConfig).where(GuildConfig.guild_id == guild.id)
             )
             cfg = cfg_res.scalars().first()
-            officer_role_id = cfg.officer_role_id if cfg else None
+            officer_role_ids = (
+                {int(rid) for rid in cfg.officer_role_ids.split(",") if rid}
+                if cfg and cfg.officer_role_ids
+                else set()
+            )
 
             for r in member_roles:
                 mapped = role_map.get(r.id)
                 if not mapped:
-                    is_officer = officer_role_id == r.id
+                    is_officer = r.id in officer_role_ids
                     new_role = Role(
                         guild_id=guild.id,
                         discord_role_id=r.id,
@@ -96,14 +100,22 @@ async def key_command(interaction: discord.Interaction) -> None:
                     role_map[r.id] = (new_role.id, is_officer)
                 else:
                     role_id, is_officer = mapped
-                    if officer_role_id == r.id and not is_officer:
+                    if r.id in officer_role_ids and not is_officer:
                         await db.execute(
                             update(Role)
-                            .where(Role.id == role_id)
-                            .values(is_officer=True)
+                                .where(Role.id == role_id)
+                                .values(is_officer=True)
                         )
                         await db.flush()
                         role_map[r.id] = (role_id, True)
+                    elif r.id not in officer_role_ids and is_officer:
+                        await db.execute(
+                            update(Role)
+                                .where(Role.id == role_id)
+                                .values(is_officer=False)
+                        )
+                        await db.flush()
+                        role_map[r.id] = (role_id, False)
 
             await db.execute(
                 delete(MembershipRole).where(

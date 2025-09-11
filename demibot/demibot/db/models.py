@@ -92,7 +92,7 @@ class GuildConfig(Base):
     officer_visible_channel_id: Mapped[Optional[int]] = mapped_column(
         BIGINT(unsigned=True)
     )
-    officer_role_id: Mapped[Optional[int]] = mapped_column(BIGINT(unsigned=True))
+    officer_role_ids: Mapped[Optional[str]] = mapped_column(Text)
 
     guild: Mapped[Guild] = relationship(back_populates="config")
 
