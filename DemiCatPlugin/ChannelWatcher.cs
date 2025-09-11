@@ -80,7 +80,7 @@ public class ChannelWatcher : IDisposable
                 {
                     var responseBody = pingResponse == null ? string.Empty : await pingResponse.Content.ReadAsStringAsync();
                     var status = pingResponse?.StatusCode;
-                    PluginServices.Instance!.Log.Warning("Channel watcher ping failed. Status: {Status}. Response Body: {ResponseBody}", status, responseBody);
+                    PluginServices.Instance!.Log.Warning("Channel watcher ping failed. Status: {Status}. Response Body: {ResponseBody}", status?.ToString() ?? "unknown", responseBody ?? "");
                     if (status == HttpStatusCode.NotFound)
                     {
                         PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
@@ -141,10 +141,8 @@ public class ChannelWatcher : IDisposable
             {
                 var status = _ws?.CloseStatus;
                 var description = _ws?.CloseStatusDescription;
-                if (status != null)
-                {
-                    PluginServices.Instance!.Log.Information("Channel watcher disconnected. Status: {Status}, Description: {Description}", status, description);
-                }
+                PluginServices.Instance!.Log.Information("Channel watcher disconnected. Status: {Status}, Description: {Description}",
+                    status?.ToString() ?? "unknown", description ?? "");
                 _ws?.Dispose();
                 _ws = null;
             }
