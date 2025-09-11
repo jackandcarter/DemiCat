@@ -225,17 +225,24 @@ async def save_message(
     error_details: list[str] = []
     if discord_client:
         channel = discord_client.get_channel(channel_id)
-    if channel and isinstance(channel, discord.abc.Messageable):
-        discord_files = None
-        if files:
-            if len(files) > MAX_ATTACHMENTS:
-                raise HTTPException(status_code=400, detail="Too many attachments")
-            discord_files = []
-            for f in files:
-                data = await f.read()
-                if len(data) > MAX_ATTACHMENT_SIZE:
-                    raise HTTPException(status_code=400, detail=f"{f.filename} too large")
-                discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
+        if channel is None:
+            try:
+                channel = await discord_client.fetch_channel(channel_id)
+            except Exception:
+                pass
+    if not channel or not isinstance(channel, discord.abc.Messageable):
+        logging.warning("Channel %s not found or not messageable", channel_id)
+        raise HTTPException(status_code=404, detail="channel not found")
+    discord_files = None
+    if files:
+        if len(files) > MAX_ATTACHMENTS:
+            raise HTTPException(status_code=400, detail="Too many attachments")
+        discord_files = []
+        for f in files:
+            data = await f.read()
+            if len(data) > MAX_ATTACHMENT_SIZE:
+                raise HTTPException(status_code=400, detail=f"{f.filename} too large")
+            discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
 
         webhook_url = _channel_webhooks.get(channel_id)
         if not webhook_url:
@@ -326,7 +333,7 @@ async def save_message(
                         e.text,
                     )
                     error_details.append(
-                        f"Webhook send failed: {e.status} {_discord_error(e)}"
+                        f"Webhook send failed: {e.status} {e.text or _discord_error(e)}"
                     )
                 else:
                     logging.exception(
@@ -403,7 +410,7 @@ async def save_message(
                         e.text,
                     )
                     error_details.append(
-                        f"Webhook retry failed: {e.status} {_discord_error(e)}"
+                        f"Webhook retry failed: {e.status} {e.text or _discord_error(e)}"
                     )
                 else:
                     logging.exception(
@@ -444,7 +451,7 @@ async def save_message(
                         e.text,
                     )
                     error_details.append(
-                        f"Direct send failed: {e.status} {_discord_error(e)}"
+                        f"Direct send failed: {e.status} {e.text or _discord_error(e)}"
                     )
                 else:
                     logging.exception(
