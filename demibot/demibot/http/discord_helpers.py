@@ -38,10 +38,21 @@ def attachment_to_dto(attachment: discord.Attachment) -> AttachmentDto:
     )
 
 
-def mention_to_dto(user: discord.abc.User) -> Mention:
-    """Convert a Discord user/member into a :class:`Mention`."""
-    name = getattr(user, "display_name", None) or getattr(user, "name", "")
-    return Mention(id=str(user.id), name=name)
+def mention_to_dto(obj: discord.abc.Snowflake) -> Mention:
+    """Convert a Discord snowflake into a :class:`Mention` with type."""
+
+    mention_type = "unknown"
+    name = getattr(obj, "name", "")
+
+    if isinstance(obj, (discord.User, discord.Member)):
+        mention_type = "user"
+        name = getattr(obj, "display_name", None) or getattr(obj, "name", "")
+    elif isinstance(obj, discord.Role):
+        mention_type = "role"
+    elif isinstance(obj, discord.abc.GuildChannel):
+        mention_type = "channel"
+
+    return Mention(id=str(obj.id), name=name, type=mention_type)
 
 
 def reaction_to_dto(reaction: discord.Reaction) -> ReactionDto:
@@ -206,11 +217,16 @@ def serialize_message(
     """Serialize a Discord message into DTO and DB JSON fragments."""
 
     attachments = [attachment_to_dto(a) for a in message.attachments] or None
-    mentions = [
+    mentions_list = [
         mention_to_dto(m)
         for m in message.mentions
         if not getattr(m, "bot", False)
-    ] or None
+    ]
+    mentions_list.extend(mention_to_dto(r) for r in getattr(message, "role_mentions", []) or [])
+    mentions_list.extend(
+        mention_to_dto(c) for c in getattr(message, "channel_mentions", []) or []
+    )
+    mentions = mentions_list or None
 
     author = MessageAuthor(
         id=str(message.author.id),
