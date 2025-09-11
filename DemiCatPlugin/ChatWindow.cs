@@ -565,9 +565,8 @@ public class ChatWindow : IDisposable
         _emojiFetchInProgress = true;
         _ = Task.Run(async () =>
         {
-            if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady())
             {
-                _emojiCatalogLoaded = true;
                 _emojiFetchInProgress = false;
                 return;
             }
@@ -576,6 +575,12 @@ public class ChatWindow : IDisposable
                 var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis");
                 ApiHelpers.AddAuthHeader(request, _tokenManager);
                 var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    _tokenManager.Clear("Invalid API key");
+                    _emojiFetchInProgress = false;
+                    return;
+                }
                 if (!response.IsSuccessStatusCode)
                 {
                     _emojiFetchInProgress = false;

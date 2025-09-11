@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net;
 using System.Numerics;
 using System.Text.Json;
 using System.Threading.Tasks;
@@ -188,13 +189,19 @@ public class EmojiPopup
 
     private async Task FetchUnicode()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
+        var tokenManager = TokenManager.Instance;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || tokenManager == null || !tokenManager.IsReady()) return;
 
         try
         {
             var req = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis/unicode");
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, tokenManager);
             var res = await _httpClient.SendAsync(req);
+            if (res.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                tokenManager.Clear("Invalid API key");
+                return;
+            }
             if (!res.IsSuccessStatusCode) return;
 
             var stream = await res.Content.ReadAsStreamAsync();
@@ -215,13 +222,19 @@ public class EmojiPopup
 
     private async Task FetchGuild()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_config.GuildId)) return;
+        var tokenManager = TokenManager.Instance;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_config.GuildId) || tokenManager == null || !tokenManager.IsReady()) return;
 
         try
         {
             var req = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis/guilds/{_config.GuildId}");
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, tokenManager);
             var res = await _httpClient.SendAsync(req);
+            if (res.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                tokenManager.Clear("Invalid API key");
+                return;
+            }
             if (!res.IsSuccessStatusCode) return;
 
             var stream = await res.Content.ReadAsStreamAsync();
