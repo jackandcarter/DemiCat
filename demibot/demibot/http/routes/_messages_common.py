@@ -302,6 +302,7 @@ async def save_message(
                 username = (
                     f"{username_base} / {ctx.user.character_name}@FFXIV FC"
                 )
+            username = username[:80]
             try:
                 sent = await webhook.send(
                     body.content,
