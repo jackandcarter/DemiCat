@@ -607,13 +607,7 @@ public class ChatWindow : IDisposable
     {
         EnsureEmojiCatalog();
         var text = msg.Content ?? string.Empty;
-        if (msg.Mentions != null)
-        {
-            foreach (var m in msg.Mentions)
-            {
-                text = text.Replace($"<@{m.Id}>", $"@{m.Name}");
-            }
-        }
+        text = ReplaceMentionTokens(text, msg.Mentions);
         text = MarkdownFormatter.Format(text);
         var parts = Regex.Split(text, "(<a?:[a-zA-Z0-9_]+:\\d+>|:[a-zA-Z0-9_]+:)");
         ImGui.PushTextWrapPos();
@@ -696,6 +690,31 @@ public class ChatWindow : IDisposable
             first = false;
         }
         ImGui.PopTextWrapPos();
+    }
+
+    internal static string ReplaceMentionTokens(string text, List<DiscordMentionDto>? mentions)
+    {
+        if (mentions == null)
+            return text;
+
+        foreach (var m in mentions)
+        {
+            switch (m.Type)
+            {
+                case "user":
+                    text = text.Replace($"<@{m.Id}>", $"@{m.Name}");
+                    text = text.Replace($"<@!{m.Id}>", $"@{m.Name}");
+                    break;
+                case "role":
+                    text = text.Replace($"<@&{m.Id}>", $"@{m.Name}");
+                    break;
+                case "channel":
+                    text = text.Replace($"<#{m.Id}>", $"#{m.Name}");
+                    break;
+            }
+        }
+
+        return text;
     }
 
     private void RenderMarkdown(string text)

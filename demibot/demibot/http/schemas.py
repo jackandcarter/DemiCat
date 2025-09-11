@@ -70,6 +70,7 @@ class EmbedDto(CamelModel):
 class Mention(CamelModel):
     id: str
     name: str
+    type: str
 
 
 class AttachmentDto(CamelModel):
