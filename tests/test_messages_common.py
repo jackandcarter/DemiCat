@@ -244,6 +244,29 @@ def test_long_username_truncated(monkeypatch):
     asyncio.run(_run())
 
 
+def test_message_too_long(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=42, discord_guild_id=42, name="Guild"))
+            db.add(User(id=42, discord_user_id=420, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 42)
+            user = await db.get(User, 42)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+            body = mc.PostBody(channelId="123", content="x" * 2001)
+            with pytest.raises(HTTPException) as exc:
+                await mc.save_message(body, ctx, db, is_officer=False)
+            assert exc.value.status_code == 400
+            assert exc.value.detail == "message too long"
+
+    asyncio.run(_run())
+
+
 def test_rest_ws_payload_parity(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")

@@ -208,6 +208,8 @@ async def save_message(
 ) -> dict:
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
+    if len(body.content) > 2000:
+        raise HTTPException(status_code=400, detail="message too long")
     channel_id = int(body.channel_id)
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
