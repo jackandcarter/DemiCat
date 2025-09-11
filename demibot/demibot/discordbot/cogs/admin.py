@@ -377,13 +377,8 @@ class ConfigWizard(discord.ui.View):
         self.event_channel_ids: list[int] = []
         self.fc_chat_channel_ids: list[int] = []
         self.officer_chat_channel_ids: list[int] = []
-        self.officer_role_id: int | None = None
+        self.officer_role_ids: list[int] = []
         self.channels = list(guild.text_channels)
-        self.role_options = [
-            discord.SelectOption(label=r.name, value=str(r.id))
-            for r in guild.roles
-            if r.name != "@everyone"
-        ]
         self.page_size = 20
         self.channel_page = 0
         self.page_prev_button = discord.ui.Button(
@@ -448,19 +443,20 @@ class ConfigWizard(discord.ui.View):
                 self.add_item(self.page_next_button)
             self.next_button.disabled = len(selected) == 0
         else:
-            officer_select = discord.ui.Select(
-                placeholder="Select officer role",
-                options=self.role_options,
+            officer_select = discord.ui.RoleSelect(
+                placeholder="Select officer roles",
+                min_values=1,
+                max_values=25,
+                default_values=[
+                    r
+                    for r in (self.guild.get_role(rid) for rid in self.officer_role_ids)
+                    if r is not None
+                ],
             )
-            if self.officer_role_id:
-                for o in officer_select.options:
-                    if o.value == str(self.officer_role_id):
-                        o.default = True
-                        break
 
             async def officer_cb(i: discord.Interaction) -> None:
-                self.officer_role_id = int(officer_select.values[0])
-                await i.response.defer()
+                self.officer_role_ids = [r.id for r in officer_select.values]
+                await self.render(i)
 
             officer_select.callback = officer_cb
             self.add_item(officer_select)
@@ -469,6 +465,7 @@ class ConfigWizard(discord.ui.View):
         if self.step < 3:
             self.add_item(self.next_button)
         else:
+            self.finish_button.disabled = len(self.officer_role_ids) == 0
             self.add_item(self.finish_button)
         if initial:
             await inter.response.send_message(embed=embed, view=self, ephemeral=True)
@@ -519,7 +516,7 @@ class ConfigWizard(discord.ui.View):
                 self.event_channel_ids,
                 self.fc_chat_channel_ids,
                 self.officer_chat_channel_ids,
-                self.officer_role_id,
+                self.officer_role_ids,
             ]
         ):
             await interaction.response.send_message(
@@ -546,28 +543,33 @@ class ConfigWizard(discord.ui.View):
                 if config is None:
                     config = GuildConfig(guild_id=guild.id)
                     db.add(config)
-                config.officer_role_id = self.officer_role_id
-                role_name = self.guild.get_role(self.officer_role_id)
-                role_name = role_name.name if role_name else "Officer"
-                role_res = await db.execute(
-                    select(Role).where(
-                        Role.guild_id == guild.id,
-                        Role.discord_role_id == self.officer_role_id,
-                    )
+                config.officer_role_ids = ",".join(
+                    str(rid) for rid in self.officer_role_ids
                 )
-                role = role_res.scalars().first()
-                if role is None:
-                    db.add(
-                        Role(
-                            guild_id=guild.id,
-                            name=role_name,
-                            discord_role_id=self.officer_role_id,
-                            is_officer=True,
+                role_res = await db.execute(
+                    select(Role).where(Role.guild_id == guild.id)
+                )
+                roles = role_res.scalars().all()
+                role_map = {r.discord_role_id: r for r in roles}
+                for rid in self.officer_role_ids:
+                    d_role = self.guild.get_role(rid)
+                    role_name = d_role.name if d_role else "Officer"
+                    role = role_map.get(rid)
+                    if role is None:
+                        db.add(
+                            Role(
+                                guild_id=guild.id,
+                                name=role_name,
+                                discord_role_id=rid,
+                                is_officer=True,
+                            )
                         )
-                    )
-                else:
-                    role.name = role_name
-                    role.is_officer = True
+                    else:
+                        role.name = role_name
+                        role.is_officer = True
+                for role in roles:
+                    if role.is_officer and role.discord_role_id not in self.officer_role_ids:
+                        role.is_officer = False
                 await db.execute(
                     delete(GuildChannel).where(
                         GuildChannel.guild_id == guild.id,
@@ -617,7 +619,7 @@ class ConfigWizard(discord.ui.View):
             f"Event channels: {', '.join(f'<#{c}>' for c in self.event_channel_ids)}\n"
             f"FC chat channels: {', '.join(f'<#{c}>' for c in self.fc_chat_channel_ids)}\n"
             f"Officer chat channels: {', '.join(f'<#{c}>' for c in self.officer_chat_channel_ids)}\n"
-            f"Officer role: <@&{self.officer_role_id}>"
+            f"Officer roles: {', '.join(f'<@&{r}>' for r in self.officer_role_ids)}"
         )
         await interaction.response.send_message(summary, ephemeral=True)
         self.stop()
