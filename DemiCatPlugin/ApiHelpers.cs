@@ -42,6 +42,38 @@ internal static class ApiHelpers
         }
     }
 
+    internal static async Task<HttpResponseMessage?> SendWithRetries(HttpRequestMessage request, HttpClient httpClient)
+    {
+        const int maxAttempts = 3;
+        const double baseDelaySeconds = 0.5;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                PluginServices.Instance!.Log.Debug($"HTTP {request.Method} {request.RequestUri} attempt {attempt}/{maxAttempts}");
+                var response = await httpClient.SendAsync(request);
+                PluginServices.Instance!.Log.Debug($"HTTP {request.Method} {request.RequestUri} responded {(int)response.StatusCode}");
+                return response;
+            }
+            catch (Exception ex)
+            {
+                PluginServices.Instance!.Log.Warning(ex, $"Attempt {attempt}/{maxAttempts} failed for {request.Method} {request.RequestUri}");
+                if (attempt == maxAttempts)
+                {
+                    PluginServices.Instance!.Log.Error($"HTTP {request.Method} {request.RequestUri} failed after {maxAttempts} attempts");
+                    return null;
+                }
+
+                var delay = TimeSpan.FromSeconds(baseDelaySeconds * Math.Pow(2, attempt - 1));
+                PluginServices.Instance!.Log.Debug($"Retrying in {delay.TotalSeconds:0.##}s");
+                await Task.Delay(delay);
+            }
+        }
+
+        return null;
+    }
+
     internal static async Task<HttpResponseMessage?> PingAsync(HttpClient httpClient, Config config, TokenManager tokenManager, CancellationToken token)
     {
         try

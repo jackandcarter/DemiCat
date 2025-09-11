@@ -340,8 +340,8 @@ public class EventCreateWindow
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/repeat");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
+            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            if (response?.IsSuccessStatusCode == true)
             {
                 var stream = await response.Content.ReadAsStreamAsync();
                 var schedules = await JsonSerializer.DeserializeAsync<List<RepeatSchedule>>(stream) ?? new();
@@ -355,7 +355,15 @@ public class EventCreateWindow
             else
             {
                 _schedulesLoaded = true;
-                _lastResult = "Failed to load schedules";
+                if (response == null)
+                {
+                    _lastResult = "Failed to load schedules";
+                }
+                else
+                {
+                    var body = await response.Content.ReadAsStringAsync();
+                    _lastResult = $"Failed to load schedules: {(int)response.StatusCode} {body}";
+                }
             }
         }
         catch
@@ -372,10 +380,19 @@ public class EventCreateWindow
         {
             var request = new HttpRequestMessage(HttpMethod.Delete, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/{id}/repeat");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
+            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            if (response?.IsSuccessStatusCode == true)
             {
                 _schedulesLoaded = false;
+            }
+            else if (response != null)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                _lastResult = $"Failed to cancel schedule: {(int)response.StatusCode} {body}";
+            }
+            else
+            {
+                _lastResult = "Failed to cancel schedule";
             }
         }
         catch
@@ -470,8 +487,20 @@ public class EventCreateWindow
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates");
             request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
-            _lastResult = response.IsSuccessStatusCode ? "Template saved" : "Failed to save template";
+            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            if (response?.IsSuccessStatusCode == true)
+            {
+                _lastResult = "Template saved";
+            }
+            else if (response != null)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                _lastResult = $"Failed to save template: {(int)response.StatusCode} {body}";
+            }
+            else
+            {
+                _lastResult = "Failed to save template";
+            }
         }
         catch
         {
@@ -518,8 +547,20 @@ public class EventCreateWindow
             request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
 
-            var response = await _httpClient.SendAsync(request);
-            _lastResult = response.IsSuccessStatusCode ? "Event posted" : $"Error: {response.StatusCode}";
+            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            if (response?.IsSuccessStatusCode == true)
+            {
+                _lastResult = "Event posted";
+            }
+            else if (response != null)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                _lastResult = $"Error {(int)response.StatusCode}: {body}";
+            }
+            else
+            {
+                _lastResult = "Failed to post event";
+            }
         }
         catch (Exception ex)
         {
