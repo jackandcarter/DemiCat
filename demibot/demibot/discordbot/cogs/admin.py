@@ -598,14 +598,20 @@ class ConfigWizard(discord.ui.View):
                 for role in roles:
                     if role.is_officer and role.discord_role_id not in self.officer_role_ids:
                         role.is_officer = False
-                await db.execute(
-                    delete(GuildChannel).where(
-                        GuildChannel.guild_id == guild.id,
-                        GuildChannel.kind.in_(
-                            [ChannelKind.EVENT, ChannelKind.FC_CHAT, ChannelKind.OFFICER_CHAT]
-                        ),
-                    )
+
+                channel_ids = (
+                    self.event_channel_ids
+                    + self.fc_chat_channel_ids
+                    + self.officer_chat_channel_ids
                 )
+                if channel_ids:
+                    await db.execute(
+                        delete(GuildChannel).where(
+                            GuildChannel.guild_id == guild.id,
+                            GuildChannel.channel_id.in_(channel_ids),
+                        )
+                    )
+                    await db.flush()
                 channel_name_lookup = {
                     ch.id: ch.name for ch in self.guild.text_channels
                 }
