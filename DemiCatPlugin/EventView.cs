@@ -207,32 +207,47 @@ public class EventView : IDisposable
     {
         if (Buttons != null && Buttons.Count > 0)
         {
-            foreach (var button in Buttons)
+            foreach (var row in Buttons
+                         .GroupBy(b => b.RowIndex ?? 0)
+                         .OrderBy(g => g.Key))
             {
-                var id = button.CustomId ?? button.Label;
-                var text = string.IsNullOrEmpty(button.Emoji) ? button.Label : $"{button.Emoji} {button.Label}";
-                var styled = button.Style.HasValue && button.Style.Value != ButtonStyle.Link;
-                if (styled)
+                var buttons = row.ToList();
+                for (var i = 0; i < buttons.Count; i++)
                 {
-                    var color = GetStyleColor(button.Style!.Value);
-                    ImGui.PushStyleColor(ImGuiCol.Button, color);
-                    ImGui.PushStyleColor(ImGuiCol.ButtonHovered, Lighten(color, 1.1f));
-                    ImGui.PushStyleColor(ImGuiCol.ButtonActive, Lighten(color, 1.2f));
-                }
-                if (ImGui.Button($"{text}##{id}{_dto.Id}", new Vector2(-1, 0)))
-                {
-                    if (!string.IsNullOrEmpty(button.Url))
+                    var button = buttons[i];
+                    var id = button.CustomId ?? button.Label;
+                    var text = string.IsNullOrEmpty(button.Emoji) ? button.Label : $"{button.Emoji} {button.Label}";
+                    var styled = button.Style.HasValue && button.Style.Value != ButtonStyle.Link;
+                    if (styled)
                     {
-                        try { Process.Start(new ProcessStartInfo(button.Url) { UseShellExecute = true }); } catch { }
+                        var color = EmbedPreviewRenderer.GetStyleColor(button.Style!.Value);
+                        ImGui.PushStyleColor(ImGuiCol.Button, color);
+                        ImGui.PushStyleColor(ImGuiCol.ButtonHovered, EmbedPreviewRenderer.Lighten(color, 1.1f));
+                        ImGui.PushStyleColor(ImGuiCol.ButtonActive, EmbedPreviewRenderer.Lighten(color, 1.2f));
                     }
-                    else if (!string.IsNullOrEmpty(button.CustomId))
+
+                    var w = button.Width ?? -1;
+                    if (ImGui.Button($"{text}##{id}{_dto.Id}", new Vector2(w, 0)))
                     {
-                        _ = SendInteraction(button.CustomId);
+                        if (!string.IsNullOrEmpty(button.Url))
+                        {
+                            try { Process.Start(new ProcessStartInfo(button.Url) { UseShellExecute = true }); } catch { }
+                        }
+                        else if (!string.IsNullOrEmpty(button.CustomId))
+                        {
+                            _ = SendInteraction(button.CustomId);
+                        }
                     }
-                }
-                if (styled)
-                {
-                    ImGui.PopStyleColor(3);
+
+                    if (styled)
+                    {
+                        ImGui.PopStyleColor(3);
+                    }
+
+                    if (i < buttons.Count - 1)
+                    {
+                        ImGui.SameLine();
+                    }
                 }
             }
         }
@@ -276,27 +291,6 @@ public class EventView : IDisposable
             return true;
         }
         return false;
-    }
-
-    private static Vector4 GetStyleColor(ButtonStyle style)
-    {
-        return style switch
-        {
-            ButtonStyle.Primary => new Vector4(0.345f, 0.396f, 0.949f, 1f),
-            ButtonStyle.Secondary => new Vector4(0.31f, 0.329f, 0.361f, 1f),
-            ButtonStyle.Success => new Vector4(0.341f, 0.949f, 0.529f, 1f),
-            ButtonStyle.Danger => new Vector4(0.929f, 0.258f, 0.27f, 1f),
-            _ => new Vector4(0.345f, 0.396f, 0.949f, 1f),
-        };
-    }
-
-    private static Vector4 Lighten(Vector4 color, float amount)
-    {
-        return new Vector4(
-            MathF.Min(color.X * amount, 1f),
-            MathF.Min(color.Y * amount, 1f),
-            MathF.Min(color.Z * amount, 1f),
-            color.W);
     }
 
     private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)
