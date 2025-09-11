@@ -19,6 +19,13 @@ public class OfficerChatWindow : ChatWindow
         : base(config, httpClient, presence, tokenManager, channelService)
     {
         _channelId = config.OfficerChannelId;
+        _bridge.StatusChanged += s =>
+        {
+            if (s.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
+            {
+                _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshRoles());
+            }
+        };
     }
 
     public override void StartNetworking()
@@ -36,6 +43,19 @@ public class OfficerChatWindow : ChatWindow
     {
         if (!_config.Roles.Contains("officer"))
         {
+            return;
+        }
+
+        if (!_bridge.IsReady())
+        {
+            if (!string.IsNullOrEmpty(_statusMessage))
+            {
+                ImGui.TextUnformatted(_statusMessage);
+            }
+            else
+            {
+                ImGui.TextUnformatted("Link DemiCat…");
+            }
             return;
         }
 
@@ -203,6 +223,41 @@ public class OfficerChatWindow : ChatWindow
                 _channelsLoaded = true;
             });
         }
+    }
+
+    private async Task RefreshRoles()
+    {
+        if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return;
+        }
+        try
+        {
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/roles";
+            var request = new HttpRequestMessage(HttpMethod.Post, url);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+            var stream = await response.Content.ReadAsStreamAsync();
+            var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _config.Roles = dto.Roles;
+                PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+            });
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error refreshing roles");
+        }
+    }
+
+    private class RolesDto
+    {
+        public List<string> Roles { get; set; } = new();
     }
 
     protected override Uri BuildWebSocketUri()
