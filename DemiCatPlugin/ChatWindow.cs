@@ -167,10 +167,13 @@ public class ChatWindow : IDisposable
         _fileDialog.Draw();
         if (!_bridge.IsReady())
         {
-            ImGui.TextUnformatted("Link DemiCat…");
             if (!string.IsNullOrEmpty(_statusMessage))
             {
                 ImGui.TextUnformatted(_statusMessage);
+            }
+            else
+            {
+                ImGui.TextUnformatted("Link DemiCat…");
             }
             return;
         }
