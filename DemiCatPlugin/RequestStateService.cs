@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -105,7 +106,8 @@ internal static class RequestStateService
 
     public static async Task RefreshAll(HttpClient httpClient, Config config)
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
+        var tokenManager = TokenManager.Instance;
+        if (!ApiHelpers.ValidateApiBaseUrl(config) || tokenManager == null || !tokenManager.IsReady()) return;
         _config = config;
         try
         {
@@ -113,8 +115,13 @@ internal static class RequestStateService
             try
             {
                 var tokenMsg = new HttpRequestMessage(HttpMethod.Get, $"{config.ApiBaseUrl.TrimEnd('/')}/api/delta-token");
-                ApiHelpers.AddAuthHeader(tokenMsg, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(tokenMsg, tokenManager);
                 var tokenResp = await httpClient.SendAsync(tokenMsg);
+                if (tokenResp.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    tokenManager.Clear("Invalid API key");
+                    return;
+                }
                 if (tokenResp.IsSuccessStatusCode)
                 {
                     var tokenStream = await tokenResp.Content.ReadAsStreamAsync();
@@ -136,8 +143,13 @@ internal static class RequestStateService
                 ? $"{baseUrl}/api/requests"
                 : $"{baseUrl}/api/requests/delta?since={Uri.EscapeDataString(config.RequestsDeltaToken)}";
             var msg = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(msg, tokenManager);
             var resp = await httpClient.SendAsync(msg);
+            if (resp.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                tokenManager.Clear("Invalid API key");
+                return;
+            }
             if (!resp.IsSuccessStatusCode)
             {
                 PluginServices.Instance!.Log.Warning($"Failed to refresh request states. URL: {url}, Status: {resp.StatusCode}");

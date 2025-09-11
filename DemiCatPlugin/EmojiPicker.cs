@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Net;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
@@ -64,15 +65,21 @@ public class EmojiPicker
 
     private async Task Fetch()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        var tokenManager = TokenManager.Instance;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || tokenManager == null || !tokenManager.IsReady())
         {
             return;
         }
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/emojis");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, tokenManager);
             var response = await _httpClient.SendAsync(request);
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                tokenManager.Clear("Invalid API key");
+                return;
+            }
             if (!response.IsSuccessStatusCode)
             {
                 return;
