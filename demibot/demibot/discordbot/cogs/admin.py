@@ -410,7 +410,16 @@ class ConfigWizard(discord.ui.View):
         followup: bool = False,
     ) -> None:
         self.clear_items()
-        embed = discord.Embed(title=self.title, description=f"Step {self.step + 1} / 4")
+        step_descriptions = [
+            "Select the event channels to be used in the plugin",
+            "Select the FC chat channels to be used in the plugin",
+            "Select the officer chat channels to be used in the plugin",
+            "Select the roles that should be treated as officers",
+        ]
+        embed = discord.Embed(
+            title=self.title,
+            description=f"Step {self.step + 1} / 4\n{step_descriptions[self.step]}",
+        )
         if self.step in (0, 1, 2):
             selected_map = {
                 0: self.event_channel_ids,
