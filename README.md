@@ -177,3 +177,10 @@ The bot exposes setup endpoints for configuring Discord channels. All requests r
 ## Extensibility
 
 The bot exposes REST endpoints that can be expanded to mirror other bots or to provide additional game integrations.
+
+## Logging
+
+HTTP routes emit structured logs to aid troubleshooting and correlation across services. Use `logging.debug` for incoming
+request data and validation steps, `logging.info` for successful Discord API calls or websocket broadcasts, and
+`logging.error` for failures. Every log entry from event and template routes includes `event_id`, `guild_id`, and
+`channel_id` fields to allow cross-system tracing.
