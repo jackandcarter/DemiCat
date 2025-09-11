@@ -36,6 +36,8 @@ _channel_webhooks: dict[int, str] = {}
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
+ALLOWED_MENTIONS = discord.AllowedMentions(users=True, roles=False, everyone=False)
+
 
 def _discord_error(exc: discord.HTTPException) -> str:
     """Return a human friendly discord error message."""
@@ -310,6 +312,7 @@ async def save_message(
                     avatar_url=avatar,
                     files=discord_files,
                     wait=True,
+                    allowed_mentions=ALLOWED_MENTIONS,
                 )
             except Exception as e:
                 # Attempt to recreate webhook once if sending failed
@@ -372,6 +375,7 @@ async def save_message(
                     avatar_url=avatar,
                     files=discord_files,
                     wait=True,
+                    allowed_mentions=ALLOWED_MENTIONS,
                 )
                 webhook = created
                 discord_msg_id = getattr(sent, "id", None)
@@ -410,7 +414,11 @@ async def save_message(
 
         if discord_msg_id is None:
             try:
-                sent = await channel.send(body.content, files=discord_files)
+                sent = await channel.send(
+                    body.content,
+                    files=discord_files,
+                    allowed_mentions=ALLOWED_MENTIONS,
+                )
                 discord_msg_id = getattr(sent, "id", None)
                 if discord_msg_id is None:
                     logging.warning(
