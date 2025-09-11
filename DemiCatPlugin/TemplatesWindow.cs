@@ -558,48 +558,18 @@ public class TemplatesWindow
             }
             return;
         }
-        if (!string.IsNullOrEmpty(tmpl.Description) && tmpl.Description.Length > 2000)
-        {
-            _lastResult = "Description exceeds 2000 characters";
-            return;
-        }
-        if (!DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl) ||
-            !DiscordValidation.IsImageUrlAllowed(tmpl.ThumbnailUrl))
-        {
-            _lastResult = "Invalid image or thumbnail URL";
-            return;
-        }
         try
         {
-
             var buttonsFlat = BuildButtonsPayload(tmpl);
-            if (buttonsFlat.Count == 0)
-            {
-                _lastResult = "Add at least one button";
-                return;
-            }
-
             var body = new
             {
                 channelId = _channelId,
-                title = tmpl.Title,
-                time = string.IsNullOrWhiteSpace(tmpl.Time) ? DateTime.UtcNow.ToString("O") : tmpl.Time,
-                description = tmpl.Description,
-                url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
-                imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
-                thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
-                color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
-                fields = tmpl.Fields != null && tmpl.Fields.Count > 0
-                    ? tmpl.Fields.Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
-                                 .Select(f => new { name = f.Name, value = f.Value, inline = f.Inline })
-                                 .ToList()
-                    : null,
-                buttons = buttonsFlat,
+                time = string.IsNullOrWhiteSpace(tmpl.Time) ? null : tmpl.Time,
+                buttons = buttonsFlat.Count > 0 ? buttonsFlat : null,
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
             };
-
-
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
+            var id = _templates[_selectedIndex].Id;
+            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}/post");
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await ApiHelpers.SendWithRetries(request, _httpClient);

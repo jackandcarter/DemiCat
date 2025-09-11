@@ -8,9 +8,17 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import Field
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ..schemas import TemplateDto, TemplatePayload, CamelModel, EmbedDto, EmbedFieldDto
+from ..schemas import (
+    TemplateDto,
+    TemplatePayload,
+    CamelModel,
+    EmbedDto,
+    EmbedFieldDto,
+    EmbedButtonDto,
+)
 from ..validation import validate_embed_payload
 from ..ws import manager
 from ...db.models import EventTemplate
@@ -29,6 +37,13 @@ class TemplateUpdateBody(CamelModel):
     name: str | None = None
     description: str | None = None
     payload: TemplatePayload | None = None
+
+
+class TemplatePostOverrides(CamelModel):
+    channel_id: str | None = Field(default=None, alias="channelId")
+    time: str | None = None
+    mentions: list[str] | None = None
+    buttons: list[EmbedButtonDto] | None = None
 
 
 def _dump_payload(payload: TemplatePayload) -> str:
@@ -203,6 +218,7 @@ async def delete_template(
 @router.post("/templates/{template_id}/post")
 async def post_template(
     template_id: str,
+    overrides: TemplatePostOverrides | None = None,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -211,23 +227,9 @@ async def post_template(
     if not tmpl or tmpl.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404, detail="Template not found")
     payload_dict = json.loads(tmpl.payload_json)
+    if overrides:
+        payload_dict.update(
+            overrides.model_dump(mode="json", by_alias=True, exclude_none=True)
+        )
     body = CreateEventBody.model_validate(payload_dict)
-    buttons = body.buttons or []
-    dto = EmbedDto(
-        id="0",
-        title=body.title,
-        description=body.description,
-        url=body.url,
-        fields=[
-            EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)
-            for f in (body.fields or [])
-        ],
-        image_url=body.image_url,
-        thumbnail_url=body.thumbnail_url,
-        color=body.color,
-        buttons=buttons,
-        channel_id=int(body.channel_id) if body.channel_id.isdigit() else None,
-        mentions=[int(m) for m in body.mentions or []] or None,
-    )
-    validate_embed_payload(dto, buttons)
     return await create_event(body=body, ctx=ctx, db=db)
