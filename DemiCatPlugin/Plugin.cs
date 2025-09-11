@@ -74,7 +74,15 @@ public class Plugin : IDalamudPlugin
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService);
         _presenceService?.Reset();
-        _mainWindow = new MainWindow(_config, _ui, _chatWindow, _officerChatWindow, _settings, _httpClient, _channelService);
+        _mainWindow = new MainWindow(
+            _config,
+            _ui,
+            _chatWindow,
+            _officerChatWindow,
+            _settings,
+            _httpClient,
+            _channelService,
+            () => RefreshRoles(_services.Log));
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
         _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
         _settings.MainWindow = _mainWindow;
@@ -153,7 +161,7 @@ public class Plugin : IDalamudPlugin
             _requestWatcher.Start();
         }
         var hasOfficerRole = _config.Roles.Contains("officer");
-        if (_config.Events || _config.SyncedChat || (_config.Officer && hasOfficerRole))
+        if (_config.Events || _config.SyncedChat || hasOfficerRole)
         {
             _ = _channelWatcher.Start();
         }
@@ -161,7 +169,7 @@ public class Plugin : IDalamudPlugin
         {
             _chatWindow.StartNetworking();
         }
-        if (_config.Officer && hasOfficerRole)
+        if (hasOfficerRole)
         {
             _officerChatWindow.StartNetworking();
         }

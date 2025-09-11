@@ -1,5 +1,6 @@
 using System.Net.Http;
 using System.Runtime.Serialization;
+using System.Threading.Tasks;
 using DemiCatPlugin;
 using Xunit;
 
@@ -16,7 +17,7 @@ public class SyncshellTabToggleTests
         var ui = new UiRenderer(cfg, http);
         var officer = new OfficerChatWindow(cfg, http, null, token, channelService);
         var settings = (SettingsWindow)FormatterServices.GetUninitializedObject(typeof(SettingsWindow));
-        var main = new MainWindow(cfg, ui, null, officer, settings, http, channelService);
+        var main = new MainWindow(cfg, ui, null, officer, settings, http, channelService, () => Task.FromResult(true));
 
         Assert.Null(SyncshellWindow.Instance);
 

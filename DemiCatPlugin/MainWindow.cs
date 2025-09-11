@@ -1,6 +1,7 @@
 using System;
 using System.Net.Http;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -18,6 +19,8 @@ public class MainWindow : IDisposable
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
     private readonly HttpClient _httpClient;
+    private readonly Func<Task<bool>> _refreshRoles;
+    private bool _checkingOfficer;
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
@@ -25,7 +28,7 @@ public class MainWindow : IDisposable
     public EventCreateWindow EventCreateWindow => _create;
     public TemplatesWindow TemplatesWindow => _templates;
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient, ChannelService channelService)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient, ChannelService channelService, Func<Task<bool>> refreshRoles)
     {
         _config = config;
         _ui = ui;
@@ -33,6 +36,7 @@ public class MainWindow : IDisposable
         _officer = officer;
         _settings = settings;
         _httpClient = httpClient;
+        _refreshRoles = refreshRoles;
         _create = new EventCreateWindow(config, httpClient, channelService);
         _templates = new TemplatesWindow(config, httpClient);
         _requestBoard = new RequestBoardWindow(config, httpClient);
@@ -213,6 +217,20 @@ public class MainWindow : IDisposable
                 }
                 else if (ImGui.BeginTabItem("Officer"))
                 {
+                    if (!_checkingOfficer)
+                    {
+                        _checkingOfficer = true;
+                        _ = Task.Run(async () =>
+                        {
+                            await _refreshRoles();
+                            PluginServices.Instance?.Framework.RunOnTick(() =>
+                            {
+                                _checkingOfficer = false;
+                                if (!HasOfficerRole)
+                                    ImGui.SetTabItemClosed("Officer");
+                            });
+                        });
+                    }
                     ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
                     _officer.Draw();
                     ImGui.EndChild();
