@@ -136,13 +136,14 @@ async def key_command(interaction: discord.Interaction) -> None:
         )
         return
 
+    embed = discord.Embed(title="Your API key", description=token)
     try:
-        await interaction.user.send(f"Your API key: {token}")
-        await interaction.response.send_message(
-            "Sent you a DM with your key", ephemeral=True
-        )
-    except discord.Forbidden:
-        await interaction.response.send_message("Unable to send DM", ephemeral=True)
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+    except Exception:
+        if interaction.response.is_done():
+            await interaction.followup.send("Failed to generate key", ephemeral=True)
+        else:
+            await interaction.response.send_message("Failed to generate key", ephemeral=True)
 
 
 @app_commands.command(name="generatekey", description="Generate an API key")
