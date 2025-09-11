@@ -378,15 +378,22 @@ class ConfigWizard(discord.ui.View):
         self.fc_chat_channel_ids: list[int] = []
         self.officer_chat_channel_ids: list[int] = []
         self.officer_role_id: int | None = None
-        self.channel_options = [
-            discord.SelectOption(label=ch.name, value=str(ch.id))
-            for ch in guild.text_channels
-        ]
+        self.channels = list(guild.text_channels)
         self.role_options = [
             discord.SelectOption(label=r.name, value=str(r.id))
             for r in guild.roles
             if r.name != "@everyone"
         ]
+        self.page_size = 20
+        self.channel_page = 0
+        self.page_prev_button = discord.ui.Button(
+            label="Prev Page", style=discord.ButtonStyle.secondary
+        )
+        self.page_prev_button.callback = self.on_prev_page
+        self.page_next_button = discord.ui.Button(
+            label="Next Page", style=discord.ButtonStyle.secondary
+        )
+        self.page_next_button.callback = self.on_next_page
         self.back_button = discord.ui.Button(
             label="Back", style=discord.ButtonStyle.secondary
         )
@@ -409,57 +416,37 @@ class ConfigWizard(discord.ui.View):
     ) -> None:
         self.clear_items()
         embed = discord.Embed(title=self.title, description=f"Step {self.step + 1} / 4")
-        if self.step == 0:
-            select = discord.ui.Select(
-                placeholder="Select event channels",
-                options=self.channel_options,
-                max_values=min(25, len(self.channel_options)),
-            )
-            if self.event_channel_ids:
-                for o in select.options:
-                    if int(o.value) in self.event_channel_ids:
-                        o.default = True
+        if self.step in (0, 1, 2):
+            selected_map = {
+                0: self.event_channel_ids,
+                1: self.fc_chat_channel_ids,
+                2: self.officer_chat_channel_ids,
+            }
+            selected = selected_map[self.step]
+            start = self.channel_page * self.page_size
+            end = start + self.page_size
+            for ch in self.channels[start:end]:
+                style = (
+                    discord.ButtonStyle.primary
+                    if ch.id in selected
+                    else discord.ButtonStyle.secondary
+                )
+                button = discord.ui.Button(label=ch.name, style=style)
 
-            async def cb(i: discord.Interaction) -> None:
-                self.event_channel_ids = [int(v) for v in select.values]
-                await i.response.defer()
+                async def channel_cb(i: discord.Interaction, cid=ch.id) -> None:
+                    if cid in selected:
+                        selected.remove(cid)
+                    else:
+                        selected.append(cid)
+                    await self.render(i)
 
-            select.callback = cb
-            self.add_item(select)
-        elif self.step == 1:
-            select = discord.ui.Select(
-                placeholder="Select FC chat channels",
-                options=self.channel_options,
-                max_values=min(25, len(self.channel_options)),
-            )
-            if self.fc_chat_channel_ids:
-                for o in select.options:
-                    if int(o.value) in self.fc_chat_channel_ids:
-                        o.default = True
-
-            async def cb(i: discord.Interaction) -> None:
-                self.fc_chat_channel_ids = [int(v) for v in select.values]
-                await i.response.defer()
-
-            select.callback = cb
-            self.add_item(select)
-        elif self.step == 2:
-            select = discord.ui.Select(
-                placeholder="Select officer chat channels",
-                options=self.channel_options,
-                max_values=min(25, len(self.channel_options)),
-            )
-            if self.officer_chat_channel_ids:
-                for o in select.options:
-                    if int(o.value) in self.officer_chat_channel_ids:
-                        o.default = True
-
-            async def cb(i: discord.Interaction) -> None:
-                self.officer_chat_channel_ids = [int(v) for v in select.values]
-                await i.response.defer()
-
-            select.callback = cb
-            self.add_item(select)
+                button.callback = channel_cb
+                self.add_item(button)
+            if start > 0:
+                self.add_item(self.page_prev_button)
+            if end < len(self.channels):
+                self.add_item(self.page_next_button)
+            self.next_button.disabled = len(selected) == 0
         else:
             officer_select = discord.ui.Select(
                 placeholder="Select officer role",
@@ -494,6 +481,7 @@ class ConfigWizard(discord.ui.View):
 
     async def on_back(self, interaction: discord.Interaction) -> None:
         self.step = max(self.step - 1, 0)
+        self.channel_page = 0
         await self.render(interaction)
 
     async def on_next(self, interaction: discord.Interaction) -> None:
@@ -513,6 +501,16 @@ class ConfigWizard(discord.ui.View):
             )
             return
         self.step += 1
+        self.channel_page = 0
+        await self.render(interaction)
+
+    async def on_prev_page(self, interaction: discord.Interaction) -> None:
+        self.channel_page = max(self.channel_page - 1, 0)
+        await self.render(interaction)
+
+    async def on_next_page(self, interaction: discord.Interaction) -> None:
+        max_page = max((len(self.channels) - 1) // self.page_size, 0)
+        self.channel_page = min(self.channel_page + 1, max_page)
         await self.render(interaction)
 
     async def on_finish(self, interaction: discord.Interaction) -> None:
