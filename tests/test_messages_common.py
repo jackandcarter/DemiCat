@@ -114,6 +114,76 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_allowed_mentions(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=5, discord_guild_id=5, name="Guild"))
+            db.add(User(id=5, discord_user_id=50, global_name="Charlie"))
+            db.add(
+                Membership(
+                    guild_id=5,
+                    user_id=5,
+                    nickname="CharlieNick",
+                    avatar_url="http://example.com/avatar.png",
+                )
+            )
+            await db.commit()
+            guild = await db.get(Guild, 5)
+            user = await db.get(User, 5)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            captured: dict[str, object] = {}
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    captured["allowed_mentions"] = kwargs.get("allowed_mentions")
+                    return types.SimpleNamespace(id=1, attachments=[])
+
+            class DummyChannel:
+                async def create_webhook(self, name: str):
+                    return DummyWebhook()
+
+                async def send(self, *args, **kwargs):
+                    captured["allowed_mentions"] = kwargs.get("allowed_mentions")
+                    return types.SimpleNamespace(id=1, attachments=[])
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyChannel()
+
+            async def dummy_broadcast(
+                message: str,
+                guild_id: int,
+                officer_only: bool = False,
+                path: str | None = None,
+            ):
+                pass
+
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="123", content="@everyone hello @here")
+            res = await mc.save_message(body, ctx, db, is_officer=False)
+            assert res["ok"] is True
+
+            am = captured.get("allowed_mentions")
+            assert isinstance(am, mc.discord.AllowedMentions)
+            assert am.everyone is False
+            assert am.roles is False
+            assert am.users is True
+
+    asyncio.run(_run())
+
+
 def test_long_username_truncated(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
