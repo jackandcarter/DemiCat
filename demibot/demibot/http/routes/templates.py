@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -25,6 +26,7 @@ from ...db.models import EventTemplate
 from .events import create_event, CreateEventBody
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 class TemplateCreateBody(CamelModel):
@@ -67,6 +69,20 @@ async def create_template(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> TemplateDto:
+    channel_id = (
+        int(body.payload.channel_id)
+        if body.payload.channel_id.isdigit()
+        else None
+    )
+    logger.debug(
+        "Incoming create_template request",
+        extra={
+            "event_id": None,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id,
+            "request": body.model_dump(mode="json", exclude_none=True),
+        },
+    )
     embed = EmbedDto(
         id="0",
         title=body.payload.title,
@@ -77,11 +93,17 @@ async def create_template(
         color=body.payload.color,
         fields=body.payload.fields,
         buttons=body.payload.buttons,
-        channel_id=int(body.payload.channel_id)
-        if body.payload.channel_id.isdigit()
-        else None,
+        channel_id=channel_id,
     )
     validate_embed_payload(embed, body.payload.buttons or [])
+    logger.debug(
+        "Template payload validated",
+        extra={
+            "event_id": None,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id,
+        },
+    )
     tmpl = EventTemplate(
         guild_id=ctx.guild.id,
         name=body.name,
@@ -96,18 +118,37 @@ async def create_template(
         return JSONResponse({"error": "duplicate"}, status_code=409)
     await db.refresh(tmpl)
     dto = _template_to_dto(tmpl)
-    await manager.broadcast_text(
-        json.dumps(
-            {
-                "topic": "templates.updated",
-                "payload": dto.model_dump(
-                    mode="json", by_alias=True, exclude_none=True
-                ),
-            }
-        ),
-        ctx.guild.id,
-        path="/ws/templates",
-    )
+    try:
+        await manager.broadcast_text(
+            json.dumps(
+                {
+                    "topic": "templates.updated",
+                    "payload": dto.model_dump(
+                        mode="json", by_alias=True, exclude_none=True
+                    ),
+                }
+            ),
+            ctx.guild.id,
+            path="/ws/templates",
+        )
+        logger.info(
+            "Websocket broadcast successful",
+            extra={
+                "event_id": None,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "Websocket broadcast failed",
+            extra={
+                "event_id": None,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+                "error": str(exc),
+            },
+        )
     return dto
 
 
@@ -148,6 +189,18 @@ async def update_template(
     tmpl = await db.get(EventTemplate, tid)
     if not tmpl or tmpl.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404, detail="Template not found")
+    channel_id = None
+    if body.payload and body.payload.channel_id and body.payload.channel_id.isdigit():
+        channel_id = int(body.payload.channel_id)
+    logger.debug(
+        "Incoming update_template request",
+        extra={
+            "event_id": None,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id,
+            "request": body.model_dump(mode="json", exclude_none=True),
+        },
+    )
     if body.name is not None:
         tmpl.name = body.name
     if body.description is not None:
@@ -163,11 +216,17 @@ async def update_template(
             color=body.payload.color,
             fields=body.payload.fields,
             buttons=body.payload.buttons,
-            channel_id=int(body.payload.channel_id)
-            if body.payload.channel_id.isdigit()
-            else None,
+            channel_id=channel_id,
         )
         validate_embed_payload(embed, body.payload.buttons or [])
+        logger.debug(
+            "Template payload validated",
+            extra={
+                "event_id": None,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+            },
+        )
         tmpl.payload_json = _dump_payload(body.payload)
     try:
         await db.commit()
@@ -176,18 +235,37 @@ async def update_template(
         return JSONResponse({"error": "duplicate"}, status_code=409)
     await db.refresh(tmpl)
     dto = _template_to_dto(tmpl)
-    await manager.broadcast_text(
-        json.dumps(
-            {
-                "topic": "templates.updated",
-                "payload": dto.model_dump(
-                    mode="json", by_alias=True, exclude_none=True
-                ),
-            }
-        ),
-        ctx.guild.id,
-        path="/ws/templates",
-    )
+    try:
+        await manager.broadcast_text(
+            json.dumps(
+                {
+                    "topic": "templates.updated",
+                    "payload": dto.model_dump(
+                        mode="json", by_alias=True, exclude_none=True
+                    ),
+                }
+            ),
+            ctx.guild.id,
+            path="/ws/templates",
+        )
+        logger.info(
+            "Websocket broadcast successful",
+            extra={
+                "event_id": None,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "Websocket broadcast failed",
+            extra={
+                "event_id": None,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+                "error": str(exc),
+            },
+        )
     return dto
 
 
@@ -199,19 +277,52 @@ async def delete_template(
 ) -> dict[str, Any]:
     tid = int(template_id)
     tmpl = await db.get(EventTemplate, tid)
+    channel_id = None
+    if tmpl:
+        try:
+            channel_id = int(json.loads(tmpl.payload_json).get("channelId", 0))
+        except Exception:
+            channel_id = None
+    logger.debug(
+        "Incoming delete_template request",
+        extra={
+            "event_id": None,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id,
+        },
+    )
     if tmpl and tmpl.guild_id == ctx.guild.id:
         await db.delete(tmpl)
         await db.commit()
-        await manager.broadcast_text(
-            json.dumps(
-                {
-                    "topic": "templates.updated",
-                    "payload": {"id": str(tid), "deleted": True},
-                }
-            ),
-            ctx.guild.id,
-            path="/ws/templates",
-        )
+        try:
+            await manager.broadcast_text(
+                json.dumps(
+                    {
+                        "topic": "templates.updated",
+                        "payload": {"id": str(tid), "deleted": True},
+                    }
+                ),
+                ctx.guild.id,
+                path="/ws/templates",
+            )
+            logger.info(
+                "Websocket broadcast successful",
+                extra={
+                    "event_id": None,
+                    "guild_id": ctx.guild.id,
+                    "channel_id": channel_id,
+                },
+            )
+        except Exception as exc:
+            logger.error(
+                "Websocket broadcast failed",
+                extra={
+                    "event_id": None,
+                    "guild_id": ctx.guild.id,
+                    "channel_id": channel_id,
+                    "error": str(exc),
+                },
+            )
     return {"ok": True}
 
 
@@ -227,9 +338,21 @@ async def post_template(
     if not tmpl or tmpl.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404, detail="Template not found")
     payload_dict = json.loads(tmpl.payload_json)
+    channel_id = payload_dict.get("channelId")
     if overrides:
         payload_dict.update(
             overrides.model_dump(mode="json", by_alias=True, exclude_none=True)
         )
+        channel_id = overrides.channel_id or channel_id
+    channel_id_int = int(channel_id) if channel_id and str(channel_id).isdigit() else None
+    logger.debug(
+        "Incoming post_template request",
+        extra={
+            "event_id": None,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id_int,
+            "request": overrides.model_dump(mode="json", exclude_none=True) if overrides else None,
+        },
+    )
     body = CreateEventBody.model_validate(payload_dict)
     return await create_event(body=body, ctx=ctx, db=db)

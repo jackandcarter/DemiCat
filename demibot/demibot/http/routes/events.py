@@ -31,6 +31,7 @@ from ...db.models import (
 from models.event import Event
 
 router = APIRouter(prefix="/api")
+logger = logging.getLogger(__name__)
 
 
 def summarize(att: Dict[str, List[str]], labels: Dict[str, str], order: List[str]) -> List[dict]:
@@ -102,6 +103,16 @@ async def create_event(
     db: AsyncSession = Depends(get_db),
 ):
     eid = str(int(datetime.utcnow().timestamp() * 1000))
+    channel_id = int(body.channel_id)
+    logger.debug(
+        "Incoming create_event request",
+        extra={
+            "event_id": eid,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id,
+            "request": body.model_dump(mode="json", exclude={"mentions"}),
+        },
+    )
     buttons = body.buttons or []
     if not buttons:
         for tag in body.attendance or ["yes", "maybe", "no"]:
@@ -113,7 +124,6 @@ async def create_event(
     else:
         ts = datetime.now(timezone.utc)
 
-    channel_id = int(body.channel_id)
     mention_ids = [int(m) for m in body.mentions or []]
 
     dto = EmbedDto(
@@ -136,6 +146,14 @@ async def create_event(
         mentions=mention_ids or None,
     )
     validate_embed_payload(dto, buttons)
+    logger.debug(
+        "Embed payload validated",
+        extra={
+            "event_id": eid,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id,
+        },
+    )
 
     stored_embeds = body.embeds
     stored_attachments = (
@@ -213,14 +231,37 @@ async def create_event(
                             )
             content = " ".join(f"<@&{m}>" for m in mention_ids) or None
             try:
+                logger.debug(
+                    "Sending event to Discord",
+                    extra={
+                        "event_id": eid,
+                        "guild_id": ctx.guild.id,
+                        "channel_id": channel_id,
+                    },
+                )
                 sent = await api_call_with_retries(
                     channel.send, content=content, embed=emb, view=view
                 )
+                logger.info(
+                    "Discord API response received",
+                    extra={
+                        "event_id": eid,
+                        "guild_id": ctx.guild.id,
+                        "channel_id": channel_id,
+                        "discord_message_id": sent.id,
+                    },
+                )
             except discord.HTTPException as exc:
                 if 500 <= getattr(exc, "status", 0) < 600:
-                    logging.error(
+                    logger.error(
                         "Discord API error",
-                        extra={"status": exc.status, "error": exc.text},
+                        extra={
+                            "event_id": eid,
+                            "guild_id": ctx.guild.id,
+                            "channel_id": channel_id,
+                            "status": exc.status,
+                            "error": exc.text,
+                        },
                     )
                     return JSONResponse(
                         {
@@ -337,12 +378,31 @@ async def create_event(
         )
     ).scalar_one_or_none()
     payload = dto.model_dump(mode="json", by_alias=True, exclude_none=True)
-    await manager.broadcast_text(
-        json.dumps(payload),
-        ctx.guild.id,
-        officer_only=kind == ChannelKind.OFFICER_CHAT,
-        path="/ws/embeds",
-    )
+    try:
+        await manager.broadcast_text(
+            json.dumps(payload),
+            ctx.guild.id,
+            officer_only=kind == ChannelKind.OFFICER_CHAT,
+            path="/ws/embeds",
+        )
+        logger.info(
+            "Websocket broadcast successful",
+            extra={
+                "event_id": eid,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "Websocket broadcast failed",
+            extra={
+                "event_id": eid,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+                "error": str(exc),
+            },
+        )
     await emit_event({"channel": channel_id, "op": "ec", "d": payload})
     return {"ok": True, "id": eid}
 
@@ -381,7 +441,19 @@ async def rsvp_event(
 ):
     message_id = int(event_id)
     tag = body.tag
+    channel_id: int | None = None
+    logger.debug(
+        "Incoming rsvp_event request",
+        extra={
+            "event_id": event_id,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id,
+            "request": body.model_dump(mode="json"),
+        },
+    )
     embed = (await db.execute(select(Embed).where(Embed.discord_message_id == message_id))).scalar_one_or_none()
+    if embed:
+        channel_id = embed.channel_id
     labels: Dict[str, str] = {}
     order: List[str] = []
     limits: Dict[str, int] = {}
@@ -435,6 +507,14 @@ async def rsvp_event(
                 )
             )
     await db.commit()
+    logger.debug(
+        "RSVP validation and commit complete",
+        extra={
+            "event_id": event_id,
+            "guild_id": ctx.guild.id,
+            "channel_id": channel_id,
+        },
+    )
 
     stmt = (
         select(
@@ -464,13 +544,32 @@ async def rsvp_event(
                 )
             )
         ).scalar_one_or_none()
+    try:
         await manager.broadcast_text(
             json.dumps(payload),
             embed.guild_id,
             officer_only=kind == ChannelKind.OFFICER_CHAT,
             path="/ws/embeds",
         )
-        await emit_event({"channel": embed.channel_id, "op": "eu", "d": payload})
+        logger.info(
+            "Websocket broadcast successful",
+            extra={
+                "event_id": event_id,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "Websocket broadcast failed",
+            extra={
+                "event_id": event_id,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+                "error": str(exc),
+            },
+        )
+    await emit_event({"channel": embed.channel_id, "op": "eu", "d": payload})
 
     return {"ok": True}
 
