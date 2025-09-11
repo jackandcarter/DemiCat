@@ -427,9 +427,19 @@ class ConfigWizard(discord.ui.View):
                 2: self.officer_chat_channel_ids,
             }
             selected = selected_map[self.step]
+            used_ids: set[int] = set()
+            if self.step > 0:
+                used_ids.update(self.event_channel_ids)
+            if self.step > 1:
+                used_ids.update(self.fc_chat_channel_ids)
+            if self.step > 2:
+                used_ids.update(self.officer_chat_channel_ids)
+            channels = [ch for ch in self.channels if ch.id not in used_ids]
+            max_page = max((len(channels) - 1) // self.page_size, 0)
+            self.channel_page = min(self.channel_page, max_page)
             start = self.channel_page * self.page_size
             end = start + self.page_size
-            for ch in self.channels[start:end]:
+            for ch in channels[start:end]:
                 style = (
                     discord.ButtonStyle.primary
                     if ch.id in selected
@@ -448,7 +458,7 @@ class ConfigWizard(discord.ui.View):
                 self.add_item(button)
             if start > 0:
                 self.add_item(self.page_prev_button)
-            if end < len(self.channels):
+            if end < len(channels):
                 self.add_item(self.page_next_button)
             self.next_button.disabled = len(selected) == 0
         else:
@@ -530,6 +540,15 @@ class ConfigWizard(discord.ui.View):
         ):
             await interaction.response.send_message(
                 "All selections are required", ephemeral=True
+            )
+            return
+        if (
+            set(self.event_channel_ids) & set(self.fc_chat_channel_ids)
+            or set(self.event_channel_ids) & set(self.officer_chat_channel_ids)
+            or set(self.fc_chat_channel_ids) & set(self.officer_chat_channel_ids)
+        ):
+            await interaction.response.send_message(
+                "Each channel may only be selected once", ephemeral=True
             )
             return
         try:
