@@ -494,8 +494,8 @@ public class EventCreateWindow
             }
             else if (response != null)
             {
-                var body = await response.Content.ReadAsStringAsync();
-                _lastResult = $"Failed to save template: {(int)response.StatusCode} {body}";
+                var responseBody = await response.Content.ReadAsStringAsync();
+                _lastResult = $"Failed to save template: {(int)response.StatusCode} {responseBody}";
             }
             else
             {
@@ -554,8 +554,8 @@ public class EventCreateWindow
             }
             else if (response != null)
             {
-                var body = await response.Content.ReadAsStringAsync();
-                _lastResult = $"Error {(int)response.StatusCode}: {body}";
+                var responseBody = await response.Content.ReadAsStringAsync();
+                _lastResult = $"Error {(int)response.StatusCode}: {responseBody}";
             }
             else
             {
