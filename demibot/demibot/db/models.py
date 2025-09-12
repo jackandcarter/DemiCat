@@ -376,7 +376,14 @@ class Request(Base):
     )
     title: Mapped[str] = mapped_column(String(255))
     description: Mapped[Optional[str]] = mapped_column(Text)
-    type: Mapped[RequestType] = mapped_column(SAEnum(RequestType))
+    type: Mapped[RequestType] = mapped_column(
+        SAEnum(
+            RequestType,
+            name="request_type",
+            values_callable=lambda e: [v.value for v in e],
+            native_enum=False,
+        )
+    )
     status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus))
     urgency: Mapped[Urgency] = mapped_column(SAEnum(Urgency))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
