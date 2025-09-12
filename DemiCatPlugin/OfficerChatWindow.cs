@@ -15,6 +15,9 @@ namespace DemiCatPlugin;
 
 public class OfficerChatWindow : ChatWindow
 {
+    private DateTime _lastRolesRefresh = DateTime.MinValue;
+    private bool _subscribed;
+
     public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
         : base(config, httpClient, presence, tokenManager, channelService)
     {
@@ -23,7 +26,7 @@ public class OfficerChatWindow : ChatWindow
         {
             if (s.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshRoles());
+                TryRefreshRoles();
             }
         };
     }
@@ -33,9 +36,11 @@ public class OfficerChatWindow : ChatWindow
         _bridge.Start();
         if (_config.Roles.Contains("officer"))
         {
-            _bridge.Subscribe(_channelId);
-            _presence?.Reset();
-            _ = RefreshMessages();
+            Subscribe();
+        }
+        else
+        {
+            TryRefreshRoles();
         }
     }
 
@@ -43,6 +48,15 @@ public class OfficerChatWindow : ChatWindow
     {
         if (!_config.Roles.Contains("officer"))
         {
+            TryRefreshRoles();
+            if (!string.IsNullOrEmpty(_statusMessage))
+            {
+                ImGui.TextUnformatted(_statusMessage);
+            }
+            else
+            {
+                ImGui.TextUnformatted("Link DemiCat…");
+            }
             return;
         }
 
@@ -57,6 +71,11 @@ public class OfficerChatWindow : ChatWindow
                 ImGui.TextUnformatted("Link DemiCat…");
             }
             return;
+        }
+
+        if (!_subscribed)
+        {
+            Subscribe();
         }
 
         var originalChatChannel = _config.ChatChannelId;
@@ -225,6 +244,14 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
+    private void Subscribe()
+    {
+        _bridge.Subscribe(_channelId);
+        _presence?.Reset();
+        _ = RefreshMessages();
+        _subscribed = true;
+    }
+
     private async Task RefreshRoles()
     {
         if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
@@ -255,6 +282,16 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
+    private void TryRefreshRoles()
+    {
+        if (DateTime.UtcNow - _lastRolesRefresh < TimeSpan.FromSeconds(30))
+        {
+            return;
+        }
+        _lastRolesRefresh = DateTime.UtcNow;
+        _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshRoles());
+    }
+
     private class RolesDto
     {
         public List<string> Roles { get; set; } = new();
@@ -274,6 +311,5 @@ public class OfficerChatWindow : ChatWindow
         }
         return builder.Uri;
     }
-
 }
 
