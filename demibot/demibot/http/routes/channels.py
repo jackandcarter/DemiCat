@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 import json
 import logging
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -63,18 +63,14 @@ async def get_channels(
                     channel_kind.value,
                     ctx.guild.id,
                 )
-                channels.append({"id": str(channel_id), "name": str(channel_id)})
-                if name is not None:
-                    await db.execute(
-                        update(GuildChannel)
-                        .where(
-                            GuildChannel.guild_id == ctx.guild.id,
-                            GuildChannel.channel_id == channel_id,
-                            GuildChannel.kind == channel_kind,
-                        )
-                        .values(name=None)
+                await db.execute(
+                    delete(GuildChannel).where(
+                        GuildChannel.guild_id == ctx.guild.id,
+                        GuildChannel.channel_id == channel_id,
+                        GuildChannel.kind == channel_kind,
                     )
-                    updated = True
+                )
+                updated = True
                 continue
             if new_name != name:
                 name = new_name
@@ -110,20 +106,14 @@ async def get_channels(
                 chan_kind.value,
                 ctx.guild.id,
             )
-            by_kind[chan_kind.value].append(
-                {"id": str(channel_id), "name": str(channel_id)}
-            )
-            if name is not None:
-                await db.execute(
-                    update(GuildChannel)
-                    .where(
-                        GuildChannel.guild_id == ctx.guild.id,
-                        GuildChannel.channel_id == channel_id,
-                        GuildChannel.kind == chan_kind,
-                    )
-                    .values(name=None)
+            await db.execute(
+                delete(GuildChannel).where(
+                    GuildChannel.guild_id == ctx.guild.id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == chan_kind,
                 )
-                updated = True
+            )
+            updated = True
             continue
         if new_name != name:
             name = new_name
@@ -158,17 +148,14 @@ async def refresh_channels(
                 kind.value,
                 ctx.guild.id,
             )
-            if name is not None:
-                await db.execute(
-                    update(GuildChannel)
-                    .where(
-                        GuildChannel.guild_id == ctx.guild.id,
-                        GuildChannel.channel_id == channel_id,
-                        GuildChannel.kind == kind,
-                    )
-                    .values(name=None)
+            await db.execute(
+                delete(GuildChannel).where(
+                    GuildChannel.guild_id == ctx.guild.id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == kind,
                 )
-                updated = True
+            )
+            updated = True
             continue
         if new_name != name:
             updated = True

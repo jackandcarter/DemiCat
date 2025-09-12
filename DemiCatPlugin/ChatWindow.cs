@@ -956,6 +956,10 @@ public class ChatWindow : IDisposable
                     // ignore parse errors
                 }
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = msg);
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshChannels());
+                }
             }
         }
         catch (Exception ex)
