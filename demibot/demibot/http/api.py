@@ -14,14 +14,55 @@ from importlib import import_module
 import pkgutil
 
 from fastapi import FastAPI
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+
+import structlog
 
 from .ws import websocket_endpoint
 from .ws_chat import websocket_endpoint_chat
+
+
+logger = structlog.get_logger()
+
+
+class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log each request and whether it succeeds or fails.
+
+    This middleware captures every HTTP request handled by the FastAPI app and
+    writes a log line indicating the request method and path.  When the request
+    completes, another line records the resulting status code.  If an exception
+    occurs while processing the request, the exception is logged so that the
+    failure reason is visible in the terminal and log files.
+    """
+
+    async def dispatch(self, request: Request, call_next):  # type: ignore[override]
+        logger.info("request.start", method=request.method, path=request.url.path)
+        try:
+            response = await call_next(request)
+            logger.info(
+                "request.success",
+                method=request.method,
+                path=request.url.path,
+                status_code=response.status_code,
+            )
+            return response
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception(
+                "request.failure",
+                method=request.method,
+                path=request.url.path,
+                error=str(exc),
+            )
+            raise
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
 
     app = FastAPI()
+    # Attach middleware so every request logs its result.  This helps operators
+    # see which communications succeed or fail in real time.
+    app.add_middleware(RequestLoggingMiddleware)
     app.add_api_websocket_route("/ws/messages", websocket_endpoint)
     app.add_api_websocket_route("/ws/embeds", websocket_endpoint)
     app.add_api_websocket_route("/ws/templates", websocket_endpoint)
