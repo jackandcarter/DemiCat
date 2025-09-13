@@ -10,9 +10,6 @@ using DiscordHelper;
 using Dalamud.Plugin;
 using Dalamud.IoC;
 using Dalamud.Plugin.Services;
-using Dalamud.Bindings.ImGui;
-using System.IO;
-using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -38,19 +35,6 @@ public class Plugin : IDalamudPlugin
     private readonly Action _openConfigUi;
     private readonly TokenManager _tokenManager;
     private readonly Action<string?> _unlinkedHandler;
-
-    private static readonly uint[] EmojiRanges =
-    {
-        0x1F300, 0x1F5FF,
-        0x1F600, 0x1F64F,
-        0x1F680, 0x1F6FF,
-        0x1F700, 0x1F77F,
-        0x1F780, 0x1F7FF,
-        0x1F800, 0x1F8FF,
-        0x1F900, 0x1F9FF,
-        0x1FA00, 0x1FAFF,
-        0
-    };
 
     public Plugin()
     {
@@ -111,8 +95,7 @@ public class Plugin : IDalamudPlugin
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
-        PluginInterface.UiBuilder.BuildFonts += AddEmojiFont;
-        PluginInterface.UiBuilder.RebuildFonts();
+        // API 13 removed BuildFonts/RebuildFonts; font work now goes through UiBuilder.FontAtlas
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
@@ -141,7 +124,6 @@ public class Plugin : IDalamudPlugin
         // Unsubscribe UI open handlers
         _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
-        PluginInterface.UiBuilder.BuildFonts -= AddEmojiFont;
 
         _tokenManager.OnLinked -= StartWatchers;
         _tokenManager.OnUnlinked -= _unlinkedHandler;
@@ -307,31 +289,10 @@ public class Plugin : IDalamudPlugin
         }
     }
 
-    private unsafe void AddEmojiFont()
+    private void AddEmojiFont()
     {
-        try
-        {
-            var dir = _services.PluginInterface.AssemblyLocation.Directory?.FullName;
-            if (dir == null) return;
-            var fontPath = Path.Combine(dir, "NotoColorEmoji.ttf");
-            if (!File.Exists(fontPath))
-            {
-                _services.Log.Warning($"Emoji font not found at {fontPath}; emojis may appear monochrome.");
-                return;
-            }
-            var io = ImGui.GetIO();
-            ImFontConfigPtr cfg = ImGuiNative.ImFontConfig_ImFontConfig();
-            cfg.MergeMode = true;
-            fixed (uint* ranges = EmojiRanges)
-            {
-                io.Fonts.AddFontFromFileTTF(fontPath, io.Fonts.Fonts.Size > 0 ? io.Fonts.Fonts[0].FontSize : 16f, cfg, (IntPtr)ranges);
-            }
-            cfg.Destroy();
-        }
-        catch (Exception ex)
-        {
-            _services.Log.Error(ex, "Failed to load emoji font");
-        }
+        // API 13: font building moved to UiBuilder.FontAtlas (managed pipeline).
+        // Kept as a stub to avoid compile errors; see "Proper API-13 way" for future implementation.
     }
 
     private class RolesDto
