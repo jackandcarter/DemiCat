@@ -1,16 +1,12 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.Unicode;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordHelper;
-using Dalamud.Interface.ManagedFontAtlas;
-using static Dalamud.Interface.ManagedFontAtlas.FontAtlasBuildToolkitUtilities;
 using Dalamud.Plugin;
 using Dalamud.IoC;
 using Dalamud.Plugin.Services;
@@ -32,32 +28,29 @@ public class Plugin : IDalamudPlugin
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
-    private Config _config;
+
+    private Config _config = null!;
     private readonly HttpClient _httpClient;
     private readonly ChannelService _channelService;
     private readonly Action _openMainUi;
     private readonly Action _openConfigUi;
     private readonly TokenManager _tokenManager;
     private readonly Action<string?> _unlinkedHandler;
-    private IDisposable? _emojiFontStep;
 
     public Plugin()
     {
         _services = PluginInterface.Create<PluginServices>()!;
         if (_services.PluginInterface == null || _services.Log == null)
-        {
             throw new InvalidOperationException("Failed to initialize plugin services.");
-        }
 
         _config = _services.PluginInterface.GetPluginConfig() as Config ?? new Config();
         _tokenManager = new TokenManager(_services.PluginInterface);
+
         var oldVersion = _config.Version;
         _config.Migrate();
         var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
         if (rolesRemoved || _config.Version != oldVersion)
-        {
             _services.PluginInterface.SavePluginConfig(_config);
-        }
 
         RequestStateService.Load(_config);
 
@@ -67,18 +60,21 @@ public class Plugin : IDalamudPlugin
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             AutomaticDecompression = DecompressionMethods.All
         };
-        _httpClient = new HttpClient(handler);
-        _httpClient.Timeout = TimeSpan.FromSeconds(10);
+        _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
 
         _ui = new UiRenderer(_config, _httpClient);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
+
         _presenceService = _config.SyncedChat && _config.EnableFcChat
             ? new DiscordPresenceService(_config, _httpClient)
             : null;
+
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService);
+
         _presenceService?.Reset();
+
         _mainWindow = new MainWindow(
             _config,
             _ui,
@@ -87,9 +83,12 @@ public class Plugin : IDalamudPlugin
             _settings,
             _httpClient,
             _channelService,
-            () => RefreshRoles(_services.Log));
+            () => RefreshRoles(_services.Log)
+        );
+
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
         _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
+
         _settings.MainWindow = _mainWindow;
         _settings.ChatWindow = _chatWindow;
         _settings.OfficerChatWindow = _officerChatWindow;
@@ -100,52 +99,27 @@ public class Plugin : IDalamudPlugin
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
-        // API 13 removed BuildFonts/RebuildFonts; font work now goes through UiBuilder.FontAtlas
-        _emojiFontStep = _services.PluginInterface.UiBuilder.FontAtlas.AddBuildStep(e => e.OnPreBuild(pre =>
-        {
-            try
-            {
-                var emojiPath = Path.Combine(
-                    _services.PluginInterface.AssemblyLocation.DirectoryName ?? string.Empty,
-                    "NotoColorEmoji.ttf");
-                if (!File.Exists(emojiPath))
-                {
-                    _services.Log.Warning($"Emoji font not found: {emojiPath}");
-                    return;
-                }
-
-                var cfg = new SafeFontConfig { MergeMode = true };
-                var sizePx = _services.PluginInterface.UiBuilder.DefaultFontHandle.Data.SizePx;
-                var ranges = BeginGlyphRange(UnicodeRanges.Emoticons)
-                    .With(UnicodeRanges.MiscellaneousSymbolsAndPictographs)
-                    .With(UnicodeRanges.TransportAndMapSymbols)
-                    .With(UnicodeRanges.SupplementalSymbolsAndPictographs)
-                    .Build();
-                pre.AddFontFromFile(emojiPath, sizePx, cfg, ranges);
-            }
-            catch (Exception ex)
-            {
-                _services.Log.Error(ex, "Failed to load emoji font");
-            }
-        }));
+        // Note: API 13 removed UiBuilder.BuildFonts/RebuildFonts and the old ImGuiNET attach path.
+        // We intentionally skip emoji font merging since ImGui/Dalamud cannot render SMP color emoji anyway.
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
+
         _openMainUi = () => _mainWindow.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
+
         _openConfigUi = () => _settings.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
         _unlinkedHandler = _ => StopWatchers();
         _tokenManager.OnLinked += StartWatchers;
         _tokenManager.OnUnlinked += _unlinkedHandler;
+
         if (_tokenManager.IsReady())
-        {
             StartWatchers();
-        }
+
         _services.Log.Info("DemiCat loaded.");
     }
-
 
     public void Dispose()
     {
@@ -159,8 +133,6 @@ public class Plugin : IDalamudPlugin
 
         _tokenManager.OnLinked -= StartWatchers;
         _tokenManager.OnUnlinked -= _unlinkedHandler;
-
-        _emojiFontStep?.Dispose();
 
         _channelWatcher.Dispose();
         _requestWatcher.Dispose();
@@ -183,8 +155,7 @@ public class Plugin : IDalamudPlugin
         var response = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, CancellationToken.None);
         if (response?.IsSuccessStatusCode != true)
         {
-            var reason = response?.StatusCode == HttpStatusCode.Unauthorized ||
-                         response?.StatusCode == HttpStatusCode.Forbidden
+            var reason = response?.StatusCode == HttpStatusCode.Unauthorized || response?.StatusCode == HttpStatusCode.Forbidden
                 ? "Invalid API key"
                 : "Network error";
             _tokenManager.Clear(reason);
@@ -192,22 +163,18 @@ public class Plugin : IDalamudPlugin
         }
 
         if (_config.Requests)
-        {
             _requestWatcher.Start();
-        }
+
         var hasOfficerRole = _config.Roles.Contains("officer");
         if (_config.Events || _config.SyncedChat || hasOfficerRole)
-        {
             _ = _channelWatcher.Start();
-        }
+
         if (_config.SyncedChat && _config.EnableFcChat)
-        {
             _chatWindow.StartNetworking();
-        }
+
         if (hasOfficerRole)
-        {
             _officerChatWindow.StartNetworking();
-        }
+
         if (_config.Events)
         {
             _ = _ui.StartNetworking();
@@ -229,9 +196,7 @@ public class Plugin : IDalamudPlugin
     private async Task<bool> RefreshRoles(IPluginLog log)
     {
         if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
-        {
             return false;
-        }
 
         try
         {
@@ -253,6 +218,7 @@ public class Plugin : IDalamudPlugin
                 log.Error($"Failed to fetch roles: {response.StatusCode}. Response Body: {responseBody}");
                 return false;
             }
+
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
             log.Info($"Roles received: {string.Join(", ", dto.Roles)}");
@@ -261,6 +227,7 @@ public class Plugin : IDalamudPlugin
             var channelRequest = new HttpRequestMessage(HttpMethod.Get, channelUrl);
             ApiHelpers.AddAuthHeader(channelRequest, _tokenManager);
             List<ChannelDto> chatChannels = new();
+
             try
             {
                 var channelResponse = await _httpClient.SendAsync(channelRequest);
@@ -271,6 +238,7 @@ public class Plugin : IDalamudPlugin
                     _tokenManager.Clear("Authentication failed");
                     return false;
                 }
+
                 if (channelResponse.IsSuccessStatusCode)
                 {
                     var channelStream = await channelResponse.Content.ReadAsStreamAsync();
@@ -287,6 +255,7 @@ public class Plugin : IDalamudPlugin
             {
                 log.Error(ex, "Error fetching channels.");
             }
+
             var hasChat = chatChannels.Count > 0;
 
             _ = _services.Framework.RunOnTick(() =>
@@ -313,6 +282,7 @@ public class Plugin : IDalamudPlugin
                 }
                 _services.PluginInterface.SavePluginConfig(_config);
             });
+
             await RoleCache.Refresh(_httpClient, _config);
             return true;
         }
