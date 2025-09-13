@@ -60,14 +60,56 @@ def _discord_error(exc: discord.HTTPException) -> str:
 
 
 async def load_webhook_cache(db: AsyncSession) -> None:
-    """Load webhook URLs from the database into the in-memory cache."""
+    """Load webhook URLs from the database into the in-memory cache.
+
+    When the Discord client is available, attempt to create webhooks for
+    channels lacking a stored URL so that permission issues surface during
+    startup.
+    """
+
     result = await db.execute(
-        select(GuildChannel.channel_id, GuildChannel.webhook_url).where(
-            GuildChannel.webhook_url.is_not(None)
+        select(
+            GuildChannel.guild_id,
+            GuildChannel.channel_id,
+            GuildChannel.webhook_url,
+        ).where(GuildChannel.webhook_url.is_not(None))
+    )
+    for _, channel_id, url in result.all():
+        _channel_webhooks[channel_id] = url
+
+    if not discord_client:
+        return
+
+    result = await db.execute(
+        select(GuildChannel.guild_id, GuildChannel.channel_id).where(
+            GuildChannel.webhook_url.is_(None)
         )
     )
-    for channel_id, url in result.all():
-        _channel_webhooks[channel_id] = url
+    rows = result.all()
+    updated = False
+    for guild_id, channel_id in rows:
+        channel = discord_client.get_channel(channel_id)
+        if not channel or not isinstance(channel, discord.abc.Messageable):
+            continue
+        try:
+            created = await channel.create_webhook(name="DemiCat Relay")
+            _channel_webhooks[channel_id] = created.url
+            gc = await db.scalar(
+                select(GuildChannel).where(
+                    GuildChannel.guild_id == guild_id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == ChannelKind.CHAT,
+                )
+            )
+            if gc:
+                gc.webhook_url = created.url
+                updated = True
+        except Exception:
+            logging.exception(
+                "Failed to create webhook for channel %s", channel_id
+            )
+    if updated:
+        await db.commit()
 
 
 async def cleanup_webhooks(db: AsyncSession) -> None:
@@ -86,6 +128,181 @@ async def cleanup_webhooks(db: AsyncSession) -> None:
         await db.commit()
         for cid in stale:
             _channel_webhooks.pop(cid, None)
+
+
+async def _send_via_webhook(
+    *,
+    channel: discord.abc.Messageable,
+    channel_id: int,
+    guild_id: int,
+    content: str,
+    username: str,
+    avatar: str | None,
+    files: list[discord.File] | None,
+    db: AsyncSession,
+) -> tuple[int | None, list[AttachmentDto] | None, list[str]]:
+    """Send a message via a channel webhook.
+
+    Returns the Discord message id and attachments on success, otherwise
+    a list of error messages describing the failure.
+    """
+
+    errors: list[str] = []
+    webhook_url = _channel_webhooks.get(channel_id)
+    if not webhook_url:
+        webhook_url = await db.scalar(
+            select(GuildChannel.webhook_url).where(
+                GuildChannel.guild_id == guild_id,
+                GuildChannel.channel_id == channel_id,
+            )
+        )
+        if webhook_url:
+            _channel_webhooks[channel_id] = webhook_url
+
+    webhook = None
+    try:
+        if webhook_url:
+            webhook = discord.Webhook.from_url(webhook_url, client=discord_client)
+        else:
+            raise Exception("no webhook")
+    except Exception as e:  # pragma: no cover - network errors
+        logging.exception("failed to init webhook for channel %s", channel_id)
+        errors.append(f"Webhook init failed: {e}")
+        webhook = None
+
+    if webhook is None:
+        try:
+            created = await channel.create_webhook(name="DemiCat Relay")
+            webhook_url = created.url
+            _channel_webhooks[channel_id] = webhook_url
+            gc = await db.scalar(
+                select(GuildChannel).where(
+                    GuildChannel.guild_id == guild_id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == ChannelKind.CHAT,
+                )
+            )
+            if gc:
+                gc.webhook_url = webhook_url
+            else:
+                db.add(
+                    GuildChannel(
+                        guild_id=guild_id,
+                        channel_id=channel_id,
+                        kind=ChannelKind.CHAT,
+                        webhook_url=webhook_url,
+                    )
+                )
+            webhook = created
+        except Exception as e:  # pragma: no cover - network errors
+            if isinstance(e, discord.HTTPException):
+                logging.exception(
+                    "create_webhook failed for channel %s: %s %s",
+                    channel_id,
+                    e.status,
+                    e.text,
+                )
+                errors.append(
+                    f"Webhook creation failed: {e.status} {_discord_error(e)}"
+                )
+            else:
+                logging.exception(
+                    "create_webhook failed for channel %s", channel_id
+                )
+                errors.append(f"Webhook creation failed: {e}")
+            return None, None, errors
+
+    try:
+        sent = await webhook.send(
+            content,
+            username=username,
+            avatar_url=avatar,
+            files=files,
+            wait=True,
+            allowed_mentions=ALLOWED_MENTIONS,
+        )
+    except Exception as e:  # pragma: no cover - network errors
+        if isinstance(e, discord.HTTPException):
+            logging.exception(
+                "webhook.send failed for channel %s: %s %s",
+                channel_id,
+                e.status,
+                e.text,
+            )
+            errors.append(
+                f"Webhook send failed: {e.status} {e.text or _discord_error(e)}"
+            )
+        else:
+            logging.exception("webhook.send failed for channel %s", channel_id)
+            errors.append(f"Webhook send failed: {e}")
+        try:
+            created = await channel.create_webhook(name="DemiCat Relay")
+            webhook_url = created.url
+            _channel_webhooks[channel_id] = webhook_url
+            gc = await db.scalar(
+                select(GuildChannel).where(
+                    GuildChannel.guild_id == guild_id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == ChannelKind.CHAT,
+                )
+            )
+            if gc:
+                gc.webhook_url = webhook_url
+            else:
+                db.add(
+                    GuildChannel(
+                        guild_id=guild_id,
+                        channel_id=channel_id,
+                        kind=ChannelKind.CHAT,
+                        webhook_url=webhook_url,
+                    )
+                )
+            sent = await created.send(
+                content,
+                username=username,
+                avatar_url=avatar,
+                files=files,
+                wait=True,
+                allowed_mentions=ALLOWED_MENTIONS,
+            )
+            webhook = created
+        except Exception as e2:  # pragma: no cover - network errors
+            if isinstance(e2, discord.HTTPException):
+                logging.exception(
+                    "webhook.send failed after retry for channel %s: %s %s",
+                    channel_id,
+                    e2.status,
+                    e2.text,
+                )
+                errors.append(
+                    f"Webhook retry failed: {e2.status} {e2.text or _discord_error(e2)}"
+                )
+            else:
+                logging.exception(
+                    "webhook.send failed after retry for channel %s", channel_id
+                )
+                errors.append(f"Webhook retry failed: {e2}")
+            return None, None, errors
+
+    discord_msg_id = getattr(sent, "id", None)
+    attachments: list[AttachmentDto] | None = None
+    if discord_msg_id is None:
+        logging.warning(
+            "webhook.send returned no id for channel %s", channel_id
+        )
+        errors.append(f"webhook.send returned no id for channel {channel_id}")
+        return None, None, errors
+    if sent.attachments:
+        attachments = [
+            AttachmentDto(
+                url=a.url,
+                filename=a.filename,
+                contentType=a.content_type,
+            )
+            for a in sent.attachments
+        ]
+
+    return discord_msg_id, attachments, []
 
 
 class PostBody(BaseModel):
@@ -247,220 +464,66 @@ async def save_message(
                 raise HTTPException(status_code=400, detail=f"{f.filename} too large")
             discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
 
-        webhook_url = _channel_webhooks.get(channel_id)
-        if not webhook_url:
-            webhook_url = await db.scalar(
-                select(GuildChannel.webhook_url).where(
-                    GuildChannel.guild_id == ctx.guild.id,
-                    GuildChannel.channel_id == channel_id,
-                )
-            )
-            if webhook_url:
-                _channel_webhooks[channel_id] = webhook_url
-        webhook = None
-        try:
-            if webhook_url:
-                webhook = discord.Webhook.from_url(webhook_url, client=discord_client)
-            else:
-                raise Exception("no webhook")
-        except Exception as e:
-            logging.exception("failed to init webhook for channel %s", channel_id)
-            error_details.append(f"Webhook init failed: {e}")
-            webhook = None
-        if webhook is None:
-            try:
-                created = await channel.create_webhook(name="DemiCat Relay")
-                webhook_url = created.url
-                _channel_webhooks[channel_id] = webhook_url
-                gc = await db.scalar(
-                    select(GuildChannel).where(
-                        GuildChannel.guild_id == ctx.guild.id,
-                        GuildChannel.channel_id == channel_id,
-                    )
-                )
-                if gc:
-                    gc.webhook_url = webhook_url
-                else:
-                    db.add(
-                        GuildChannel(
-                            guild_id=ctx.guild.id,
-                            channel_id=channel_id,
-                            kind=ChannelKind.CHAT,
-                            webhook_url=webhook_url,
-                        )
-                    )
-                webhook = created
-            except Exception as e:
-                if isinstance(e, discord.HTTPException):
-                    logging.exception(
-                        "create_webhook failed for channel %s: %s %s",
-                        channel_id,
-                        e.status,
-                        e.text,
-                    )
-                    error_details.append(
-                        f"Webhook creation failed: {e.status} {_discord_error(e)}"
-                    )
-                else:
-                    logging.exception(
-                        "create_webhook failed for channel %s", channel_id
-                    )
-                    error_details.append(f"Webhook creation failed: {e}")
-                webhook = None
-        if webhook:
-            username_base = nickname or (
-                ctx.user.global_name or ("Officer" if is_officer else "Player")
-            )
-            username = f"{username_base}@FFXIV FC"
-            if body.use_character_name and ctx.user.character_name:
-                username = (
-                    f"{username_base} / {ctx.user.character_name}@FFXIV FC"
-                )
-            username = username[:80]
-            try:
-                sent = await webhook.send(
-                    body.content,
-                    username=username,
-                    avatar_url=avatar,
-                    files=discord_files,
-                    wait=True,
-                    allowed_mentions=ALLOWED_MENTIONS,
-                )
-            except Exception as e:
-                # Attempt to recreate webhook once if sending failed
-                if isinstance(e, discord.HTTPException):
-                    logging.exception(
-                        "webhook.send failed for channel %s: %s %s",
-                        channel_id,
-                        e.status,
-                        e.text,
-                    )
-                    error_details.append(
-                        f"Webhook send failed: {e.status} {e.text or _discord_error(e)}"
-                    )
-                else:
-                    logging.exception(
-                        "webhook.send failed for channel %s", channel_id
-                    )
-                    error_details.append(f"Webhook send failed: {e}")
-                webhook = None
-            else:
-                discord_msg_id = getattr(sent, "id", None)
-                if discord_msg_id is None:
-                    logging.warning(
-                        "webhook.send returned no id for channel %s", channel_id
-                    )
-                elif sent.attachments:
-                    attachments = [
-                        AttachmentDto(
-                            url=a.url,
-                            filename=a.filename,
-                            contentType=a.content_type,
-                        )
-                        for a in sent.attachments
-                    ]
-        if webhook is None:
-            try:
-                created = await channel.create_webhook(name="DemiCat Relay")
-                webhook_url = created.url
-                _channel_webhooks[channel_id] = webhook_url
-                gc = await db.scalar(
-                    select(GuildChannel).where(
-                        GuildChannel.guild_id == ctx.guild.id,
-                        GuildChannel.channel_id == channel_id,
-                    )
-                )
-                if gc:
-                    gc.webhook_url = webhook_url
-                else:
-                    db.add(
-                        GuildChannel(
-                            guild_id=ctx.guild.id,
-                            channel_id=channel_id,
-                            kind=ChannelKind.CHAT,
-                            webhook_url=webhook_url,
-                        )
-                    )
-                sent = await created.send(
-                    body.content,
-                    username=username,
-                    avatar_url=avatar,
-                    files=discord_files,
-                    wait=True,
-                    allowed_mentions=ALLOWED_MENTIONS,
-                )
-                webhook = created
-                discord_msg_id = getattr(sent, "id", None)
-                if discord_msg_id is None:
-                    logging.warning(
-                        "webhook.send returned no id for channel %s", channel_id
-                    )
-                elif sent.attachments:
-                    attachments = [
-                        AttachmentDto(
-                            url=a.url,
-                            filename=a.filename,
-                            contentType=a.content_type,
-                        )
-                        for a in sent.attachments
-                    ]
-            except Exception as e:
-                if isinstance(e, discord.HTTPException):
-                    logging.exception(
-                        "webhook.send failed after retry for channel %s: %s %s",
-                        channel_id,
-                        e.status,
-                        e.text,
-                    )
-                    error_details.append(
-                        f"Webhook retry failed: {e.status} {e.text or _discord_error(e)}"
-                    )
-                else:
-                    logging.exception(
-                        "webhook.send failed after retry for channel %s", channel_id
-                    )
-                    error_details.append(
-                        f"Webhook retry failed: {e}"
-                    )
-                discord_msg_id = None
+    username_base = nickname or (
+        ctx.user.global_name or ("Officer" if is_officer else "Player")
+    )
+    username = f"{username_base}@FFXIV FC"
+    if body.use_character_name and ctx.user.character_name:
+        username = f"{username_base} / {ctx.user.character_name}@FFXIV FC"
+    username = username[:80]
 
-        if discord_msg_id is None:
+    discord_msg_id, attachments, webhook_errors = await _send_via_webhook(
+        channel=channel,
+        channel_id=channel_id,
+        guild_id=ctx.guild.id,
+        content=body.content,
+        username=username,
+        avatar=avatar,
+        files=discord_files,
+        db=db,
+    )
+    error_details.extend(webhook_errors)
+
+    if discord_msg_id is None:
+        for f in discord_files or []:
             try:
-                sent = await channel.send(
-                    body.content,
-                    files=discord_files,
-                    allowed_mentions=ALLOWED_MENTIONS,
+                f.reset()
+            except Exception:
+                pass
+        try:
+            sent = await channel.send(
+                body.content,
+                files=discord_files,
+                allowed_mentions=ALLOWED_MENTIONS,
+            )
+            discord_msg_id = getattr(sent, "id", None)
+            if discord_msg_id is None:
+                logging.warning(
+                    "channel.send returned no id for channel %s", channel_id
                 )
-                discord_msg_id = getattr(sent, "id", None)
-                if discord_msg_id is None:
-                    logging.warning(
-                        "channel.send returned no id for channel %s", channel_id
+            elif sent.attachments:
+                attachments = [
+                    AttachmentDto(
+                        url=a.url,
+                        filename=a.filename,
+                        contentType=a.content_type,
                     )
-                elif sent.attachments:
-                    attachments = [
-                        AttachmentDto(
-                            url=a.url,
-                            filename=a.filename,
-                            contentType=a.content_type,
-                        )
-                        for a in sent.attachments
-                    ]
-            except Exception as e:
-                if isinstance(e, discord.HTTPException):
-                    logging.exception(
-                        "channel.send failed for channel %s: %s %s",
-                        channel_id,
-                        e.status,
-                        e.text,
-                    )
-                    error_details.append(
-                        f"Direct send failed: {e.status} {e.text or _discord_error(e)}"
-                    )
-                else:
-                    logging.exception(
-                        "channel.send failed for channel %s", channel_id
-                    )
-                    error_details.append(f"Direct send failed: {e}")
+                    for a in sent.attachments
+                ]
+        except Exception as e:
+            if isinstance(e, discord.HTTPException):
+                logging.exception(
+                    "channel.send failed for channel %s: %s %s",
+                    channel_id,
+                    e.status,
+                    e.text,
+                )
+                error_details.append(
+                    f"Direct send failed: {e.status} {e.text or _discord_error(e)}"
+                )
+            else:
+                logging.exception("channel.send failed for channel %s", channel_id)
+                error_details.append(f"Direct send failed: {e}")
 
     if discord_msg_id is None:
         logging.warning(
@@ -549,7 +612,10 @@ async def save_message(
         officer_only=is_officer,
         path="/ws/officer-messages" if is_officer else "/ws/messages",
     )
-    return {"ok": True, "id": str(discord_msg_id)}
+    result: dict[str, object] = {"ok": True, "id": str(discord_msg_id)}
+    if error_details:
+        result["detail"] = {"discord": error_details}
+    return result
 
 
 async def edit_message(
