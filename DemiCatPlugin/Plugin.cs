@@ -111,8 +111,8 @@ public class Plugin : IDalamudPlugin
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
-        _services.PluginInterface.UiBuilder.BuildFonts += AddEmojiFont;
-        _services.PluginInterface.UiBuilder.RebuildFontAtlas();
+        PluginInterface.UiBuilder.BuildFonts += AddEmojiFont;
+        PluginInterface.UiBuilder.RebuildFonts();
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
@@ -141,7 +141,7 @@ public class Plugin : IDalamudPlugin
         // Unsubscribe UI open handlers
         _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
-        _services.PluginInterface.UiBuilder.BuildFonts -= AddEmojiFont;
+        PluginInterface.UiBuilder.BuildFonts -= AddEmojiFont;
 
         _tokenManager.OnLinked -= StartWatchers;
         _tokenManager.OnUnlinked -= _unlinkedHandler;
