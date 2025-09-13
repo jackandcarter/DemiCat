@@ -38,7 +38,7 @@ public class Plugin : IDalamudPlugin
     private readonly TokenManager _tokenManager;
     private readonly Action<string?> _unlinkedHandler;
 
-    private static readonly ushort[] EmojiRanges =
+    private static readonly uint[] EmojiRanges =
     {
         0x1F300, 0x1F5FF,
         0x1F600, 0x1F64F,
@@ -319,7 +319,7 @@ public class Plugin : IDalamudPlugin
             var io = ImGui.GetIO();
             var cfg = ImGuiNative.ImFontConfig_ImFontConfig();
             cfg.MergeMode = true;
-            fixed (ushort* ranges = EmojiRanges)
+            fixed (uint* ranges = EmojiRanges)
             {
                 io.Fonts.AddFontFromFileTTF(fontPath, io.Fonts.Fonts[0]?.FontSize ?? 16f, cfg, (IntPtr)ranges);
             }
