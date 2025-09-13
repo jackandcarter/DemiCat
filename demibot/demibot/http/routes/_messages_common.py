@@ -36,7 +36,10 @@ _channel_webhooks: dict[int, str] = {}
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
-ALLOWED_MENTIONS = discord.AllowedMentions(users=True, roles=False, everyone=False)
+# Restrict everyone mentions but allow user and role pings
+ALLOWED_MENTIONS = discord.AllowedMentions(
+    users=True, roles=True, everyone=False
+)
 
 
 def _discord_error(exc: discord.HTTPException) -> str:
