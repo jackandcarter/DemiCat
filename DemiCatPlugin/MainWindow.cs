@@ -21,6 +21,7 @@ public class MainWindow : IDisposable
     private readonly HttpClient _httpClient;
     private readonly Func<Task<bool>> _refreshRoles;
     private bool _checkingOfficer;
+    private bool _officerChecked;
 
     public bool IsOpen;
     public bool HasOfficerRole { get; set; }
@@ -215,26 +216,35 @@ public class MainWindow : IDisposable
                     if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
                         ImGui.SetTooltip("Link DemiCat to use officer chat.");
                 }
-                else if (ImGui.BeginTabItem("Officer"))
+                else
                 {
-                    if (!_checkingOfficer)
+                    var officerOpen = ImGui.BeginTabItem("Officer");
+                    if (officerOpen)
                     {
-                        _checkingOfficer = true;
-                        _ = Task.Run(async () =>
+                        if (!_officerChecked && !_checkingOfficer)
                         {
-                            await _refreshRoles();
-                            PluginServices.Instance?.Framework.RunOnTick(() =>
+                            _officerChecked = true;
+                            _checkingOfficer = true;
+                            _ = Task.Run(async () =>
                             {
-                                _checkingOfficer = false;
-                                if (!HasOfficerRole)
-                                    ImGui.SetTabItemClosed("Officer");
+                                await _refreshRoles();
+                                PluginServices.Instance?.Framework.RunOnTick(() =>
+                                {
+                                    _checkingOfficer = false;
+                                    if (!HasOfficerRole)
+                                        ImGui.SetTabItemClosed("Officer");
+                                });
                             });
-                        });
+                        }
+                        ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
+                        _officer.Draw();
+                        ImGui.EndChild();
+                        ImGui.EndTabItem();
                     }
-                    ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
-                    _officer.Draw();
-                    ImGui.EndChild();
-                    ImGui.EndTabItem();
+                    else
+                    {
+                        _officerChecked = false;
+                    }
                 }
             }
 
