@@ -47,12 +47,17 @@ def mention_to_dto(obj: discord.abc.Snowflake) -> Mention:
     # First, attempt to use the ``discord`` types directly.  This is the
     # typical code path when running inside the real application where the
     # ``discord.py`` library is available.
-    if isinstance(obj, (discord.User, getattr(discord, "Member", object))):
+
+    member_cls = getattr(discord, "Member", None)
+    role_cls = getattr(discord, "Role", None)
+    channel_cls = getattr(discord.abc, "GuildChannel", None)
+
+    if isinstance(obj, discord.User) or (member_cls and isinstance(obj, member_cls)):
         mention_type = "user"
         name = getattr(obj, "display_name", None) or getattr(obj, "name", "")
-    elif isinstance(obj, getattr(discord, "Role", object)):
+    elif role_cls and isinstance(obj, role_cls):
         mention_type = "role"
-    elif isinstance(obj, getattr(discord.abc, "GuildChannel", object)):
+    elif channel_cls and isinstance(obj, channel_cls):
         mention_type = "channel"
     else:
         # In the test environment the full ``discord`` module might not be
