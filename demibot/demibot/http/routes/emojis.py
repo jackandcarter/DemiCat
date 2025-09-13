@@ -2,13 +2,14 @@ from __future__ import annotations
 
 from time import monotonic
 from typing import Dict, List, Tuple
-import json
-from pathlib import Path
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..deps import RequestContext, api_key_auth
+from ..deps import RequestContext, api_key_auth, get_db
 from ..discord_client import discord_client
+from ...db.models import UnicodeEmoji
 
 router = APIRouter(prefix="/api")
 
@@ -68,17 +69,16 @@ async def get_guild_emojis(
 
 
 @router.get("/emojis/unicode")
-async def get_unicode_emojis() -> List[dict]:
+async def get_unicode_emojis(db: AsyncSession = Depends(get_db)) -> List[dict]:
     global _unicode_cache
     if _unicode_cache:
         data, ts = _unicode_cache
         if monotonic() - ts < _CACHE_TTL:
             return data
-    data_path = Path(__file__).resolve().parents[1] / "data" / "unicode_emojis.json"
-    try:
-        with data_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-    except Exception:
-        data = []
+    result = await db.execute(select(UnicodeEmoji))
+    data = [
+        {"emoji": row.emoji, "name": row.name, "imageUrl": row.image_url}
+        for row in result.scalars()
+    ]
     _unicode_cache = (data, monotonic())
     return data
