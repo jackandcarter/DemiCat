@@ -54,6 +54,19 @@ internal static class ApiHelpers
                 PluginServices.Instance!.Log.Debug($"HTTP {request.Method} {request.RequestUri} attempt {attempt}/{maxAttempts}");
                 var response = await httpClient.SendAsync(request);
                 PluginServices.Instance!.Log.Debug($"HTTP {request.Method} {request.RequestUri} responded {(int)response.StatusCode}");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    // Successful communications are logged at info so they are visible in Dalamud's log file.
+                    PluginServices.Instance!.Log.Information($"HTTP {request.Method} {request.RequestUri} succeeded");
+                }
+                else
+                {
+                    // If the server returns an error status code, capture the body so the reason is clear to the user.
+                    var body = await response.Content.ReadAsStringAsync();
+                    PluginServices.Instance!.Log.Warning($"HTTP {request.Method} {request.RequestUri} failed with {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}");
+                }
+
                 return response;
             }
             catch (Exception ex)

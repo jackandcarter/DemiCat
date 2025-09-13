@@ -298,7 +298,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 var wsUrl = new Uri(($"{baseUrl}/ws/embeds")
                     .Replace("http://", "ws://")
                     .Replace("https://", "wss://"));
+
+                PluginServices.Instance!.Log.Information($"Connecting WebSocket to {wsUrl}");
                 await _webSocket.ConnectAsync(wsUrl, CancellationToken.None);
+                PluginServices.Instance!.Log.Information("WebSocket connected successfully");
+
                 StopPolling();
                 await ReceiveLoop();
             }
