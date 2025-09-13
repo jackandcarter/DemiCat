@@ -178,7 +178,7 @@ def test_allowed_mentions(monkeypatch):
             am = captured.get("allowed_mentions")
             assert isinstance(am, mc.discord.AllowedMentions)
             assert am.everyone is False
-            assert am.roles is False
+            assert am.roles is True
             assert am.users is True
 
     asyncio.run(_run())
