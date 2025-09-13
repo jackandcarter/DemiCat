@@ -11,6 +11,7 @@ from . import (
     requests,
     user_settings,
     installations,
+    discord_emojis,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "requests",
     "user_settings",
     "installations",
+    "discord_emojis",
 ]

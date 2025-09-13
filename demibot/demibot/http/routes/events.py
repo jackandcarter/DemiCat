@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import re
 import discord
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
@@ -209,12 +210,23 @@ async def create_event(
                             if b.style is not None
                             else discord.ButtonStyle.secondary
                         )
+                        emoji_obj = None
+                        if b.emoji:
+                            match = re.match(r"<(a?):([^:>]+):(\d+)>", b.emoji)
+                            if match:
+                                emoji_obj = discord.PartialEmoji(
+                                    name=match.group(2),
+                                    id=int(match.group(3)),
+                                    animated=match.group(1) == "a",
+                                )
+                            else:
+                                emoji_obj = discord.PartialEmoji(name=b.emoji)
                         if b.url:
                             view.add_item(
                                 discord.ui.Button(
                                     label=b.label,
                                     url=b.url,
-                                    emoji=b.emoji,
+                                    emoji=emoji_obj,
                                     style=style,
                                     row=row_index,
                                 )
@@ -224,7 +236,7 @@ async def create_event(
                                 discord.ui.Button(
                                     label=b.label,
                                     custom_id=b.custom_id,
-                                    emoji=b.emoji,
+                                    emoji=emoji_obj,
                                     style=style,
                                     row=row_index,
                                 )
