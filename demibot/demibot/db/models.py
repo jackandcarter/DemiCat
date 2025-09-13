@@ -357,6 +357,14 @@ class EventButton(Base):
     max_signups: Mapped[Optional[int]] = mapped_column(Integer)
 
 
+class UnicodeEmoji(Base):
+    __tablename__ = "unicode_emojis"
+
+    emoji: Mapped[str] = mapped_column(String(16), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    image_url: Mapped[str] = mapped_column(String(255))
+
+
 class Request(Base):
     __tablename__ = "requests"
     __table_args__ = (

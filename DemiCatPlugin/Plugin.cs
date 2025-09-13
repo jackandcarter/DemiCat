@@ -10,6 +10,8 @@ using DiscordHelper;
 using Dalamud.Plugin;
 using Dalamud.IoC;
 using Dalamud.Plugin.Services;
+using Dalamud.Bindings.ImGui;
+using System.IO;
 
 namespace DemiCatPlugin;
 
@@ -35,6 +37,19 @@ public class Plugin : IDalamudPlugin
     private readonly Action _openConfigUi;
     private readonly TokenManager _tokenManager;
     private readonly Action<string?> _unlinkedHandler;
+
+    private static readonly ushort[] EmojiRanges =
+    {
+        0x1F300, 0x1F5FF,
+        0x1F600, 0x1F64F,
+        0x1F680, 0x1F6FF,
+        0x1F700, 0x1F77F,
+        0x1F780, 0x1F7FF,
+        0x1F800, 0x1F8FF,
+        0x1F900, 0x1F9FF,
+        0x1FA00, 0x1FAFF,
+        0
+    };
 
     public Plugin()
     {
@@ -95,6 +110,7 @@ public class Plugin : IDalamudPlugin
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
+        AddEmojiFont();
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
@@ -285,6 +301,34 @@ public class Plugin : IDalamudPlugin
         {
             log.Error(ex, "Error refreshing roles.");
             return false;
+        }
+    }
+
+    private unsafe void AddEmojiFont()
+    {
+        try
+        {
+            var dir = _services.PluginInterface.AssemblyLocation.Directory?.FullName;
+            if (dir == null) return;
+            var fontPath = Path.Combine(dir, "NotoColorEmoji.ttf");
+            if (!File.Exists(fontPath))
+            {
+                _services.Log.Warning($"Emoji font not found at {fontPath}; emojis may appear monochrome.");
+                return;
+            }
+            var io = ImGui.GetIO();
+            var cfg = ImGuiNative.ImFontConfig_ImFontConfig();
+            cfg.MergeMode = true;
+            fixed (ushort* ranges = EmojiRanges)
+            {
+                io.Fonts.AddFontFromFileTTF(fontPath, io.Fonts.Fonts[0]?.FontSize ?? 16f, cfg, (IntPtr)ranges);
+            }
+            cfg.Destroy();
+            _services.PluginInterface.UiBuilder.RebuildFonts();
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Error(ex, "Failed to load emoji font");
         }
     }
 

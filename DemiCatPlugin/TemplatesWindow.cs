@@ -491,26 +491,12 @@ public class TemplatesWindow
                     MakeCustomId(label, x.RowIndex, x.ColIndex),
                     x.RowIndex,
                     (int)(b?.Style ?? x.Data.Style),
-                    NormalizeEmoji(b?.Emoji ?? x.Data.Emoji),
+                    EmojiUtils.Normalize(b?.Emoji ?? x.Data.Emoji),
                     b?.MaxSignups ?? x.Data.MaxSignups,
                     Math.Min(b?.Width ?? x.Data.Width ?? ButtonSizeHelper.ComputeWidth(label), ButtonSizeHelper.Max));
             })
             .ToList();
     }
-
-    private static string? NormalizeEmoji(string? emoji)
-    {
-        if (string.IsNullOrWhiteSpace(emoji)) return null;
-        if (emoji.StartsWith("custom:", StringComparison.OrdinalIgnoreCase))
-        {
-            var id = emoji.Substring("custom:".Length);
-            var name = EmojiPopup.LookupGuildName(id) ?? "emoji";
-            var animated = EmojiPopup.IsGuildEmojiAnimated(id);
-            return $"<{(animated ? "a" : string.Empty)}:{name}:{id}>";
-        }
-        return emoji;
-    }
-
 
     internal EmbedDto ToEmbedDto(Template tmpl)
     {

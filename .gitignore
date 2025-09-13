@@ -15,6 +15,7 @@ latest.zip
 .venv/
 .dotnet/
 DemiCatPlugin/packages.lock.json
+DemiCatPlugin/NotoColorEmoji.ttf
 
 # DemiBot configuration
 demibot/demibot/config.json

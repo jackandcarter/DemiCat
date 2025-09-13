@@ -448,7 +448,7 @@ public class EventCreateWindow
                     Tag = b.Tag,
                     Include = b.Include,
                     Label = b.Label,
-                    Emoji = b.Emoji,
+                    Emoji = EmojiUtils.Normalize(b.Emoji),
                     Style = b.Style,
                     MaxSignups = b.MaxSignups,
                     Width = b.Width
@@ -586,7 +586,7 @@ public class EventCreateWindow
                     Tag = b.Tag,
                     Include = b.Include,
                     Label = b.Label,
-                    Emoji = b.Emoji,
+                    Emoji = EmojiUtils.Normalize(b.Emoji),
                     Style = b.Style,
                     MaxSignups = b.MaxSignups,
                     Width = b.Width
@@ -724,7 +724,7 @@ public class EventCreateWindow
                 Tag = b.Tag,
                 Include = b.Include,
                 Label = b.Label,
-                Emoji = b.Emoji,
+                Emoji = EmojiUtils.Normalize(b.Emoji),
                 Style = b.Style,
                 MaxSignups = b.MaxSignups,
                 Width = b.Width

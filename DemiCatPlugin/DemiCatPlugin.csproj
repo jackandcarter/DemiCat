@@ -39,6 +39,10 @@
   <ItemGroup>
     <EmbeddedResource Include="icon.png" />
   </ItemGroup>
+
+  <ItemGroup Condition="Exists('NotoColorEmoji.ttf')">
+    <None Include="NotoColorEmoji.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../DemiCat.UI/DemiCat.UI.csproj" />
   </ItemGroup>
