@@ -12,6 +12,7 @@ using Dalamud.IoC;
 using Dalamud.Plugin.Services;
 using Dalamud.Bindings.ImGui;
 using System.IO;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -110,7 +111,8 @@ public class Plugin : IDalamudPlugin
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
-        AddEmojiFont();
+        _services.PluginInterface.UiBuilder.BuildFonts += AddEmojiFont;
+        _services.PluginInterface.UiBuilder.RebuildFontAtlas();
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
@@ -139,6 +141,7 @@ public class Plugin : IDalamudPlugin
         // Unsubscribe UI open handlers
         _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
+        _services.PluginInterface.UiBuilder.BuildFonts -= AddEmojiFont;
 
         _tokenManager.OnLinked -= StartWatchers;
         _tokenManager.OnUnlinked -= _unlinkedHandler;
@@ -317,14 +320,13 @@ public class Plugin : IDalamudPlugin
                 return;
             }
             var io = ImGui.GetIO();
-            var cfg = ImGuiNative.ImFontConfig_ImFontConfig();
+            ImFontConfigPtr cfg = ImGuiNative.ImFontConfig_ImFontConfig();
             cfg.MergeMode = true;
             fixed (uint* ranges = EmojiRanges)
             {
-                io.Fonts.AddFontFromFileTTF(fontPath, io.Fonts.Fonts[0]?.FontSize ?? 16f, cfg, (IntPtr)ranges);
+                io.Fonts.AddFontFromFileTTF(fontPath, io.Fonts.Fonts.Size > 0 ? io.Fonts.Fonts[0].FontSize : 16f, cfg, (IntPtr)ranges);
             }
             cfg.Destroy();
-            _services.PluginInterface.UiBuilder.RebuildFonts();
         }
         catch (Exception ex)
         {
