@@ -686,9 +686,10 @@ class ConfigWizard(discord.ui.View):
                         )
                     )
                 await db.commit()
-        except Exception:
+        except Exception as exc:
+            logging.exception("Failed to save settings")
             await interaction.response.send_message(
-                "Failed to save settings", ephemeral=True
+                f"Failed to save settings: {exc}", ephemeral=True
             )
             return
         summary = (
