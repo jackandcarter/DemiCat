@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using Dalamud.Plugin;
 
 namespace DemiCatPlugin;
@@ -55,13 +56,35 @@ public class TokenManager
                 _token = null;
                 return;
             }
-#if WINDOWS
+
             var encrypted = File.ReadAllBytes(path);
-            var bytes = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
-            _token = Encoding.UTF8.GetString(bytes);
-#else
-            _token = File.ReadAllText(path);
-#endif
+            try
+            {
+                var bytes = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
+                _token = Encoding.UTF8.GetString(bytes);
+            }
+            catch (CryptographicException)
+            {
+                // Migration path for previously stored plain text tokens
+                var text = Encoding.UTF8.GetString(encrypted);
+                _token = string.IsNullOrEmpty(text) ? null : text;
+                if (_token != null)
+                {
+                    try
+                    {
+                        var bytes = Encoding.UTF8.GetBytes(_token);
+                        var cipher = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
+                        File.WriteAllBytes(path, cipher);
+                        RestrictPermissions(path);
+                    }
+                    catch (PlatformNotSupportedException)
+                    {
+                        File.WriteAllBytes(path, Encoding.UTF8.GetBytes(_token));
+                        RestrictPermissions(path);
+                    }
+                }
+            }
+
             State = string.IsNullOrEmpty(_token) ? LinkState.Unlinked : LinkState.Linked;
         }
         catch
@@ -76,13 +99,20 @@ public class TokenManager
         try
         {
             var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
-#if WINDOWS
             var bytes = Encoding.UTF8.GetBytes(token);
-            var encrypted = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
+            byte[] encrypted;
+            try
+            {
+                encrypted = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
+            }
+            catch (PlatformNotSupportedException)
+            {
+                // fallback to plain text but restrict permissions
+                encrypted = bytes;
+            }
+
             File.WriteAllBytes(path, encrypted);
-#else
-            File.WriteAllText(path, token);
-#endif
+            RestrictPermissions(path);
             _token = token;
             State = LinkState.Linked;
             OnLinked?.Invoke();
@@ -91,6 +121,21 @@ public class TokenManager
         {
             _token = null;
             State = LinkState.Unlinked;
+        }
+    }
+
+    private static void RestrictPermissions(string path)
+    {
+        try
+        {
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+        }
+        catch
+        {
+            // ignore
         }
     }
 
