@@ -1,11 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException
-from ..auth import with_context, RequestContext
+from ..deps import RequestContext, api_key_auth
 from ...ws.client import discord_client
 
 router = APIRouter(prefix="/api/discord", tags=["discord"])
 
 @router.get("/emojis")
-async def list_emojis(ctx: RequestContext = Depends(with_context)):
+async def list_emojis(ctx: RequestContext = Depends(api_key_auth)):
     if not discord_client:
         raise HTTPException(503, "discord not connected")
     guild = discord_client.get_guild(ctx.guild.id)
