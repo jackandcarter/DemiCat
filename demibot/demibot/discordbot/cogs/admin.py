@@ -24,7 +24,7 @@ from ...db.models import (
     UserInstallation,
     ChannelKind,
 )
-from ...db.session import get_session, init_db, _Session
+from ...db import session as db_session
 
 
 logger = logging.getLogger(__name__)
@@ -39,7 +39,7 @@ class Admin(commands.Cog):
 
 async def _authorized_role_ids(guild_id: int) -> set[int]:
     """Return a set of Discord role IDs authorized for the guild."""
-    async with get_session() as db:
+    async with db_session.get_session() as db:
         guild_res = await db.execute(
             select(Guild).where(Guild.discord_guild_id == guild_id)
         )
@@ -58,7 +58,7 @@ async def _authorized_role_ids(guild_id: int) -> set[int]:
 
 @demibot.command(name="clear", description="Delete all user records for this guild")
 async def clear_users(interaction: discord.Interaction) -> None:
-    async with get_session() as db:
+    async with db_session.get_session() as db:
         guild_res = await db.execute(
             select(Guild).where(Guild.discord_guild_id == interaction.guild.id)
         )
@@ -86,16 +86,12 @@ async def clear_users(interaction: discord.Interaction) -> None:
 
 @demibot.command(name="deleteasset", description="Soft delete an asset")
 @app_commands.describe(asset_id="Asset identifier")
-async def delete_asset_cmd(
-    interaction: discord.Interaction, asset_id: int
-) -> None:
-    async with get_session() as db:
+async def delete_asset_cmd(interaction: discord.Interaction, asset_id: int) -> None:
+    async with db_session.get_session() as db:
         result = await db.execute(select(Asset).where(Asset.id == asset_id))
         asset = result.scalar_one_or_none()
         if asset is None:
-            await interaction.response.send_message(
-                "Asset not found", ephemeral=True
-            )
+            await interaction.response.send_message("Asset not found", ephemeral=True)
             return
         asset.deleted_at = datetime.utcnow()
         await db.commit()
@@ -109,7 +105,7 @@ async def delete_asset_cmd(
 async def rebuild_index_cmd(
     interaction: discord.Interaction, forget: bool = False
 ) -> None:
-    async with get_session() as db:
+    async with db_session.get_session() as db:
         await db.execute(delete(IndexCheckpoint))
         if forget:
             await db.execute(delete(UserInstallation))
@@ -164,7 +160,7 @@ async def key_embed(interaction: discord.Interaction) -> None:
         ) -> None:
             token = secrets.token_hex(16)
             try:
-                async with get_session() as db:
+                async with db_session.get_session() as db:
                     guild_res = await db.execute(
                         select(Guild).where(
                             Guild.discord_guild_id == button_inter.guild.id
@@ -264,7 +260,7 @@ async def reset_guild(interaction: discord.Interaction) -> None:
     if interaction.user.id != interaction.guild.owner_id:
         await interaction.response.send_message("Owner only", ephemeral=True)
         return
-    async with get_session() as db:
+    async with db_session.get_session() as db:
         guild_res = await db.execute(
             select(Guild).where(Guild.discord_guild_id == interaction.guild.id)
         )
@@ -299,7 +295,7 @@ async def resync_members(interaction: discord.Interaction) -> None:
         await interaction.response.send_message("Admin only", ephemeral=True)
         return
     count = 0
-    async with get_session() as db:
+    async with db_session.get_session() as db:
         guild_res = await db.execute(
             select(Guild).where(Guild.discord_guild_id == interaction.guild.id)
         )
@@ -577,13 +573,13 @@ class ConfigWizard(discord.ui.View):
                 "Each channel may only be selected once", ephemeral=True
             )
             return
-        if _Session is None:
+        if db_session._Session is None:
             await interaction.response.send_message(
                 "database not initialized", ephemeral=True
             )
             return
         try:
-            async with get_session() as db:
+            async with db_session.get_session() as db:
                 guild_res = await db.execute(
                     select(Guild).where(Guild.discord_guild_id == self.guild.id)
                 )
@@ -630,7 +626,10 @@ class ConfigWizard(discord.ui.View):
                         role.name = role_name
                         role.is_officer = True
                 for role in roles:
-                    if role.is_officer and role.discord_role_id not in self.officer_role_ids:
+                    if (
+                        role.is_officer
+                        and role.discord_role_id not in self.officer_role_ids
+                    ):
                         role.is_officer = False
                 for rid in self.mention_role_ids:
                     d_role = self.guild.get_role(rid)
@@ -738,6 +737,6 @@ async def setup_wizard(interaction: discord.Interaction) -> None:
 async def setup(bot: commands.Bot) -> None:
     cfg = getattr(bot, "cfg", None)
     if cfg is not None:
-        await init_db(cfg.database.url)
+        await db_session.init_db(cfg.database.url)
     await bot.add_cog(Admin(bot))
     bot.tree.add_command(demibot)
