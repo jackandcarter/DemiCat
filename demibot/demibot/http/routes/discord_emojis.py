@@ -8,7 +8,7 @@ router = APIRouter(prefix="/api/discord", tags=["discord"])
 async def list_emojis(ctx: RequestContext = Depends(api_key_auth)):
     if not discord_client:
         raise HTTPException(503, "discord not connected")
-    guild = discord_client.get_guild(ctx.guild.id)
+    guild = discord_client.get_guild(ctx.guild.discord_guild_id)
     if not guild:
         raise HTTPException(404, "guild not found")
 
