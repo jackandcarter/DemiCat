@@ -102,6 +102,6 @@ async def init_db(url: str) -> AsyncEngine:
 @asynccontextmanager
 async def get_session() -> AsyncIterator[AsyncSession]:
     if _Session is None:
-        raise RuntimeError("Engine not initialized")
+        raise RuntimeError("database not initialized")
     async with _Session() as session:
         yield session
