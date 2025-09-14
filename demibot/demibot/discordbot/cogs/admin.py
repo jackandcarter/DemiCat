@@ -609,42 +609,31 @@ class ConfigWizard(discord.ui.View):
                 )
                 roles = role_res.scalars().all()
                 role_map = {r.discord_role_id: r for r in roles}
-                for rid in self.officer_role_ids:
+
+                union_role_ids = set(self.officer_role_ids) | set(self.mention_role_ids)
+                for rid in union_role_ids:
                     d_role = self.guild.get_role(rid)
-                    role_name = d_role.name if d_role else "Officer"
+                    role_name = d_role.name if d_role else (
+                        "Officer" if rid in self.officer_role_ids else "Role"
+                    )
                     role = role_map.get(rid)
                     if role is None:
-                        db.add(
-                            Role(
-                                guild_id=guild.id,
-                                name=role_name,
-                                discord_role_id=rid,
-                                is_officer=True,
-                            )
+                        role = Role(
+                            guild_id=guild.id,
+                            name=role_name,
+                            discord_role_id=rid,
                         )
+                        db.add(role)
+                        role_map[rid] = role
                     else:
                         role.name = role_name
-                        role.is_officer = True
+                    role.is_officer = rid in self.officer_role_ids
+                    role.is_chat = rid in self.mention_role_ids
+
                 for role in roles:
-                    if (
-                        role.is_officer
-                        and role.discord_role_id not in self.officer_role_ids
-                    ):
+                    if role.discord_role_id not in union_role_ids:
                         role.is_officer = False
-                for rid in self.mention_role_ids:
-                    d_role = self.guild.get_role(rid)
-                    role_name = d_role.name if d_role else "Role"
-                    role = role_map.get(rid)
-                    if role is None:
-                        db.add(
-                            Role(
-                                guild_id=guild.id,
-                                name=role_name,
-                                discord_role_id=rid,
-                            )
-                        )
-                    else:
-                        role.name = role_name
+                        role.is_chat = False
 
                 await db.execute(
                     delete(GuildChannel).where(
