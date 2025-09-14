@@ -59,26 +59,8 @@ public class SignupOptionEditor
 
             if (!string.IsNullOrWhiteSpace(_working.Emoji))
             {
-                if (_working.Emoji.StartsWith("custom:", StringComparison.OrdinalIgnoreCase))
-                {
-                    var id = _working.Emoji.Substring("custom:".Length);
-                    var ext = EmojiPopup.IsGuildEmojiAnimated(id) ? "gif" : "png"; // we won’t animate but PNG works for most
-                    var url = $"https://cdn.discordapp.com/emojis/{id}.{ext}";
-                    WebTextureCache.Get(url, tex =>
-                    {
-                        if (tex != null)
-                        {
-                            var wrap = tex.GetWrapOrEmpty();
-                            ImGui.Image(wrap.Handle, new Vector2(20, 20));
-                            ImGui.SameLine();
-                        }
-                    });
-                }
-                else
-                {
-                    ImGui.TextUnformatted(_working.Emoji);
-                    ImGui.SameLine();
-                }
+                EmojiUtils.DrawEmoji(_working.Emoji);
+                ImGui.SameLine();
             }
             var max = _working.MaxSignups ?? 0;
             if (ImGui.InputInt("Max Signups", ref max))

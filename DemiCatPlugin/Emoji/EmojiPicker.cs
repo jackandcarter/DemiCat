@@ -14,12 +14,15 @@ namespace DemiCatPlugin.Emoji
 
         public void Draw(ref string targetText, float buttonSize = 28f)
         {
+            var prev = _tabIndex;
             if (ImGui.BeginTabBar("##dc_emoji_tabs"))
             {
                 if (ImGui.BeginTabItem("Standard")) { _tabIndex = 0; DrawStandard(ref targetText, buttonSize); ImGui.EndTabItem(); }
                 if (ImGui.BeginTabItem("Custom"))   { _tabIndex = 1; DrawCustom(ref targetText, buttonSize);   ImGui.EndTabItem(); }
                 ImGui.EndTabBar();
             }
+            if (prev != _tabIndex)
+                _search = string.Empty;
         }
 
         private void DrawStandard(ref string targetText, float size)
