@@ -1266,6 +1266,7 @@ public class ChatWindow : IDisposable
         }
         if (_messages.Count > 0 && long.TryParse(_messages[^1].Id, out var last))
         {
+            var channelId = CurrentChannelId;
             _config.ChatCursors[channelId] = last;
         }
     }
