@@ -28,6 +28,7 @@ from ...db.models import (
     ChannelKind,
     EventSignup,
     User,
+    GuildConfig,
 )
 from models.event import Event
 
@@ -126,6 +127,14 @@ async def create_event(
         ts = datetime.now(timezone.utc)
 
     mention_ids = [int(m) for m in body.mentions or []]
+    if "officer" not in ctx.roles:
+        cfg = await db.scalar(
+            select(GuildConfig).where(GuildConfig.guild_id == ctx.guild.id)
+        )
+        allowed = {
+            int(r) for r in (cfg.mention_role_ids or "").split(",") if r
+        } if cfg else set()
+        mention_ids = [m for m in mention_ids if m in allowed]
 
     dto = EmbedDto(
         id=eid,

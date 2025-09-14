@@ -93,6 +93,7 @@ class GuildConfig(Base):
         BIGINT(unsigned=True)
     )
     officer_role_ids: Mapped[Optional[str]] = mapped_column(Text)
+    mention_role_ids: Mapped[Optional[str]] = mapped_column(Text)
 
     guild: Mapped[Guild] = relationship(back_populates="config")
 
