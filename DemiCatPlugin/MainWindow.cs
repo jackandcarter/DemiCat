@@ -29,7 +29,7 @@ public class MainWindow : IDisposable
     public EventCreateWindow EventCreateWindow => _create;
     public TemplatesWindow TemplatesWindow => _templates;
 
-    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient, ChannelService channelService, Func<Task<bool>> refreshRoles)
+    public MainWindow(Config config, UiRenderer ui, ChatWindow? chat, OfficerChatWindow officer, SettingsWindow settings, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection, Func<Task<bool>> refreshRoles)
     {
         _config = config;
         _ui = ui;
@@ -38,8 +38,8 @@ public class MainWindow : IDisposable
         _settings = settings;
         _httpClient = httpClient;
         _refreshRoles = refreshRoles;
-        _create = new EventCreateWindow(config, httpClient, channelService);
-        _templates = new TemplatesWindow(config, httpClient);
+        _create = new EventCreateWindow(config, httpClient, channelService, channelSelection);
+        _templates = new TemplatesWindow(config, httpClient, channelSelection);
         _requestBoard = new RequestBoardWindow(config, httpClient);
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;

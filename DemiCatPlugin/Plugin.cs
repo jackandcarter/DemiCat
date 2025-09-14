@@ -28,6 +28,7 @@ public class Plugin : IDalamudPlugin
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
+    private readonly ChannelSelectionService _channelSelection;
 
     private Config _config = null!;
     private readonly HttpClient _httpClient;
@@ -63,7 +64,8 @@ public class Plugin : IDalamudPlugin
         };
         _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
 
-        _ui = new UiRenderer(_config, _httpClient);
+        _channelSelection = new ChannelSelectionService(_config);
+        _ui = new UiRenderer(_config, _httpClient, _channelSelection);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
 
         _presenceService = _config.SyncedChat && _config.EnableFcChat
@@ -71,8 +73,8 @@ public class Plugin : IDalamudPlugin
             : null;
 
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService);
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection);
 
         _presenceService?.Reset();
 
@@ -84,6 +86,7 @@ public class Plugin : IDalamudPlugin
             _settings,
             _httpClient,
             _channelService,
+            _channelSelection,
             () => RefreshRoles(_services.Log)
         );
 

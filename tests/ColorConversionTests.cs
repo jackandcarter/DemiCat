@@ -70,7 +70,8 @@ public class ColorConversionTests
         var config = new Config();
         var http = new HttpClient(new StubHandler());
         var channelService = new ChannelService(config, http, new TokenManager());
-        var window = new EventCreateWindow(config, http, channelService);
+        var selection = new ChannelSelectionService(config);
+        var window = new EventCreateWindow(config, http, channelService, selection);
         typeof(EventCreateWindow).GetField("_color", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(window, ColorUtils.RgbToImGui(rgb));
         var preview = (EmbedDto)typeof(EventCreateWindow).GetMethod("BuildPreview", BindingFlags.NonPublic | BindingFlags.Instance)!
