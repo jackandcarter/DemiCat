@@ -134,6 +134,8 @@ class ChatConnectionManager:
         if info is None:
             return
         channels = data.get("channels", [])
+        old_channels = set(info.channels)
+        new_channels: Set[str] = set()
         for ch in channels:
             channel_id: str
             is_officer = False
@@ -145,7 +147,13 @@ class ChatConnectionManager:
             if is_officer and "officer" not in info.ctx.roles:
                 # Skip officer-only channels for non-officers.
                 continue
-            info.channels.add(channel_id)
+            new_channels.add(channel_id)
+        removed = old_channels - new_channels
+        for ch in removed:
+            info.cursors.pop(ch, None)
+        added = new_channels - old_channels
+        info.channels = new_channels
+        for channel_id in added:
             self._sub_count += 1
             logger.info(
                 "chat.ws subscribe channel=%s count=%s",
