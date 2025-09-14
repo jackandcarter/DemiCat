@@ -694,6 +694,10 @@ class ConfigWizard(discord.ui.View):
             f"Mentionable roles: {', '.join(f'<@&{r}>' for r in self.mention_role_ids)}"
         )
         await interaction.response.send_message(summary, ephemeral=True)
+        try:
+            await interaction.message.delete()
+        except discord.HTTPException:
+            pass
         self.stop()
 
 
