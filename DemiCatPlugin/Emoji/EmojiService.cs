@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
@@ -19,11 +20,24 @@ namespace DemiCatPlugin.Emoji
 
         public async Task RefreshAsync(CancellationToken ct = default)
         {
+            if (!_tokens.IsReady())
+            {
+                Custom = new();
+                return;
+            }
+
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/discord/emojis";
             var req = new HttpRequestMessage(HttpMethod.Get, url);
             ApiHelpers.AddAuthHeader(req, _tokens);
 
             using var res = await _http.SendAsync(req, ct);
+            if (res.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                _tokens.Clear("Authentication failed");
+                Custom = new();
+                return;
+            }
+
             res.EnsureSuccessStatusCode();
             using var stream = await res.Content.ReadAsStreamAsync(ct);
             using var doc = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
