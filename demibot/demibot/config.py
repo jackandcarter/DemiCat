@@ -20,6 +20,8 @@ from urllib.parse import quote_plus
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
+logger = logging.getLogger(__name__)
+
 CFG_PATH = Path.home() / ".config" / "demibot" / "config.json"
 
 
@@ -73,7 +75,7 @@ def load_config() -> AppConfig:
         try:
             data = json.loads(CFG_PATH.read_text())
         except json.JSONDecodeError:
-            logging.warning("Invalid JSON in %s, using defaults", CFG_PATH)
+            logger.warning("Invalid JSON in %s, using defaults", CFG_PATH)
             return AppConfig()
         db_data = data.get("database", {})
         return AppConfig(
@@ -101,7 +103,7 @@ def save_config(cfg: AppConfig) -> None:
     try:
         CFG_PATH.chmod(0o600)
     except OSError as exc:  # pragma: no cover - platform dependent
-        logging.warning("Unable to set permissions on %s: %s", CFG_PATH, exc)
+        logger.warning("Unable to set permissions on %s: %s", CFG_PATH, exc)
 
 
 async def ensure_config(force_reconfigure: bool = False) -> AppConfig:
@@ -164,7 +166,7 @@ async def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             await engine.dispose()
             return True
         except Exception as exc:  # pragma: no cover - interactive prompt
-            print(f"Database connection failed: {exc}")
+            logger.error("Database connection failed: %s", exc)
             return False
 
     active_profile = cfg.database.active()
@@ -182,7 +184,7 @@ async def ensure_config(force_reconfigure: bool = False) -> AppConfig:
             _prompt_database()
             profile = cfg.database.active()
             if not profile.user or not profile.password:
-                print("Username and password are required.")
+                logger.error("Username and password are required.")
                 continue
             if await _check_database():
                 break

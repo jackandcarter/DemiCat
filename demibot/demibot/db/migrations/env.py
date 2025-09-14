@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import os
+import logging
 from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 from sqlalchemy.engine import make_url
+
+logger = logging.getLogger(__name__)
 
 # Import metadata so autogenerate works
 from demibot.db.base import Base  # noqa: F401
@@ -53,27 +56,35 @@ def _normalize_sqlalchemy_url(url: str) -> str:
 
 
 def _debug_print_url_sources(final_url: str) -> None:
-    """Print loud diagnostics about where the URL came from and what it is."""
+    """Log diagnostics about where the URL came from and what it is."""
     env_demibot = os.getenv("DEMIBOT_DATABASE_URL")
     env_generic = os.getenv("DATABASE_URL")
     env_forced = os.getenv("DEMIBOT_FORCED_URL")
 
-    print("=== ALEMBIC DEBUG: URL SOURCES ===")
-    print("DEMIBOT_FORCED_URL:", repr(env_forced))
-    print("DEMIBOT_DATABASE_URL:", repr(env_demibot))
-    print("DATABASE_URL:", repr(env_generic))
-    print("alembic.ini sqlalchemy.url (raw):", repr(config.get_main_option("sqlalchemy.url")))
-    print("=> Using (normalized) URL:", make_url(final_url).render_as_string(hide_password=False))
-    print("URL components:",
-          {
-              "username": make_url(final_url).username,
-              "password": make_url(final_url).password,
-              "host": make_url(final_url).host,
-              "port": make_url(final_url).port,
-              "database": make_url(final_url).database,
-              "drivername": make_url(final_url).drivername,
-          })
-    print("=== END ALEMBIC DEBUG ===")
+    logger.info("=== ALEMBIC DEBUG: URL SOURCES ===")
+    logger.info("DEMIBOT_FORCED_URL: %r", env_forced)
+    logger.info("DEMIBOT_DATABASE_URL: %r", env_demibot)
+    logger.info("DATABASE_URL: %r", env_generic)
+    logger.info(
+        "alembic.ini sqlalchemy.url (raw): %r",
+        config.get_main_option("sqlalchemy.url"),
+    )
+    logger.info(
+        "=> Using (normalized) URL: %s",
+        make_url(final_url).render_as_string(hide_password=False),
+    )
+    logger.info(
+        "URL components: %s",
+        {
+            "username": make_url(final_url).username,
+            "password": make_url(final_url).password,
+            "host": make_url(final_url).host,
+            "port": make_url(final_url).port,
+            "database": make_url(final_url).database,
+            "drivername": make_url(final_url).drivername,
+        },
+    )
+    logger.info("=== END ALEMBIC DEBUG ===")
 
 
 # ---------------------------
@@ -99,7 +110,7 @@ else:
 norm_url = _normalize_sqlalchemy_url(chosen)
 config.set_main_option("sqlalchemy.url", norm_url)
 
-# Very explicit print so we can SEE the real value Alembic is using (password visible on purpose)
+# Very explicit log so we can SEE the real value Alembic is using (password visible on purpose)
 _debug_print_url_sources(norm_url)
 
 target_metadata = Base.metadata
