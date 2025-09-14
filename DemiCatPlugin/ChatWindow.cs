@@ -35,6 +35,7 @@ public class ChatWindow : IDisposable
     protected string _input = string.Empty;
     protected bool _useCharacterName;
     protected string _statusMessage = string.Empty;
+    private string _lastError = string.Empty;
     protected readonly DiscordPresenceService? _presence;
     protected readonly List<string> _attachments = new();
     private readonly FileDialogManager _fileDialog = new();
@@ -539,7 +540,13 @@ public class ChatWindow : IDisposable
             _ = SendMessage();
         }
 
-        if (!string.IsNullOrEmpty(_statusMessage))
+        if (!string.IsNullOrEmpty(_lastError))
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+            ImGui.TextWrapped(_lastError);
+            ImGui.PopStyleColor();
+        }
+        else if (!string.IsNullOrEmpty(_statusMessage))
         {
             ImGui.TextUnformatted(_statusMessage);
         }
@@ -917,6 +924,7 @@ public class ChatWindow : IDisposable
                     _messages.Add(optimistic);
                     _input = string.Empty;
                     _statusMessage = string.Empty;
+                    _lastError = string.Empty;
                     _replyToId = null;
                     _attachments.Clear();
                 });
@@ -925,7 +933,7 @@ public class ChatWindow : IDisposable
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to send message. Status: {response.StatusCode}. Response Body: {responseBody}");
-                var msg = "Failed to send message";
+                var msg = $"{(int)response.StatusCode} {response.ReasonPhrase}";
                 try
                 {
                     using var doc = JsonDocument.Parse(responseBody);
@@ -937,16 +945,21 @@ public class ChatWindow : IDisposable
                         }
                         else if (detail.ValueKind == JsonValueKind.Object)
                         {
-                            if (detail.TryGetProperty("message", out var m))
-                                msg = m.GetString() ?? msg;
+                            List<string> parts = new();
                             if (detail.TryGetProperty("discord", out var discord) && discord.ValueKind == JsonValueKind.Array)
                             {
-                                var parts = discord.EnumerateArray()
+                                parts = discord.EnumerateArray()
                                     .Select(e => e.GetString())
-                                    .Where(s => !string.IsNullOrEmpty(s));
-                                var extra = string.Join("; ", parts);
-                                if (!string.IsNullOrEmpty(extra))
-                                    msg = $"{msg}: {extra}";
+                                    .Where(s => !string.IsNullOrEmpty(s))
+                                    .ToList();
+                            }
+                            if (parts.Count > 0)
+                            {
+                                msg = string.Join("\n", parts);
+                            }
+                            else if (detail.TryGetProperty("message", out var m))
+                            {
+                                msg = m.GetString() ?? msg;
                             }
                         }
                     }
@@ -955,7 +968,11 @@ public class ChatWindow : IDisposable
                 {
                     // ignore parse errors
                 }
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = msg);
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _statusMessage = msg;
+                    _lastError = msg;
+                });
                 if (response.StatusCode == HttpStatusCode.NotFound)
                 {
                     _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshChannels());
@@ -965,7 +982,11 @@ public class ChatWindow : IDisposable
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error sending message");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Failed to send message");
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _statusMessage = "Failed to send message";
+                _lastError = "Failed to send message";
+            });
         }
     }
 

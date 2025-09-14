@@ -5,6 +5,7 @@ import json
 import io
 import types
 import logging
+import asyncio
 
 import discord
 from fastapi import HTTPException, UploadFile
@@ -212,6 +213,7 @@ async def _send_via_webhook(
                 errors.append(f"Webhook creation failed: {e}")
             return None, None, errors
 
+    sent = None
     try:
         sent = await webhook.send(
             content,
@@ -221,8 +223,25 @@ async def _send_via_webhook(
             wait=True,
             allowed_mentions=ALLOWED_MENTIONS,
         )
-    except Exception as e:  # pragma: no cover - network errors
-        if isinstance(e, discord.HTTPException):
+    except discord.HTTPException as e:  # pragma: no cover - network errors
+        if e.status == 429:
+            try:
+                retry_after = float(getattr(e, "retry_after", 0)) or 1.0
+            except Exception:
+                retry_after = 1.0
+            await asyncio.sleep(min(retry_after, 5.0))
+            try:
+                sent = await webhook.send(
+                    content,
+                    username=username,
+                    avatar_url=avatar,
+                    files=files,
+                    wait=True,
+                    allowed_mentions=ALLOWED_MENTIONS,
+                )
+            except Exception as e2:  # pragma: no cover - network errors
+                e = e2
+        if sent is None:
             logging.exception(
                 "webhook.send failed for channel %s: %s %s",
                 channel_id,
@@ -232,9 +251,11 @@ async def _send_via_webhook(
             errors.append(
                 f"Webhook send failed: {e.status} {e.text or _discord_error(e)}"
             )
-        else:
-            logging.exception("webhook.send failed for channel %s", channel_id)
-            errors.append(f"Webhook send failed: {e}")
+    except Exception as e:  # pragma: no cover - network errors
+        logging.exception("webhook.send failed for channel %s", channel_id)
+        errors.append(f"Webhook send failed: {e}")
+
+    if sent is None:
         try:
             created = await channel.create_webhook(name="DemiCat Relay")
             webhook_url = created.url
@@ -429,7 +450,9 @@ async def save_message(
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
     if len(body.content) > 2000:
-        raise HTTPException(status_code=400, detail="message too long")
+        raise HTTPException(
+            status_code=400, detail="Message too long (max 2000 characters)."
+        )
     channel_id = int(body.channel_id)
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
