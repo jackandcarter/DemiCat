@@ -12,5 +12,6 @@ from .base import Base
 # are not re-exported but the import has the desired side effect of registering
 # all models with ``Base.metadata``.
 from . import models  # noqa: F401
+from models import event as _event  # noqa: F401
 
 __all__ = ["Base"]
