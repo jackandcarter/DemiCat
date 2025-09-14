@@ -85,6 +85,7 @@ class ChatConnectionManager:
         self._backfill_total = 0
         self._backfill_batches = 0
         self._ping_task: asyncio.Task | None = None
+        self._webhook_supervisor: asyncio.Task | None = None
 
     async def connect(self, websocket: WebSocket, ctx: RequestContext) -> None:
         await websocket.accept(
@@ -201,37 +202,94 @@ class ChatConnectionManager:
         queue.append(msg)
         if msg.channel_id not in self._webhook_tasks:
             self._webhook_tasks[msg.channel_id] = asyncio.create_task(
-                self._process_webhook_queue(msg.channel_id)
+                self._run_webhook_queue(msg.channel_id)
             )
+            self._ensure_webhook_supervisor()
+
+    async def _run_webhook_queue(self, channel_id: int) -> None:
+        try:
+            await self._process_webhook_queue(channel_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(
+                "chat.ws webhook task crashed channel=%s", channel_id
+            )
+            queue = self._webhook_queues.get(channel_id)
+            self._webhook_tasks.pop(channel_id, None)
+            if queue:
+                self._webhook_tasks[channel_id] = asyncio.create_task(
+                    self._run_webhook_queue(channel_id)
+                )
 
     async def _process_webhook_queue(self, channel_id: int) -> None:
         queue = self._webhook_queues.get(channel_id)
         while queue:
-            msg = queue[0]
-            success, retry_after = await self._send_webhook(msg)
-            if success:
-                queue.pop(0)
-                continue
-            msg.attempts += 1
-            if msg.attempts >= MAX_SEND_ATTEMPTS:
-                logger.error(
-                    "chat.ws webhook give up channel=%s attempts=%s",
-                    channel_id,
-                    msg.attempts,
+            try:
+                msg = queue[0]
+                success, retry_after = await self._send_webhook(msg)
+                if success:
+                    queue.pop(0)
+                    continue
+                msg.attempts += 1
+                if msg.attempts >= MAX_SEND_ATTEMPTS:
+                    logger.error(
+                        "chat.ws webhook give up channel=%s attempts=%s",
+                        channel_id,
+                        msg.attempts,
+                    )
+                    queue.pop(0)
+                    await emit_event(
+                        {
+                            "channel": str(channel_id),
+                            "op": "mf",
+                            "d": msg.payload,
+                        }
+                    )
+                    continue
+                delay = max(RETRY_BASE * (2 ** (msg.attempts - 1)), retry_after)
+                await asyncio.sleep(delay)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "chat.ws webhook queue error channel=%s", channel_id
                 )
-                queue.pop(0)
-                await emit_event(
-                    {
-                        "channel": str(channel_id),
-                        "op": "mf",
-                        "d": msg.payload,
-                    }
-                )
-                continue
-            delay = max(RETRY_BASE * (2 ** (msg.attempts - 1)), retry_after)
-            await asyncio.sleep(delay)
+                await asyncio.sleep(1.0)
         self._webhook_tasks.pop(channel_id, None)
         self._webhook_queues.pop(channel_id, None)
+
+    def _ensure_webhook_supervisor(self) -> None:
+        if self._webhook_supervisor is None or self._webhook_supervisor.done():
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return
+            self._webhook_supervisor = loop.create_task(
+                self._supervise_webhook_tasks()
+            )
+
+    async def _supervise_webhook_tasks(self) -> None:
+        try:
+            while self._webhook_tasks:
+                await asyncio.sleep(5)
+                for cid, task in list(self._webhook_tasks.items()):
+                    if task.done():
+                        exc = task.exception()
+                        if exc:
+                            logger.warning(
+                                "chat.ws webhook task failed channel=%s", cid
+                            )
+                        if self._webhook_queues.get(cid):
+                            self._webhook_tasks[cid] = asyncio.create_task(
+                                self._run_webhook_queue(cid)
+                            )
+                        else:
+                            self._webhook_tasks.pop(cid, None)
+        except asyncio.CancelledError:
+            pass
+        finally:
+            self._webhook_supervisor = None
 
     async def _send_webhook(self, msg: PendingWebhookMessage) -> tuple[bool, float]:
         webhook = discord.Webhook.from_url(msg.webhook_url, client=discord_client)
