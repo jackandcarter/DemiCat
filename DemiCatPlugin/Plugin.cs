@@ -36,6 +36,7 @@ public class Plugin : IDalamudPlugin
     private readonly Action _openConfigUi;
     private readonly TokenManager _tokenManager;
     private readonly Action<string?> _unlinkedHandler;
+    private bool _officerWatcherRunning;
 
     public Plugin()
     {
@@ -173,7 +174,17 @@ public class Plugin : IDalamudPlugin
             _chatWindow.StartNetworking();
 
         if (hasOfficerRole)
-            _officerChatWindow.StartNetworking();
+        {
+            if (!_officerWatcherRunning)
+            {
+                _officerChatWindow.StartNetworking();
+                _officerWatcherRunning = true;
+            }
+        }
+        else
+        {
+            _officerWatcherRunning = false;
+        }
 
         if (_config.Events)
         {
@@ -189,6 +200,7 @@ public class Plugin : IDalamudPlugin
         _channelWatcher.Stop();
         _chatWindow.StopNetworking();
         _officerChatWindow.StopNetworking();
+        _officerWatcherRunning = false;
         _ui.StopNetworking();
         _mainWindow.TemplatesWindow.StopNetworking();
     }
