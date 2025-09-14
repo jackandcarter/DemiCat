@@ -1,9 +1,9 @@
 using System;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
-using System.Numerics;
 using System.Net.Http;
 using DemiCat.UI;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -12,11 +12,14 @@ public class SignupOptionEditor
     private bool _open;
     private Template.TemplateButton _working = new();
     private Action<Template.TemplateButton>? _onSave;
-    private readonly EmojiPopup _emojiPopup;
+    private readonly EmojiService _emojiService;
+    private readonly EmojiPicker _emojiPicker;
 
     public SignupOptionEditor(Config config, HttpClient httpClient)
     {
-        _emojiPopup = new EmojiPopup(config, httpClient);
+        _emojiService = new EmojiService(httpClient, TokenManager.Instance!, config);
+        _emojiPicker = new EmojiPicker(_emojiService);
+        _ = _emojiService.RefreshAsync();
     }
 
     public void Open(Template.TemplateButton button, Action<Template.TemplateButton> onSave)
@@ -48,37 +51,24 @@ public class SignupOptionEditor
             var label = _working.Label;
             if (ImGui.InputText("Label", ref label, 64))
                 _working.Label = label;
-            var emoji = _working.Emoji;
-            if (ImGui.InputText("Emoji", ref emoji, 16))
-                _working.Emoji = emoji;
             ImGui.SameLine();
-            if (ImGui.Button("Pick"))
+            if (ImGui.Button("Pick Emoji")) ImGui.OpenPopup("##dc_btn_emoji");
+            if (ImGui.BeginPopup("##dc_btn_emoji"))
             {
-                _emojiPopup.Open(e => _working.Emoji = e);
+                string temp = _working.Emoji ?? string.Empty;
+                _emojiPicker.Draw(ref temp);
+                ImGui.Separator();
+                if (ImGui.Button("Use Above"))
+                {
+                    _working.Emoji = temp;
+                    ImGui.CloseCurrentPopup();
+                }
+                ImGui.EndPopup();
             }
-
             if (!string.IsNullOrWhiteSpace(_working.Emoji))
             {
-                if (_working.Emoji.StartsWith("custom:", StringComparison.OrdinalIgnoreCase))
-                {
-                    var id = _working.Emoji.Substring("custom:".Length);
-                    var ext = EmojiPopup.IsGuildEmojiAnimated(id) ? "gif" : "png"; // we won’t animate but PNG works for most
-                    var url = $"https://cdn.discordapp.com/emojis/{id}.{ext}";
-                    WebTextureCache.Get(url, tex =>
-                    {
-                        if (tex != null)
-                        {
-                            var wrap = tex.GetWrapOrEmpty();
-                            ImGui.Image(wrap.Handle, new Vector2(20, 20));
-                            ImGui.SameLine();
-                        }
-                    });
-                }
-                else
-                {
-                    ImGui.TextUnformatted(_working.Emoji);
-                    ImGui.SameLine();
-                }
+                ImGui.SameLine();
+                ImGui.TextUnformatted(_working.Emoji);
             }
             var max = _working.MaxSignups ?? 0;
             if (ImGui.InputInt("Max Signups", ref max))
@@ -104,8 +94,6 @@ public class SignupOptionEditor
                 }
                 ImGui.EndCombo();
             }
-            _emojiPopup.Draw();
-
             if (ImGui.Button("Save"))
             {
                 _onSave?.Invoke(new Template.TemplateButton
