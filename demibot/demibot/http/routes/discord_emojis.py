@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from ..deps import RequestContext, api_key_auth
-from ...ws.client import discord_client
+from ..discord_client import discord_client
 
 router = APIRouter(prefix="/api/discord", tags=["discord"])
 
