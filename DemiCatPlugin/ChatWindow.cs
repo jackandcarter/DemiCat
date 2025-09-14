@@ -547,13 +547,23 @@ public class ChatWindow : IDisposable
         }
 
         var inputBuf = MakeUtf8Buffer(_input, 2048);
+        ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 72f);
         var send = ImGui.InputText(
             "##chatInput",
             inputBuf,
             ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
             new ImGui.ImGuiInputTextCallbackDelegate(OnInputEdited)
         );
+        ImGui.PopItemWidth();
         _input = ReadUtf8Buffer(inputBuf);
+
+        ImGui.SameLine();
+        if (ImGui.Button("😊")) ImGui.OpenPopup("##dc_emoji_picker");
+        if (ImGui.BeginPopup("##dc_emoji_picker"))
+        {
+            _emojiPicker.Draw(selection => _input += selection);
+            ImGui.EndPopup();
+        }
 
         ImGui.SameLine();
         if (ImGui.Button("Send") || send)

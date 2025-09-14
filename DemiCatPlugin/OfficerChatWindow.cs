@@ -17,9 +17,6 @@ public class OfficerChatWindow : ChatWindow
 {
     private DateTime _lastRolesRefresh = DateTime.MinValue;
     private bool _subscribed;
-    private readonly Emoji.EmojiService _emojiService;
-    private readonly Emoji.EmojiPicker _emojiPicker;
-    private string _chatInput = string.Empty;
 
     public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection)
         : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.OfficerChat)
@@ -31,9 +28,6 @@ public class OfficerChatWindow : ChatWindow
                 TryRefreshRoles();
             }
         };
-        _emojiService = new Emoji.EmojiService(httpClient, tokenManager, config);
-        _emojiPicker = new Emoji.EmojiPicker(_emojiService);
-        _ = _emojiService.RefreshAsync();
     }
 
     public override void StartNetworking()
@@ -84,19 +78,6 @@ public class OfficerChatWindow : ChatWindow
         }
 
         base.Draw();
-
-        _chatInput = _input;
-        ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 36f);
-        ImGui.InputText("##chat_input", ref _chatInput, 2000);
-        ImGui.PopItemWidth();
-        ImGui.SameLine();
-        if (ImGui.Button("😊")) ImGui.OpenPopup("##dc_emoji_picker");
-        if (ImGui.BeginPopup("##dc_emoji_picker"))
-        {
-            _emojiPicker.Draw(ref _chatInput);
-            ImGui.EndPopup();
-        }
-        _input = _chatInput;
 
         // Reserved padded area beneath the standard chat input for upcoming officer tools.
         ImGui.Dummy(new Vector2(0, ImGui.GetFrameHeightWithSpacing()));
