@@ -47,7 +47,7 @@ public class EventCreateWindow
     private bool _channelFetchFailed;
     private string _channelErrorMessage = string.Empty;
     private int _selectedIndex;
-    private string _channelId = string.Empty;
+    private readonly ChannelSelectionService _channelSelection;
     private EmbedDto? _preview;
     private bool _confirmCreate;
 
@@ -57,14 +57,29 @@ public class EventCreateWindow
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public EventCreateWindow(Config config, HttpClient httpClient, ChannelService channelService)
+    public EventCreateWindow(Config config, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection)
     {
         _config = config;
         _httpClient = httpClient;
         _channelService = channelService;
-        _channelId = config.EventChannelId;
+        _channelSelection = channelSelection;
         _optionEditor = new SignupOptionEditor(config, httpClient);
         ResetDefaultButtons();
+        _channelSelection.ChannelChanged += HandleChannelChanged;
+    }
+
+    private string ChannelId => _channelSelection.GetChannel(ChannelKind.Event);
+
+    private void HandleChannelChanged(string kind, string oldId, string newId)
+    {
+        if (kind != ChannelKind.Event) return;
+        PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            if (_channels.Count > 0)
+            {
+                _selectedIndex = _channels.FindIndex(c => c.Id == newId);
+            }
+        });
     }
 
     public void StartNetworking()
@@ -104,9 +119,8 @@ public class EventCreateWindow
             var channelNames = _channels.Select(c => c.Name).ToArray();
             if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
-                _channelId = _channels[_selectedIndex].Id;
-                _config.EventChannelId = _channelId;
-                SaveConfig();
+                var newId = _channels[_selectedIndex].Id;
+                _channelSelection.SetChannel(ChannelKind.Event, newId);
             }
         }
         else
@@ -308,7 +322,7 @@ public class EventCreateWindow
         var openConfirm = _confirmCreate;
         if (_confirmCreate && ImGui.BeginPopupModal("Confirm Event Create", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
         {
-            var channelName = _channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? _channelId;
+            var channelName = _channels.FirstOrDefault(c => c.Id == ChannelId)?.Name ?? ChannelId;
             ImGui.TextUnformatted($"Channel: {channelName}");
             var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
             ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
@@ -479,7 +493,7 @@ public class EventCreateWindow
             var buttons = dto.Buttons ?? new List<EmbedButtonDto>();
             var payload = new
             {
-                channelId = _channelId,
+                channelId = ChannelId,
                 title = dto.Title,
                 time = _time,
                 description = dto.Description,
@@ -523,9 +537,10 @@ public class EventCreateWindow
 
     private async Task CreateEvent()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId))
+        var channelId = ChannelId;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(channelId))
         {
-            if (string.IsNullOrWhiteSpace(_channelId))
+            if (string.IsNullOrWhiteSpace(channelId))
             {
                 _lastResult = "No channel selected";
             }
@@ -542,7 +557,7 @@ public class EventCreateWindow
             var buttons = dto.Buttons ?? new List<EmbedButtonDto>();
             var body = new
             {
-                channelId = _channelId,
+                channelId,
                 title = dto.Title,
                 time = dto.Timestamp?.ToString("O") ?? _time,
                 description = dto.Description,
@@ -678,14 +693,15 @@ public class EventCreateWindow
             {
                 _channels.Clear();
                 _channels.AddRange(dto);
-                if (!string.IsNullOrEmpty(_channelId))
+                var current = ChannelId;
+                if (!string.IsNullOrEmpty(current))
                 {
-                    _selectedIndex = _channels.FindIndex(c => c.Id == _channelId);
+                    _selectedIndex = _channels.FindIndex(c => c.Id == current);
                     if (_selectedIndex < 0) _selectedIndex = 0;
                 }
                 if (_channels.Count > 0)
                 {
-                    _channelId = _channels[_selectedIndex].Id;
+                    _channelSelection.SetChannel(ChannelKind.Event, _channels[_selectedIndex].Id);
                 }
                 _channelsLoaded = true;
                 _channelFetchFailed = false;

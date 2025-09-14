@@ -22,7 +22,8 @@ public class EventButtonWidthTests
         var config = new Config();
         var http = new HttpClient(new StubHandler());
         var channelService = new ChannelService(config, http, new TokenManager());
-        var window = new EventCreateWindow(config, http, channelService);
+        var selection = new ChannelSelectionService(config);
+        var window = new EventCreateWindow(config, http, channelService, selection);
         var buttonsField = typeof(EventCreateWindow).GetField("_buttons", BindingFlags.NonPublic | BindingFlags.Instance)!;
         buttonsField.SetValue(window, new List<Template.TemplateButton>
         {

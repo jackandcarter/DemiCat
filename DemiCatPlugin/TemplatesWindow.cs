@@ -30,7 +30,7 @@ public class TemplatesWindow
     private bool _channelFetchFailed;
     private string _channelErrorMessage = string.Empty;
     private int _channelIndex;
-    private string _channelId = string.Empty;
+    private readonly ChannelSelectionService _channelSelection;
     private bool _confirmPost;
     private Template? _pendingTemplate;
     private readonly List<RoleDto> _roles = new();
@@ -45,17 +45,32 @@ public class TemplatesWindow
     private readonly ChatBridge? _bridge;
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
-    public TemplatesWindow(Config config, HttpClient httpClient)
+    public TemplatesWindow(Config config, HttpClient httpClient, ChannelSelectionService channelSelection)
     {
         _config = config;
         _httpClient = httpClient;
-        _channelId = config.EventChannelId;
+        _channelSelection = channelSelection;
         var token = TokenManager.Instance;
         if (token != null)
         {
             _bridge = new ChatBridge(config, httpClient, token, BuildWebSocketUri);
             _bridge.TemplatesUpdated += () => _ = LoadTemplates();
         }
+        _channelSelection.ChannelChanged += HandleChannelChanged;
+    }
+
+    private string ChannelId => _channelSelection.GetChannel(ChannelKind.Event);
+
+    private void HandleChannelChanged(string kind, string oldId, string newId)
+    {
+        if (kind != ChannelKind.Event) return;
+        PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            if (_channels.Count > 0)
+            {
+                _channelIndex = _channels.FindIndex(c => c.Id == newId);
+            }
+        });
     }
 
     public void StartNetworking()
@@ -101,9 +116,8 @@ public class TemplatesWindow
             var channelNames = _channels.Select(c => c.Name).ToArray();
             if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
             {
-                _channelId = _channels[_channelIndex].Id;
-                _config.EventChannelId = _channelId;
-                SaveConfig();
+                var newId = _channels[_channelIndex].Id;
+                _channelSelection.SetChannel(ChannelKind.Event, newId);
             }
         }
         else
@@ -175,12 +189,12 @@ public class TemplatesWindow
             var openConfirm = _confirmPost;
             if (_confirmPost && ImGui.BeginPopupModal("Confirm Template Post", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
             {
-                var channelName = _channels.FirstOrDefault(c => c.Id == _channelId)?.Name ?? _channelId;
+            var channelName = _channels.FirstOrDefault(c => c.Id == ChannelId)?.Name ?? ChannelId;
                 ImGui.TextUnformatted($"Channel: {channelName}");
                 var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
                 ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
                 var buttonsCount = _buttonRows.FlattenNonEmpty().Count();
-                bool canConfirm = !string.IsNullOrWhiteSpace(_channelId)
+                bool canConfirm = !string.IsNullOrWhiteSpace(ChannelId)
                     && DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl)
                     && DiscordValidation.IsImageUrlAllowed(tmpl.ThumbnailUrl)
                     && buttonsCount > 0;
@@ -410,14 +424,15 @@ public class TemplatesWindow
     {
         _channels.Clear();
         _channels.AddRange(channels);
-        if (!string.IsNullOrEmpty(_channelId))
+        var current = ChannelId;
+        if (!string.IsNullOrEmpty(current))
         {
-            _channelIndex = _channels.FindIndex(c => c.Id == _channelId);
+            _channelIndex = _channels.FindIndex(c => c.Id == current);
             if (_channelIndex < 0) _channelIndex = 0;
         }
         if (_channels.Count > 0)
         {
-            _channelId = _channels[_channelIndex].Id;
+            _channelSelection.SetChannel(ChannelKind.Event, _channels[_channelIndex].Id);
         }
     }
 
@@ -536,9 +551,10 @@ public class TemplatesWindow
 
     private async Task PostTemplate(Template tmpl)
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(_channelId))
+        var channelId = ChannelId;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(channelId))
         {
-            if (string.IsNullOrWhiteSpace(_channelId))
+            if (string.IsNullOrWhiteSpace(channelId))
             {
                 _lastResult = "No channel selected";
             }
@@ -549,7 +565,7 @@ public class TemplatesWindow
             var buttonsFlat = BuildButtonsPayload(tmpl);
             var body = new
             {
-                channelId = _channelId,
+                channelId,
                 time = string.IsNullOrWhiteSpace(tmpl.Time) ? null : tmpl.Time,
                 buttons = buttonsFlat.Count > 0 ? buttonsFlat : null,
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null

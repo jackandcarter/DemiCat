@@ -24,7 +24,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private readonly Dictionary<string, EventView> _embeds = new();
     private readonly object _embedLock = new();
     private readonly List<EmbedDto> _embedDtos = new();
-    private string _channelId;
+    private readonly ChannelSelectionService _channelSelection;
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _pollCts;
     private readonly List<ChannelDto> _channels = new();
@@ -44,17 +44,26 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private bool _presenceLoadAttempted;
     private static readonly Regex MentionRegex = new("<@!?([0-9]+)>", RegexOptions.Compiled);
 
-    public UiRenderer(Config config, HttpClient httpClient)
+    public UiRenderer(Config config, HttpClient httpClient, ChannelSelectionService channelSelection)
     {
         _config = config;
         _httpClient = httpClient;
-        _channelId = config.EventChannelId;
+        _channelSelection = channelSelection;
+        _channelSelection.ChannelChanged += HandleChannelChanged;
     }
 
-    public string ChannelId
+    private string ChannelId => _channelSelection.GetChannel(ChannelKind.Event);
+
+    private void HandleChannelChanged(string kind, string oldId, string newId)
     {
-        get => _channelId;
-        set => _channelId = value;
+        if (kind != ChannelKind.Event) return;
+        PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            if (_channels.Count > 0)
+            {
+                _selectedIndex = _channels.FindIndex(c => c.Id == newId);
+            }
+        });
     }
 
     private void StartPolling()
@@ -227,9 +236,10 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         try
         {
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds";
-            if (!string.IsNullOrEmpty(_channelId))
+            var channelId = ChannelId;
+            if (!string.IsNullOrEmpty(channelId))
             {
-                url += $"?channel_id={_channelId}";
+                url += $"?channel_id={channelId}";
             }
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
@@ -379,8 +389,9 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                         var embed = document.RootElement.Deserialize<EmbedDto>(JsonOpts);
                         if (embed != null)
                         {
-                            if (string.IsNullOrEmpty(_channelId) ||
-                                embed.ChannelId?.ToString() == _channelId)
+                            var channelId = ChannelId;
+                            if (string.IsNullOrEmpty(channelId) ||
+                                embed.ChannelId?.ToString() == channelId)
                             {
                                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                                 {
@@ -452,9 +463,10 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         try
         {
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/embeds";
-            if (!string.IsNullOrEmpty(_channelId))
+            var channelId = ChannelId;
+            if (!string.IsNullOrEmpty(channelId))
             {
-                url += $"?channel_id={_channelId}";
+                url += $"?channel_id={channelId}";
             }
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
@@ -503,9 +515,8 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             var channelNames = _channels.Select(c => c.Name).ToArray();
             if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
-                _channelId = _channels[_selectedIndex].Id;
-                _config.EventChannelId = _channelId;
-                SaveConfig();
+                var newId = _channels[_selectedIndex].Id;
+                _channelSelection.SetChannel(ChannelKind.Event, newId);
                 _ = RefreshChannels();
                 _ = RefreshEmbeds();
             }
@@ -516,10 +527,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
 
         List<EventView> embeds;
+        var channelId = ChannelId;
         lock (_embedLock)
         {
             embeds = _embeds.Values
-                .Where(v => string.IsNullOrEmpty(_channelId) || v.ChannelId == _channelId)
+                .Where(v => string.IsNullOrEmpty(channelId) || v.ChannelId == channelId)
                 .ToList();
         }
 
@@ -602,14 +614,15 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             {
                 _channels.Clear();
                 _channels.AddRange(dto.Event);
-                if (!string.IsNullOrEmpty(_channelId))
+                var current = ChannelId;
+                if (!string.IsNullOrEmpty(current))
                 {
-                    _selectedIndex = _channels.FindIndex(c => c.Id == _channelId);
+                    _selectedIndex = _channels.FindIndex(c => c.Id == current);
                     if (_selectedIndex < 0) _selectedIndex = 0;
                 }
                 if (_channels.Count > 0)
                 {
-                    _channelId = _channels[_selectedIndex].Id;
+                    _channelSelection.SetChannel(ChannelKind.Event, _channels[_selectedIndex].Id);
                 }
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
@@ -682,6 +695,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public void Dispose()
     {
+        _channelSelection.ChannelChanged -= HandleChannelChanged;
         DisposeAsync().GetAwaiter().GetResult();
     }
 }

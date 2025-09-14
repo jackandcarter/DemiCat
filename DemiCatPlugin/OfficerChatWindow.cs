@@ -21,10 +21,9 @@ public class OfficerChatWindow : ChatWindow
     private readonly Emoji.EmojiPicker _emojiPicker;
     private string _chatInput = string.Empty;
 
-    public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
-        : base(config, httpClient, presence, tokenManager, channelService)
+    public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection)
+        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.OfficerChat)
     {
-        _channelId = config.OfficerChannelId;
         _bridge.StatusChanged += s =>
         {
             if (s.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
@@ -84,7 +83,6 @@ public class OfficerChatWindow : ChatWindow
             Subscribe();
         }
 
-        var originalChatChannel = _config.ChatChannelId;
         base.Draw();
 
         _chatInput = _input;
@@ -102,13 +100,6 @@ public class OfficerChatWindow : ChatWindow
 
         // Reserved padded area beneath the standard chat input for upcoming officer tools.
         ImGui.Dummy(new Vector2(0, ImGui.GetFrameHeightWithSpacing()));
-
-        if (_config.ChatChannelId != originalChatChannel || _config.OfficerChannelId != _channelId)
-        {
-            _config.ChatChannelId = originalChatChannel;
-            _config.OfficerChannelId = _channelId;
-            SaveConfig();
-        }
     }
 
     protected override string MessagesPath => "/api/officer-messages";
@@ -117,12 +108,13 @@ public class OfficerChatWindow : ChatWindow
     {
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}";
         var form = new MultipartFormDataContent();
-        form.Add(new StringContent(_channelId), "channelId");
+        var channelId = CurrentChannelId;
+        form.Add(new StringContent(channelId), "channelId");
         form.Add(new StringContent(content), "content");
         form.Add(new StringContent(_useCharacterName ? "true" : "false"), "useCharacterName");
         if (!string.IsNullOrEmpty(_replyToId))
         {
-            var refJson = JsonSerializer.Serialize(new { messageId = _replyToId, channelId = _channelId });
+            var refJson = JsonSerializer.Serialize(new { messageId = _replyToId, channelId });
             form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
         }
         foreach (var path in _attachments)
@@ -265,8 +257,9 @@ public class OfficerChatWindow : ChatWindow
 
     private void Subscribe()
     {
-        _bridge.Unsubscribe(_channelId);
-        _bridge.Subscribe(_channelId);
+        var chan = CurrentChannelId;
+        _bridge.Unsubscribe(chan);
+        _bridge.Subscribe(chan);
         _presence?.Reset();
         _ = RefreshMessages();
         _subscribed = true;

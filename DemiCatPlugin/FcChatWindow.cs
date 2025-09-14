@@ -14,10 +14,9 @@ public class FcChatWindow : ChatWindow
     private readonly Emoji.EmojiPicker _emojiPicker;
     private string _chatInput = string.Empty;
 
-    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
-        : base(config, httpClient, presence, tokenManager, channelService)
+    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection)
+        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.FcChat)
     {
-        _channelId = config.FcChannelId;
         if (presence != null)
         {
             _presenceSidebar = new PresenceSidebar(presence) { TextureLoader = LoadTexture };
@@ -50,8 +49,6 @@ public class FcChatWindow : ChatWindow
             return;
         }
 
-        var originalChatChannel = _config.ChatChannelId;
-
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
         if (_presenceSidebar != null)
@@ -76,17 +73,6 @@ public class FcChatWindow : ChatWindow
             ImGui.EndPopup();
         }
         _input = _chatInput;
-
-        if (_config.ChatChannelId != originalChatChannel || _config.FcChannelId != _channelId)
-        {
-            _config.ChatChannelId = originalChatChannel;
-            _config.FcChannelId = _channelId;
-            SaveConfig();
-        }
-        else
-        {
-            _config.ChatChannelId = originalChatChannel;
-        }
     }
 
     public override Task RefreshMessages()

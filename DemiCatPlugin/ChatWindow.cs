@@ -31,7 +31,6 @@ public class ChatWindow : IDisposable
     protected bool _channelsLoaded;
     protected bool _channelFetchFailed;
     protected string _channelErrorMessage = string.Empty;
-    protected string _channelId;
     protected string _input = string.Empty;
     protected bool _useCharacterName;
     protected string _statusMessage = string.Empty;
@@ -52,6 +51,8 @@ public class ChatWindow : IDisposable
     private bool _emojiCatalogLoaded;
     private bool _emojiFetchInProgress;
     protected readonly ChatBridge _bridge;
+    private readonly ChannelSelectionService _channelSelection;
+    private readonly string _channelKind;
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true
@@ -63,6 +64,8 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, TypingUser> _typingUsers = new();
     private int _selectionStart;
     private int _selectionEnd;
+
+    protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind);
 
     private class TextureCacheEntry
     {
@@ -99,15 +102,16 @@ public class ChatWindow : IDisposable
 
     protected virtual string MessagesPath => "/api/messages";
 
-    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
+    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, string channelKind)
     {
         _config = config;
         _httpClient = httpClient;
         _presence = presence;
         _tokenManager = tokenManager;
         _channelService = channelService;
+        _channelSelection = channelSelection;
+        _channelKind = channelKind;
         _emojiPicker = new EmojiPicker(config, httpClient) { TextureLoader = LoadTexture };
-        _channelId = config.ChatChannelId;
         _useCharacterName = config.UseCharacterName;
         _bridge = new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri);
         _bridge.MessageReceived += HandleBridgeMessage;
@@ -118,8 +122,10 @@ public class ChatWindow : IDisposable
         _bridge.ResyncRequested += (ch, cur) =>
             PluginServices.Instance!.Framework.RunOnTick(async () =>
             {
-                if (ch == _channelId) await RefreshMessages();
+                if (ch == CurrentChannelId) await RefreshMessages();
             });
+
+        _channelSelection.ChannelChanged += HandleChannelSelectionChanged;
 
         EnsureEmojiCatalog();
     }
@@ -127,8 +133,12 @@ public class ChatWindow : IDisposable
     public virtual void StartNetworking()
     {
         _bridge.Start();
-        _bridge.Unsubscribe(_channelId);
-        _bridge.Subscribe(_channelId);
+        var chan = CurrentChannelId;
+        if (!string.IsNullOrEmpty(chan))
+        {
+            _bridge.Unsubscribe(chan);
+            _bridge.Subscribe(chan);
+        }
         _presence?.Reset();
     }
 
@@ -164,6 +174,19 @@ public class ChatWindow : IDisposable
         return Encoding.UTF8.GetString(buf, 0, len);
     }
 
+    private void HandleChannelSelectionChanged(string kind, string oldId, string newId)
+    {
+        if (kind != _channelKind) return;
+        PluginServices.Instance!.Framework.RunOnTick(async () =>
+        {
+            if (!string.IsNullOrEmpty(oldId))
+                _bridge.Unsubscribe(oldId);
+            if (!string.IsNullOrEmpty(newId))
+                _bridge.Subscribe(newId);
+            await RefreshMessages();
+        });
+    }
+
     public virtual void Draw()
     {
         _fileDialog.Draw();
@@ -190,14 +213,9 @@ public class ChatWindow : IDisposable
             var channelNames = _channels.Select(c => c.Name).ToArray();
             if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
-                var oldChannel = _channelId;
-                _channelId = _channels[_selectedIndex].Id;
-                _config.ChatChannelId = _channelId;
+                var newId = _channels[_selectedIndex].Id;
                 ClearTextureCache();
-                SaveConfig();
-                _bridge.Unsubscribe(oldChannel);
-                _bridge.Subscribe(_channelId);
-                _ = RefreshMessages();
+                _channelSelection.SetChannel(_channelKind, newId);
             }
         }
         else
@@ -412,7 +430,7 @@ public class ChatWindow : IDisposable
         }
         clipper.End();
         ImGui.EndChild();
-        _bridge.Ack(_channelId);
+        _bridge.Ack(CurrentChannelId);
         SaveConfig();
 
         if (_replyToId != null)
@@ -559,15 +577,16 @@ public class ChatWindow : IDisposable
     {
         _channels.Clear();
         _channels.AddRange(channels);
-        if (!string.IsNullOrEmpty(_channelId))
+        var current = CurrentChannelId;
+        if (!string.IsNullOrEmpty(current))
         {
-            _selectedIndex = _channels.FindIndex(c => c.Id == _channelId);
+            _selectedIndex = _channels.FindIndex(c => c.Id == current);
             if (_selectedIndex < 0) _selectedIndex = 0;
         }
         if (_channels.Count > 0)
         {
-            _channelId = _channels[_selectedIndex].Id;
-            _ = RefreshMessages();
+            var newId = _channels[_selectedIndex].Id;
+            _channelSelection.SetChannel(_channelKind, newId);
         }
     }
 
@@ -827,7 +846,8 @@ public class ChatWindow : IDisposable
             _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Invalid API URL");
             return;
         }
-        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(_input))
+        var channelId = CurrentChannelId;
+        if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(_input))
         {
             return;
         }
@@ -876,11 +896,11 @@ public class ChatWindow : IDisposable
             {
                 var body = new
                 {
-                    channelId = _channelId,
+                    channelId = channelId,
                     content,
                     useCharacterName = _useCharacterName,
                     messageReference = _replyToId != null
-                        ? new { messageId = _replyToId, channelId = _channelId }
+                        ? new { messageId = _replyToId, channelId = channelId }
                         : null
                 };
                 request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}");
@@ -916,7 +936,7 @@ public class ChatWindow : IDisposable
                 var optimistic = new DiscordMessageDto
                 {
                     Id = id ?? Guid.NewGuid().ToString(),
-                    ChannelId = _channelId,
+                    ChannelId = channelId,
                     Content = text,
                     Author = new DiscordUserDto { Name = "You" },
                     Timestamp = DateTime.UtcNow
@@ -996,7 +1016,8 @@ public class ChatWindow : IDisposable
 
     protected virtual async Task<HttpRequestMessage> BuildMultipartRequest(string content)
     {
-        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{_channelId}/messages";
+        var channelId = CurrentChannelId;
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages";
         var form = new MultipartFormDataContent();
         form.Add(new StringContent(content), "content");
         form.Add(new StringContent(_useCharacterName ? "true" : "false"), "useCharacterName");
@@ -1032,7 +1053,8 @@ public class ChatWindow : IDisposable
             PluginServices.Instance!.Log.Warning("Cannot react: API base URL is not configured.");
             return;
         }
-        if (string.IsNullOrWhiteSpace(_channelId) || string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(emoji))
+        var channelId = CurrentChannelId;
+        if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(emoji))
         {
             return;
         }
@@ -1040,7 +1062,7 @@ public class ChatWindow : IDisposable
         try
         {
             var method = remove ? HttpMethod.Delete : HttpMethod.Put;
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{_channelId}/messages/{messageId}/reactions/{Uri.EscapeDataString(emoji)}";
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages/{messageId}/reactions/{Uri.EscapeDataString(emoji)}";
             var request = new HttpRequestMessage(method, url);
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
@@ -1153,7 +1175,8 @@ public class ChatWindow : IDisposable
 
     public virtual async Task RefreshMessages()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(_channelId))
+        var channelId = CurrentChannelId;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(channelId))
         {
             return;
         }
@@ -1163,11 +1186,11 @@ public class ChatWindow : IDisposable
             const int PageSize = 50;
             var all = new List<DiscordMessageDto>();
             string? before = null;
-            var hasCursor = _config.ChatCursors.TryGetValue(_channelId, out var since);
+            var hasCursor = _config.ChatCursors.TryGetValue(channelId, out var since);
             var after = hasCursor ? since.ToString() : null;
             while (all.Count < MaxMessages)
             {
-                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{_channelId}?limit={PageSize}";
+                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{channelId}?limit={PageSize}";
                 if (before != null)
                 {
                     url += $"&before={before}";
@@ -1243,7 +1266,7 @@ public class ChatWindow : IDisposable
         }
         if (_messages.Count > 0 && long.TryParse(_messages[^1].Id, out var last))
         {
-            _config.ChatCursors[_channelId] = last;
+            _config.ChatCursors[channelId] = last;
         }
     }
 
@@ -1290,6 +1313,7 @@ public class ChatWindow : IDisposable
     public void Dispose()
     {
         StopNetworking();
+        _channelSelection.ChannelChanged -= HandleChannelSelectionChanged;
         _bridge.Dispose();
         ClearTextureCache();
     }
@@ -1394,9 +1418,10 @@ public class ChatWindow : IDisposable
                 var msg = document.RootElement.Deserialize<DiscordMessageDto>(JsonOpts);
                 if (msg != null)
                 {
+                    var current = CurrentChannelId;
                     _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                     {
-                        if (msg.ChannelId == _channelId)
+                        if (msg.ChannelId == current)
                         {
                             var index = _messages.FindIndex(m => m.Id == msg.Id);
                             if (index >= 0)
@@ -1432,8 +1457,9 @@ public class ChatWindow : IDisposable
     {
         _presence?.Reload();
         _ = _presence?.Refresh();
-        _bridge.Unsubscribe(_channelId);
-        _bridge.Subscribe(_channelId);
+        var chan = CurrentChannelId;
+        _bridge.Unsubscribe(chan);
+        _bridge.Subscribe(chan);
     }
 
     private void HandleBridgeUnlinked()
