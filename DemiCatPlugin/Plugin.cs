@@ -146,7 +146,11 @@ public class Plugin : IDalamudPlugin
         _httpClient.Dispose();
     }
 
-    private void StartWatchers() => _ = StartWatchersAsync();
+    private void StartWatchers()
+    {
+        _services.Log.Info("Starting watchers");
+        _ = StartWatchersAsync();
+    }
 
     private async Task StartWatchersAsync()
     {
@@ -164,19 +168,29 @@ public class Plugin : IDalamudPlugin
         }
 
         if (_config.Requests)
+        {
+            _services.Log.Info("Starting request watcher");
             _requestWatcher.Start();
+        }
 
         var hasOfficerRole = _config.Roles.Contains("officer");
         if (_config.Events || _config.SyncedChat || hasOfficerRole)
+        {
+            _services.Log.Info("Starting channel watcher");
             _ = _channelWatcher.Start();
+        }
 
         if (_config.SyncedChat && _config.EnableFcChat)
+        {
+            _services.Log.Info("Starting chat window networking");
             _chatWindow.StartNetworking();
+        }
 
         if (hasOfficerRole)
         {
             if (!_officerWatcherRunning)
             {
+                _services.Log.Info("Starting officer chat window networking");
                 _officerChatWindow.StartNetworking();
                 _officerWatcherRunning = true;
             }
@@ -188,14 +202,18 @@ public class Plugin : IDalamudPlugin
 
         if (_config.Events)
         {
+            _services.Log.Info("Starting event watchers");
             _ = _ui.StartNetworking();
             _mainWindow.EventCreateWindow.StartNetworking();
             _mainWindow.TemplatesWindow.StartNetworking();
         }
+
+        _services.Log.Info("Watchers started");
     }
 
     private void StopWatchers()
     {
+        _services.Log.Info("Stopping watchers");
         _requestWatcher.Stop();
         _channelWatcher.Stop();
         _chatWindow.StopNetworking();
@@ -203,6 +221,7 @@ public class Plugin : IDalamudPlugin
         _officerWatcherRunning = false;
         _ui.StopNetworking();
         _mainWindow.TemplatesWindow.StopNetworking();
+        _services.Log.Info("Watchers stopped");
     }
 
     private async Task<bool> RefreshRoles(IPluginLog log)
@@ -295,6 +314,11 @@ public class Plugin : IDalamudPlugin
                 _services.PluginInterface.SavePluginConfig(_config);
                 StopWatchers();
                 StartWatchers();
+                if (_config.Requests)
+                {
+                    _services.Log.Info("Restarting request watcher");
+                    _requestWatcher.Start();
+                }
             });
 
             await RoleCache.Refresh(_httpClient, _config);
