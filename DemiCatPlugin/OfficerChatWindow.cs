@@ -265,6 +265,7 @@ public class OfficerChatWindow : ChatWindow
 
     private void Subscribe()
     {
+        _bridge.Unsubscribe(_channelId);
         _bridge.Subscribe(_channelId);
         _presence?.Reset();
         _ = RefreshMessages();

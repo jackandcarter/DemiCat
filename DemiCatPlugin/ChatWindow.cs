@@ -127,6 +127,7 @@ public class ChatWindow : IDisposable
     public virtual void StartNetworking()
     {
         _bridge.Start();
+        _bridge.Unsubscribe(_channelId);
         _bridge.Subscribe(_channelId);
         _presence?.Reset();
     }
@@ -189,10 +190,12 @@ public class ChatWindow : IDisposable
             var channelNames = _channels.Select(c => c.Name).ToArray();
             if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
+                var oldChannel = _channelId;
                 _channelId = _channels[_selectedIndex].Id;
                 _config.ChatChannelId = _channelId;
                 ClearTextureCache();
                 SaveConfig();
+                _bridge.Unsubscribe(oldChannel);
                 _bridge.Subscribe(_channelId);
                 _ = RefreshMessages();
             }
@@ -1429,6 +1432,7 @@ public class ChatWindow : IDisposable
     {
         _presence?.Reload();
         _ = _presence?.Refresh();
+        _bridge.Unsubscribe(_channelId);
         _bridge.Subscribe(_channelId);
     }
 

@@ -80,6 +80,16 @@ public class ChatBridge : IDisposable
         _ = SendSubscriptions();
     }
 
+    public void Unsubscribe(string channel)
+    {
+        if (string.IsNullOrEmpty(channel)) return;
+        if (_subs.Remove(channel))
+        {
+            PluginServices.Instance?.Log.Info($"chat.ws unsubscribe channel={channel}");
+            _ = SendSubscriptions();
+        }
+    }
+
     public void Ack(string channel)
     {
         _ = AckAsync(channel);
