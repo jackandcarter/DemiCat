@@ -222,7 +222,7 @@ def extract_embed_buttons(message: discord.Message) -> List[EmbedButtonDto]:
                         row_index=row_index,
                     )
                 )
-    except Exception:
+    except (AttributeError, TypeError):
         logging.exception(
             "Button extraction failed for channel %s message %s",
             getattr(getattr(message, "channel", None), "id", None),
@@ -267,7 +267,7 @@ def serialize_message(
         for emb in message.embeds:
             try:
                 embeds_list.append(embed_to_dto(message, emb, buttons or None))
-            except Exception:
+            except (AttributeError, TypeError):
                 continue
         embeds = embeds_list or None
         if embeds:
@@ -289,7 +289,7 @@ def serialize_message(
     if getattr(message, "components", None):
         try:
             components = components_to_dtos(message)
-        except Exception:
+        except (AttributeError, TypeError):
             components = None
         if components:
             components_json = json.dumps(
