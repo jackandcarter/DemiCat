@@ -189,15 +189,17 @@ public class MainWindow : IDisposable
 
             if (_chat != null)
             {
+                var chatLabel = _chat is FcChatWindow ? "FC Chat" : "Chat";
+                var chatTooltip = _chat is FcChatWindow ? "Link DemiCat to use FC chat." : "Link DemiCat to use chat.";
                 if (!linked)
                 {
                     ImGui.BeginDisabled();
-                    ImGui.TabItemButton("Chat");
+                    ImGui.TabItemButton(chatLabel);
                     ImGui.EndDisabled();
                     if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                        ImGui.SetTooltip("Link DemiCat to use chat.");
+                        ImGui.SetTooltip(chatTooltip);
                 }
-                else if (ImGui.BeginTabItem("Chat"))
+                else if (ImGui.BeginTabItem(chatLabel))
                 {
                     ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
                     _chat.Draw();
