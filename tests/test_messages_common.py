@@ -815,6 +815,39 @@ def test_save_message_webhook_failure(monkeypatch):
     asyncio.run(_run())
 
 
+def test_webhook_errors_returned(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=5, discord_guild_id=5, name="Guild"))
+            db.add(User(id=5, discord_user_id=50, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 5)
+            user = await db.get(User, 5)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def dummy_broadcast(message: str, guild_id: int, officer_only: bool = False, path: str | None = None):
+                return None
+
+            async def dummy_webhook(*args, **kwargs):
+                return 123, [], ["Webhook init failed"]
+
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+            monkeypatch.setattr(mc, "_send_via_webhook", dummy_webhook)
+            monkeypatch.setattr(mc, "discord_client", None)
+
+            body = mc.PostBody(channelId="123", content="hello")
+            res = await mc.save_message(body, ctx, db, is_officer=False)
+            assert res["ok"] is True
+            assert res.get("detail", {}).get("discord") == ["Webhook init failed"]
+
+    asyncio.run(_run())
+
+
 def test_webhook_cache_persist_and_load(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
