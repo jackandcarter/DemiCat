@@ -39,7 +39,7 @@ public class MainWindow : IDisposable
         _httpClient = httpClient;
         _refreshRoles = refreshRoles;
         _create = new EventCreateWindow(config, httpClient, channelService, channelSelection);
-        _templates = new TemplatesWindow(config, httpClient, channelSelection);
+        _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection);
         _requestBoard = new RequestBoardWindow(config, httpClient);
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
