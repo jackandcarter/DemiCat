@@ -103,8 +103,9 @@ def test_officer_path_requires_role(monkeypatch):
             finally:
                 await session.close()
 
-        async def fake_api_key_auth(x_api_key, x_discord_id, db):
+        async def fake_api_key_auth(request, x_api_key, x_discord_id, db):
             assert x_discord_id is None
+            assert request.method == "WS"
             return ctx
 
         connected = False

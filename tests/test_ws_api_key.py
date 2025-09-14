@@ -52,8 +52,9 @@ def test_websocket_auth_success(monkeypatch):
         finally:
             await session.close()
 
-    async def fake_api_key_auth(x_api_key, x_discord_id, db):
+    async def fake_api_key_auth(request, x_api_key, x_discord_id, db):
         assert x_discord_id is None
+        assert request.method == "WS"
         return ctx
 
     connected = False
@@ -85,8 +86,9 @@ def test_websocket_auth_failure(monkeypatch):
         finally:
             await session.close()
 
-    async def fake_api_key_auth(x_api_key, x_discord_id, db):
+    async def fake_api_key_auth(request, x_api_key, x_discord_id, db):
         assert x_discord_id is None
+        assert request.method == "WS"
         raise HTTPException(status_code=401, detail="bad token")
 
     monkeypatch.setattr(ws_module, "get_session", fake_get_session)
