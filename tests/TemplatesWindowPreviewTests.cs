@@ -33,7 +33,9 @@ public class TemplatesWindowPreviewTests
     {
         var config = new Config();
         var http = new HttpClient(new StubHandler());
-        var window = new TemplatesWindow(config, http);
+        var channelService = new ChannelService(config, http, new TokenManager());
+        var selection = new ChannelSelectionService(config);
+        var window = new TemplatesWindow(config, http, channelService, selection);
 
         var firstTmpl = new Template { Name = "One", Title = "T1", Description = "D1" };
         window.SelectTemplate(0, firstTmpl);

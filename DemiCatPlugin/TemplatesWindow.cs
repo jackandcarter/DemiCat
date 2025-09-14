@@ -1,10 +1,8 @@
 using System;
-using System.Net;
 using System.Net.Http;
-using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
@@ -19,6 +17,7 @@ public class TemplatesWindow
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
+    private readonly ChannelService _channelService;
     private readonly List<TemplateItem> _templates = new();
     private bool _templatesLoaded;
     private int _selectedIndex = -1;
@@ -45,10 +44,11 @@ public class TemplatesWindow
     private readonly ChatBridge? _bridge;
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
-    public TemplatesWindow(Config config, HttpClient httpClient, ChannelSelectionService channelSelection)
+    public TemplatesWindow(Config config, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection)
     {
         _config = config;
         _httpClient = httpClient;
+        _channelService = channelService;
         _channelSelection = channelSelection;
         var token = TokenManager.Instance;
         if (token != null)
@@ -330,87 +330,22 @@ public class TemplatesWindow
             _channelsLoaded = true;
             return;
         }
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                _channelFetchFailed = true;
-                _channelErrorMessage = "Invalid API URL";
-                _channelsLoaded = true;
-            });
-            return;
-        }
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
-            if (response == null)
-            {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    _channelFetchFailed = true;
-                    _channelErrorMessage = "Failed to load channels";
-                    _channelsLoaded = true;
-                });
-                return;
-            }
-            if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
-            {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    _channelFetchFailed = true;
-                    _channelErrorMessage = response.StatusCode == HttpStatusCode.Unauthorized
-                        ? "Authentication failed"
-                        : "Forbidden \u2013 check API key/roles";
-                    _channelsLoaded = true;
-                });
-                return;
-            }
-            if (!response.IsSuccessStatusCode)
-            {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    _channelFetchFailed = true;
-                    _channelErrorMessage = "Failed to load channels";
-                    _channelsLoaded = true;
-                });
-                return;
-            }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            if (await ChannelNameResolver.Resolve(dto.Event, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            var channels = (await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList();
+            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                SetChannels(dto.Event);
+                SetChannels(channels);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
             });
         }
-        catch (HttpRequestException ex)
-        {
-            PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                _channelFetchFailed = true;
-                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Unauthorized
-                    ? "Authentication failed"
-                    : ex.StatusCode == HttpStatusCode.Forbidden
-                        ? "Forbidden \u2013 check API key/roles"
-                        : "Failed to load channels";
-                _channelsLoaded = true;
-            });
-        }
         catch (Exception ex)
         {
-            PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
+            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels");
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channelFetchFailed = true;
@@ -452,11 +387,6 @@ public class TemplatesWindow
         RoleCache.Reset();
         _roles.Clear();
         _rolesLoaded = false;
-    }
-
-    private class ChannelListDto
-    {
-        [JsonPropertyName(ChannelKind.Event)] public List<ChannelDto> Event { get; set; } = new();
     }
 
     private record TemplateItem(string Id, Template Template);
