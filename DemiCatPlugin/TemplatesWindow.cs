@@ -1,5 +1,7 @@
 using System;
 using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
 using System.Numerics;
 using System.Threading;
@@ -502,7 +504,9 @@ public class TemplatesWindow
             };
             var id = _templates[_selectedIndex].Id;
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}/post");
-            request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+            request.Content = content;
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await ApiHelpers.SendWithRetries(request, _httpClient);
             if (response?.IsSuccessStatusCode == true)
