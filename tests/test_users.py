@@ -1,7 +1,6 @@
 
 from pathlib import Path
 import asyncio
-from pathlib import Path
 import sys
 import types
 
@@ -107,7 +106,8 @@ def test_get_users_reads_presence_from_db():
 
 def test_get_users_name_fallbacks():
     class DummyUser:
-        def __init__(self, name: str):
+        def __init__(self, user_id: int, name: str):
+            self.id = user_id
             self.name = name
             self.display_avatar = None
 
@@ -117,7 +117,7 @@ def test_get_users_name_fallbacks():
 
         def get_user(self, user_id):
             if user_id == 70:
-                return DummyUser("Charlie")
+                return DummyUser(user_id, "Charlie")
             return None
 
         async def fetch_user(self, user_id):
@@ -146,6 +146,54 @@ def test_get_users_name_fallbacks():
             assert names['50'] == 'Nick'
             assert names['60'] == 'Bob'
             assert names['70'] == 'Charlie'
+            users_route.discord_client = None
+
+    asyncio.run(_run())
+
+
+def test_get_users_fetches_multiple_users_once():
+    class DummyUser:
+        def __init__(self, uid: int):
+            self.id = uid
+            self.name = f"Name{uid}"
+            self.display_avatar = None
+
+    class DummyDiscordClient:
+        def __init__(self):
+            self.fetched: list[int] = []
+
+        def get_guild(self, guild_id):
+            return None
+
+        def get_user(self, user_id):
+            return None
+
+        async def fetch_user(self, user_id):
+            self.fetched.append(user_id)
+            return DummyUser(user_id)
+
+    async def _run():
+        await init_db('sqlite+aiosqlite://')
+        async with get_session() as db:
+            await db.execute(delete(MembershipRole))
+            await db.execute(delete(Role))
+            await db.execute(delete(DbPresence))
+            await db.execute(delete(Membership))
+            await db.execute(delete(User))
+            await db.commit()
+            db.add(User(id=8, discord_user_id=80))
+            db.add(User(id=9, discord_user_id=90))
+            db.add(Membership(id=8, guild_id=1, user_id=8))
+            db.add(Membership(id=9, guild_id=1, user_id=9))
+            await db.commit()
+            client = DummyDiscordClient()
+            users_route.discord_client = client
+            ctx = StubContext(1)
+            res = await get_users(ctx=ctx, db=db)
+            names = {u['id']: u['name'] for u in res}
+            assert names['80'] == 'Name80'
+            assert names['90'] == 'Name90'
+            assert set(client.fetched) == {80, 90}
             users_route.discord_client = None
 
     asyncio.run(_run())
