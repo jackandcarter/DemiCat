@@ -15,6 +15,7 @@ public class ChannelWatcher : IDisposable
     private readonly HttpClient _httpClient;
     private readonly UiRenderer _ui;
     private readonly EventCreateWindow _eventCreateWindow;
+    private readonly TemplatesWindow _templatesWindow;
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
     private readonly TokenManager _tokenManager;
@@ -24,11 +25,12 @@ public class ChannelWatcher : IDisposable
     private DateTime _lastRefresh = DateTime.MinValue;
     private readonly TimeSpan _refreshCooldown = TimeSpan.FromSeconds(2);
 
-    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager, HttpClient httpClient)
+    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, TemplatesWindow templatesWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager, HttpClient httpClient)
     {
         _config = config;
         _ui = ui;
         _eventCreateWindow = eventCreateWindow;
+        _templatesWindow = templatesWindow;
         _chatWindow = chatWindow;
         _officerChatWindow = officerChatWindow;
         _tokenManager = tokenManager;
@@ -204,6 +206,7 @@ public class ChannelWatcher : IDisposable
 
         _ = SafeRefresh(_ui.RefreshChannels);
         _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
+        _ = SafeRefresh(_templatesWindow.RefreshChannels);
         if (_config.SyncedChat && _config.EnableFcChat)
             _ = SafeRefresh(_chatWindow.RefreshChannels);
         if (_config.Roles.Contains("officer"))
