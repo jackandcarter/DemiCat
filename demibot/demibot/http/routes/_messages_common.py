@@ -133,7 +133,7 @@ async def cleanup_webhooks(db: AsyncSession) -> None:
 
 async def _send_via_webhook(
     *,
-    channel: discord.abc.Messageable,
+    channel: discord.abc.Messageable | None,
     channel_id: int,
     guild_id: int,
     content: str,
@@ -141,8 +141,13 @@ async def _send_via_webhook(
     avatar: str | None,
     files: list[discord.File] | None,
     db: AsyncSession,
+    thread: discord.abc.Snowflake | None = None,
 ) -> tuple[int | None, list[AttachmentDto] | None, list[str]]:
     """Send a message via a channel webhook.
+
+    ``channel`` should be the channel owning the webhook.  When ``thread`` is
+    provided, the message will be sent to that thread using the parent
+    channel's webhook.
 
     Returns the Discord message id and attachments on success, otherwise
     a list of error messages describing the failure.
@@ -161,17 +166,15 @@ async def _send_via_webhook(
             _channel_webhooks[channel_id] = webhook_url
 
     webhook = None
-    try:
-        if webhook_url:
+    if webhook_url:
+        try:
             webhook = discord.Webhook.from_url(webhook_url, client=discord_client)
-        else:
-            raise Exception("no webhook")
-    except Exception as e:  # pragma: no cover - network errors
-        logging.exception("failed to init webhook for channel %s", channel_id)
-        errors.append(f"Webhook init failed: {e}")
-        webhook = None
+        except Exception as e:  # pragma: no cover - network errors
+            logging.exception("failed to init webhook for channel %s", channel_id)
+            errors.append(f"Webhook init failed: {e}")
+            webhook = None
 
-    if webhook is None:
+    if webhook is None and channel is not None:
         try:
             created = await channel.create_webhook(name="DemiCat Relay")
             webhook_url = created.url
@@ -212,6 +215,9 @@ async def _send_via_webhook(
                 )
                 errors.append(f"Webhook creation failed: {e}")
             return None, None, errors
+    elif webhook is None:
+        errors.append("Webhook creation failed: channel not available")
+        return None, None, errors
 
     sent = None
     try:
@@ -222,6 +228,7 @@ async def _send_via_webhook(
             files=files,
             wait=True,
             allowed_mentions=ALLOWED_MENTIONS,
+            thread=thread,
         )
     except discord.HTTPException as e:  # pragma: no cover - network errors
         if e.status == 429:
@@ -238,6 +245,7 @@ async def _send_via_webhook(
                     files=files,
                     wait=True,
                     allowed_mentions=ALLOWED_MENTIONS,
+                    thread=thread,
                 )
             except Exception as e2:  # pragma: no cover - network errors
                 e = e2
@@ -285,6 +293,7 @@ async def _send_via_webhook(
                 files=files,
                 wait=True,
                 allowed_mentions=ALLOWED_MENTIONS,
+                thread=thread,
             )
             webhook = created
         except Exception as e2:  # pragma: no cover - network errors
@@ -457,6 +466,8 @@ async def save_message(
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
     channel = None
+    thread: discord.Thread | None = None
+    webhook_channel: discord.abc.Messageable | None = None
     membership = await db.scalar(
         select(Membership).where(
             Membership.guild_id == ctx.guild.id,
@@ -473,9 +484,31 @@ async def save_message(
                 channel = await discord_client.fetch_channel(channel_id)
             except Exception:
                 pass
-    if not channel or not isinstance(channel, discord.abc.Messageable):
-        logging.warning("Channel %s not found or not messageable", channel_id)
-        raise HTTPException(status_code=404, detail="channel not found")
+    if channel is not None:
+        if isinstance(channel, discord.Thread):
+            thread = channel
+            webhook_channel = getattr(channel, "parent", None)
+            if not webhook_channel or not isinstance(
+                webhook_channel, discord.abc.Messageable
+            ):
+                logging.warning(
+                    "Channel %s not found or not messageable", channel_id
+                )
+                channel = None
+                webhook_channel = None
+        else:
+            webhook_channel = channel
+            if isinstance(channel, discord.ForumChannel):
+                raise HTTPException(
+                    status_code=400,
+                    detail="cannot send directly to a forum root; select a thread",
+                )
+            if not isinstance(channel, discord.abc.Messageable):
+                logging.warning(
+                    "Channel %s not found or not messageable", channel_id
+                )
+                channel = None
+                webhook_channel = None
     discord_files = None
     if files:
         if len(files) > MAX_ATTACHMENTS:
@@ -496,57 +529,66 @@ async def save_message(
     username = username[:80]
 
     discord_msg_id, attachments, webhook_errors = await _send_via_webhook(
-        channel=channel,
-        channel_id=channel_id,
+        channel=webhook_channel,
+        channel_id=getattr(webhook_channel, "id", channel_id),
         guild_id=ctx.guild.id,
         content=body.content,
         username=username,
         avatar=avatar,
         files=discord_files,
         db=db,
+        thread=thread,
     )
     error_details.extend(webhook_errors)
 
     if discord_msg_id is None:
-        for f in discord_files or []:
+        if channel and isinstance(channel, discord.abc.Messageable):
+            for f in discord_files or []:
+                try:
+                    f.reset()
+                except Exception:
+                    pass
             try:
-                f.reset()
-            except Exception:
-                pass
-        try:
-            sent = await channel.send(
-                body.content,
-                files=discord_files,
-                allowed_mentions=ALLOWED_MENTIONS,
-            )
-            discord_msg_id = getattr(sent, "id", None)
-            if discord_msg_id is None:
-                logging.warning(
-                    "channel.send returned no id for channel %s", channel_id
+                sent = await channel.send(
+                    body.content,
+                    files=discord_files,
+                    allowed_mentions=ALLOWED_MENTIONS,
                 )
-            elif sent.attachments:
-                attachments = [
-                    AttachmentDto(
-                        url=a.url,
-                        filename=a.filename,
-                        contentType=a.content_type,
+                discord_msg_id = getattr(sent, "id", None)
+                if discord_msg_id is None:
+                    logging.warning(
+                        "channel.send returned no id for channel %s", channel_id
                     )
-                    for a in sent.attachments
-                ]
-        except Exception as e:
-            if isinstance(e, discord.HTTPException):
-                logging.exception(
-                    "channel.send failed for channel %s: %s %s",
-                    channel_id,
-                    e.status,
-                    e.text,
-                )
-                error_details.append(
-                    f"Direct send failed: {e.status} {e.text or _discord_error(e)}"
-                )
-            else:
-                logging.exception("channel.send failed for channel %s", channel_id)
-                error_details.append(f"Direct send failed: {e}")
+                elif sent.attachments:
+                    attachments = [
+                        AttachmentDto(
+                            url=a.url,
+                            filename=a.filename,
+                            contentType=a.content_type,
+                        )
+                        for a in sent.attachments
+                    ]
+            except Exception as e:
+                if isinstance(e, discord.HTTPException):
+                    logging.exception(
+                        "channel.send failed for channel %s: %s %s",
+                        channel_id,
+                        e.status,
+                        e.text,
+                    )
+                    error_details.append(
+                        f"Direct send failed: {e.status} {e.text or _discord_error(e)}"
+                    )
+                else:
+                    logging.exception(
+                        "channel.send failed for channel %s", channel_id
+                    )
+                    error_details.append(f"Direct send failed: {e}")
+        else:
+            logging.warning(
+                "Channel %s not found or not messageable", channel_id
+            )
+            raise HTTPException(status_code=404, detail="channel not found")
 
     if discord_msg_id is None:
         logging.warning(
@@ -652,6 +694,10 @@ async def edit_message(
 ) -> dict:
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
+    if len(content) > 2000:
+        raise HTTPException(
+            status_code=400, detail="Message too long (max 2000 characters)."
+        )
     msg = await db.get(Message, int(message_id))
     if not msg or msg.channel_id != int(channel_id) or msg.is_officer != is_officer:
         raise HTTPException(status_code=404)

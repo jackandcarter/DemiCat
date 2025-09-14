@@ -114,6 +114,142 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_forum_root_rejected(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=8, discord_guild_id=8, name="Guild"))
+            db.add(User(id=8, discord_user_id=80, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 8)
+            user = await db.get(User, 8)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            class DummyForum:
+                pass
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyForum()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord, "ForumChannel", DummyForum)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="1", content="hi")
+            with pytest.raises(HTTPException) as exc:
+                await mc.save_message(body, ctx, db, is_officer=False)
+            assert exc.value.status_code == 400
+
+    asyncio.run(_run())
+
+
+def test_thread_uses_parent_webhook(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=11, discord_guild_id=11, name="Guild"))
+            db.add(User(id=11, discord_user_id=110, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 11)
+            user = await db.get(User, 11)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            captured: dict[str, object] = {}
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    captured["thread"] = kwargs.get("thread")
+                    return types.SimpleNamespace(id=1, attachments=[])
+
+            class DummyParent:
+                id = 123
+
+                async def create_webhook(self, name: str):
+                    captured["created_on_parent"] = True
+                    return DummyWebhook()
+
+            class DummyThread(DummyParent):
+                id = 456
+                parent = DummyParent()
+
+                async def create_webhook(self, name: str):
+                    captured["created_on_thread"] = True
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyThread()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyParent)
+            monkeypatch.setattr(mc.discord, "Thread", DummyThread)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="456", content="hello")
+            res = await mc.save_message(body, ctx, db, is_officer=False)
+            assert res["ok"] is True
+            assert isinstance(captured.get("thread"), DummyThread)
+            assert captured.get("created_on_parent") is True
+            assert "created_on_thread" not in captured
+
+    asyncio.run(_run())
+
+
+def test_cached_webhook_without_channel(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=12, discord_guild_id=12, name="Guild"))
+            db.add(User(id=12, discord_user_id=120, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 12)
+            user = await db.get(User, 12)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            captured: dict[str, object] = {}
+
+            class DummyWebhook:
+                async def send(self, *args, **kwargs):
+                    captured["sent"] = True
+                    return types.SimpleNamespace(id=1, attachments=[])
+
+            class DummyWebhookCls:
+                @staticmethod
+                def from_url(url: str, client=None):
+                    return DummyWebhook()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return None
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord, "Webhook", DummyWebhookCls)
+            monkeypatch.setattr(mc, "_channel_webhooks", {123: "http://example.com"})
+
+            body = mc.PostBody(channelId="123", content="hello")
+            res = await mc.save_message(body, ctx, db, is_officer=False)
+            assert res["ok"] is True
+            assert captured.get("sent") is True
+
+    asyncio.run(_run())
+
+
+
 def test_allowed_mentions(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
