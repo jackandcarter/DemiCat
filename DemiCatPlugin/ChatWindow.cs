@@ -951,6 +951,7 @@ public class ChatWindow : IDisposable
                                 parts = discord.EnumerateArray()
                                     .Select(e => e.GetString())
                                     .Where(s => !string.IsNullOrEmpty(s))
+                                    .Select(s => s!)
                                     .ToList();
                             }
                             if (parts.Count > 0)
