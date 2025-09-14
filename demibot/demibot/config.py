@@ -128,8 +128,15 @@ async def ensure_config(force_reconfigure: bool = False) -> AppConfig:
         """Prompt for basic connection details for a profile."""
 
         profile.host = input(f"{name} host [{profile.host}]: ") or profile.host
-        port = input(f"{name} port [{profile.port}]: ") or profile.port
-        profile.port = int(port)
+        while True:
+            port_input = input(f"{name} port [{profile.port}]: ")
+            if not port_input:
+                break
+            try:
+                profile.port = int(port_input)
+                break
+            except ValueError:
+                print("Invalid port. Please enter a number.")
         profile.database = (
             input(f"{name} database [{profile.database}]: ") or profile.database
         )
