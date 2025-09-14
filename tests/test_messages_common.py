@@ -262,7 +262,10 @@ def test_message_too_long(monkeypatch):
             with pytest.raises(HTTPException) as exc:
                 await mc.save_message(body, ctx, db, is_officer=False)
             assert exc.value.status_code == 400
-            assert exc.value.detail == "message too long"
+            assert (
+                exc.value.detail
+                == "Message too long (max 2000 characters)."
+            )
 
     asyncio.run(_run())
 
