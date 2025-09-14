@@ -1,5 +1,4 @@
 import asyncio
-from types import SimpleNamespace
 from pathlib import Path
 import sys
 import types
@@ -66,11 +65,20 @@ class DummyFollowup:
         pass
 
 
+class DummyMessage:
+    def __init__(self) -> None:
+        self.id = 0
+        self.deleted = False
+
+    async def delete(self) -> None:
+        self.deleted = True
+
+
 class DummyInteraction:
     def __init__(self) -> None:
         self.response = DummyResponse()
         self.followup = DummyFollowup()
-        self.message = SimpleNamespace(id=0)
+        self.message = DummyMessage()
 
 
 def test_role_union_deduplication() -> None:
@@ -88,7 +96,9 @@ def test_role_union_deduplication() -> None:
         view.officer_role_ids = [42]
         view.mention_role_ids = [42]
 
-        await view.on_finish(DummyInteraction())
+        interaction = DummyInteraction()
+        await view.on_finish(interaction)
+        assert interaction.message.deleted is True
 
         async with get_session() as db:
             roles = (await db.execute(select(Role))).scalars().all()
