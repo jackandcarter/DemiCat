@@ -642,19 +642,19 @@ class ConfigWizard(discord.ui.View):
                     else:
                         role.name = role_name
 
-                channel_ids = (
-                    self.event_channel_ids
-                    + self.fc_chat_channel_ids
-                    + self.officer_chat_channel_ids
-                )
-                if channel_ids:
-                    await db.execute(
-                        delete(GuildChannel).where(
-                            GuildChannel.guild_id == guild.id,
-                            GuildChannel.channel_id.in_(channel_ids),
-                        )
+                await db.execute(
+                    delete(GuildChannel).where(
+                        GuildChannel.guild_id == guild.id,
+                        GuildChannel.kind.in_(
+                            [
+                                ChannelKind.EVENT,
+                                ChannelKind.FC_CHAT,
+                                ChannelKind.OFFICER_CHAT,
+                            ]
+                        ),
                     )
-                    await db.flush()
+                )
+                await db.flush()
                 channel_name_lookup = {
                     ch.id: ch.name for ch in self.guild.text_channels
                 }
