@@ -5,7 +5,9 @@ import sys
 import types
 
 sys.path.append(str(Path(__file__).resolve().parents[1] / "demibot"))
-sys.modules.setdefault("structlog", types.ModuleType("structlog"))
+structlog_stub = types.ModuleType("structlog")
+structlog_stub.get_logger = lambda *a, **k: None
+sys.modules.setdefault("structlog", structlog_stub)
 alembic_stub = types.ModuleType("alembic")
 alembic_stub.command = types.SimpleNamespace()
 alembic_config_stub = types.ModuleType("alembic.config")

@@ -63,7 +63,8 @@ def test_chat_ws_role_access(monkeypatch):
         async def fake_get_session():
             yield DummySession()
 
-        async def fake_auth(x_api_key, x_discord_id, db):
+        async def fake_auth(request, x_api_key, x_discord_id, db):
+            assert request.method == "WS"
             return ctx
 
         manager = ws_chat.ChatConnectionManager()
@@ -90,7 +91,8 @@ def test_chat_ws_invalid_token(monkeypatch):
         async def fake_get_session():
             yield DummySession()
 
-        async def fake_auth(x_api_key, x_discord_id, db):
+        async def fake_auth(request, x_api_key, x_discord_id, db):
+            assert request.method == "WS"
             raise HTTPException(status_code=401, detail="bad")
 
         monkeypatch.setattr(ws_chat, "get_session", fake_get_session)

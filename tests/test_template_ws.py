@@ -15,7 +15,9 @@ http_pkg = types.ModuleType("demibot.http")
 http_pkg.__path__ = [str(root / "demibot/http")]
 sys.modules.setdefault("demibot.http", http_pkg)
 
-sys.modules.setdefault("structlog", types.ModuleType("structlog"))
+structlog_stub = types.ModuleType("structlog")
+structlog_stub.get_logger = lambda *a, **k: None
+sys.modules.setdefault("structlog", structlog_stub)
 
 db_pkg = types.ModuleType("demibot.db")
 db_pkg.__path__ = [str(root / "demibot/db")]

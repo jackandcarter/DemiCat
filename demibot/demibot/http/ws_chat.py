@@ -9,6 +9,7 @@ import random
 import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Set
+from types import SimpleNamespace
 
 import discord
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
@@ -38,6 +39,15 @@ MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 # Retry configuration for Discord webhook sends.
 RETRY_BASE = 1.0  # seconds
 MAX_SEND_ATTEMPTS = 5
+
+
+def _ws_request(ws: WebSocket):
+    client_host = getattr(getattr(ws, "client", None), "host", "unknown")
+    return SimpleNamespace(
+        client=SimpleNamespace(host=client_host),
+        method="WS",
+        url=SimpleNamespace(path=ws.scope.get("path", "")),
+    )
 
 
 @dataclass
@@ -385,7 +395,12 @@ async def websocket_endpoint_chat(websocket: WebSocket) -> None:
     ctx: RequestContext | None = None
     async with get_session() as db:
         try:
-            ctx = await api_key_auth(x_api_key=token, x_discord_id=None, db=db)
+            ctx = await api_key_auth(
+                _ws_request(websocket),
+                x_api_key=token,
+                x_discord_id=None,
+                db=db,
+            )
         except HTTPException:
             await websocket.close(code=1008, reason="auth failed")
             return

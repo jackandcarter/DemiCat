@@ -18,6 +18,7 @@ structlog_stub = types.SimpleNamespace(
     make_filtering_bound_logger=lambda *a, **k: None,
     stdlib=types.SimpleNamespace(LoggerFactory=lambda: None),
     configure=lambda *a, **k: None,
+    get_logger=lambda *a, **k: None,
 )
 sys.modules.setdefault("structlog", structlog_stub)
 

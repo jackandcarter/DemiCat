@@ -6,6 +6,7 @@ from typing import Dict
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 import logging
+from types import SimpleNamespace
 
 from ..db.session import get_session
 from .deps import RequestContext, api_key_auth
@@ -17,6 +18,15 @@ SEND_TIMEOUT = 5.0
 # Mapping of websocket paths to roles required to access them.
 # Additional entries can be added as new protected paths are introduced.
 PROTECTED_PATH_ROLES: dict[str, str] = {"/ws/officer-messages": "officer"}
+
+
+def _ws_request(ws: WebSocket):
+    client_host = getattr(getattr(ws, "client", None), "host", "unknown")
+    return SimpleNamespace(
+        client=SimpleNamespace(host=client_host),
+        method="WS",
+        url=SimpleNamespace(path=ws.scope.get("path", "")),
+    )
 
 
 @dataclass
@@ -118,6 +128,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     async with get_session() as db:
         try:
             ctx = await api_key_auth(
+                _ws_request(websocket),
                 x_api_key=token,
                 x_discord_id=None,
                 db=db,
