@@ -378,6 +378,7 @@ class ConfigWizard(discord.ui.View):
         self.fc_chat_channel_ids: list[int] = []
         self.officer_chat_channel_ids: list[int] = []
         self.officer_role_ids: list[int] = []
+        self.mention_role_ids: list[int] = []
         self.channels = list(guild.text_channels)
         self.page_size = 20
         self.channel_page = 0
@@ -415,10 +416,11 @@ class ConfigWizard(discord.ui.View):
             "Select the FC chat channels to be used in the plugin",
             "Select the officer chat channels to be used in the plugin",
             "Select the roles that should be treated as officers",
+            "Select the roles that can be mentioned",
         ]
         embed = discord.Embed(
             title=self.title,
-            description=f"Step {self.step + 1} / 4\n{step_descriptions[self.step]}",
+            description=f"Step {self.step + 1} / 5\n{step_descriptions[self.step]}",
         )
         if self.step in (0, 1, 2):
             selected_map = {
@@ -461,7 +463,7 @@ class ConfigWizard(discord.ui.View):
             if end < len(channels):
                 self.add_item(self.page_next_button)
             self.next_button.disabled = len(selected) == 0
-        else:
+        elif self.step == 3:
             officer_select = discord.ui.RoleSelect(
                 placeholder="Select officer roles",
                 min_values=1,
@@ -479,12 +481,30 @@ class ConfigWizard(discord.ui.View):
 
             officer_select.callback = officer_cb
             self.add_item(officer_select)
+        else:
+            mention_select = discord.ui.RoleSelect(
+                placeholder="Select mentionable roles",
+                min_values=1,
+                max_values=25,
+                default_values=[
+                    r
+                    for r in (self.guild.get_role(rid) for rid in self.mention_role_ids)
+                    if r is not None
+                ],
+            )
+
+            async def mention_cb(i: discord.Interaction) -> None:
+                self.mention_role_ids = [r.id for r in mention_select.values]
+                await self.render(i)
+
+            mention_select.callback = mention_cb
+            self.add_item(mention_select)
         if self.step > 0:
             self.add_item(self.back_button)
-        if self.step < 3:
+        if self.step < 4:
             self.add_item(self.next_button)
         else:
-            self.finish_button.disabled = len(self.officer_role_ids) == 0
+            self.finish_button.disabled = len(self.mention_role_ids) == 0
             self.add_item(self.finish_button)
         if initial:
             await inter.response.send_message(embed=embed, view=self, ephemeral=True)
@@ -516,6 +536,11 @@ class ConfigWizard(discord.ui.View):
                 "Select at least one officer chat channel", ephemeral=True
             )
             return
+        if self.step == 3 and not self.officer_role_ids:
+            await interaction.response.send_message(
+                "Select at least one officer role", ephemeral=True
+            )
+            return
         self.step += 1
         self.channel_page = 0
         await self.render(interaction)
@@ -536,6 +561,7 @@ class ConfigWizard(discord.ui.View):
                 self.fc_chat_channel_ids,
                 self.officer_chat_channel_ids,
                 self.officer_role_ids,
+                self.mention_role_ids,
             ]
         ):
             await interaction.response.send_message(
@@ -574,6 +600,9 @@ class ConfigWizard(discord.ui.View):
                 config.officer_role_ids = ",".join(
                     str(rid) for rid in self.officer_role_ids
                 )
+                config.mention_role_ids = ",".join(
+                    str(rid) for rid in self.mention_role_ids
+                )
                 role_res = await db.execute(
                     select(Role).where(Role.guild_id == guild.id)
                 )
@@ -598,6 +627,20 @@ class ConfigWizard(discord.ui.View):
                 for role in roles:
                     if role.is_officer and role.discord_role_id not in self.officer_role_ids:
                         role.is_officer = False
+                for rid in self.mention_role_ids:
+                    d_role = self.guild.get_role(rid)
+                    role_name = d_role.name if d_role else "Role"
+                    role = role_map.get(rid)
+                    if role is None:
+                        db.add(
+                            Role(
+                                guild_id=guild.id,
+                                name=role_name,
+                                discord_role_id=rid,
+                            )
+                        )
+                    else:
+                        role.name = role_name
 
                 channel_ids = (
                     self.event_channel_ids
@@ -653,7 +696,8 @@ class ConfigWizard(discord.ui.View):
             f"Event channels: {', '.join(f'<#{c}>' for c in self.event_channel_ids)}\n"
             f"FC chat channels: {', '.join(f'<#{c}>' for c in self.fc_chat_channel_ids)}\n"
             f"Officer chat channels: {', '.join(f'<#{c}>' for c in self.officer_chat_channel_ids)}\n"
-            f"Officer roles: {', '.join(f'<@&{r}>' for r in self.officer_role_ids)}"
+            f"Officer roles: {', '.join(f'<@&{r}>' for r in self.officer_role_ids)}\n"
+            f"Mentionable roles: {', '.join(f'<@&{r}>' for r in self.mention_role_ids)}"
         )
         await interaction.response.send_message(summary, ephemeral=True)
         self.stop()
