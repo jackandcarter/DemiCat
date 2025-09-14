@@ -24,7 +24,7 @@ from ...db.models import (
     UserInstallation,
     ChannelKind,
 )
-from ...db.session import get_session
+from ...db.session import get_session, init_db, _Session
 
 
 logger = logging.getLogger(__name__)
@@ -577,6 +577,11 @@ class ConfigWizard(discord.ui.View):
                 "Each channel may only be selected once", ephemeral=True
             )
             return
+        if _Session is None:
+            await interaction.response.send_message(
+                "database not initialized", ephemeral=True
+            )
+            return
         try:
             async with get_session() as db:
                 guild_res = await db.execute(
@@ -731,5 +736,8 @@ async def setup_wizard(interaction: discord.Interaction) -> None:
 
 
 async def setup(bot: commands.Bot) -> None:
+    cfg = getattr(bot, "cfg", None)
+    if cfg is not None:
+        await init_db(cfg.database.url)
     await bot.add_cog(Admin(bot))
     bot.tree.add_command(demibot)
