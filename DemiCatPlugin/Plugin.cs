@@ -281,6 +281,8 @@ public class Plugin : IDalamudPlugin
                     _presenceService?.Dispose();
                 }
                 _services.PluginInterface.SavePluginConfig(_config);
+                StopWatchers();
+                StartWatchers();
             });
 
             await RoleCache.Refresh(_httpClient, _config);
