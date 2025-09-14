@@ -332,7 +332,7 @@ async def _send_via_webhook(
             for a in sent.attachments
         ]
 
-    return discord_msg_id, attachments, []
+    return discord_msg_id, attachments, errors
 
 
 class PostBody(BaseModel):
