@@ -177,6 +177,11 @@ public class EventCreateWindow
             if (ImGui.Checkbox("Include", ref include))
                 button.Include = include;
             ImGui.SameLine();
+            if (!string.IsNullOrWhiteSpace(button.Emoji))
+            {
+                EmojiUtils.DrawEmoji(button.Emoji);
+                ImGui.SameLine();
+            }
             ImGui.TextUnformatted($"{button.Label} ({button.Tag})");
             ImGui.SameLine();
             if (ImGui.Button("Edit"))

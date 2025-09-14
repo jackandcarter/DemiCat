@@ -214,9 +214,14 @@ public class EventView : IDisposable
                 var buttons = row.ToList();
                 for (var i = 0; i < buttons.Count; i++)
                 {
+                    if (i > 0) ImGui.SameLine();
                     var button = buttons[i];
+                    if (!string.IsNullOrEmpty(button.Emoji))
+                    {
+                        EmojiUtils.DrawEmoji(button.Emoji);
+                        ImGui.SameLine();
+                    }
                     var id = button.CustomId ?? button.Label;
-                    var text = string.IsNullOrEmpty(button.Emoji) ? button.Label : $"{button.Emoji} {button.Label}";
                     var styled = button.Style.HasValue && button.Style.Value != ButtonStyle.Link;
                     if (styled)
                     {
@@ -227,7 +232,7 @@ public class EventView : IDisposable
                     }
 
                     var w = button.Width ?? -1;
-                    if (ImGui.Button($"{text}##{id}{_dto.Id}", new Vector2(w, 0)))
+                    if (ImGui.Button($"{button.Label}##{id}{_dto.Id}", new Vector2(w, 0)))
                     {
                         if (!string.IsNullOrEmpty(button.Url))
                         {
@@ -242,11 +247,6 @@ public class EventView : IDisposable
                     if (styled)
                     {
                         ImGui.PopStyleColor(3);
-                    }
-
-                    if (i < buttons.Count - 1)
-                    {
-                        ImGui.SameLine();
                     }
                 }
             }
