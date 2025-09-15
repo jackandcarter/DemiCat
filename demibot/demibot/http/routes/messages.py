@@ -15,7 +15,7 @@ from ._messages_common import (
     delete_message as delete_message_common,
 )
 from ..discord_client import discord_client
-from ...db.models import Message
+from ...db.models import Message, ChannelKind
 
 router = APIRouter(prefix="/api")
 
@@ -40,7 +40,7 @@ async def post_message(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    return await save_message(body, ctx, db, is_officer=False)
+    return await save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
 
 
 @router.post("/channels/{channel_id}/messages")
@@ -65,7 +65,7 @@ async def post_message_with_attachments(
         use_character_name=useCharacterName,
         message_reference=ref,
     )
-    return await save_message(body, ctx, db, is_officer=False, files=files)
+    return await save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT, files=files)
 
 
 @router.put("/channels/{channel_id}/messages/{message_id}/reactions/{emoji}")

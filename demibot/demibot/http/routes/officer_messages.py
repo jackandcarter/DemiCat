@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ._messages_common import PostBody, fetch_messages, save_message
+from ...db.models import ChannelKind
 
 router = APIRouter(prefix="/api")
 
@@ -29,4 +30,4 @@ async def post_officer_message(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    return await save_message(body, ctx, db, is_officer=True)
+    return await save_message(body, ctx, db, channel_kind=ChannelKind.OFFICER_CHAT)

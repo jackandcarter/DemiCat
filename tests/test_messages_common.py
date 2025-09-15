@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
-from demibot.db.models import Guild, User, Message, Membership, GuildChannel
+from demibot.db.models import Guild, User, Message, Membership, GuildChannel, ChannelKind
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
 import importlib.util
@@ -55,6 +55,7 @@ def test_save_and_fetch_messages(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
             db.add(User(id=1, discord_user_id=10, global_name="Alice"))
             db.add(
@@ -65,6 +66,7 @@ def test_save_and_fetch_messages(monkeypatch):
                     avatar_url="http://example.com/avatar.png",
                 )
             )
+            db.add(GuildChannel(guild_id=1, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 1)
             user = await db.get(User, 1)
@@ -96,7 +98,7 @@ def test_save_and_fetch_messages(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             body = mc.PostBody(channelId="123", content="hello")
-            res = await mc.save_message(body, ctx, db, is_officer=False)
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
 
             msg = (await db.execute(select(Message))).scalar_one()
@@ -114,6 +116,29 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_channel_not_configured(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=99, discord_guild_id=99, name="Guild"))
+            db.add(User(id=99, discord_user_id=990, global_name="Alice"))
+            await db.commit()
+            guild = await db.get(Guild, 99)
+            user = await db.get(User, 99)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+            body = mc.PostBody(channelId="123", content="hi")
+            with pytest.raises(HTTPException) as exc:
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+            assert exc.value.status_code == 400
+            assert "channel not configured" in str(exc.value.detail)
+    asyncio.run(_run())
+
+
 def test_forum_root_rejected(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
@@ -122,8 +147,10 @@ def test_forum_root_rejected(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=8, discord_guild_id=8, name="Guild"))
             db.add(User(id=8, discord_user_id=80, global_name="Alice"))
+            db.add(GuildChannel(guild_id=8, channel_id=1, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 8)
             user = await db.get(User, 8)
@@ -142,7 +169,7 @@ def test_forum_root_rejected(monkeypatch):
 
             body = mc.PostBody(channelId="1", content="hi")
             with pytest.raises(HTTPException) as exc:
-                await mc.save_message(body, ctx, db, is_officer=False)
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert exc.value.status_code == 400
 
     asyncio.run(_run())
@@ -156,8 +183,10 @@ def test_thread_uses_parent_webhook(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=11, discord_guild_id=11, name="Guild"))
             db.add(User(id=11, discord_user_id=110, global_name="Alice"))
+            db.add(GuildChannel(guild_id=11, channel_id=456, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 11)
             user = await db.get(User, 11)
@@ -197,7 +226,7 @@ def test_thread_uses_parent_webhook(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             body = mc.PostBody(channelId="456", content="hello")
-            res = await mc.save_message(body, ctx, db, is_officer=False)
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
             assert isinstance(captured.get("thread"), DummyThread)
             assert captured.get("created_on_parent") is True
@@ -214,8 +243,10 @@ def test_cached_webhook_without_channel(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=12, discord_guild_id=12, name="Guild"))
             db.add(User(id=12, discord_user_id=120, global_name="Alice"))
+            db.add(GuildChannel(guild_id=12, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 12)
             user = await db.get(User, 12)
@@ -242,7 +273,7 @@ def test_cached_webhook_without_channel(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {123: "http://example.com"})
 
             body = mc.PostBody(channelId="123", content="hello")
-            res = await mc.save_message(body, ctx, db, is_officer=False)
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
             assert captured.get("sent") is True
 
@@ -258,6 +289,7 @@ def test_allowed_mentions(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=5, discord_guild_id=5, name="Guild"))
             db.add(User(id=5, discord_user_id=50, global_name="Charlie"))
             db.add(
@@ -268,6 +300,7 @@ def test_allowed_mentions(monkeypatch):
                     avatar_url="http://example.com/avatar.png",
                 )
             )
+            db.add(GuildChannel(guild_id=5, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 5)
             user = await db.get(User, 5)
@@ -308,7 +341,7 @@ def test_allowed_mentions(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             body = mc.PostBody(channelId="123", content="@everyone hello @here")
-            res = await mc.save_message(body, ctx, db, is_officer=False)
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
 
             am = captured.get("allowed_mentions")
@@ -328,6 +361,7 @@ def test_long_username_truncated(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             long_name = "A" * 100
             db.add(Guild(id=3, discord_guild_id=3, name="Guild"))
             db.add(User(id=3, discord_user_id=30, global_name="Alice"))
@@ -339,6 +373,7 @@ def test_long_username_truncated(monkeypatch):
                     avatar_url="http://example.com/avatar.png",
                 )
             )
+            db.add(GuildChannel(guild_id=3, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 3)
             user = await db.get(User, 3)
@@ -373,7 +408,7 @@ def test_long_username_truncated(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             body = mc.PostBody(channelId="123", content="hello")
-            res = await mc.save_message(body, ctx, db, is_officer=False)
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
             assert len(captured["username"]) == 80
 
@@ -388,15 +423,17 @@ def test_message_too_long(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=42, discord_guild_id=42, name="Guild"))
             db.add(User(id=42, discord_user_id=420, global_name="Alice"))
+            db.add(GuildChannel(guild_id=42, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 42)
             user = await db.get(User, 42)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
             body = mc.PostBody(channelId="123", content="x" * 2001)
             with pytest.raises(HTTPException) as exc:
-                await mc.save_message(body, ctx, db, is_officer=False)
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert exc.value.status_code == 400
             assert (
                 exc.value.detail
@@ -414,6 +451,7 @@ def test_rest_ws_payload_parity(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=2, discord_guild_id=2, name="Guild"))
             db.add(User(id=2, discord_user_id=20, global_name="Bob"))
             db.add(
@@ -424,6 +462,7 @@ def test_rest_ws_payload_parity(monkeypatch):
                     avatar_url="http://example.com/avatar.png",
                 )
             )
+            db.add(GuildChannel(guild_id=2, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 2)
             user = await db.get(User, 2)
@@ -453,7 +492,7 @@ def test_rest_ws_payload_parity(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             body = mc.PostBody(channelId="123", content="hello")
-            await mc.save_message(body, ctx, db, is_officer=False)
+            await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             rest_data = await mc.fetch_messages("123", ctx, db, is_officer=False)
             assert len(rest_data) == 1
             rest_msg = rest_data[0]
@@ -483,8 +522,10 @@ def test_multipart_message(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=9, discord_guild_id=9, name="Guild"))
             db.add(User(id=9, discord_user_id=90, global_name="Alice"))
+            db.add(GuildChannel(guild_id=9, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 9)
             user = await db.get(User, 9)
@@ -576,7 +617,7 @@ def test_multipart_message(monkeypatch):
 
             upload = UploadFile(filename="a.txt", file=io.BytesIO(b"hi"))
             body = mc.PostBody(channelId="123", content="hello")
-            res = await mc.save_message(body, ctx, db, is_officer=False, files=[upload])
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT, files=[upload])
             assert res["ok"] is True
 
             msg = (await db.execute(select(Message))).scalar_one()
@@ -593,8 +634,10 @@ def test_discord_failure_details(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=3, discord_guild_id=3, name="Guild"))
             db.add(User(id=3, discord_user_id=30, global_name="Alice"))
+            db.add(GuildChannel(guild_id=3, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 3)
             user = await db.get(User, 3)
@@ -627,7 +670,7 @@ def test_discord_failure_details(monkeypatch):
 
             body = mc.PostBody(channelId="123", content="oops")
             with pytest.raises(HTTPException) as ex:
-                await mc.save_message(body, ctx, db, is_officer=False)
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert ex.value.status_code == 502
             detail = ex.value.detail
             assert isinstance(detail, dict)
@@ -646,8 +689,10 @@ def test_attachment_validation(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=7, discord_guild_id=7, name="Guild"))
             db.add(User(id=7, discord_user_id=70, global_name="Alice"))
+            db.add(GuildChannel(guild_id=7, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 7)
             user = await db.get(User, 7)
@@ -684,11 +729,11 @@ def test_attachment_validation(monkeypatch):
 
             uploads = [UploadFile(filename=f"{i}.txt", file=io.BytesIO(b"hi")) for i in range(11)]
             with pytest.raises(HTTPException):
-                await mc.save_message(body, ctx, db, is_officer=False, files=uploads)
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT, files=uploads)
 
             big = UploadFile(filename="big.txt", file=io.BytesIO(b"x" * (25 * 1024 * 1024 + 1)))
             with pytest.raises(HTTPException):
-                await mc.save_message(body, ctx, db, is_officer=False, files=[big])
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT, files=[big])
 
     asyncio.run(_run())
 
@@ -701,8 +746,10 @@ def test_officer_flow(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=2, discord_guild_id=2, name="Guild"))
             db.add(User(id=2, discord_user_id=20, global_name="Alice"))
+            db.add(GuildChannel(guild_id=2, channel_id=123, kind=ChannelKind.OFFICER_CHAT))
             await db.commit()
             guild = await db.get(Guild, 2)
             user = await db.get(User, 2)
@@ -734,7 +781,7 @@ def test_officer_flow(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             body = mc.PostBody(channelId="123", content="secret")
-            res = await mc.save_message(body, ctx, db, is_officer=True)
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.OFFICER_CHAT)
             assert res["ok"] is True
 
             msg = (await db.execute(select(Message))).scalar_one()
@@ -756,8 +803,10 @@ def test_officer_requires_role(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=3, discord_guild_id=3, name="Guild"))
             db.add(User(id=3, discord_user_id=30, global_name="Alice"))
+            db.add(GuildChannel(guild_id=3, channel_id=123, kind=ChannelKind.OFFICER_CHAT))
             await db.commit()
             guild = await db.get(Guild, 3)
             user = await db.get(User, 3)
@@ -765,7 +814,7 @@ def test_officer_requires_role(monkeypatch):
 
             body = mc.PostBody(channelId="123", content="secret")
             with pytest.raises(HTTPException):
-                await mc.save_message(body, ctx, db, is_officer=True)
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.OFFICER_CHAT)
             with pytest.raises(HTTPException):
                 await mc.fetch_messages("123", ctx, db, is_officer=True)
 
@@ -780,8 +829,10 @@ def test_save_message_webhook_failure(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=4, discord_guild_id=4, name="Guild"))
             db.add(User(id=4, discord_user_id=40, global_name="Alice"))
+            db.add(GuildChannel(guild_id=4, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 4)
             user = await db.get(User, 4)
@@ -807,7 +858,7 @@ def test_save_message_webhook_failure(monkeypatch):
 
             body = mc.PostBody(channelId="123", content="oops")
             with pytest.raises(HTTPException) as exc:
-                await mc.save_message(body, ctx, db, is_officer=False)
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert exc.value.status_code == 502
             result = await db.execute(select(Message))
             assert result.first() is None
@@ -823,8 +874,10 @@ def test_webhook_errors_returned(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=5, discord_guild_id=5, name="Guild"))
             db.add(User(id=5, discord_user_id=50, global_name="Alice"))
+            db.add(GuildChannel(guild_id=5, channel_id=123, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 5)
             user = await db.get(User, 5)
@@ -841,7 +894,7 @@ def test_webhook_errors_returned(monkeypatch):
             monkeypatch.setattr(mc, "discord_client", None)
 
             body = mc.PostBody(channelId="123", content="hello")
-            res = await mc.save_message(body, ctx, db, is_officer=False)
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
             assert res.get("detail", {}).get("discord") == ["Webhook init failed"]
 
@@ -856,6 +909,7 @@ def test_webhook_cache_persist_and_load(monkeypatch):
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=6, discord_guild_id=6, name="Guild"))
             db.add(User(id=6, discord_user_id=60, global_name="Alice"))
             db.add(
@@ -866,6 +920,7 @@ def test_webhook_cache_persist_and_load(monkeypatch):
                     avatar_url="http://example.com/avatar.png",
                 )
             )
+            db.add(GuildChannel(guild_id=6, channel_id=321, kind=ChannelKind.FC_CHAT))
             await db.commit()
             guild = await db.get(Guild, 6)
             user = await db.get(User, 6)
@@ -935,7 +990,7 @@ def test_webhook_cache_persist_and_load(monkeypatch):
             monkeypatch.setattr(mc, "serialize_message", fake_serialize_message)
 
             body = mc.PostBody(channelId="321", content="hello")
-            res = await mc.save_message(body, ctx, db, is_officer=False)
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
 
             stored = await db.scalar(
@@ -957,7 +1012,7 @@ def test_webhook_cache_persist_and_load(monkeypatch):
             )
 
             body2 = mc.PostBody(channelId="321", content="again")
-            res2 = await mc.save_message(body2, ctx, db, is_officer=False)
+            res2 = await mc.save_message(body2, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res2["ok"] is True
             assert create_calls == 1
 
@@ -972,6 +1027,7 @@ def test_fetch_messages_pagination():
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
             db.add(Guild(id=5, discord_guild_id=5, name="Guild"))
             db.add(User(id=5, discord_user_id=50, global_name="Alice"))
             await db.commit()

@@ -99,7 +99,6 @@ async def load_webhook_cache(db: AsyncSession) -> None:
                 select(GuildChannel).where(
                     GuildChannel.guild_id == guild_id,
                     GuildChannel.channel_id == channel_id,
-                    GuildChannel.kind == ChannelKind.CHAT,
                 )
             )
             if gc:
@@ -183,7 +182,6 @@ async def _send_via_webhook(
                 select(GuildChannel).where(
                     GuildChannel.guild_id == guild_id,
                     GuildChannel.channel_id == channel_id,
-                    GuildChannel.kind == ChannelKind.CHAT,
                 )
             )
             if gc:
@@ -272,7 +270,6 @@ async def _send_via_webhook(
                 select(GuildChannel).where(
                     GuildChannel.guild_id == guild_id,
                     GuildChannel.channel_id == channel_id,
-                    GuildChannel.kind == ChannelKind.CHAT,
                 )
             )
             if gc:
@@ -453,16 +450,29 @@ async def save_message(
     ctx: RequestContext,
     db: AsyncSession,
     *,
-    is_officer: bool,
+    channel_kind: ChannelKind,
     files: list[UploadFile] | None = None,
 ) -> dict:
+    channel_id = int(body.channel_id)
+    gc_kind = await db.scalar(
+        select(GuildChannel.kind).where(
+            GuildChannel.guild_id == ctx.guild.id,
+            GuildChannel.channel_id == channel_id,
+            GuildChannel.kind == channel_kind,
+        )
+    )
+    if gc_kind is None:
+        raise HTTPException(
+            status_code=400,
+            detail="channel not configured for this tab; re-run wizard or pick a configured channel",
+        )
+    is_officer = gc_kind == ChannelKind.OFFICER_CHAT
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
     if len(body.content) > 2000:
         raise HTTPException(
-            status_code=400, detail="Message too long (max 2000 characters)."
+            status_code=400, detail="Message too long (max 2000 characters).",
         )
-    channel_id = int(body.channel_id)
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
     channel = None
