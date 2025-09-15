@@ -506,6 +506,8 @@ async def save_message(
     if channel is not None:
         if isinstance(channel, discord.Thread):
             thread_obj = channel
+            if getattr(channel, "archived", False):
+                raise HTTPException(status_code=400, detail="thread is archived")
             base_channel = getattr(channel, "parent", None)
             if base_channel is None:
                 raise HTTPException(status_code=400, detail="parent channel not found")
