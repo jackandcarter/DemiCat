@@ -25,6 +25,8 @@ public class ChannelWatcher : IDisposable
     private DateTime _lastRefresh = DateTime.MinValue;
     private readonly TimeSpan _refreshCooldown = TimeSpan.FromSeconds(2);
 
+    internal static ChannelWatcher? Instance { get; private set; }
+
     public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, TemplatesWindow templatesWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager, HttpClient httpClient)
     {
         _config = config;
@@ -35,6 +37,8 @@ public class ChannelWatcher : IDisposable
         _officerChatWindow = officerChatWindow;
         _tokenManager = tokenManager;
         _httpClient = httpClient;
+
+        Instance = this;
     }
 
     public async Task Start()
@@ -199,9 +203,9 @@ public class ChannelWatcher : IDisposable
         }
     }
 
-    private void RefreshChannelsIfNeeded()
+    private void RefreshChannelsIfNeeded(bool force = false)
     {
-        if (DateTime.UtcNow - _lastRefresh < _refreshCooldown)
+        if (!force && DateTime.UtcNow - _lastRefresh < _refreshCooldown)
             return;
 
         _ = SafeRefresh(_ui.RefreshChannels);
@@ -213,6 +217,11 @@ public class ChannelWatcher : IDisposable
             _ = SafeRefresh(_officerChatWindow.RefreshChannels);
 
         _lastRefresh = DateTime.UtcNow;
+    }
+
+    public void TriggerRefresh(bool force = false)
+    {
+        RefreshChannelsIfNeeded(force);
     }
 
     private Uri BuildWebSocketUri()
@@ -230,5 +239,6 @@ public class ChannelWatcher : IDisposable
         try { _task?.GetAwaiter().GetResult(); } catch { }
         _ws?.Dispose();
         _cts?.Dispose();
+        if (Instance == this) Instance = null;
     }
 }

@@ -584,6 +584,26 @@ public class EventCreateWindow
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 _lastResult = $"Error {(int)response.StatusCode}: {responseBody}";
+
+                string? detailText = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(responseBody);
+                    if (doc.RootElement.TryGetProperty("detail", out var detail))
+                        detailText = detail.GetString();
+                    else if (doc.RootElement.TryGetProperty("message", out var message))
+                        detailText = message.GetString();
+                }
+                catch
+                {
+                    // ignore parse errors
+                }
+                var lower = detailText?.ToLowerInvariant() ?? string.Empty;
+                if (lower == "channel not configured" || lower == "unsupported channel type" || response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _ = PluginServices.Instance!.Framework.RunOnTick(async () => await FetchChannels(true));
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() => ChannelWatcher.Instance?.TriggerRefresh(true));
+                }
             }
             else
             {
