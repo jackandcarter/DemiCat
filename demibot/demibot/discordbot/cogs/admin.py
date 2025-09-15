@@ -635,16 +635,15 @@ class ConfigWizard(discord.ui.View):
                         role.is_officer = False
                         role.is_chat = False
 
+                all_ids = (
+                    self.event_channel_ids
+                    + self.fc_chat_channel_ids
+                    + self.officer_chat_channel_ids
+                )
                 await db.execute(
                     delete(GuildChannel).where(
                         GuildChannel.guild_id == guild.id,
-                        GuildChannel.kind.in_(
-                            [
-                                ChannelKind.EVENT,
-                                ChannelKind.FC_CHAT,
-                                ChannelKind.OFFICER_CHAT,
-                            ]
-                        ),
+                        GuildChannel.channel_id.in_(all_ids),
                     )
                 )
                 await db.flush()
