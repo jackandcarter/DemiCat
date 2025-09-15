@@ -341,7 +341,8 @@ public class ChatBridge : IDisposable
 
     private async Task<bool> ValidateToken(CancellationToken token)
     {
-        var response = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, token);
+        var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
+        var response = await pingService.PingAsync(token);
         if (response?.StatusCode == HttpStatusCode.NotFound)
         {
             PluginServices.Instance?.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");

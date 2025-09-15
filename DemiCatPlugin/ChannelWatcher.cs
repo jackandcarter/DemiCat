@@ -81,7 +81,8 @@ public class ChannelWatcher : IDisposable
 
             try
             {
-                var pingResponse = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, token);
+                var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
+                var pingResponse = await pingService.PingAsync(token);
                 if (pingResponse?.IsSuccessStatusCode != true)
                 {
                     var responseBody = pingResponse == null ? string.Empty : await pingResponse.Content.ReadAsStringAsync();
