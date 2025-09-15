@@ -30,6 +30,7 @@ from ...db.models import (
     User,
     GuildConfig,
 )
+from ._messages_common import _send_via_webhook, ALLOWED_MENTIONS
 from models.event import Event
 
 router = APIRouter(prefix="/api")
@@ -164,6 +165,18 @@ async def create_event(
             "channel_id": channel_id,
         },
     )
+    gc_kind = await db.scalar(
+        select(GuildChannel.kind).where(
+            GuildChannel.guild_id == ctx.guild.id,
+            GuildChannel.channel_id == channel_id,
+            GuildChannel.kind == ChannelKind.EVENT,
+        )
+    )
+    if gc_kind is None:
+        raise HTTPException(
+            status_code=400,
+            detail="channel not configured for events; re-run wizard or pick a configured channel",
+        )
 
     stored_embeds = body.embeds
     stored_attachments = (
@@ -176,7 +189,23 @@ async def create_event(
     sent: discord.Message | None = None
     if discord_client:
         channel = discord_client.get_channel(channel_id)
-        if isinstance(channel, discord.abc.Messageable):
+        if channel is None:
+            try:
+                channel = await discord_client.fetch_channel(channel_id)
+            except Exception:
+                channel = None
+        thread_obj: discord.Thread | None = None
+        base_channel = channel
+        if isinstance(channel, discord.Thread):
+            thread_obj = channel
+            base_channel = getattr(channel, "parent", None)
+            if base_channel is None:
+                raise HTTPException(status_code=400, detail="parent channel not found")
+        if isinstance(base_channel, discord.CategoryChannel):
+            raise HTTPException(status_code=400, detail="cannot post to a category")
+        if base_channel is not None and not isinstance(base_channel, discord.TextChannel):
+            raise HTTPException(status_code=400, detail="unsupported channel type")
+        if isinstance(base_channel, discord.abc.Messageable):
             emb = discord.Embed(title=body.title, description=body.description)
             emb.timestamp = ts
             if body.color is not None:
@@ -260,16 +289,48 @@ async def create_event(
                         "channel_id": channel_id,
                     },
                 )
-                sent = await api_call_with_retries(
-                    channel.send, content=content, embed=emb, view=view
-                )
+                if thread_obj:
+                    msg_id, _, _ = await _send_via_webhook(
+                        channel=base_channel,
+                        channel_id=base_channel.id,
+                        guild_id=ctx.guild.id,
+                        content=content or "",
+                        username="DemiCat",
+                        avatar=None,
+                        files=None,
+                        embed=emb,
+                        view=view,
+                        db=db,
+                        thread=thread_obj,
+                    )
+                    if msg_id is None:
+                        sent = await api_call_with_retries(
+                            base_channel.send,
+                            content=content,
+                            embed=emb,
+                            view=view,
+                            allowed_mentions=ALLOWED_MENTIONS,
+                            thread=thread_obj,
+                        )
+                        discord_msg_id = sent.id
+                    else:
+                        discord_msg_id = msg_id
+                else:
+                    sent = await api_call_with_retries(
+                        base_channel.send,
+                        content=content,
+                        embed=emb,
+                        view=view,
+                        allowed_mentions=ALLOWED_MENTIONS,
+                    )
+                    discord_msg_id = sent.id
                 logger.info(
                     "Discord API response received",
                     extra={
                         "event_id": eid,
                         "guild_id": ctx.guild.id,
                         "channel_id": channel_id,
-                        "discord_message_id": sent.id,
+                        "discord_message_id": discord_msg_id,
                     },
                 )
             except discord.HTTPException as exc:
@@ -293,10 +354,11 @@ async def create_event(
                         status_code=502,
                     )
                 raise
-            discord_msg_id = sent.id
-            if stored_embeds is None and sent.embeds:
+            if sent and sent.embeds:
                 stored_embeds = [e.to_dict() for e in sent.embeds]
-            if stored_attachments is None and sent.attachments:
+            elif stored_embeds is None and discord_msg_id:
+                stored_embeds = [emb.to_dict()]
+            if sent and sent.attachments and stored_attachments is None:
                 stored_attachments = [
                     {
                         "url": a.url,

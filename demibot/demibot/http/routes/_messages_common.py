@@ -139,6 +139,8 @@ async def _send_via_webhook(
     username: str,
     avatar: str | None,
     files: list[discord.File] | None,
+    embed: discord.Embed | None = None,
+    view: discord.ui.View | None = None,
     db: AsyncSession,
     thread: discord.abc.Snowflake | None = None,
 ) -> tuple[int | None, list[AttachmentDto] | None, list[str]]:
@@ -148,8 +150,9 @@ async def _send_via_webhook(
     provided, the message will be sent to that thread using the parent
     channel's webhook.
 
-    Returns the Discord message id and attachments on success, otherwise
-    a list of error messages describing the failure.
+    ``embed`` and ``view`` are optional and allow rich messages to be sent via
+    the webhook.  Returns the Discord message id and attachments on success,
+    otherwise a list of error messages describing the failure.
     """
 
     errors: list[str] = []
@@ -226,6 +229,8 @@ async def _send_via_webhook(
             files=files,
             wait=True,
             allowed_mentions=ALLOWED_MENTIONS,
+            embeds=[embed] if embed else None,
+            view=view,
             thread=thread,
         )
     except discord.HTTPException as e:  # pragma: no cover - network errors
@@ -243,6 +248,8 @@ async def _send_via_webhook(
                     files=files,
                     wait=True,
                     allowed_mentions=ALLOWED_MENTIONS,
+                    embeds=[embed] if embed else None,
+                    view=view,
                     thread=thread,
                 )
             except Exception as e2:  # pragma: no cover - network errors
@@ -290,6 +297,8 @@ async def _send_via_webhook(
                 files=files,
                 wait=True,
                 allowed_mentions=ALLOWED_MENTIONS,
+                embeds=[embed] if embed else None,
+                view=view,
                 thread=thread,
             )
             webhook = created
