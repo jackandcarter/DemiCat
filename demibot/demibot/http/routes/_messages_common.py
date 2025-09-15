@@ -664,7 +664,10 @@ async def save_message(
                     error_details.append(f"Direct send failed: {e}")
         else:
             logging.warning("Failed to resolve channel %s", cid)
-            raise HTTPException(status_code=404, detail="channel not found")
+            detail: dict[str, object] = {"message": "channel not found"}
+            if error_details:
+                detail["discord"] = error_details
+            raise HTTPException(status_code=404, detail=detail)
 
     if discord_msg_id is None:
         logging.warning(

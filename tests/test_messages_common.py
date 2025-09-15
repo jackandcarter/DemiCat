@@ -830,6 +830,42 @@ def test_discord_failure_details(monkeypatch):
     asyncio.run(_run())
 
 
+def test_channel_not_found_returns_error_details(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=8, discord_guild_id=8, name="Guild"))
+            db.add(User(id=8, discord_user_id=80, global_name="Alice"))
+            db.add(GuildChannel(guild_id=8, channel_id=123, kind=ChannelKind.FC_CHAT))
+            await db.commit()
+            guild = await db.get(Guild, 8)
+            user = await db.get(User, 8)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def failing_webhook(*args, **kwargs):
+                return None, None, ["Webhook boom"]
+
+            monkeypatch.setattr(mc, "_send_via_webhook", failing_webhook)
+            monkeypatch.setattr(mc, "discord_client", None)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="123", content="hi")
+            with pytest.raises(HTTPException) as ex:
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+            assert ex.value.status_code == 404
+            detail = ex.value.detail
+            assert isinstance(detail, dict)
+            assert detail.get("message") == "channel not found"
+            assert detail.get("discord") == ["Webhook boom"]
+
+    asyncio.run(_run())
+
+
 def test_attachment_validation(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
