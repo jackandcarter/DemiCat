@@ -822,7 +822,7 @@ public class ChatWindow : IDisposable
         try
         {
             var presences = _presence?.Presences ?? new List<PresenceDto>();
-            var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles);
+            var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles, _config.MentionRoleIds);
             logContent = content;
 
             HttpRequestMessage request;

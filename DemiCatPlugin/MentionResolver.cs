@@ -10,7 +10,11 @@ public static class MentionResolver
 
     private static string Normalize(string name) => name.Trim().ToLowerInvariant();
 
-    public static string Resolve(string content, IEnumerable<PresenceDto> presences, IEnumerable<RoleDto> roles)
+    public static string Resolve(
+        string content,
+        IEnumerable<PresenceDto> presences,
+        IEnumerable<RoleDto> roles,
+        IEnumerable<string>? allowedRoleIds = null)
     {
         var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
@@ -19,9 +23,14 @@ public static class MentionResolver
             lookup[Normalize(u.Name)] = $"<@{u.Id}>";
         }
 
+        HashSet<string>? allowed = null;
+        if (allowedRoleIds != null)
+            allowed = new HashSet<string>(allowedRoleIds);
+
         foreach (var r in roles)
         {
-            lookup[Normalize(r.Name)] = $"<@&{r.Id}>";
+            if (allowed == null || allowed.Contains(r.Id))
+                lookup[Normalize(r.Name)] = $"<@&{r.Id}>";
         }
 
         // Discord special mentions
