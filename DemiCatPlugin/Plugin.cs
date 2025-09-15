@@ -76,7 +76,7 @@ public class Plugin : IDalamudPlugin
             : null;
 
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
-        _avatarCache = new AvatarCache(TextureProvider);
+        _avatarCache = new AvatarCache(TextureProvider, _httpClient);
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache);
 
