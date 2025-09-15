@@ -19,6 +19,7 @@ using DiscordHelper;
 using System.Diagnostics;
 using Dalamud.Interface.ImGuiFileDialog;
 using DemiCatPlugin.Emoji;
+using DemiCatPlugin.Avatars;
 
 namespace DemiCatPlugin;
 
@@ -52,6 +53,7 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, EmojiData> _emojiCatalog = new();
     protected readonly ChatBridge _bridge;
     private readonly ChannelSelectionService _channelSelection;
+    private readonly AvatarCache _avatarCache;
     private readonly string _channelKind;
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -117,7 +119,7 @@ public class ChatWindow : IDisposable
 
     protected virtual string MessagesPath => "/api/messages";
 
-    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, string channelKind)
+    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, string channelKind, AvatarCache avatarCache)
     {
         _config = config;
         _httpClient = httpClient;
@@ -125,6 +127,7 @@ public class ChatWindow : IDisposable
         _tokenManager = tokenManager;
         _channelService = channelService;
         _channelSelection = channelSelection;
+        _avatarCache = avatarCache;
         _channelKind = channelKind;
         _emojiService = new EmojiService(httpClient, tokenManager, config);
         _emojiPicker = new EmojiPicker(_emojiService);
@@ -257,20 +260,19 @@ public class ChatWindow : IDisposable
                 var msg = _messages[i];
                 ImGui.PushID(msg.Id);
                 ImGui.BeginGroup();
-                if (msg.Author != null &&
-                    !string.IsNullOrEmpty(msg.Author.AvatarUrl) &&
-                    msg.AvatarTexture == null)
+                if (msg.Author != null && msg.AvatarTexture == null)
                 {
-                    LoadTexture(msg.Author.AvatarUrl, t => msg.AvatarTexture = t);
+                    _ = _avatarCache.GetAsync(msg.Author.AvatarUrl, msg.Author.Id)
+                        .ContinueWith(t => PluginServices.Instance!.Framework.RunOnTick(() => msg.AvatarTexture = t.Result));
                 }
                 if (msg.AvatarTexture != null)
                 {
                     var wrap = msg.AvatarTexture.GetWrapOrEmpty();
-                    ImGui.Image(wrap.Handle, new Vector2(32, 32));
+                    ImGui.Image(wrap.Handle, new Vector2(20, 20));
                 }
                 else
                 {
-                    ImGui.Dummy(new Vector2(32, 32));
+                    ImGui.Dummy(new Vector2(20, 20));
                 }
                 ImGui.SameLine();
 
@@ -1227,11 +1229,7 @@ public class ChatWindow : IDisposable
 
     private void DisposeMessageTextures(DiscordMessageDto msg)
     {
-        if (msg.AvatarTexture?.GetWrapOrEmpty() is IDisposable wrap)
-        {
-            wrap.Dispose();
-            msg.AvatarTexture = null;
-        }
+        msg.AvatarTexture = null;
         if (msg.Attachments != null)
         {
             foreach (var a in msg.Attachments)

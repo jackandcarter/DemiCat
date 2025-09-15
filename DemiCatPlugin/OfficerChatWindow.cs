@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using System.Numerics;
 using System.IO;
 using System.Linq;
+using DemiCatPlugin.Avatars;
 
 namespace DemiCatPlugin;
 
@@ -19,8 +20,8 @@ public class OfficerChatWindow : ChatWindow
     private DateTime _lastRolesRefresh = DateTime.MinValue;
     private bool _subscribed;
 
-    public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection)
-        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.OfficerChat)
+    public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, AvatarCache avatarCache)
+        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.OfficerChat, avatarCache)
     {
         _bridge.StatusChanged += s =>
         {

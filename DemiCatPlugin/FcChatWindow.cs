@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using System.Numerics;
+using DemiCatPlugin.Avatars;
 
 namespace DemiCatPlugin;
 
@@ -11,8 +12,8 @@ public class FcChatWindow : ChatWindow
     private readonly PresenceSidebar? _presenceSidebar;
     private float _presenceWidth = 150f;
 
-    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection)
-        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.FcChat)
+    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, AvatarCache avatarCache)
+        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.FcChat, avatarCache)
     {
         if (presence != null)
         {
