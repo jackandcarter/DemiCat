@@ -40,6 +40,8 @@ public class Config : IPluginConfiguration
     public bool FCSyncShell { get; set; } = false;
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
+    [JsonPropertyName("mentionRoleIds")]
+    public List<string> MentionRoleIds { get; set; } = new();
     public List<RoleDto> GuildRoles { get; set; } = new();
     [JsonPropertyName("templates")]
     public List<Template> TemplateData { get; set; } = new();
