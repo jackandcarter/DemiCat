@@ -67,6 +67,8 @@ public class Plugin : IDalamudPlugin
         };
         _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
 
+        PingService.Instance = new PingService(_httpClient, _config, _tokenManager);
+
         _channelSelection = new ChannelSelectionService(_config);
         _ui = new UiRenderer(_config, _httpClient, _channelSelection);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
@@ -165,7 +167,8 @@ public class Plugin : IDalamudPlugin
         if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
             return;
 
-        var response = await ApiHelpers.PingAsync(_httpClient, _config, _tokenManager, CancellationToken.None);
+        var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
+        var response = await pingService.PingAsync(CancellationToken.None);
         if (response?.IsSuccessStatusCode != true)
         {
             var reason = response?.StatusCode == HttpStatusCode.Unauthorized || response?.StatusCode == HttpStatusCode.Forbidden
