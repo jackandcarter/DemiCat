@@ -10,6 +10,7 @@ using DiscordHelper;
 using Dalamud.Plugin;
 using Dalamud.IoC;
 using Dalamud.Plugin.Services;
+using DemiCatPlugin.Avatars;
 
 namespace DemiCatPlugin;
 
@@ -18,10 +19,12 @@ public class Plugin : IDalamudPlugin
     public string Name => "DemiCat";
 
     [PluginService] internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    [PluginService] internal ITextureProvider TextureProvider { get; private set; } = null!;
 
     private readonly PluginServices _services;
     private readonly UiRenderer _ui;
     private readonly SettingsWindow _settings;
+    private readonly AvatarCache _avatarCache;
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
     private readonly DiscordPresenceService? _presenceService;
@@ -73,8 +76,9 @@ public class Plugin : IDalamudPlugin
             : null;
 
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection);
+        _avatarCache = new AvatarCache(TextureProvider);
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache);
 
         _presenceService?.Reset();
 
@@ -146,6 +150,7 @@ public class Plugin : IDalamudPlugin
         _mainWindow.Dispose();
         _ui.DisposeAsync().GetAwaiter().GetResult();
         _settings.Dispose();
+        _avatarCache.Dispose();
         _httpClient.Dispose();
     }
 
