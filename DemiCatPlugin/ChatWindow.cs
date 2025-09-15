@@ -842,6 +842,7 @@ public class ChatWindow : IDisposable
                 request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             }
             ApiHelpers.AddAuthHeader(request, _tokenManager);
+            PluginServices.Instance!.Log.Information($"Sending message to channel {channelId}");
             var response = await _httpClient.SendAsync(request);
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
@@ -892,6 +893,7 @@ public class ChatWindow : IDisposable
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning($"Failed to send message (channel {channelId}, content '{Truncate(logContent)}'). Status: {response.StatusCode}. Response Body: {responseBody}");
                 var msg = $"{(int)response.StatusCode} {response.ReasonPhrase}";
+                string detailText = string.Empty;
                 try
                 {
                     using var doc = JsonDocument.Parse(responseBody);
@@ -899,7 +901,7 @@ public class ChatWindow : IDisposable
                     {
                         if (detail.ValueKind == JsonValueKind.String)
                         {
-                            msg = detail.GetString() ?? msg;
+                            detailText = detail.GetString() ?? string.Empty;
                         }
                         else if (detail.ValueKind == JsonValueKind.Object)
                         {
@@ -914,11 +916,11 @@ public class ChatWindow : IDisposable
                             }
                             if (parts.Count > 0)
                             {
-                                msg = string.Join("\n", parts);
+                                detailText = string.Join("\n", parts);
                             }
                             else if (detail.TryGetProperty("message", out var m))
                             {
-                                msg = m.GetString() ?? msg;
+                                detailText = m.GetString() ?? string.Empty;
                             }
                         }
                     }
@@ -927,12 +929,17 @@ public class ChatWindow : IDisposable
                 {
                     // ignore parse errors
                 }
+                if (!string.IsNullOrEmpty(detailText))
+                {
+                    msg = detailText;
+                }
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _statusMessage = msg;
                     _lastError = msg;
                 });
-                if (response.StatusCode == HttpStatusCode.NotFound)
+                var lower = detailText.ToLowerInvariant();
+                if (lower == "channel not configured" || lower == "unsupported channel type" || response.StatusCode == HttpStatusCode.NotFound)
                 {
                     _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshChannels());
                 }
