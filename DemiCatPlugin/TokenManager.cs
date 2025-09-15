@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
+using System.Diagnostics;
 using Dalamud.Plugin;
 
 namespace DemiCatPlugin;
@@ -17,6 +18,8 @@ public enum LinkState
 public class TokenManager
 {
     private const string TokenFileName = "token.dat";
+    private const string StoreService = "DemiCat";
+    private const string StoreAccount = "Token";
     private readonly IDalamudPluginInterface _pluginInterface;
     private string? _token;
     public LinkState State { get; private set; } = LinkState.Unlinked;
@@ -49,43 +52,29 @@ public class TokenManager
     {
         try
         {
-            var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
-            if (!File.Exists(path))
-            {
-                State = LinkState.Unlinked;
-                _token = null;
-                return;
-            }
+            string? token = null;
 
-            var encrypted = File.ReadAllBytes(path);
-            try
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                var bytes = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
-                _token = Encoding.UTF8.GetString(bytes);
+                token = LoadDpapiToken();
             }
-            catch (CryptographicException)
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                // Migration path for previously stored plain text tokens
-                var text = Encoding.UTF8.GetString(encrypted);
-                _token = string.IsNullOrEmpty(text) ? null : text;
-                if (_token != null)
+                if (!TryReadKeychain(out token))
                 {
-                    try
-                    {
-                        var bytes = Encoding.UTF8.GetBytes(_token);
-                        var cipher = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
-                        File.WriteAllBytes(path, cipher);
-                        RestrictPermissions(path);
-                    }
-                    catch (PlatformNotSupportedException)
-                    {
-                        File.WriteAllBytes(path, Encoding.UTF8.GetBytes(_token));
-                        RestrictPermissions(path);
-                    }
+                    token = LoadLegacyFile(TryWriteKeychain);
+                }
+            }
+            else
+            {
+                if (!TryReadLibSecret(out token))
+                {
+                    token = LoadLegacyFile(TryWriteLibSecret);
                 }
             }
 
-            State = string.IsNullOrEmpty(_token) ? LinkState.Unlinked : LinkState.Linked;
+            _token = token;
+            State = string.IsNullOrEmpty(token) ? LinkState.Unlinked : LinkState.Linked;
         }
         catch
         {
@@ -98,21 +87,26 @@ public class TokenManager
     {
         try
         {
-            var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
-            var bytes = Encoding.UTF8.GetBytes(token);
-            byte[] encrypted;
-            try
+            bool stored = false;
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
-                encrypted = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
+                stored = SaveDpapiToken(token);
             }
-            catch (PlatformNotSupportedException)
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
             {
-                // fallback to plain text but restrict permissions
-                encrypted = bytes;
+                stored = TryWriteKeychain(token);
+            }
+            else
+            {
+                stored = TryWriteLibSecret(token);
             }
 
-            File.WriteAllBytes(path, encrypted);
-            RestrictPermissions(path);
+            if (!stored)
+            {
+                SavePlainFile(token);
+            }
+
             _token = token;
             State = LinkState.Linked;
             OnLinked?.Invoke();
@@ -139,13 +133,212 @@ public class TokenManager
         }
     }
 
-    public void Clear(string? reason = null)
+    private string? LoadDpapiToken()
+    {
+        var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
+        if (!File.Exists(path))
+            return null;
+
+        var encrypted = File.ReadAllBytes(path);
+        try
+        {
+            var bytes = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(bytes);
+        }
+        catch (CryptographicException)
+        {
+            // migration from plain text
+            var text = Encoding.UTF8.GetString(encrypted);
+            var token = string.IsNullOrEmpty(text) ? null : text;
+            if (token != null)
+            {
+                SaveDpapiToken(token);
+            }
+            return token;
+        }
+    }
+
+    private bool SaveDpapiToken(string token)
     {
         try
         {
             var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
-            if (File.Exists(path))
-                File.Delete(path);
+            var bytes = Encoding.UTF8.GetBytes(token);
+            var cipher = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(path, cipher);
+            RestrictPermissions(path);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private string? LoadLegacyFile(Func<string, bool> migrate)
+    {
+        var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
+        if (!File.Exists(path))
+            return null;
+
+        var text = File.ReadAllText(path, Encoding.UTF8);
+        if (string.IsNullOrEmpty(text))
+            return null;
+
+        if (migrate(text))
+        {
+            try { File.Delete(path); } catch { }
+        }
+        else
+        {
+            RestrictPermissions(path);
+        }
+
+        return text;
+    }
+
+    private void SavePlainFile(string token)
+    {
+        var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
+        File.WriteAllText(path, token, Encoding.UTF8);
+        RestrictPermissions(path);
+    }
+
+    private static bool TryReadKeychain(out string? token)
+    {
+        token = null;
+        try
+        {
+            var psi = new ProcessStartInfo("security", $"-q find-generic-password -s {StoreService} -a {StoreAccount} -w")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var proc = Process.Start(psi);
+            proc!.WaitForExit();
+            if (proc.ExitCode == 0)
+            {
+                token = proc.StandardOutput.ReadToEnd().Trim();
+                if (token.Length == 0) token = null;
+                return token != null;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private static bool TryWriteKeychain(string token)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("security", $"-q add-generic-password -s {StoreService} -a {StoreAccount} -w {token} -U")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var proc = Process.Start(psi);
+            proc!.WaitForExit();
+            return proc.ExitCode == 0;
+        }
+        catch { }
+        return false;
+    }
+
+    private static void TryDeleteKeychain()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("security", $"-q delete-generic-password -s {StoreService} -a {StoreAccount}")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var proc = Process.Start(psi);
+            proc?.WaitForExit();
+        }
+        catch { }
+    }
+
+    private static bool TryReadLibSecret(out string? token)
+    {
+        token = null;
+        try
+        {
+            var psi = new ProcessStartInfo("secret-tool", $"lookup service {StoreService} account {StoreAccount}")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var proc = Process.Start(psi);
+            proc!.WaitForExit();
+            if (proc.ExitCode == 0)
+            {
+                token = proc.StandardOutput.ReadToEnd().Trim();
+                if (token.Length == 0) token = null;
+                return token != null;
+            }
+        }
+        catch { }
+        return false;
+    }
+
+    private static bool TryWriteLibSecret(string token)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("secret-tool", $"store --label=\"DemiCat Token\" service {StoreService} account {StoreAccount}")
+            {
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var proc = Process.Start(psi);
+            if (proc == null) return false;
+            proc.StandardInput.Write(token);
+            proc.StandardInput.Close();
+            proc.WaitForExit();
+            return proc.ExitCode == 0;
+        }
+        catch { }
+        return false;
+    }
+
+    private static void TryDeleteLibSecret()
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("secret-tool", $"clear service {StoreService} account {StoreAccount}")
+            {
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            using var proc = Process.Start(psi);
+            proc?.WaitForExit();
+        }
+        catch { }
+    }
+
+    public void Clear(string? reason = null)
+    {
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                TryDeleteKeychain();
+            }
+            else
+            {
+                TryDeleteLibSecret();
+                var path = Path.Combine(_pluginInterface.ConfigDirectory.FullName, TokenFileName);
+                if (File.Exists(path))
+                    File.Delete(path);
+            }
         }
         catch
         {
