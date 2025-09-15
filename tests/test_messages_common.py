@@ -116,6 +116,118 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_fetch_messages_backfills_from_discord(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
+            db.add(User(id=1, discord_user_id=1, global_name="Bob"))
+            await db.commit()
+            guild = await db.get(Guild, 1)
+            user = await db.get(User, 1)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            msgs = [
+                types.SimpleNamespace(
+                    id=1,
+                    channel=types.SimpleNamespace(id=123),
+                    author=types.SimpleNamespace(id=1, display_name="Bob"),
+                    created_at=datetime(2024, 1, 1),
+                    content="first",
+                    attachments=[],
+                    mentions=[],
+                    role_mentions=[],
+                    channel_mentions=[],
+                    embeds=[],
+                    reference=None,
+                    components=[],
+                    reactions=[],
+                    edited_at=None,
+                ),
+                types.SimpleNamespace(
+                    id=2,
+                    channel=types.SimpleNamespace(id=123),
+                    author=types.SimpleNamespace(id=1, display_name="Bob"),
+                    created_at=datetime(2024, 1, 2),
+                    content="second",
+                    attachments=[],
+                    mentions=[],
+                    role_mentions=[],
+                    channel_mentions=[],
+                    embeds=[],
+                    reference=None,
+                    components=[],
+                    reactions=[],
+                    edited_at=None,
+                ),
+            ]
+
+            def fake_serialize_message(message):
+                dto = types.SimpleNamespace(
+                    id=str(message.id),
+                    channel_id=str(message.channel.id),
+                    author_name="Bob",
+                    author_avatar_url=None,
+                    timestamp=message.created_at,
+                    content=message.content,
+                    attachments=None,
+                    mentions=None,
+                    author=None,
+                    embeds=None,
+                    reference=None,
+                    components=None,
+                    reactions=None,
+                    edited_timestamp=None,
+                )
+                fragments = {
+                    "attachments_json": None,
+                    "mentions_json": None,
+                    "author_json": "{}",
+                    "embeds_json": None,
+                    "reference_json": None,
+                    "components_json": None,
+                    "reactions_json": None,
+                }
+                return dto, fragments
+
+            monkeypatch.setattr(mc, "serialize_message", fake_serialize_message)
+
+            class DummyChannel:
+                def __init__(self, messages):
+                    self.messages = messages
+                    self.calls: list[int | None] = []
+
+                def history(self, limit=None):
+                    self.calls.append(limit)
+
+                    async def gen():
+                        for m in self.messages[: limit or len(self.messages)]:
+                            yield m
+
+                    return gen()
+
+            dummy_channel = DummyChannel(msgs)
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return dummy_channel
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+
+            data = await mc.fetch_messages("123", ctx, db, is_officer=False, limit=5)
+            assert dummy_channel.calls == [5]
+            assert [m["content"] for m in data] == ["first", "second"]
+
+            rows = (await db.execute(select(Message))).scalars().all()
+            assert len(rows) == 2
+
+    asyncio.run(_run())
+
+
 def test_channel_not_configured(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
