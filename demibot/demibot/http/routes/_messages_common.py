@@ -559,9 +559,19 @@ async def save_message(
         if channel is None:
             try:
                 channel = await discord_client.fetch_channel(cid)
-            except Exception:
-                pass
+            except TypeError as e:
+                logging.exception("fetch_channel(%s) type error: %s", cid, e)
+            except discord.HTTPException as e:
+                logging.exception(
+                    "fetch_channel(%s) failed: %s %s", cid, e.status, e.text
+                )
     if channel is not None:
+        logging.info(
+            "Resolved channel %s as %s in guild %s",
+            cid,
+            channel.__class__.__name__,
+            getattr(getattr(channel, "guild", None), "id", "unknown"),
+        )
         if isinstance(channel, discord.Thread):
             thread_obj = channel
             if getattr(channel, "archived", False):
@@ -653,9 +663,7 @@ async def save_message(
                     )
                     error_details.append(f"Direct send failed: {e}")
         else:
-            logging.warning(
-                "Channel %s not found or not messageable", cid
-            )
+            logging.warning("Failed to resolve channel %s", cid)
             raise HTTPException(status_code=404, detail="channel not found")
 
     if discord_msg_id is None:
