@@ -939,7 +939,7 @@ public class ChatWindow : IDisposable
                     _lastError = msg;
                 });
                 var lower = detailText.ToLowerInvariant();
-                if (lower == "channel not configured" || lower == "unsupported channel type" || response.StatusCode == HttpStatusCode.NotFound)
+                if (lower.Contains("channel not configured") || lower.Contains("unsupported channel type") || response.StatusCode == HttpStatusCode.NotFound)
                 {
                     _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshChannels());
                 }
