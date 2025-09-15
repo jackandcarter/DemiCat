@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -517,6 +518,26 @@ public class TemplatesWindow
             {
                 var bodyText = await response.Content.ReadAsStringAsync();
                 _lastResult = $"Failed to post template: {(int)response.StatusCode} {bodyText}";
+
+                string? detailText = null;
+                try
+                {
+                    using var doc = JsonDocument.Parse(bodyText);
+                    if (doc.RootElement.TryGetProperty("detail", out var detail))
+                        detailText = detail.GetString();
+                    else if (doc.RootElement.TryGetProperty("message", out var message))
+                        detailText = message.GetString();
+                }
+                catch
+                {
+                    // ignore parse errors
+                }
+                var lower = detailText?.ToLowerInvariant() ?? string.Empty;
+                if (lower == "channel not configured" || lower == "unsupported channel type" || response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _ = PluginServices.Instance!.Framework.RunOnTick(async () => await FetchChannels(true));
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() => ChannelWatcher.Instance?.TriggerRefresh(true));
+                }
             }
             else
             {
