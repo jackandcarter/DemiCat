@@ -362,8 +362,12 @@ async def fetch_messages(
 ) -> list[dict]:
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
+    try:
+        cid = int(channel_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid channel id")
     stmt = select(Message).where(
-        Message.channel_id == int(channel_id),
+        Message.channel_id == cid,
         Message.is_officer.is_(is_officer),
     )
     if before is not None:
@@ -383,7 +387,7 @@ async def fetch_messages(
         shortfall = 50
 
     if shortfall > 0 and discord_client and before is None and after is None:
-        channel = discord_client.get_channel(int(channel_id))
+        channel = discord_client.get_channel(cid)
         if channel and isinstance(channel, discord.abc.Messageable):
             fetched: list[discord.Message] = []
             try:
@@ -513,11 +517,14 @@ async def save_message(
     channel_kind: ChannelKind,
     files: list[UploadFile] | None = None,
 ) -> dict:
-    channel_id = int(body.channel_id)
+    try:
+        cid = int(body.channel_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid channel id")
     gc_kind = await db.scalar(
         select(GuildChannel.kind).where(
             GuildChannel.guild_id == ctx.guild.id,
-            GuildChannel.channel_id == channel_id,
+            GuildChannel.channel_id == cid,
             GuildChannel.kind == channel_kind,
         )
     )
@@ -548,10 +555,10 @@ async def save_message(
     avatar = membership.avatar_url if membership else None
     error_details: list[str] = []
     if discord_client:
-        channel = discord_client.get_channel(channel_id)
+        channel = discord_client.get_channel(cid)
         if channel is None:
             try:
-                channel = await discord_client.fetch_channel(channel_id)
+                channel = await discord_client.fetch_channel(cid)
             except Exception:
                 pass
     if channel is not None:
@@ -590,7 +597,7 @@ async def save_message(
 
     discord_msg_id, attachments, webhook_errors = await _send_via_webhook(
         channel=base_channel,
-        channel_id=getattr(base_channel, "id", channel_id),
+        channel_id=getattr(base_channel, "id", cid),
         guild_id=ctx.guild.id,
         content=body.content,
         username=username,
@@ -618,7 +625,7 @@ async def save_message(
                 discord_msg_id = getattr(sent, "id", None)
                 if discord_msg_id is None:
                     logging.warning(
-                        "channel.send returned no id for channel %s", channel_id
+                        "channel.send returned no id for channel %s", cid
                     )
                 elif sent.attachments:
                     attachments = [
@@ -633,7 +640,7 @@ async def save_message(
                 if isinstance(e, discord.HTTPException):
                     logging.exception(
                         "channel.send failed for channel %s: %s %s",
-                        channel_id,
+                        cid,
                         e.status,
                         e.text,
                     )
@@ -642,18 +649,18 @@ async def save_message(
                     )
                 else:
                     logging.exception(
-                        "channel.send failed for channel %s", channel_id
+                        "channel.send failed for channel %s", cid
                     )
                     error_details.append(f"Direct send failed: {e}")
         else:
             logging.warning(
-                "Channel %s not found or not messageable", channel_id
+                "Channel %s not found or not messageable", cid
             )
             raise HTTPException(status_code=404, detail="channel not found")
 
     if discord_msg_id is None:
         logging.warning(
-            "Failed to relay message to Discord for channel %s", channel_id
+            "Failed to relay message to Discord for channel %s", cid
         )
         detail: dict[str, object] = {"message": "Failed to relay message to Discord"}
         if error_details:
@@ -674,7 +681,7 @@ async def save_message(
 
     dummy = types.SimpleNamespace(
         id=discord_msg_id,
-        channel=types.SimpleNamespace(id=channel_id),
+        channel=types.SimpleNamespace(id=cid),
         author=types.SimpleNamespace(
             id=ctx.user.id,
             display_name=display_name,
@@ -711,7 +718,7 @@ async def save_message(
 
     msg = Message(
         discord_message_id=discord_msg_id,
-        channel_id=channel_id,
+        channel_id=cid,
         guild_id=ctx.guild.id,
         author_id=ctx.user.id,
         author_name=author.name,
@@ -760,7 +767,11 @@ async def edit_message(
             status_code=400, detail="Message too long (max 2000 characters)."
         )
     msg = await db.get(Message, int(message_id))
-    if not msg or msg.channel_id != int(channel_id) or msg.is_officer != is_officer:
+    try:
+        cid = int(channel_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid channel id")
+    if not msg or msg.channel_id != cid or msg.is_officer != is_officer:
         raise HTTPException(status_code=404)
     if msg.author_id != ctx.user.id:
         raise HTTPException(status_code=403)
@@ -768,7 +779,7 @@ async def edit_message(
     msg.edited_timestamp = datetime.utcnow()
     await db.commit()
     if discord_client:
-        channel = discord_client.get_channel(int(channel_id))
+        channel = discord_client.get_channel(cid)
         if channel and isinstance(channel, discord.abc.Messageable):
             try:
                 discord_msg = await channel.fetch_message(int(message_id))
@@ -831,7 +842,7 @@ async def edit_message(
 
     dto = ChatMessage(
         id=str(message_id),
-        channel_id=str(channel_id),
+        channel_id=str(cid),
         author_name=msg.author_name,
         author_avatar_url=msg.author_avatar_url,
         timestamp=msg.created_at,
@@ -866,14 +877,18 @@ async def delete_message(
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
     msg = await db.get(Message, int(message_id))
-    if not msg or msg.channel_id != int(channel_id) or msg.is_officer != is_officer:
+    try:
+        cid = int(channel_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid channel id")
+    if not msg or msg.channel_id != cid or msg.is_officer != is_officer:
         raise HTTPException(status_code=404)
     if msg.author_id != ctx.user.id:
         raise HTTPException(status_code=403)
     await db.delete(msg)
     await db.commit()
     if discord_client:
-        channel = discord_client.get_channel(int(channel_id))
+        channel = discord_client.get_channel(cid)
         if channel and isinstance(channel, discord.abc.Messageable):
             try:
                 discord_msg = await channel.fetch_message(int(message_id))
@@ -881,7 +896,7 @@ async def delete_message(
             except Exception:
                 pass
     await manager.broadcast_text(
-        json.dumps({"id": str(message_id), "channelId": str(channel_id), "deleted": True}),
+        json.dumps({"id": str(message_id), "channelId": str(cid), "deleted": True}),
         ctx.guild.id,
         officer_only=is_officer,
         path="/ws/officer-messages" if is_officer else "/ws/messages",
