@@ -1366,7 +1366,7 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var channels = (await _channelService.FetchAsync(ChannelKind.FcChat, CancellationToken.None)).ToList();
+            var channels = (await _channelService.FetchAsync(_channelKind, CancellationToken.None)).ToList();
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
