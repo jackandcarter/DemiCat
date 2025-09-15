@@ -557,12 +557,6 @@ public class ChatWindow : IDisposable
         ImGui.SameLine();
         if (ImGui.SmallButton("Link")) WrapSelection("[", "](url)");
 
-        if (!string.IsNullOrEmpty(_input))
-        {
-            var preview = new DiscordMessageDto { Content = _input };
-            FormatContent(preview);
-        }
-
         var inputBuf = MakeUtf8Buffer(_input, 2048);
         ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 72f);
         var send = ImGui.InputText(
@@ -586,6 +580,14 @@ public class ChatWindow : IDisposable
         if (ImGui.Button("Send") || send)
         {
             _ = SendMessage();
+        }
+
+        if (!string.IsNullOrEmpty(_input))
+        {
+            ImGui.BeginChild("##inputPreview", new Vector2(0, ImGui.GetTextLineHeight() * 5), true);
+            var preview = new DiscordMessageDto { Content = _input };
+            FormatContent(preview);
+            ImGui.EndChild();
         }
 
         if (!string.IsNullOrEmpty(_lastError))
