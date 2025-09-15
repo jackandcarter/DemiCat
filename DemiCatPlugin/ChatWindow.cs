@@ -818,10 +818,12 @@ public class ChatWindow : IDisposable
             }
         }
 
+        string logContent = _input;
         try
         {
             var presences = _presence?.Presences ?? new List<PresenceDto>();
             var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles);
+            logContent = content;
 
             HttpRequestMessage request;
             if (_attachments.Count > 0)
@@ -830,15 +832,12 @@ public class ChatWindow : IDisposable
             }
             else
             {
-                var body = new
-                {
-                    channelId = channelId,
-                    content,
-                    useCharacterName = _useCharacterName,
-                    messageReference = _replyToId != null
-                        ? new { messageId = _replyToId, channelId = channelId }
-                        : null
-                };
+                var body = new MessageBuilder()
+                    .WithChannelId(channelId)
+                    .WithContent(content)
+                    .UseCharacterName(_useCharacterName)
+                    .WithMessageReference(_replyToId, channelId)
+                    .Build();
                 request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}");
                 request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             }
@@ -891,7 +890,7 @@ public class ChatWindow : IDisposable
             else
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to send message. Status: {response.StatusCode}. Response Body: {responseBody}");
+                PluginServices.Instance!.Log.Warning($"Failed to send message (channel {channelId}, content '{Truncate(logContent)}'). Status: {response.StatusCode}. Response Body: {responseBody}");
                 var msg = $"{(int)response.StatusCode} {response.ReasonPhrase}";
                 try
                 {
@@ -941,7 +940,7 @@ public class ChatWindow : IDisposable
         }
         catch (Exception ex)
         {
-            PluginServices.Instance!.Log.Error(ex, "Error sending message");
+            PluginServices.Instance!.Log.Error(ex, $"Error sending message (channel {channelId}, content '{Truncate(logContent)}')");
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _statusMessage = "Failed to send message";
@@ -959,8 +958,14 @@ public class ChatWindow : IDisposable
         form.Add(new StringContent(_useCharacterName ? "true" : "false"), "useCharacterName");
         if (!string.IsNullOrEmpty(_replyToId))
         {
-            var refJson = JsonSerializer.Serialize(new { messageId = _replyToId });
-            form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
+            var reference = new MessageBuilder()
+                .WithMessageReference(_replyToId)
+                .BuildMessageReference();
+            if (reference != null)
+            {
+                var refJson = JsonSerializer.Serialize(reference);
+                form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
+            }
         }
         foreach (var path in _attachments)
         {
@@ -980,6 +985,12 @@ public class ChatWindow : IDisposable
         {
             Content = form
         };
+    }
+
+    private static string Truncate(string? value, int max = 100)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        return value.Length <= max ? value : value[..max] + "...";
     }
 
     protected virtual async Task React(string messageId, string emoji, bool remove)
