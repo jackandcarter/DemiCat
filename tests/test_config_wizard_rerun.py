@@ -100,29 +100,30 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
         view1.mention_role_ids = [42]
         await view1.on_finish(DummyInteraction())
 
-        # Change the existing channel mapping to a different kind to simulate a conflict
-        async with get_session() as db:
-            chan = (
-                await db.execute(
-                    select(GuildChannel).where(
-                        GuildChannel.guild_id == 1, GuildChannel.channel_id == 1
-                    )
-                )
-            ).scalar_one()
-            chan.kind = ChannelKind.CHAT
-            await db.commit()
-
         # Second run of the wizard should succeed without IntegrityError
         view2 = ConfigWizard(guild, "title", "final", "done")
-        view2.event_channel_ids = [1]
-        view2.fc_chat_channel_ids = [2]
-        view2.officer_chat_channel_ids = [3]
+        # Use the same channel IDs but rotate the assignments to ensure the
+        # previous rows are replaced cleanly.
+        view2.event_channel_ids = [2]
+        view2.fc_chat_channel_ids = [3]
+        view2.officer_chat_channel_ids = [1]
         view2.officer_role_ids = [42]
         view2.mention_role_ids = [42]
         await view2.on_finish(DummyInteraction())
 
         async with get_session() as db:
-            chans = (await db.execute(select(GuildChannel))).scalars().all()
+            chans = (
+                await db.execute(select(GuildChannel).order_by(GuildChannel.channel_id))
+            ).scalars().all()
             assert len(chans) == 3
+            channel_map = {
+                chan.channel_id: (chan.kind, chan.name)
+                for chan in chans
+            }
+            assert channel_map == {
+                1: (ChannelKind.OFFICER_CHAT, "one"),
+                2: (ChannelKind.EVENT, "two"),
+                3: (ChannelKind.FC_CHAT, "three"),
+            }
 
     asyncio.run(_run())
