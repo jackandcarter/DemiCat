@@ -38,6 +38,119 @@ async def get_channels(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    async def process_channel(
+        channel_id: int, name: str, channel_kind: ChannelKind
+    ) -> tuple[dict[str, str] | None, bool]:
+        """Return channel payload and whether the DB was updated."""
+
+        changed = False
+        channel_obj = None
+        if discord_client:
+            channel_obj = discord_client.get_channel(channel_id)
+            if channel_obj is None:
+                try:
+                    channel_obj = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
+                except Exception:  # pragma: no cover - best effort
+                    channel_obj = None
+
+        if channel_obj is not None:
+            if isinstance(
+                channel_obj,
+                (
+                    discord.CategoryChannel,
+                    discord.VoiceChannel,
+                    discord.StageChannel,
+                    discord.ForumChannel,
+                ),
+            ):
+                await db.execute(
+                    delete(GuildChannel).where(
+                        GuildChannel.guild_id == ctx.guild.id,
+                        GuildChannel.channel_id == channel_id,
+                        GuildChannel.kind == channel_kind,
+                    )
+                )
+                return None, True
+            if isinstance(channel_obj, discord.Thread):
+                if getattr(channel_obj, "archived", False):
+                    await db.execute(
+                        delete(GuildChannel).where(
+                            GuildChannel.guild_id == ctx.guild.id,
+                            GuildChannel.channel_id == channel_id,
+                            GuildChannel.kind == channel_kind,
+                        )
+                    )
+                    return None, True
+                parent = getattr(channel_obj, "parent", None)
+                parent_id = getattr(parent, "id", None)
+                parent_name = getattr(parent, "name", None)
+                label = channel_obj.name
+                if parent_name:
+                    label = f"{parent_name} / {channel_obj.name}"
+                if label != name:
+                    await db.execute(
+                        update(GuildChannel)
+                        .where(
+                            GuildChannel.guild_id == ctx.guild.id,
+                            GuildChannel.channel_id == channel_id,
+                            GuildChannel.kind == channel_kind,
+                        )
+                        .values(name=label)
+                    )
+                    changed = True
+                data: dict[str, str] = {"id": str(channel_id), "name": label}
+                if parent_id is not None:
+                    data["parentId"] = str(parent_id)
+                return data, changed
+            # Text channel
+            label = channel_obj.name
+            if label != name:
+                await db.execute(
+                    update(GuildChannel)
+                    .where(
+                        GuildChannel.guild_id == ctx.guild.id,
+                        GuildChannel.channel_id == channel_id,
+                        GuildChannel.kind == channel_kind,
+                    )
+                    .values(name=label)
+                )
+                changed = True
+            return {"id": str(channel_id), "name": label}, changed
+
+        # Fallback if the channel couldn't be fetched
+        new_name = await ensure_channel_name(
+            db, ctx.guild.id, channel_id, channel_kind, name
+        )
+        if new_name is None:
+            logging.warning(
+                "Channel name missing for %s (%s) in guild %s",
+                channel_id,
+                channel_kind.value,
+                ctx.guild.id,
+            )
+            await db.execute(
+                update(GuildChannel)
+                .where(
+                    GuildChannel.guild_id == ctx.guild.id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == channel_kind,
+                )
+                .values(name=None)
+            )
+            return {"id": str(channel_id), "name": str(channel_id)}, True
+        if new_name != name:
+            await db.execute(
+                update(GuildChannel)
+                .where(
+                    GuildChannel.guild_id == ctx.guild.id,
+                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.kind == channel_kind,
+                )
+                .values(name=new_name)
+            )
+            changed = True
+        return {"id": str(channel_id), "name": new_name}, changed
+
     # Allow fetching a single channel kind for plugin convenience
     single_kinds = {
         ChannelKind.EVENT.value: ChannelKind.EVENT,
@@ -55,66 +168,11 @@ async def get_channels(
         channels: list[dict[str, str]] = []
         updated = False
         for channel_id, name in result.all():
-            new_name = await ensure_channel_name(
-                db, ctx.guild.id, channel_id, channel_kind, name
-            )
-            if new_name is None:
-                logging.warning(
-                    "Channel name missing for %s (%s) in guild %s",
-                    channel_id,
-                    channel_kind.value,
-                    ctx.guild.id,
-                )
-                await db.execute(
-                    update(GuildChannel)
-                    .where(
-                        GuildChannel.guild_id == ctx.guild.id,
-                        GuildChannel.channel_id == channel_id,
-                        GuildChannel.kind == channel_kind,
-                    )
-                    .values(name=None)
-                )
+            data, changed = await process_channel(channel_id, name, channel_kind)
+            if data is not None:
+                channels.append(data)
+            if changed:
                 updated = True
-                name = str(channel_id)
-            else:
-                if new_name != name:
-                    name = new_name
-                    updated = True
-            channel_obj = None
-            if discord_client:
-                channel_obj = discord_client.get_channel(channel_id)
-                if channel_obj is None:
-                    try:
-                        channel_obj = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
-                    except Exception:  # pragma: no cover - network errors
-                        channel_obj = None
-            if channel_obj is not None:
-                if isinstance(channel_obj, discord.ForumChannel):
-                    await db.execute(
-                        delete(GuildChannel).where(
-                            GuildChannel.guild_id == ctx.guild.id,
-                            GuildChannel.channel_id == channel_id,
-                            GuildChannel.kind == channel_kind,
-                        )
-                    )
-                    updated = True
-                    continue
-                if isinstance(channel_obj, discord.Thread):
-                    if getattr(channel_obj, "archived", False):
-                        await db.execute(
-                            delete(GuildChannel).where(
-                                GuildChannel.guild_id == ctx.guild.id,
-                                GuildChannel.channel_id == channel_id,
-                                GuildChannel.kind == channel_kind,
-                            )
-                        )
-                        updated = True
-                        continue
-                    parent = getattr(channel_obj, "parent", None)
-                    parent_name = getattr(parent, "name", None)
-                    if parent_name:
-                        name = f"{parent_name} / {channel_obj.name}"
-            channels.append({"id": str(channel_id), "name": name})
         if updated:
             await db.commit()
             await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
@@ -125,76 +183,17 @@ async def get_channels(
             GuildChannel.guild_id == ctx.guild.id
         )
     )
-    # Include human-friendly channel names so the plugin can display readable
-    # labels in dropdowns.
     plugin_kinds = [k for k in ChannelKind if k != ChannelKind.CHAT]
-    by_kind: dict[str, list[dict[str, str]]] = {
-        kind.value: [] for kind in plugin_kinds
-    }
+    by_kind: dict[str, list[dict[str, str]]] = {k.value: [] for k in plugin_kinds}
     updated = False
     for chan_kind, channel_id, name in result.all():
         if chan_kind not in plugin_kinds:
             continue
-        new_name = await ensure_channel_name(
-            db, ctx.guild.id, channel_id, chan_kind, name
-        )
-        if new_name is None:
-            logging.warning(
-                "Channel name missing for %s (%s) in guild %s",
-                channel_id,
-                chan_kind.value,
-                ctx.guild.id,
-            )
-            await db.execute(
-                update(GuildChannel)
-                .where(
-                    GuildChannel.guild_id == ctx.guild.id,
-                    GuildChannel.channel_id == channel_id,
-                    GuildChannel.kind == chan_kind,
-                )
-                .values(name=None)
-            )
+        data, changed = await process_channel(channel_id, name, chan_kind)
+        if data is not None:
+            by_kind[chan_kind.value].append(data)
+        if changed:
             updated = True
-            name = str(channel_id)
-        else:
-            if new_name != name:
-                name = new_name
-                updated = True
-        channel_obj = None
-        if discord_client:
-            channel_obj = discord_client.get_channel(channel_id)
-            if channel_obj is None:
-                try:
-                    channel_obj = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
-                except Exception:  # pragma: no cover - network errors
-                    channel_obj = None
-        if channel_obj is not None:
-            if isinstance(channel_obj, discord.ForumChannel):
-                await db.execute(
-                    delete(GuildChannel).where(
-                        GuildChannel.guild_id == ctx.guild.id,
-                        GuildChannel.channel_id == channel_id,
-                        GuildChannel.kind == chan_kind,
-                    )
-                )
-                updated = True
-                continue
-            if isinstance(channel_obj, discord.Thread):
-                if getattr(channel_obj, "archived", False):
-                    await db.execute(
-                        delete(GuildChannel).where(
-                            GuildChannel.guild_id == ctx.guild.id,
-                            GuildChannel.channel_id == channel_id,
-                            GuildChannel.kind == chan_kind,
-                        )
-                    )
-                    updated = True
-                    continue
-                parent = getattr(channel_obj, "parent", None)
-                parent_name = getattr(parent, "name", None)
-                if parent_name:
-                    name = f"{parent_name} / {channel_obj.name}"
-        by_kind[chan_kind.value].append({"id": str(channel_id), "name": name})
     if updated:
         await db.commit()
         await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
