@@ -1,14 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Net.Http;
 using System.Threading.Tasks;
 using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
+using StbImageSharp;
 
 namespace DemiCatPlugin.Avatars;
 
 public class AvatarCache : IDisposable
 {
     private readonly ITextureProvider _textureProvider;
+    private readonly HttpClient _httpClient;
     private readonly Dictionary<string, CacheEntry> _cache = new();
     private readonly TimeSpan _ttl = TimeSpan.FromHours(12);
     private readonly object _lock = new();
@@ -20,9 +24,10 @@ public class AvatarCache : IDisposable
         public Task<ISharedImmediateTexture?>? Pending;
     }
 
-    public AvatarCache(ITextureProvider textureProvider)
+    public AvatarCache(ITextureProvider textureProvider, HttpClient httpClient)
     {
         _textureProvider = textureProvider;
+        _httpClient = httpClient;
     }
 
     public Task<ISharedImmediateTexture?> GetAsync(string? avatarUrl, string? userId)
@@ -36,7 +41,7 @@ public class AvatarCache : IDisposable
             if (_cache.TryGetValue(url, out var entry))
             {
                 if (entry.Texture != null && entry.Expiration > DateTime.UtcNow)
-                    return Task.FromResult(entry.Texture);
+                    return Task.FromResult<ISharedImmediateTexture?>(entry.Texture);
                 if (entry.Pending != null)
                     return entry.Pending;
             }
@@ -49,16 +54,33 @@ public class AvatarCache : IDisposable
 
     private async Task<ISharedImmediateTexture?> FetchAsync(string url)
     {
-        var tex = await _textureProvider.GetFromUrlAsync(url);
-        lock (_lock)
+        try
         {
-            _cache[url] = new CacheEntry
+            var bytes = await _httpClient.GetByteArrayAsync(url).ConfigureAwait(false);
+            using var stream = new MemoryStream(bytes);
+            var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+            var wrap = _textureProvider.CreateFromRaw(
+                RawImageSpecification.Rgba32(image.Width, image.Height),
+                image.Data);
+            var tex = new ForwardingSharedImmediateTexture(wrap);
+            lock (_lock)
             {
-                Texture = tex,
-                Expiration = DateTime.UtcNow + _ttl
-            };
+                _cache[url] = new CacheEntry
+                {
+                    Texture = tex,
+                    Expiration = DateTime.UtcNow + _ttl
+                };
+            }
+            return tex;
         }
-        return tex;
+        catch
+        {
+            lock (_lock)
+            {
+                _cache.Remove(url);
+            }
+            return null;
+        }
     }
 
     private static string DefaultAvatarUrl(string? userId)
