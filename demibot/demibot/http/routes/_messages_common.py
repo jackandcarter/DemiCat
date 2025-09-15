@@ -476,8 +476,8 @@ async def save_message(
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
     channel = None
-    thread: discord.Thread | None = None
-    webhook_channel: discord.abc.Messageable | None = None
+    thread_obj: discord.Thread | None = None
+    base_channel: discord.abc.Messageable | None = None
     membership = await db.scalar(
         select(Membership).where(
             Membership.guild_id == ctx.guild.id,
@@ -496,29 +496,17 @@ async def save_message(
                 pass
     if channel is not None:
         if isinstance(channel, discord.Thread):
-            thread = channel
-            webhook_channel = getattr(channel, "parent", None)
-            if not webhook_channel or not isinstance(
-                webhook_channel, discord.abc.Messageable
-            ):
-                logging.warning(
-                    "Channel %s not found or not messageable", channel_id
-                )
-                channel = None
-                webhook_channel = None
+            thread_obj = channel
+            base_channel = getattr(channel, "parent", None)
+            if base_channel is None:
+                raise HTTPException(status_code=400, detail="parent channel not found")
         else:
-            webhook_channel = channel
-            if isinstance(channel, discord.ForumChannel):
-                raise HTTPException(
-                    status_code=400,
-                    detail="cannot send directly to a forum root; select a thread",
-                )
-            if not isinstance(channel, discord.abc.Messageable):
-                logging.warning(
-                    "Channel %s not found or not messageable", channel_id
-                )
-                channel = None
-                webhook_channel = None
+            base_channel = channel
+
+        if isinstance(base_channel, discord.CategoryChannel):
+            raise HTTPException(status_code=400, detail="cannot post to a category")
+        if not isinstance(base_channel, discord.TextChannel):
+            raise HTTPException(status_code=400, detail="unsupported channel type")
     discord_files = None
     if files:
         if len(files) > MAX_ATTACHMENTS:
@@ -539,27 +527,28 @@ async def save_message(
     username = username[:80]
 
     discord_msg_id, attachments, webhook_errors = await _send_via_webhook(
-        channel=webhook_channel,
-        channel_id=getattr(webhook_channel, "id", channel_id),
+        channel=base_channel,
+        channel_id=getattr(base_channel, "id", channel_id),
         guild_id=ctx.guild.id,
         content=body.content,
         username=username,
         avatar=avatar,
         files=discord_files,
         db=db,
-        thread=thread,
+        thread=thread_obj,
     )
     error_details.extend(webhook_errors)
 
     if discord_msg_id is None:
-        if channel and isinstance(channel, discord.abc.Messageable):
+        target_channel = thread_obj or base_channel
+        if target_channel and isinstance(target_channel, discord.abc.Messageable):
             for f in discord_files or []:
                 try:
                     f.reset()
                 except Exception:
                     pass
             try:
-                sent = await channel.send(
+                sent = await target_channel.send(
                     body.content,
                     files=discord_files,
                     allowed_mentions=ALLOWED_MENTIONS,
