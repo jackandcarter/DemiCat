@@ -20,8 +20,9 @@ namespace DemiCatPlugin.Emoji
 
         public async Task RefreshAsync(CancellationToken ct = default)
         {
-            if (!_tokens.IsReady())
+            if (!_tokens.IsReady() || string.IsNullOrEmpty(_tokens.Token))
             {
+                PluginServices.Instance?.ToastGui.ShowError("Emoji auth failed");
                 Custom = new();
                 return;
             }
@@ -33,6 +34,7 @@ namespace DemiCatPlugin.Emoji
             using var res = await _http.SendAsync(req, ct);
             if (res.StatusCode == HttpStatusCode.Unauthorized)
             {
+                PluginServices.Instance?.ToastGui.ShowError("Emoji auth failed");
                 _tokens.Clear("Authentication failed");
                 Custom = new();
                 return;
