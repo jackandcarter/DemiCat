@@ -95,8 +95,14 @@ public class OfficerChatWindow : ChatWindow
         form.Add(new StringContent(_useCharacterName ? "true" : "false"), "useCharacterName");
         if (!string.IsNullOrEmpty(_replyToId))
         {
-            var refJson = JsonSerializer.Serialize(new { messageId = _replyToId, channelId });
-            form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
+            var reference = new MessageBuilder()
+                .WithMessageReference(_replyToId, channelId)
+                .BuildMessageReference();
+            if (reference != null)
+            {
+                var refJson = JsonSerializer.Serialize(reference);
+                form.Add(new StringContent(refJson, Encoding.UTF8), "message_reference");
+            }
         }
         foreach (var path in _attachments)
         {
