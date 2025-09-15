@@ -225,7 +225,7 @@ public class ChatWindow : IDisposable
 
         if (_channels.Count > 0)
         {
-            var channelNames = _channels.Select(c => c.Name).ToArray();
+            var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
             if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
                 var newId = _channels[_selectedIndex].Id;
@@ -605,7 +605,7 @@ public class ChatWindow : IDisposable
     public void SetChannels(List<ChannelDto> channels)
     {
         _channels.Clear();
-        _channels.AddRange(channels);
+        _channels.AddRange(ChannelDtoExtensions.SortForDisplay(channels));
         var current = CurrentChannelId;
         if (!string.IsNullOrEmpty(current))
         {

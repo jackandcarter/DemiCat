@@ -116,7 +116,7 @@ public class EventCreateWindow
         }
         if (_channels.Count > 0)
         {
-            var channelNames = _channels.Select(c => c.Name).ToArray();
+            var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
             if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
                 var newId = _channels[_selectedIndex].Id;
@@ -687,7 +687,7 @@ public class EventCreateWindow
 
         try
         {
-            var dto = (await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList();
+            var dto = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList());
             if (await ChannelNameResolver.Resolve(dto, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {

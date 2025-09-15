@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Numerics;
 using System.IO;
+using System.Linq;
 
 namespace DemiCatPlugin;
 
@@ -207,7 +208,7 @@ public class OfficerChatWindow : ChatWindow
 
         try
         {
-            var channels = (await _channelService.FetchAsync(ChannelKind.OfficerChat, CancellationToken.None)).ToList();
+            var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(ChannelKind.OfficerChat, CancellationToken.None)).ToList());
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
                 return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>

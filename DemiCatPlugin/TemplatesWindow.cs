@@ -115,7 +115,7 @@ public class TemplatesWindow
         }
         if (_channels.Count > 0)
         {
-            var channelNames = _channels.Select(c => c.Name).ToArray();
+            var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
             if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
             {
                 var newId = _channels[_channelIndex].Id;
@@ -335,7 +335,7 @@ public class TemplatesWindow
 
         try
         {
-            var channels = (await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList();
+            var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList());
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
@@ -360,7 +360,7 @@ public class TemplatesWindow
     private void SetChannels(List<ChannelDto> channels)
     {
         _channels.Clear();
-        _channels.AddRange(channels);
+        _channels.AddRange(ChannelDtoExtensions.SortForDisplay(channels));
         var current = ChannelId;
         if (!string.IsNullOrEmpty(current))
         {
