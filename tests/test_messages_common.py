@@ -235,6 +235,43 @@ def test_thread_uses_parent_webhook(monkeypatch):
     asyncio.run(_run())
 
 
+def test_archived_thread_rejected(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=13, discord_guild_id=13, name="Guild"))
+            db.add(User(id=13, discord_user_id=130, global_name="Alice"))
+            db.add(GuildChannel(guild_id=13, channel_id=456, kind=ChannelKind.FC_CHAT))
+            await db.commit()
+            guild = await db.get(Guild, 13)
+            user = await db.get(User, 13)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            class DummyThread:
+                archived = True
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyThread()
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord, "Thread", DummyThread)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="456", content="hello")
+            with pytest.raises(HTTPException) as exc:
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+            assert exc.value.status_code == 400
+            assert exc.value.detail == "thread is archived"
+
+    asyncio.run(_run())
+
+
 def test_cached_webhook_without_channel(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
