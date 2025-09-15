@@ -78,15 +78,19 @@ async def add_reaction(
 ):
     if not discord_client:
         raise HTTPException(status_code=503, detail="Discord client unavailable")
+    try:
+        cid = int(channel_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid channel id")
     row = await db.get(Message, int(message_id))
-    if not row or row.channel_id != int(channel_id):
+    if not row or row.channel_id != cid:
         raise HTTPException(status_code=404, detail="message not found")
     if row.is_officer:
         if "officer" not in ctx.roles:
             raise HTTPException(status_code=403, detail="forbidden")
     elif "chat" not in ctx.roles:
         raise HTTPException(status_code=403, detail="forbidden")
-    channel = discord_client.get_channel(int(channel_id))
+    channel = discord_client.get_channel(cid)
     if not channel or not isinstance(channel, discord.abc.Messageable):
         raise HTTPException(status_code=404, detail="channel not found")
     try:
@@ -116,15 +120,19 @@ async def remove_reaction(
 ):
     if not discord_client:
         raise HTTPException(status_code=503, detail="Discord client unavailable")
+    try:
+        cid = int(channel_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid channel id")
     row = await db.get(Message, int(message_id))
-    if not row or row.channel_id != int(channel_id):
+    if not row or row.channel_id != cid:
         raise HTTPException(status_code=404, detail="message not found")
     if row.is_officer:
         if "officer" not in ctx.roles:
             raise HTTPException(status_code=403, detail="forbidden")
     elif "chat" not in ctx.roles:
         raise HTTPException(status_code=403, detail="forbidden")
-    channel = discord_client.get_channel(int(channel_id))
+    channel = discord_client.get_channel(cid)
     if not channel or not isinstance(channel, discord.abc.Messageable):
         raise HTTPException(status_code=404, detail="channel not found")
     try:
@@ -170,7 +178,11 @@ async def execute_command(
     command = body.get("command")
     if not command:
         raise HTTPException(status_code=400, detail="command required")
-    channel = discord_client.get_channel(int(channel_id))
+    try:
+        cid = int(channel_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="invalid channel id")
+    channel = discord_client.get_channel(cid)
     if not channel or not isinstance(channel, discord.abc.Messageable):
         raise HTTPException(status_code=404)
     try:
