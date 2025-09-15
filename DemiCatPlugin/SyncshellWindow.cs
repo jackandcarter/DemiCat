@@ -620,9 +620,9 @@ public class SyncshellWindow : IDisposable
                 SaveInstalledCache();
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            PluginServices.Instance?.Log.Error(ex, "Failed to load caches");
         }
 
         ComputeUpdates();
@@ -636,9 +636,9 @@ public class SyncshellWindow : IDisposable
             var json = JsonSerializer.Serialize(wrapper);
             File.WriteAllText(_assetsFile, json);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            PluginServices.Instance?.Log.Error(ex, "Failed to save assets cache");
         }
     }
 
@@ -650,9 +650,9 @@ public class SyncshellWindow : IDisposable
             var json = JsonSerializer.Serialize(wrapper);
             File.WriteAllText(_installedFile, json);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            PluginServices.Instance?.Log.Error(ex, "Failed to save installed cache");
         }
     }
 
@@ -665,9 +665,9 @@ public class SyncshellWindow : IDisposable
             if (File.Exists(_installedFile))
                 File.Delete(_installedFile);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            PluginServices.Instance?.Log.Error(ex, "Failed to clear caches");
         }
 
         _assets.Clear();
