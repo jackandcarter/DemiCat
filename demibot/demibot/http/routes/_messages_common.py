@@ -375,6 +375,57 @@ async def fetch_messages(
         stmt = stmt.limit(limit)
     result = await db.execute(stmt)
     rows = list(result.scalars())
+
+    shortfall = 0
+    if limit is not None:
+        shortfall = limit - len(rows)
+    elif not rows:
+        shortfall = 50
+
+    if shortfall > 0 and discord_client and before is None and after is None:
+        channel = discord_client.get_channel(int(channel_id))
+        if channel and isinstance(channel, discord.abc.Messageable):
+            fetched: list[discord.Message] = []
+            try:
+                async for msg in channel.history(limit=shortfall):
+                    fetched.append(msg)
+            except Exception:
+                fetched = []
+
+            inserted = False
+            for msg in fetched:
+                if await db.get(Message, msg.id):
+                    continue
+                dto, fragments = serialize_message(msg)
+                db.add(
+                    Message(
+                        discord_message_id=msg.id,
+                        channel_id=msg.channel.id,
+                        guild_id=ctx.guild.id,
+                        author_id=msg.author.id,
+                        author_name=dto.author_name,
+                        author_avatar_url=dto.author_avatar_url,
+                        content_raw=msg.content,
+                        content_display=msg.content,
+                        content=dto.content,
+                        attachments_json=fragments["attachments_json"],
+                        mentions_json=fragments["mentions_json"],
+                        author_json=fragments["author_json"],
+                        embeds_json=fragments["embeds_json"],
+                        reference_json=fragments["reference_json"],
+                        components_json=fragments["components_json"],
+                        reactions_json=fragments["reactions_json"],
+                        edited_timestamp=dto.edited_timestamp,
+                        is_officer=is_officer,
+                        created_at=msg.created_at,
+                    )
+                )
+                inserted = True
+            if inserted:
+                await db.commit()
+                result = await db.execute(stmt)
+                rows = list(result.scalars())
+
     rows.reverse()
     out: list[ChatMessage] = []
     for m in rows:
