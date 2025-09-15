@@ -29,13 +29,15 @@ public class TokenManager
     public event Action? OnLinked;
     public event Action<string?>? OnUnlinked;
 
-    public TokenManager()
+#if TEST
+    internal TokenManager()
     {
         _pluginInterface = null!;
         _token = "test";
         State = LinkState.Linked;
         Instance = this;
     }
+#endif
 
     public TokenManager(IDalamudPluginInterface pluginInterface)
     {

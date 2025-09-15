@@ -15,6 +15,6 @@
     <Compile Include="../DemiCatPlugin/MarkdownFormatter.cs" Link="MarkdownFormatter.cs" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="../DemiCatPlugin/DemiCatPlugin.csproj" />
+    <ProjectReference Include="../DemiCatPlugin/DemiCatPlugin.csproj" AdditionalProperties="DefineConstants=$(DefineConstants);TEST" />
   </ItemGroup>
 </Project>
