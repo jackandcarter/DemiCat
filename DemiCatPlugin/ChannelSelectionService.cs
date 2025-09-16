@@ -6,40 +6,75 @@ namespace DemiCatPlugin;
 public class ChannelSelectionService
 {
     private readonly Config _config;
-    private readonly Dictionary<string, string> _channels = new();
 
     public ChannelSelectionService(Config config)
     {
         _config = config;
-        _channels[ChannelKind.Event] = config.EventChannelId;
-        _channels[ChannelKind.FcChat] = config.FcChannelId;
-        _channels[ChannelKind.OfficerChat] = config.OfficerChannelId;
+        _config.ChannelSelections ??= new Dictionary<string, string>();
     }
 
-    public event Action<string, string, string>? ChannelChanged;
+    public event Action<string, string, string, string>? ChannelChanged;
 
-    public string GetChannel(string kind)
-        => _channels.TryGetValue(kind, out var id) ? id : string.Empty;
-
-    public void SetChannel(string kind, string id)
+    public string GetChannel(string kind, string? guildId)
     {
-        var old = GetChannel(kind);
-        if (old == id) return;
-        _channels[kind] = id;
-        switch (kind)
+        guildId ??= string.Empty;
+        var key = ChannelKeyHelper.BuildSelectionKey(guildId, kind);
+        if (_config.ChannelSelections.TryGetValue(key, out var id))
         {
-            case ChannelKind.Event:
-                _config.EventChannelId = id;
-                break;
-            case ChannelKind.FcChat:
-                _config.FcChannelId = id;
-                break;
-            case ChannelKind.OfficerChat:
-                _config.OfficerChannelId = id;
-                break;
+            return id;
         }
+
+        if (!ChannelKeyHelper.IsDefaultGuild(guildId))
+        {
+            return string.Empty;
+        }
+
+        return kind switch
+        {
+            ChannelKind.Event => _config.EventChannelId,
+            ChannelKind.FcChat => _config.FcChannelId,
+            ChannelKind.OfficerChat => _config.OfficerChannelId,
+            ChannelKind.Chat => _config.ChatChannelId,
+            _ => string.Empty
+        } ?? string.Empty;
+    }
+
+    public void SetChannel(string kind, string? guildId, string id)
+    {
+        guildId ??= string.Empty;
+        var old = GetChannel(kind, guildId);
+        if (old == id) return;
+
+        var key = ChannelKeyHelper.BuildSelectionKey(guildId, kind);
+        if (string.IsNullOrEmpty(id))
+        {
+            _config.ChannelSelections.Remove(key);
+        }
+        else
+        {
+            _config.ChannelSelections[key] = id;
+        }
+
+        if (ChannelKeyHelper.IsDefaultGuild(guildId))
+        {
+            switch (kind)
+            {
+                case ChannelKind.Event:
+                    _config.EventChannelId = id;
+                    break;
+                case ChannelKind.FcChat:
+                    _config.FcChannelId = id;
+                    break;
+                case ChannelKind.OfficerChat:
+                    _config.OfficerChannelId = id;
+                    break;
+                case ChannelKind.Chat:
+                    _config.ChatChannelId = id;
+                    break;
+            }
+        }
+
         PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
-        ChannelChanged?.Invoke(kind, old, id);
+        ChannelChanged?.Invoke(kind, guildId, old, id);
     }
 }
-

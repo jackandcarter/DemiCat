@@ -9,10 +9,24 @@ public class ChannelDto
     [JsonPropertyName("id")] public string Id { get; set; } = string.Empty;
     [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
     [JsonPropertyName("parentId")] public string? ParentId { get; set; }
+    [JsonPropertyName("kind")] public string Kind { get; set; } = string.Empty;
 }
 
 public static class ChannelDtoExtensions
 {
+    public static void EnsureKind(this ChannelDto? channel, string fallbackKind)
+    {
+        if (channel == null) return;
+        if (string.IsNullOrEmpty(channel.Kind))
+        {
+            channel.Kind = ChannelKeyHelper.NormalizeKind(fallbackKind);
+        }
+        else
+        {
+            channel.Kind = ChannelKeyHelper.NormalizeKind(channel.Kind);
+        }
+    }
+
     public static List<ChannelDto> SortForDisplay(IEnumerable<ChannelDto> channels)
     {
         var parents = channels.Where(c => string.IsNullOrEmpty(c.ParentId)).ToList();

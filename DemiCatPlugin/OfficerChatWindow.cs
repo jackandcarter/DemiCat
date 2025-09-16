@@ -248,7 +248,7 @@ public class OfficerChatWindow : ChatWindow
     {
         var chan = CurrentChannelId;
         _bridge.Unsubscribe(chan);
-        _bridge.Subscribe(chan);
+        _bridge.Subscribe(chan, _config.GuildId, ChannelKind);
         _presence?.Reset();
         _ = RefreshMessages();
         _subscribed = true;

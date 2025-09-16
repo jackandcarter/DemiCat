@@ -27,6 +27,7 @@ public class ChatBridge : IDisposable
     private bool _tokenValid;
     private readonly Dictionary<string, long> _cursors = new();
     private readonly Dictionary<string, long> _acked = new();
+    private readonly Dictionary<string, (string GuildId, string Kind)> _channelMetadata = new();
     private readonly HashSet<string> _subs = new();
     private int _connectCount;
     private int _reconnectCount;
@@ -82,9 +83,10 @@ public class ChatBridge : IDisposable
 
     public bool IsReady() => _tokenValid && _ws?.State == WebSocketState.Open;
 
-    public void Subscribe(string channel)
+    public void Subscribe(string channel, string? guildId, string? kind)
     {
         if (string.IsNullOrEmpty(channel)) return;
+        RegisterChannelMetadata(channel, guildId, kind);
         _subs.Add(channel);
         PluginServices.Instance?.Log.Info($"chat.ws subscribe channel={channel}");
         _ = SendSubscriptions();
@@ -93,6 +95,7 @@ public class ChatBridge : IDisposable
     public void Unsubscribe(string channel)
     {
         if (string.IsNullOrEmpty(channel)) return;
+        _channelMetadata.Remove(channel);
         if (_subs.Remove(channel))
         {
             PluginServices.Instance?.Log.Info($"chat.ws unsubscribe channel={channel}");
@@ -100,8 +103,12 @@ public class ChatBridge : IDisposable
         }
     }
 
-    public void Ack(string channel)
+    public void Ack(string channel, string? guildId, string? kind)
     {
+        if (!string.IsNullOrEmpty(channel))
+        {
+            RegisterChannelMetadata(channel, guildId, kind);
+        }
         _ = AckAsync(channel);
     }
 
@@ -117,6 +124,23 @@ public class ChatBridge : IDisposable
         PluginServices.Instance?.Log.Info($"chat.ws resync channel={channel}");
         _resyncCount++;
         _ = SendRaw(json);
+    }
+
+    private void RegisterChannelMetadata(string channel, string? guildId, string? kind)
+    {
+        if (string.IsNullOrEmpty(channel)) return;
+        var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
+        var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
+        _channelMetadata[channel] = (normalizedGuild, normalizedKind);
+    }
+
+    private string BuildCursorKey(string channel)
+    {
+        if (_channelMetadata.TryGetValue(channel, out var meta))
+        {
+            return ChannelKeyHelper.BuildCursorKey(meta.GuildId, meta.Kind, channel);
+        }
+        return ChannelKeyHelper.BuildCursorKey(_config.GuildId, null, channel);
     }
 
     private async Task Run(CancellationToken token)
@@ -434,7 +458,8 @@ public class ChatBridge : IDisposable
         if (!_cursors.TryGetValue(channel, out var cursor)) return Task.CompletedTask;
         if (_acked.TryGetValue(channel, out var acked) && acked == cursor) return Task.CompletedTask;
         _acked[channel] = cursor;
-        _config.ChatCursors[channel] = cursor;
+        var key = BuildCursorKey(channel);
+        _config.ChatCursors[key] = cursor;
         var json = JsonSerializer.Serialize(new { op = "ack", ch = channel, cur = cursor });
         return SendRaw(json);
     }
@@ -446,7 +471,8 @@ public class ChatBridge : IDisposable
         var chans = new List<object>();
         foreach (var ch in _subs)
         {
-            _config.ChatCursors.TryGetValue(ch, out var since);
+            var key = BuildCursorKey(ch);
+            _config.ChatCursors.TryGetValue(key, out var since);
             chans.Add(new { id = ch, since });
         }
         var json = JsonSerializer.Serialize(new { op = "sub", channels = chans });

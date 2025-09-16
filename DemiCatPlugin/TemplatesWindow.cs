@@ -62,11 +62,13 @@ public class TemplatesWindow
         _channelSelection.ChannelChanged += HandleChannelChanged;
     }
 
-    private string ChannelId => _channelSelection.GetChannel(ChannelKind.Event);
+    private string ChannelId => _channelSelection.GetChannel(ChannelKind.Event, _config.GuildId);
 
-    private void HandleChannelChanged(string kind, string oldId, string newId)
+    private void HandleChannelChanged(string kind, string guildId, string oldId, string newId)
     {
         if (kind != ChannelKind.Event) return;
+        if (!string.Equals(ChannelKeyHelper.NormalizeGuildId(guildId), ChannelKeyHelper.NormalizeGuildId(_config.GuildId), StringComparison.Ordinal))
+            return;
         PluginServices.Instance!.Framework.RunOnTick(() =>
         {
             if (_channels.Count > 0)
@@ -120,7 +122,7 @@ public class TemplatesWindow
             if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
             {
                 var newId = _channels[_channelIndex].Id;
-                _channelSelection.SetChannel(ChannelKind.Event, newId);
+                _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
             }
         }
         else
@@ -370,7 +372,7 @@ public class TemplatesWindow
         }
         if (_channels.Count > 0)
         {
-            _channelSelection.SetChannel(ChannelKind.Event, _channels[_channelIndex].Id);
+            _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, _channels[_channelIndex].Id);
         }
     }
 
