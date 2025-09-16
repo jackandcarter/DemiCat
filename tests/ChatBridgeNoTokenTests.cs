@@ -18,7 +18,7 @@ public class ChatBridgeNoTokenTests
         typeof(TokenManager).GetField("_token", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(tm, null);
         typeof(TokenManager).GetProperty("State", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public)!.SetValue(tm, LinkState.Unlinked);
 
-        var bridge = new ChatBridge(config, client, tm, () => new Uri("ws://localhost"));
+        var bridge = new ChatBridge(config, client, tm, () => new Uri("ws://localhost"), new ChannelSelectionService(config));
         bridge.Start();
         await Task.Delay(100);
         bridge.Stop();

@@ -29,6 +29,7 @@ public class ChatBridge : IDisposable
     private readonly Dictionary<string, long> _acked = new();
     private readonly Dictionary<string, (string GuildId, string Kind)> _channelMetadata = new();
     private readonly HashSet<string> _subs = new();
+    private readonly ChannelSelectionService _channelSelection;
     private int _connectCount;
     private int _reconnectCount;
     private int _resyncCount;
@@ -40,8 +41,11 @@ public class ChatBridge : IDisposable
     private DateTime _lastDisconnectLog;
     private string? _lastErrorSignature;
     private DateTime _lastErrorLog;
+    private string? _lastSubscribeMismatchSignature;
+    private DateTime _lastSubscribeMismatchLog;
     private static readonly TimeSpan DisconnectLogThrottle = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan SubscribeMismatchThrottle = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public event Action<string>? MessageReceived;
@@ -52,12 +56,13 @@ public class ChatBridge : IDisposable
     public event Action<string, long>? ResyncRequested;
     public event Action? TemplatesUpdated;
 
-    public ChatBridge(Config config, HttpClient httpClient, TokenManager tokenManager, Func<Uri> uriBuilder)
+    public ChatBridge(Config config, HttpClient httpClient, TokenManager tokenManager, Func<Uri> uriBuilder, ChannelSelectionService channelSelection)
     {
         _config = config;
         _httpClient = httpClient;
         _tokenManager = tokenManager;
         _uriBuilder = uriBuilder;
+        _channelSelection = channelSelection;
     }
 
     public void Start()
@@ -86,8 +91,12 @@ public class ChatBridge : IDisposable
     public void Subscribe(string channel, string? guildId, string? kind)
     {
         if (string.IsNullOrEmpty(channel)) return;
-        RegisterChannelMetadata(channel, guildId, kind);
-        _subs.Add(channel);
+        var key = RegisterChannelMetadata(channel, guildId, kind);
+        ValidateSubscription(channel, guildId, kind);
+        if (!string.IsNullOrEmpty(key))
+        {
+            _subs.Add(key);
+        }
         PluginServices.Instance?.Log.Info($"chat.ws subscribe channel={channel}");
         _ = SendSubscriptions();
     }
@@ -95,8 +104,9 @@ public class ChatBridge : IDisposable
     public void Unsubscribe(string channel)
     {
         if (string.IsNullOrEmpty(channel)) return;
+        var key = KeyForChannel(channel);
         _channelMetadata.Remove(channel);
-        if (_subs.Remove(channel))
+        if (!string.IsNullOrEmpty(key) && _subs.Remove(key))
         {
             PluginServices.Instance?.Log.Info($"chat.ws unsubscribe channel={channel}");
             _ = SendSubscriptions();
@@ -126,21 +136,105 @@ public class ChatBridge : IDisposable
         _ = SendRaw(json);
     }
 
-    private void RegisterChannelMetadata(string channel, string? guildId, string? kind)
+    private static string Key(string? guildId, string? kind, string channelId)
+        => ChannelKeyHelper.BuildCursorKey(guildId, kind, channelId);
+
+    private string KeyForChannel(string channel)
     {
-        if (string.IsNullOrEmpty(channel)) return;
+        if (string.IsNullOrEmpty(channel)) return string.Empty;
+        if (_channelMetadata.TryGetValue(channel, out var meta))
+        {
+            return Key(meta.GuildId, meta.Kind, channel);
+        }
+        return Key(_config.GuildId, null, channel);
+    }
+
+    private string RegisterChannelMetadata(string channel, string? guildId, string? kind)
+    {
+        if (string.IsNullOrEmpty(channel)) return string.Empty;
         var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
         var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
         _channelMetadata[channel] = (normalizedGuild, normalizedKind);
+        return Key(normalizedGuild, normalizedKind, channel);
     }
 
-    private string BuildCursorKey(string channel)
+    private void ValidateSubscription(string channel, string? guildId, string? kind)
     {
+        if (string.IsNullOrEmpty(channel) || string.IsNullOrEmpty(kind)) return;
+        var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
+        var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
+        if (string.IsNullOrEmpty(normalizedKind)) return;
+        var selected = _channelSelection.GetChannel(normalizedKind, normalizedGuild);
+        if (string.IsNullOrEmpty(selected)) return;
+        if (string.Equals(selected, channel, StringComparison.Ordinal)) return;
+        LogSubscribeMismatch(channel, normalizedGuild, normalizedKind, selected);
+    }
+
+    private void LogSubscribeMismatch(string channel, string guildId, string kind, string selected)
+    {
+        var now = DateTime.UtcNow;
+        var signature = $"{guildId}:{kind}:{selected}";
+        if (_lastSubscribeMismatchSignature == signature && (now - _lastSubscribeMismatchLog) < SubscribeMismatchThrottle)
+        {
+            return;
+        }
+        _lastSubscribeMismatchSignature = signature;
+        _lastSubscribeMismatchLog = now;
+        PluginServices.Instance?.Log.Warning($"chat.ws subscribe mismatch channel={channel} guild={guildId} kind={kind} selected={selected}");
+    }
+
+    private bool ShouldAcceptFrame(string op, string channel, string? guildId, string? kind)
+    {
+        var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
+        var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
+
+        if (string.IsNullOrEmpty(channel))
+        {
+            LogBatchDrop(op, channel, normalizedGuild, normalizedKind, "missing_channel", null, null, null);
+            return false;
+        }
+
         if (_channelMetadata.TryGetValue(channel, out var meta))
         {
-            return ChannelKeyHelper.BuildCursorKey(meta.GuildId, meta.Kind, channel);
+            if (!string.Equals(meta.GuildId, normalizedGuild, StringComparison.Ordinal) ||
+                !string.Equals(meta.Kind, normalizedKind, StringComparison.Ordinal))
+            {
+                LogBatchDrop(op, channel, normalizedGuild, normalizedKind, "metadata_mismatch", meta.GuildId, meta.Kind, null);
+                return false;
+            }
         }
-        return ChannelKeyHelper.BuildCursorKey(_config.GuildId, null, channel);
+
+        if (string.IsNullOrEmpty(normalizedKind))
+        {
+            return true;
+        }
+
+        var selected = _channelSelection.GetChannel(normalizedKind, normalizedGuild);
+        if (!string.IsNullOrEmpty(selected) && !string.Equals(selected, channel, StringComparison.Ordinal))
+        {
+            LogBatchDrop(op, channel, normalizedGuild, normalizedKind, "selection_mismatch", normalizedGuild, normalizedKind, selected);
+            return false;
+        }
+
+        return true;
+    }
+
+    private void LogBatchDrop(string op, string channel, string guildId, string kind, string reason, string? expectedGuild, string? expectedKind, string? expectedChannel)
+    {
+        var message = $"chat.ws drop batch op={op} channel={channel} guild={guildId} kind={kind} reason={reason}";
+        if (!string.IsNullOrEmpty(expectedGuild))
+        {
+            message += $" expected_guild={expectedGuild}";
+        }
+        if (!string.IsNullOrEmpty(expectedKind))
+        {
+            message += $" expected_kind={expectedKind}";
+        }
+        if (!string.IsNullOrEmpty(expectedChannel))
+        {
+            message += $" expected_channel={expectedChannel}";
+        }
+        PluginServices.Instance?.Log.Warning(message);
     }
 
     private async Task Run(CancellationToken token)
@@ -364,13 +458,30 @@ public class ChatBridge : IDisposable
             {
                 case "batch":
                     var channel = root.GetProperty("channel").GetString() ?? string.Empty;
+                    root.TryGetProperty("guildId", out var guildEl);
+                    root.TryGetProperty("kind", out var kindEl);
+                    var guildId = guildEl.ValueKind == JsonValueKind.String ? guildEl.GetString() : null;
+                    var kind = kindEl.ValueKind == JsonValueKind.String ? kindEl.GetString() : null;
+                    if (!ShouldAcceptFrame("batch", channel, guildId, kind))
+                    {
+                        break;
+                    }
+                    var key = RegisterChannelMetadata(channel, guildId, kind);
+                    if (string.IsNullOrEmpty(key))
+                    {
+                        key = KeyForChannel(channel);
+                    }
+                    if (string.IsNullOrEmpty(key))
+                    {
+                        break;
+                    }
                     var msgs = root.GetProperty("messages");
                     var count = 0;
                     foreach (var msg in msgs.EnumerateArray())
                     {
                         count++;
                         var cursor = msg.GetProperty("cursor").GetInt64();
-                        _cursors[channel] = cursor;
+                        _cursors[key] = cursor;
                         var mOp = msg.GetProperty("op").GetString();
                         if (mOp == "mc" || mOp == "mu")
                         {
@@ -402,6 +513,15 @@ public class ChatBridge : IDisposable
                     break;
                 case "resync":
                     var ch = root.GetProperty("channel").GetString() ?? string.Empty;
+                    root.TryGetProperty("guildId", out var resGuildEl);
+                    root.TryGetProperty("kind", out var resKindEl);
+                    var resGuildId = resGuildEl.ValueKind == JsonValueKind.String ? resGuildEl.GetString() : null;
+                    var resKind = resKindEl.ValueKind == JsonValueKind.String ? resKindEl.GetString() : null;
+                    if (!ShouldAcceptFrame("resync", ch, resGuildId, resKind))
+                    {
+                        break;
+                    }
+                    RegisterChannelMetadata(ch, resGuildId, resKind);
                     var cur = root.GetProperty("cursor").GetInt64();
                     _resyncCount++;
                     PluginServices.Instance?.Log.Info($"chat.ws resync channel={ch} count={_resyncCount}");
@@ -455,10 +575,12 @@ public class ChatBridge : IDisposable
 
     private Task AckAsync(string channel)
     {
-        if (!_cursors.TryGetValue(channel, out var cursor)) return Task.CompletedTask;
-        if (_acked.TryGetValue(channel, out var acked) && acked == cursor) return Task.CompletedTask;
-        _acked[channel] = cursor;
-        var key = BuildCursorKey(channel);
+        if (string.IsNullOrEmpty(channel)) return Task.CompletedTask;
+        var key = KeyForChannel(channel);
+        if (string.IsNullOrEmpty(key)) return Task.CompletedTask;
+        if (!_cursors.TryGetValue(key, out var cursor)) return Task.CompletedTask;
+        if (_acked.TryGetValue(key, out var acked) && acked == cursor) return Task.CompletedTask;
+        _acked[key] = cursor;
         _config.ChatCursors[key] = cursor;
         var json = JsonSerializer.Serialize(new { op = "ack", ch = channel, cur = cursor });
         return SendRaw(json);
@@ -469,14 +591,18 @@ public class ChatBridge : IDisposable
         if (_ws == null || _ws.State != WebSocketState.Open || _subs.Count == 0)
             return Task.CompletedTask;
         var chans = new List<object>();
-        foreach (var ch in _subs)
+        foreach (var kvp in _channelMetadata)
         {
-            var key = BuildCursorKey(ch);
+            var channelId = kvp.Key;
+            var meta = kvp.Value;
+            var key = Key(meta.GuildId, meta.Kind, channelId);
+            if (!_subs.Contains(key)) continue;
             _config.ChatCursors.TryGetValue(key, out var since);
-            chans.Add(new { id = ch, since });
+            chans.Add(new { id = channelId, since });
         }
+        if (chans.Count == 0) return Task.CompletedTask;
         var json = JsonSerializer.Serialize(new { op = "sub", channels = chans });
-        PluginServices.Instance?.Log.Info($"chat.ws subscribe count={_subs.Count}");
+        PluginServices.Instance?.Log.Info($"chat.ws subscribe count={chans.Count}");
         return SendRaw(json);
     }
 

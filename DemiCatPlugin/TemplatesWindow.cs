@@ -56,7 +56,7 @@ public class TemplatesWindow
         var token = TokenManager.Instance;
         if (token != null)
         {
-            _bridge = new ChatBridge(config, httpClient, token, BuildWebSocketUri);
+            _bridge = new ChatBridge(config, httpClient, token, BuildWebSocketUri, channelSelection);
             _bridge.TemplatesUpdated += () => _ = LoadTemplates();
         }
         _channelSelection.ChannelChanged += HandleChannelChanged;
