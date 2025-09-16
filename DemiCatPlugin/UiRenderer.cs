@@ -32,6 +32,9 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private bool _channelFetchFailed;
     private string _channelErrorMessage = string.Empty;
     private int _selectedIndex;
+    private bool _channelWarningShown;
+    private bool _channelSelectionWarningShown;
+    private bool _embedWarningShown;
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private DateTime _lastSync;
     private int _failureCount;
@@ -207,11 +210,13 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private void AnnotateEmbedDtos()
     {
         if (_presences.Count == 0) return;
+        if (_embedDtos.Count == 0) return;
         foreach (var dto in _embedDtos)
         {
-            if (dto.Fields == null) continue;
+            if (dto?.Fields == null) continue;
             foreach (var f in dto.Fields)
             {
+                if (f == null || string.IsNullOrEmpty(f.Value)) continue;
                 f.Value = MentionRegex.Replace(f.Value, match =>
                 {
                     var id = match.Groups[1].Value;
@@ -228,11 +233,17 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private void AnnotateEmbedsWithPresence()
     {
         if (_presences.Count == 0) return;
+        if (_embedDtos.Count == 0) return;
         lock (_embedLock)
         {
             AnnotateEmbedDtos();
             foreach (var dto in _embedDtos)
             {
+                if (dto == null || string.IsNullOrEmpty(dto.Id))
+                {
+                    continue;
+                }
+
                 if (_embeds.TryGetValue(dto.Id, out var view))
                 {
                     view.Update(dto);
@@ -542,13 +553,23 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         PluginServices.Instance?.Log.Error(ex, $"embeds.ws {stage} failed");
     }
 
-    public void SetEmbeds(IEnumerable<EmbedDto> embeds)
+    public void SetEmbeds(IEnumerable<EmbedDto>? embeds)
     {
+        if (embeds == null)
+        {
+            return;
+        }
+
         lock (_embedLock)
         {
             var ids = new HashSet<string>();
             foreach (var dto in embeds)
             {
+                if (dto == null || string.IsNullOrEmpty(dto.Id))
+                {
+                    continue;
+                }
+
                 ids.Add(dto.Id);
                 if (_embeds.TryGetValue(dto.Id, out var view))
                 {
@@ -621,40 +642,119 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         if (!_channelsLoaded)
         {
             _ = FetchChannels();
+            ImGui.TextUnformatted("Loading channels...");
+            return;
         }
 
-        if (_channels.Count > 0)
+        if (_channels.Count == 0)
         {
-            var channelNames = _channels.Select(c => c.Name).ToArray();
-            if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
+            ShowWarningOrToast(_channelFetchFailed ? _channelErrorMessage : "No channels available", ref _channelWarningShown);
+            return;
+        }
+
+        var channelNames = _channels
+            .Select(c => c?.Name ?? c?.Id ?? string.Empty)
+            .ToArray();
+
+        if (channelNames.Length == 0)
+        {
+            ShowWarningOrToast(_channelFetchFailed ? _channelErrorMessage : "No channels available", ref _channelWarningShown);
+            return;
+        }
+
+        _channelWarningShown = false;
+
+        var comboIndex = _selectedIndex;
+        if (comboIndex < 0 || comboIndex >= channelNames.Length)
+        {
+            comboIndex = Math.Clamp(comboIndex, 0, channelNames.Length - 1);
+        }
+
+        if (ImGui.Combo("Channel", ref comboIndex, channelNames, channelNames.Length))
+        {
+            if (comboIndex >= 0 && comboIndex < _channels.Count)
             {
-                var newId = _channels[_selectedIndex].Id;
-                _channelSelection.SetChannel(ChannelKind.Event, newId);
-                _ = RefreshChannels();
-                _ = RefreshEmbeds();
+                var selectedChannel = _channels[comboIndex];
+                if (!string.IsNullOrEmpty(selectedChannel?.Id))
+                {
+                    _selectedIndex = comboIndex;
+                    _channelSelection.SetChannel(ChannelKind.Event, selectedChannel.Id);
+                    _ = RefreshChannels();
+                    _ = RefreshEmbeds();
+                }
+                else
+                {
+                    ShowWarningOrToast("Select a valid channel to view events.", ref _channelSelectionWarningShown);
+                    return;
+                }
+            }
+            else
+            {
+                ShowWarningOrToast("Select a valid channel to view events.", ref _channelSelectionWarningShown);
+                return;
             }
         }
         else
         {
-            ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
+            _selectedIndex = comboIndex;
         }
 
-        List<EventView> embeds;
+        if (_selectedIndex < 0 || _selectedIndex >= _channels.Count)
+        {
+            ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
+            return;
+        }
+
+        var selected = _channels[_selectedIndex];
+        if (selected == null || string.IsNullOrEmpty(selected.Id))
+        {
+            ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
+            return;
+        }
+
         var channelId = ChannelId;
+        if (string.IsNullOrWhiteSpace(channelId))
+        {
+            ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
+            return;
+        }
+
+        _channelSelectionWarningShown = false;
+
+        List<EventView> embeds;
         lock (_embedLock)
         {
             embeds = _embeds.Values
-                .Where(v => string.IsNullOrEmpty(channelId) || v.ChannelId == channelId)
+                .Where(v => v != null && v.ChannelId == channelId)
                 .ToList();
         }
+
+        if (_embedDtos.Count == 0 || embeds.Count == 0)
+        {
+            ShowWarningOrToast("No events to display.", ref _embedWarningShown);
+            return;
+        }
+
+        _embedWarningShown = false;
 
         ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), true);
         foreach (var view in embeds)
         {
-            view.Draw();
+            view?.Draw();
         }
 
         ImGui.EndChild();
+    }
+
+    private void ShowWarningOrToast(string message, ref bool toastShown)
+    {
+        var text = string.IsNullOrWhiteSpace(message) ? "No data available" : message;
+        ImGui.TextUnformatted(text);
+        if (!toastShown)
+        {
+            PluginServices.Instance?.ToastGui.ShowError(text);
+            toastShown = true;
+        }
     }
 
     public void ResetChannels()
@@ -722,20 +822,32 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            if (await ChannelNameResolver.Resolve(dto.Event, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            var eventChannels = (dto.Event ?? new List<ChannelDto>())
+                .Where(c => c != null)
+                .ToList();
+            if (await ChannelNameResolver.Resolve(eventChannels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
-                _channels.AddRange(dto.Event);
+                _channels.AddRange(eventChannels);
                 var current = ChannelId;
                 if (!string.IsNullOrEmpty(current))
                 {
-                    _selectedIndex = _channels.FindIndex(c => c.Id == current);
+                    _selectedIndex = _channels.FindIndex(c => c != null && c.Id == current);
                     if (_selectedIndex < 0) _selectedIndex = 0;
                 }
                 if (_channels.Count > 0)
                 {
-                    _channelSelection.SetChannel(ChannelKind.Event, _channels[_selectedIndex].Id);
+                    if (_selectedIndex < 0 || _selectedIndex >= _channels.Count)
+                    {
+                        _selectedIndex = Math.Clamp(_selectedIndex, 0, _channels.Count - 1);
+                    }
+
+                    var selectedChannel = _channels[_selectedIndex];
+                    if (!string.IsNullOrEmpty(selectedChannel?.Id))
+                    {
+                        _channelSelection.SetChannel(ChannelKind.Event, selectedChannel.Id);
+                    }
                 }
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
