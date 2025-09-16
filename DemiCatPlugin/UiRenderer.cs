@@ -35,6 +35,12 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private readonly SemaphoreSlim _connectGate = new(1, 1);
     private DateTime _lastSync;
     private int _failureCount;
+    private bool _networkingActive;
+    private int _webSocketReconnectAttempt;
+    private string? _lastWebSocketErrorSignature;
+    private DateTime _lastWebSocketErrorLog;
+    private DateTime _nextWebSocketAttempt = DateTime.MinValue;
+    private static readonly TimeSpan WebSocketErrorLogThrottle = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true
@@ -108,6 +114,9 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             return;
         }
 
+        _networkingActive = true;
+        _webSocketReconnectAttempt = 0;
+        _nextWebSocketAttempt = DateTime.UtcNow;
         StartPolling();
         await RefreshChannels();
         await LoadPresences();
@@ -130,6 +139,9 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             _webSocket.Dispose();
             _webSocket = null;
         }
+        _webSocketReconnectAttempt = 0;
+        _nextWebSocketAttempt = DateTime.MaxValue;
+        _networkingActive = false;
     }
 
     private async Task PollLoop(CancellationToken token)
@@ -150,7 +162,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                     ? baseInterval
                     : TimeSpan.FromSeconds(
                         Math.Min(baseInterval.TotalSeconds * Math.Pow(2, _failureCount), 300));
-                if (_webSocket == null || _webSocket.State != WebSocketState.Open)
+                if ((_webSocket == null || _webSocket.State != WebSocketState.Open) && DateTime.UtcNow >= _nextWebSocketAttempt)
                 {
                     _ = ConnectWebSocket();
                 }
@@ -277,6 +289,16 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task ConnectWebSocket()
     {
+        if (DateTime.UtcNow < _nextWebSocketAttempt)
+        {
+            return;
+        }
+
+        if (!_networkingActive)
+        {
+            return;
+        }
+
         await _connectGate.WaitAsync();
         try
         {
@@ -287,6 +309,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
             if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true || !_config.Enabled)
             {
+                ScheduleNextWebSocketAttempt();
                 return;
             }
 
@@ -300,37 +323,60 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                     {
                         PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
                     }
-                    StartPolling();
+                    ScheduleNextWebSocketAttempt();
                     return;
                 }
+
+                _webSocket?.Dispose();
                 _webSocket = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_webSocket, TokenManager.Instance!);
                 var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
-                var wsUrl = new Uri(($"{baseUrl}/ws/embeds")
-                    .Replace("http://", "ws://")
-                    .Replace("https://", "wss://"));
+                var urlString = ($"{baseUrl}/ws/embeds")
+                    .Replace("http://", "ws://", StringComparison.OrdinalIgnoreCase)
+                    .Replace("https://", "wss://", StringComparison.OrdinalIgnoreCase);
+                if (!Uri.TryCreate(urlString, UriKind.Absolute, out var wsUrl) || !IsValidWebSocketUri(wsUrl))
+                {
+                    LogWebSocketException(new InvalidOperationException("Missing WebSocket URL"), "uri");
+                    ScheduleNextWebSocketAttempt();
+                    return;
+                }
 
-                PluginServices.Instance!.Log.Information($"Connecting WebSocket to {wsUrl}");
+                PluginServices.Instance!.Log.Information("Connecting WebSocket to {Uri}", wsUrl);
                 await _webSocket.ConnectAsync(wsUrl, CancellationToken.None);
                 PluginServices.Instance!.Log.Information("WebSocket connected successfully");
 
+                ResetWebSocketBackoff();
                 StopPolling();
                 await ReceiveLoop();
+                ScheduleNextWebSocketAttempt();
+            }
+            catch (HttpRequestException ex)
+            {
+                LogWebSocketException(ex, "connect");
+                ScheduleNextWebSocketAttempt();
             }
             catch (WebSocketException ex)
             {
-                var status = ex.Data.Contains("StatusCode") ? ex.Data["StatusCode"] : ex.WebSocketErrorCode;
-                PluginServices.Instance!.Log.Error(ex, $"Failed to connect WebSocket. Status: {status}");
-                _webSocket?.Dispose();
-                _webSocket = null;
-                StartPolling();
+                LogWebSocketException(ex, "connect");
+                ScheduleNextWebSocketAttempt();
+            }
+            catch (IOException ex)
+            {
+                LogWebSocketException(ex, "connect");
+                ScheduleNextWebSocketAttempt();
             }
             catch (Exception ex)
             {
-                PluginServices.Instance!.Log.Error(ex, "Failed to connect WebSocket");
-                _webSocket?.Dispose();
-                _webSocket = null;
-                StartPolling();
+                LogWebSocketException(ex, "connect");
+                ScheduleNextWebSocketAttempt();
+            }
+            finally
+            {
+                if (_webSocket?.State != WebSocketState.Open)
+                {
+                    _webSocket?.Dispose();
+                    _webSocket = null;
+                }
             }
         }
         finally
@@ -351,7 +397,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         {
             while (_webSocket.State == WebSocketState.Open)
             {
-                var ms = new MemoryStream();
+                using var ms = new MemoryStream();
                 WebSocketReceiveResult result;
                 do
                 {
@@ -418,16 +464,82 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 }
             }
         }
-        catch
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, CancellationToken.None))
         {
-            // ignored
         }
-        finally
+        catch (OperationCanceledException)
         {
-            _webSocket?.Dispose();
-            _webSocket = null;
-            StartPolling();
+            throw;
         }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (WebSocketException ex)
+        {
+            LogWebSocketException(ex, "receive");
+        }
+        catch (IOException ex)
+        {
+            LogWebSocketException(ex, "receive");
+        }
+    }
+
+    private void ScheduleNextWebSocketAttempt()
+    {
+        if (!_networkingActive)
+        {
+            _nextWebSocketAttempt = DateTime.MaxValue;
+            return;
+        }
+        _webSocketReconnectAttempt++;
+        var delay = GetWebSocketRetryDelay(_webSocketReconnectAttempt);
+        _nextWebSocketAttempt = DateTime.UtcNow + delay;
+        StartPolling();
+    }
+
+    private void ResetWebSocketBackoff()
+    {
+        _webSocketReconnectAttempt = 0;
+        _nextWebSocketAttempt = DateTime.UtcNow;
+    }
+
+    private static TimeSpan GetWebSocketRetryDelay(int attempt)
+    {
+        var cappedAttempt = Math.Max(1, attempt);
+        var baseDelay = Math.Min(15d, Math.Pow(2, cappedAttempt - 1));
+        var min = Math.Max(0.5d, baseDelay / 2d);
+        var max = Math.Max(min, baseDelay);
+        var jitter = min + (max - min) * Random.Shared.NextDouble();
+        return TimeSpan.FromSeconds(jitter);
+    }
+
+    private static bool ShouldRethrow(OperationCanceledException _, CancellationToken token)
+        => token.CanBeCanceled && token.IsCancellationRequested;
+
+    private static bool IsValidWebSocketUri(Uri? uri)
+    {
+        if (uri == null || !uri.IsAbsoluteUri)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(uri.ToString()))
+            return false;
+
+        return string.Equals(uri.Scheme, "ws", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void LogWebSocketException(Exception ex, string stage)
+    {
+        var now = DateTime.UtcNow;
+        var signature = $"{stage}:{ex.GetType().FullName}:{ex.Message}";
+        if (_lastWebSocketErrorSignature == signature && (now - _lastWebSocketErrorLog) < WebSocketErrorLogThrottle)
+        {
+            return;
+        }
+
+        _lastWebSocketErrorSignature = signature;
+        _lastWebSocketErrorLog = now;
+        PluginServices.Instance?.Log.Error(ex, $"embeds.ws {stage} failed");
     }
 
     public void SetEmbeds(IEnumerable<EmbedDto> embeds)

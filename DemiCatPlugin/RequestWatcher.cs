@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
@@ -16,6 +17,10 @@ public class RequestWatcher : IDisposable
     private ClientWebSocket? _ws;
     private Task? _task;
     private CancellationTokenSource? _cts;
+    private int _retryAttempt;
+    private string? _lastErrorSignature;
+    private DateTime _lastErrorLog;
+    private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
 
     public RequestWatcher(Config config, HttpClient httpClient, TokenManager tokenManager)
     {
@@ -48,15 +53,17 @@ public class RequestWatcher : IDisposable
 
     private async Task Run(CancellationToken token)
     {
-        var delay = TimeSpan.FromSeconds(5);
+        var baseDelay = TimeSpan.FromSeconds(5);
         while (!token.IsCancellationRequested)
         {
             if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady() || !_config.Enabled || !_config.Requests)
             {
-                try { await Task.Delay(delay, token); } catch { }
-                delay = TimeSpan.FromSeconds(5);
+                await DelayWithBackoff(baseDelay, token);
+                _retryAttempt = 0;
                 continue;
             }
+
+            var hadTransportError = true;
             try
             {
                 var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
@@ -67,17 +74,42 @@ public class RequestWatcher : IDisposable
                     {
                         PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
                     }
-                    try { await Task.Delay(delay, token); } catch { }
-                    delay = TimeSpan.FromSeconds(5);
+                    await DelayWithBackoff(baseDelay, token);
+                    _retryAttempt = 0;
                     continue;
                 }
+
                 try { await RequestStateService.RefreshAll(_httpClient, _config); } catch { }
+
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);
-                var uri = BuildWebSocketUri();
-                await _ws.ConnectAsync(uri, token);
-                delay = TimeSpan.FromSeconds(5);
+
+                Uri? uri;
+                try
+                {
+                    uri = BuildWebSocketUri();
+                }
+                catch (Exception ex)
+                {
+                    LogConnectionException(ex, "uri");
+                    await DelayWithBackoff(baseDelay, token);
+                    _retryAttempt = 0;
+                    continue;
+                }
+
+                if (!IsValidWebSocketUri(uri))
+                {
+                    LogConnectionException(new InvalidOperationException("Missing WebSocket URL"), "uri");
+                    await DelayWithBackoff(baseDelay, token);
+                    _retryAttempt = 0;
+                    continue;
+                }
+
+                await _ws.ConnectAsync(uri!, token);
+                _retryAttempt = 0;
+                hadTransportError = false;
+
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
@@ -86,21 +118,49 @@ public class RequestWatcher : IDisposable
                         break;
                     HandleMessage(message);
                 }
+
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
                     PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
+                    hadTransportError = true;
                 }
+            }
+            catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+            {
             }
             catch (OperationCanceledException)
             {
-                // Swallow cancellation during shutdown
+                throw;
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException)
             {
-                if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message.Contains("403"))
+            }
+            catch (HttpRequestException ex)
+            {
+                hadTransportError = true;
+                if (ex.StatusCode == HttpStatusCode.Forbidden)
                 {
                     PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
                 }
+                LogConnectionException(ex, "connect");
+            }
+            catch (WebSocketException ex)
+            {
+                hadTransportError = true;
+                if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
+                {
+                    PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
+                }
+                LogConnectionException(ex, "connect");
+            }
+            catch (IOException ex)
+            {
+                hadTransportError = true;
+                LogConnectionException(ex, "connect");
+            }
+            catch (Exception ex)
+            {
+                hadTransportError = true;
                 PluginServices.Instance?.Log.Error(ex, "Request watcher loop failed");
             }
             finally
@@ -108,6 +168,7 @@ public class RequestWatcher : IDisposable
                 _ws?.Dispose();
                 _ws = null;
             }
+
             if (token.IsCancellationRequested)
                 break;
 
@@ -115,8 +176,18 @@ public class RequestWatcher : IDisposable
             {
                 try { await RequestStateService.RefreshAll(_httpClient, _config); } catch { }
             }
-            try { await Task.Delay(delay, token); } catch { }
-            delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
+
+            if (hadTransportError)
+            {
+                _retryAttempt++;
+                var retryDelay = GetRetryDelay(_retryAttempt);
+                await DelayWithBackoff(retryDelay, token);
+            }
+            else
+            {
+                _retryAttempt = 0;
+                await DelayWithBackoff(baseDelay, token);
+            }
         }
     }
 
@@ -199,6 +270,60 @@ public class RequestWatcher : IDisposable
         {
             PluginServices.Instance?.Log.Error(ex, "Failed to handle request notification");
         }
+    }
+
+    private async Task DelayWithBackoff(TimeSpan delay, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(delay, token);
+        }
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+        {
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+    }
+
+    private static TimeSpan GetRetryDelay(int attempt)
+    {
+        var cappedAttempt = Math.Max(1, attempt);
+        var baseDelay = Math.Min(15d, Math.Pow(2, cappedAttempt - 1));
+        var min = Math.Max(0.5d, baseDelay / 2d);
+        var max = Math.Max(min, baseDelay);
+        var jitter = min + (max - min) * Random.Shared.NextDouble();
+        return TimeSpan.FromSeconds(jitter);
+    }
+
+    private static bool ShouldRethrow(OperationCanceledException _, CancellationToken token)
+        => token.CanBeCanceled && token.IsCancellationRequested;
+
+    private static bool IsValidWebSocketUri(Uri? uri)
+    {
+        if (uri == null || !uri.IsAbsoluteUri)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(uri.ToString()))
+            return false;
+
+        return string.Equals(uri.Scheme, "ws", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void LogConnectionException(Exception ex, string stage)
+    {
+        var now = DateTime.UtcNow;
+        var signature = $"{stage}:{ex.GetType().FullName}:{ex.Message}";
+        if (_lastErrorSignature == signature && (now - _lastErrorLog) < ErrorLogThrottle)
+        {
+            return;
+        }
+
+        _lastErrorSignature = signature;
+        _lastErrorLog = now;
+        PluginServices.Instance?.Log.Error(ex, $"request.ws {stage} failed");
     }
 
     private Uri BuildWebSocketUri()
