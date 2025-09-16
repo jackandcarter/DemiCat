@@ -199,10 +199,19 @@ async def _send_via_webhook(
                     )
                 )
             webhook = created
+        except discord.Forbidden as e:
+            logging.warning(
+                "Webhook creation forbidden",
+                extra={"guild_id": guild_id, "channel_id": channel_id},
+            )
+            raise HTTPException(
+                status_code=403, detail="Manage Webhooks required"
+            ) from e
         except Exception as e:  # pragma: no cover - network errors
             if isinstance(e, discord.HTTPException):
                 logging.exception(
-                    "create_webhook failed for channel %s: %s %s",
+                    "create_webhook failed for guild %s channel %s: %s %s",
+                    guild_id,
                     channel_id,
                     e.status,
                     e.text,
@@ -212,7 +221,9 @@ async def _send_via_webhook(
                 )
             else:
                 logging.exception(
-                    "create_webhook failed for channel %s", channel_id
+                    "create_webhook failed for guild %s channel %s",
+                    guild_id,
+                    channel_id,
                 )
                 errors.append(f"Webhook creation failed: {e}")
             return None, None, errors
@@ -302,10 +313,19 @@ async def _send_via_webhook(
                 thread=thread,
             )
             webhook = created
+        except discord.Forbidden as e2:
+            logging.warning(
+                "Webhook creation forbidden during retry",
+                extra={"guild_id": guild_id, "channel_id": channel_id},
+            )
+            raise HTTPException(
+                status_code=403, detail="Manage Webhooks required"
+            ) from e2
         except Exception as e2:  # pragma: no cover - network errors
             if isinstance(e2, discord.HTTPException):
                 logging.exception(
-                    "webhook.send failed after retry for channel %s: %s %s",
+                    "webhook.send failed after retry for guild %s channel %s: %s %s",
+                    guild_id,
                     channel_id,
                     e2.status,
                     e2.text,
@@ -315,7 +335,9 @@ async def _send_via_webhook(
                 )
             else:
                 logging.exception(
-                    "webhook.send failed after retry for channel %s", channel_id
+                    "webhook.send failed after retry for guild %s channel %s",
+                    guild_id,
+                    channel_id,
                 )
                 errors.append(f"Webhook retry failed: {e2}")
             return None, None, errors
@@ -663,7 +685,20 @@ async def save_message(
                     )
                     error_details.append(f"Direct send failed: {e}")
         else:
-            logging.warning("Failed to resolve channel %s", cid)
+            log_extra = {"guild_id": ctx.guild.id, "channel_id": cid}
+            if is_officer:
+                logging.warning(
+                    "Officer channel unresolved", extra=log_extra
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "OFFICER_CHANNEL_UNRESOLVED",
+                        "message": "Officer channel could not be resolved",
+                        "channelId": str(cid),
+                    },
+                )
+            logging.warning("Failed to resolve channel", extra=log_extra)
             detail: dict[str, object] = {"message": "channel not found"}
             if error_details:
                 detail["discord"] = error_details

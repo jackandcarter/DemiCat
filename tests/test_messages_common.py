@@ -893,6 +893,58 @@ def test_save_message_unresolved_channel_id(monkeypatch):
     asyncio.run(_run())
 
 
+def test_save_message_unresolved_officer_channel(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=12, discord_guild_id=12, name="Guild"))
+            db.add(User(id=12, discord_user_id=120, global_name="Alice"))
+            db.add(
+                GuildChannel(
+                    guild_id=12,
+                    channel_id=789,
+                    kind=ChannelKind.OFFICER_CHAT,
+                )
+            )
+            await db.commit()
+            guild = await db.get(Guild, 12)
+            user = await db.get(User, 12)
+            ctx = RequestContext(
+                user=user, guild=guild, key=DummyKey(), roles=["officer"]
+            )
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return None
+
+                async def fetch_channel(self, cid: int):
+                    return None
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channelId="789", content="hi")
+            with pytest.raises(HTTPException) as ex:
+                await mc.save_message(
+                    body,
+                    ctx,
+                    db,
+                    channel_kind=ChannelKind.OFFICER_CHAT,
+                )
+            assert ex.value.status_code == 409
+            detail = ex.value.detail
+            assert isinstance(detail, dict)
+            assert detail.get("code") == "OFFICER_CHANNEL_UNRESOLVED"
+            assert detail.get("channelId") == "789"
+
+    asyncio.run(_run())
+
+
 def test_channel_not_found_returns_error_details(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
