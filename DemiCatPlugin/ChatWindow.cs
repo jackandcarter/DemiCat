@@ -896,6 +896,7 @@ public class ChatWindow : IDisposable
                 PluginServices.Instance!.Log.Warning($"Failed to send message (channel {channelId}, content '{Truncate(logContent)}'). Status: {response.StatusCode}. Response Body: {responseBody}");
                 var msg = $"{(int)response.StatusCode} {response.ReasonPhrase}";
                 string detailText = string.Empty;
+                string? detailCode = null;
                 try
                 {
                     using var doc = JsonDocument.Parse(responseBody);
@@ -908,6 +909,10 @@ public class ChatWindow : IDisposable
                         else if (detail.ValueKind == JsonValueKind.Object)
                         {
                             List<string> parts = new();
+                            if (detail.TryGetProperty("code", out var codeProp) && codeProp.ValueKind == JsonValueKind.String)
+                            {
+                                detailCode = codeProp.GetString();
+                            }
                             if (detail.TryGetProperty("discord", out var discord) && discord.ValueKind == JsonValueKind.Array)
                             {
                                 parts = discord.EnumerateArray()
@@ -940,6 +945,13 @@ public class ChatWindow : IDisposable
                     _statusMessage = msg;
                     _lastError = msg;
                 });
+                if (response.StatusCode == HttpStatusCode.Conflict
+                    && string.Equals(MessagesPath, "/api/officer-messages", StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(detailCode, "OFFICER_CHANNEL_UNRESOLVED", StringComparison.OrdinalIgnoreCase))
+                {
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                        PluginServices.Instance?.ToastGui.ShowError("Officer channel invalid or missing. Re-select a channel and ensure the bot has Manage Webhooks."));
+                }
                 var lower = detailText.ToLowerInvariant();
                 if (lower.Contains("channel not configured") || lower.Contains("unsupported channel type") || response.StatusCode == HttpStatusCode.NotFound)
                 {
