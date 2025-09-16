@@ -85,6 +85,10 @@ public class ChannelWatcher : IDisposable
             }
 
             var hadTransportError = true;
+            int? retryStatusCode = null;
+            string? retryStatusDetail = null;
+            WebSocketCloseStatus? closeStatus = null;
+            string? closeStatusDescription = null;
             try
             {
                 var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
@@ -160,6 +164,8 @@ public class ChannelWatcher : IDisposable
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
                     PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
+                    retryStatusCode = (int)WebSocketCloseStatus.PolicyViolation;
+                    retryStatusDetail = WebSocketCloseStatus.PolicyViolation.ToString();
                     hadTransportError = true;
                 }
             }
@@ -176,6 +182,8 @@ public class ChannelWatcher : IDisposable
             catch (HttpRequestException ex)
             {
                 hadTransportError = true;
+                retryStatusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : null;
+                retryStatusDetail = ex.StatusCode?.ToString() ?? ex.Message;
                 LogConnectionException(ex, "connect");
             }
             catch (WebSocketException ex)
@@ -185,24 +193,33 @@ public class ChannelWatcher : IDisposable
                 {
                     PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
                 }
+                retryStatusCode = (int)ex.WebSocketErrorCode;
+                retryStatusDetail = ex.WebSocketErrorCode.ToString();
                 LogConnectionException(ex, "connect");
             }
             catch (IOException ex)
             {
                 hadTransportError = true;
+                retryStatusDetail = ex.Message;
                 LogConnectionException(ex, "connect");
             }
             catch (Exception ex)
             {
                 hadTransportError = true;
-                PluginServices.Instance!.Log.Error(ex, "Channel watcher loop failed");
+                retryStatusDetail = ex.Message;
+                LogConnectionException(ex, "loop");
             }
             finally
             {
-                var status = _ws?.CloseStatus;
-                var description = _ws?.CloseStatusDescription;
+                closeStatus = _ws?.CloseStatus;
+                closeStatusDescription = _ws?.CloseStatusDescription;
+                if (closeStatus.HasValue)
+                {
+                    retryStatusCode ??= (int)closeStatus.Value;
+                    retryStatusDetail ??= closeStatus.Value.ToString();
+                }
                 PluginServices.Instance!.Log.Information("Channel watcher disconnected. Status: {Status}, Description: {Description}",
-                    status?.ToString() ?? "unknown", description ?? "");
+                    closeStatus?.ToString() ?? "unknown", closeStatusDescription ?? "");
                 _ws?.Dispose();
                 _ws = null;
             }
@@ -222,6 +239,15 @@ public class ChannelWatcher : IDisposable
             {
                 _retryAttempt++;
                 var retryDelay = GetRetryDelay(_retryAttempt);
+                var statusDetail = retryStatusDetail ?? "unknown";
+                var statusCodeValue = retryStatusCode ?? 0;
+                PluginServices.Instance!.Log.Warning(
+                    "Channel watcher retry {Attempt}. Status {StatusCode} ({StatusDetail}). Next retry in {Delay}",
+                    _retryAttempt,
+                    statusCodeValue,
+                    statusDetail,
+                    $"{retryDelay.TotalSeconds:0.###}s"
+                );
                 await DelayWithBackoff(retryDelay, token);
             }
             else

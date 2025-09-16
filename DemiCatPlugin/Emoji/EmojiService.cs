@@ -16,6 +16,9 @@ namespace DemiCatPlugin.Emoji
         private readonly Config _config;
         private readonly object _refreshLock = new();
         private CancellationTokenSource? _refreshCancellation;
+        private string? _lastLoopErrorSignature;
+        private DateTime _lastLoopErrorLoggedAt;
+        private static readonly TimeSpan LoopErrorThrottle = TimeSpan.FromSeconds(30);
 
         public List<CustomEmoji> Custom { get; private set; } = new();
 
@@ -146,7 +149,7 @@ namespace DemiCatPlugin.Emoji
                 }
                 catch (Exception ex)
                 {
-                    PluginServices.Instance?.Log.Error(ex, "Emoji refresh loop failed");
+                    LogLoopFailure(ex);
                     break;
                 }
 
@@ -155,7 +158,14 @@ namespace DemiCatPlugin.Emoji
                     ? GetNextDelay(attempt, result.retryAfterSeconds)
                     : (TimeSpan?)null;
 
-                LogAttempt(attempt, result.status, result.ok, result.list.Count, nextDelay, result.retryAfterSeconds);
+                LogAttempt(
+                    attempt,
+                    result.status,
+                    result.ok,
+                    result.list.Count,
+                    nextDelay,
+                    result.retryAfterSeconds
+                );
 
                 if (result.status == HttpStatusCode.Unauthorized || result.status == HttpStatusCode.Forbidden)
                 {
@@ -252,19 +262,83 @@ namespace DemiCatPlugin.Emoji
             if (log == null) return;
 
             var outcome = ok ? (count > 0 ? "success" : "warm-up") : "failed";
-            var statusDescription = status == 0 ? "n/a" : $"{(int)status} {status}";
+            var statusCode = status == 0 ? 0 : (int)status;
+            var statusName = status == 0 ? "n/a" : status.ToString();
             var delayDescription = nextDelay.HasValue ? $"{nextDelay.Value.TotalSeconds:0.###}s" : "none";
+            var willRetry = nextDelay.HasValue;
 
-            if (retryAfter.HasValue)
+            if (willRetry)
             {
-                log.Information("Emoji refresh attempt {Attempt} {Outcome}. Status {Status}. Next retry {Delay} (Retry-After {RetryAfter}s)",
-                    attempt, outcome, statusDescription, delayDescription, retryAfter.Value);
+                if (retryAfter.HasValue)
+                {
+                    log.Warning(
+                        "Emoji refresh retry {Attempt}. Outcome {Outcome}. Status {StatusCode} ({StatusName}). Next retry in {Delay} (Retry-After {RetryAfter}s)",
+                        attempt,
+                        outcome,
+                        statusCode,
+                        statusName,
+                        delayDescription,
+                        retryAfter.Value
+                    );
+                }
+                else
+                {
+                    log.Warning(
+                        "Emoji refresh retry {Attempt}. Outcome {Outcome}. Status {StatusCode} ({StatusName}). Next retry in {Delay}",
+                        attempt,
+                        outcome,
+                        statusCode,
+                        statusName,
+                        delayDescription
+                    );
+                }
             }
             else
             {
-                log.Information("Emoji refresh attempt {Attempt} {Outcome}. Status {Status}. Next retry {Delay}",
-                    attempt, outcome, statusDescription, delayDescription);
+                if (retryAfter.HasValue)
+                {
+                    log.Information(
+                        "Emoji refresh attempt {Attempt} {Outcome}. Status {StatusCode} ({StatusName}). Next retry {Delay} (Retry-After {RetryAfter}s)",
+                        attempt,
+                        outcome,
+                        statusCode,
+                        statusName,
+                        delayDescription,
+                        retryAfter.Value
+                    );
+                }
+                else
+                {
+                    log.Information(
+                        "Emoji refresh attempt {Attempt} {Outcome}. Status {StatusCode} ({StatusName}). Next retry {Delay}",
+                        attempt,
+                        outcome,
+                        statusCode,
+                        statusName,
+                        delayDescription
+                    );
+                }
             }
+        }
+
+        private void LogLoopFailure(Exception ex)
+        {
+            var log = PluginServices.Instance?.Log;
+            if (log == null)
+            {
+                return;
+            }
+
+            var signature = $"{ex.GetType().FullName}:{ex.Message}";
+            var now = DateTime.UtcNow;
+            if (_lastLoopErrorSignature == signature && (now - _lastLoopErrorLoggedAt) < LoopErrorThrottle)
+            {
+                return;
+            }
+
+            _lastLoopErrorSignature = signature;
+            _lastLoopErrorLoggedAt = now;
+            log.Error(ex, "Emoji refresh loop failed");
         }
 
         private void PublishUpdate()
