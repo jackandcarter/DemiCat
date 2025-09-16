@@ -53,7 +53,7 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, EmojiData> _emojiCatalog = new();
     protected readonly ChatBridge _bridge;
     private readonly ChannelSelectionService _channelSelection;
-    private readonly AvatarCache _avatarCache;
+    private readonly AvatarCache? _avatarCache;
     private readonly string _channelKind;
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -67,7 +67,8 @@ public class ChatWindow : IDisposable
     private int _selectionStart;
     private int _selectionEnd;
 
-    protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind);
+    protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
+    protected string ChannelKind => _channelKind;
 
     private class TextureCacheEntry
     {
@@ -119,7 +120,7 @@ public class ChatWindow : IDisposable
 
     protected virtual string MessagesPath => "/api/messages";
 
-    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, string channelKind, AvatarCache avatarCache)
+    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, string channelKind, AvatarCache? avatarCache)
     {
         _config = config;
         _httpClient = httpClient;
@@ -148,6 +149,13 @@ public class ChatWindow : IDisposable
         _channelSelection.ChannelChanged += HandleChannelSelectionChanged;
     }
 
+#if TEST
+    internal ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
+        : this(config, httpClient, presence, tokenManager, channelService, new ChannelSelectionService(config), ChannelKind.Chat, null)
+    {
+    }
+#endif
+
     public virtual void StartNetworking()
     {
         _bridge.Start();
@@ -155,7 +163,7 @@ public class ChatWindow : IDisposable
         if (!string.IsNullOrEmpty(chan))
         {
             _bridge.Unsubscribe(chan);
-            _bridge.Subscribe(chan);
+            _bridge.Subscribe(chan, _config.GuildId, _channelKind);
         }
         _presence?.Reset();
     }
@@ -192,15 +200,17 @@ public class ChatWindow : IDisposable
         return Encoding.UTF8.GetString(buf, 0, len);
     }
 
-    private void HandleChannelSelectionChanged(string kind, string oldId, string newId)
+    private void HandleChannelSelectionChanged(string kind, string guildId, string oldId, string newId)
     {
         if (kind != _channelKind) return;
+        if (!string.Equals(ChannelKeyHelper.NormalizeGuildId(guildId), ChannelKeyHelper.NormalizeGuildId(_config.GuildId), StringComparison.Ordinal))
+            return;
         PluginServices.Instance!.Framework.RunOnTick(async () =>
         {
             if (!string.IsNullOrEmpty(oldId))
                 _bridge.Unsubscribe(oldId);
             if (!string.IsNullOrEmpty(newId))
-                _bridge.Subscribe(newId);
+                _bridge.Subscribe(newId, _config.GuildId, _channelKind);
             await RefreshMessages();
         });
     }
@@ -233,7 +243,7 @@ public class ChatWindow : IDisposable
             {
                 var newId = _channels[_selectedIndex].Id;
                 ClearTextureCache();
-                _channelSelection.SetChannel(_channelKind, newId);
+                _channelSelection.SetChannel(_channelKind, _config.GuildId, newId);
             }
         }
         else
@@ -260,7 +270,7 @@ public class ChatWindow : IDisposable
                 var msg = _messages[i];
                 ImGui.PushID(msg.Id);
                 ImGui.BeginGroup();
-                if (msg.Author != null && msg.AvatarTexture == null)
+                if (msg.Author != null && msg.AvatarTexture == null && _avatarCache != null)
                 {
                     _ = _avatarCache.GetAsync(msg.Author.AvatarUrl, msg.Author.Id)
                         .ContinueWith(t => PluginServices.Instance!.Framework.RunOnTick(() => msg.AvatarTexture = t.Result));
@@ -449,7 +459,7 @@ public class ChatWindow : IDisposable
         }
         clipper.End();
         ImGui.EndChild();
-        _bridge.Ack(CurrentChannelId);
+        _bridge.Ack(CurrentChannelId, _config.GuildId, _channelKind);
         SaveConfig();
 
         if (_replyToId != null)
@@ -617,7 +627,7 @@ public class ChatWindow : IDisposable
         if (_channels.Count > 0)
         {
             var newId = _channels[_selectedIndex].Id;
-            _channelSelection.SetChannel(_channelKind, newId);
+            _channelSelection.SetChannel(_channelKind, _config.GuildId, newId);
         }
     }
 
@@ -1154,7 +1164,8 @@ public class ChatWindow : IDisposable
             const int PageSize = 50;
             var all = new List<DiscordMessageDto>();
             string? before = null;
-            var hasCursor = _config.ChatCursors.TryGetValue(channelId, out var since);
+            var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
+            var hasCursor = _config.ChatCursors.TryGetValue(cursorKey, out var since);
             var after = hasCursor ? since.ToString() : null;
             while (all.Count < MaxMessages)
             {
@@ -1235,7 +1246,11 @@ public class ChatWindow : IDisposable
         if (_messages.Count > 0 && long.TryParse(_messages[^1].Id, out var last))
         {
             var channelId = CurrentChannelId;
-            _config.ChatCursors[channelId] = last;
+            if (!string.IsNullOrEmpty(channelId))
+            {
+                var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
+                _config.ChatCursors[cursorKey] = last;
+            }
         }
     }
 
@@ -1424,7 +1439,7 @@ public class ChatWindow : IDisposable
         _ = _presence?.Refresh();
         var chan = CurrentChannelId;
         _bridge.Unsubscribe(chan);
-        _bridge.Subscribe(chan);
+        _bridge.Subscribe(chan, _config.GuildId, _channelKind);
     }
 
     private void HandleBridgeUnlinked()

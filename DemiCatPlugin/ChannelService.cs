@@ -41,6 +41,10 @@ public class ChannelService
                 response.EnsureSuccessStatusCode();
                 var stream = await response.Content.ReadAsStreamAsync(linkedCts.Token);
                 var channels = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream, JsonOpts, linkedCts.Token) ?? new List<ChannelDto>();
+                foreach (var channel in channels)
+                {
+                    channel.EnsureKind(kind);
+                }
                 return ChannelDtoExtensions.SortForDisplay(channels);
             }
             catch (HttpRequestException) when (attempt < 2)

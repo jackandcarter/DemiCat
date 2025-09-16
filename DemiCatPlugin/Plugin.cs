@@ -286,6 +286,10 @@ public class Plugin : IDalamudPlugin
                     var channelStream = await channelResponse.Content.ReadAsStreamAsync();
                     var channelsDto = await JsonSerializer.DeserializeAsync<ChannelListDto>(channelStream) ?? new ChannelListDto();
                     chatChannels = channelsDto.Chat;
+                    foreach (var channel in chatChannels)
+                    {
+                        channel.EnsureKind(ChannelKind.FcChat);
+                    }
                 }
                 else
                 {

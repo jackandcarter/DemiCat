@@ -61,11 +61,13 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         _channelSelection.ChannelChanged += HandleChannelChanged;
     }
 
-    private string ChannelId => _channelSelection.GetChannel(ChannelKind.Event);
+    private string ChannelId => _channelSelection.GetChannel(ChannelKind.Event, _config.GuildId);
 
-    private void HandleChannelChanged(string kind, string oldId, string newId)
+    private void HandleChannelChanged(string kind, string guildId, string oldId, string newId)
     {
         if (kind != ChannelKind.Event) return;
+        if (!string.Equals(ChannelKeyHelper.NormalizeGuildId(guildId), ChannelKeyHelper.NormalizeGuildId(_config.GuildId), StringComparison.Ordinal))
+            return;
         PluginServices.Instance!.Framework.RunOnTick(() =>
         {
             if (_channels.Count > 0)
@@ -678,7 +680,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 if (!string.IsNullOrEmpty(selectedChannel?.Id))
                 {
                     _selectedIndex = comboIndex;
-                    _channelSelection.SetChannel(ChannelKind.Event, selectedChannel.Id);
+                    _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, selectedChannel.Id);
                     _ = RefreshChannels();
                     _ = RefreshEmbeds();
                 }
@@ -825,6 +827,10 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             var eventChannels = (dto.Event ?? new List<ChannelDto>())
                 .Where(c => c != null)
                 .ToList();
+            foreach (var channel in eventChannels)
+            {
+                channel.EnsureKind(ChannelKind.Event);
+            }
             if (await ChannelNameResolver.Resolve(eventChannels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
@@ -846,7 +852,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                     var selectedChannel = _channels[_selectedIndex];
                     if (!string.IsNullOrEmpty(selectedChannel?.Id))
                     {
-                        _channelSelection.SetChannel(ChannelKind.Event, selectedChannel.Id);
+                        _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, selectedChannel.Id);
                     }
                 }
                 _channelsLoaded = true;

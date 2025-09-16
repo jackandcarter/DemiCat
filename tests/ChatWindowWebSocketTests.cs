@@ -39,12 +39,12 @@ public class ChatWindowWebSocketTests
         string? payload = null;
         bridge.MessageReceived += p => payload = p;
         bridge.Start();
-        bridge.Subscribe("1");
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
 
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
         await WaitUntil(() => payload != null, TimeSpan.FromSeconds(5));
 
-        bridge.Ack("1");
+        bridge.Ack("1", config.GuildId, ChannelKind.Chat);
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"ack\"")), TimeSpan.FromSeconds(5));
 
         await bridge.Send("1", new { text = "hi" });
@@ -93,10 +93,10 @@ public class ChatWindowWebSocketTests
         bool received = false;
         bridge.MessageReceived += _ => received = true;
         bridge.Start();
-        bridge.Subscribe("1");
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
 
         await WaitUntil(() => firstBatchSent && received, TimeSpan.FromSeconds(5));
-        bridge.Ack("1");
+        bridge.Ack("1", config.GuildId, ChannelKind.Chat);
 
         await WaitUntil(() => secondSince != -1, TimeSpan.FromSeconds(10));
 
@@ -130,7 +130,7 @@ public class ChatWindowWebSocketTests
         DiscordUserDto? user = null;
         bridge.TypingReceived += u => user = u;
         bridge.Start();
-        bridge.Subscribe("1");
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
 
         await WaitUntil(() => user != null, TimeSpan.FromSeconds(5));
 
@@ -189,7 +189,7 @@ public class ChatWindowWebSocketTests
         var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
 
         bridge.Start();
-        bridge.Subscribe("1");
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
 
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
 

@@ -7,9 +7,9 @@ using System.Text.Json.Serialization;
 namespace DemiCatPlugin;
 
 public class Config : IPluginConfiguration
-{ 
+{
     // Required by Dalamud
-    public int Version { get; set; } = 4;
+    public int Version { get; set; } = 5;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -19,6 +19,7 @@ public class Config : IPluginConfiguration
     public string GuildId { get; set; } = string.Empty;
     public string ChatChannelId { get; set; } = string.Empty;
     public Dictionary<string, long> ChatCursors { get; set; } = new();
+    public Dictionary<string, string> ChannelSelections { get; set; } = new();
     public string EventChannelId { get; set; } = string.Empty;
     public string FcChannelId { get; set; } = string.Empty;
     public string FcChannelName { get; set; } = string.Empty;
@@ -123,6 +124,62 @@ public class Config : IPluginConfiguration
                 }
             }
             Version = 4;
+            ExtensionData = null;
+        }
+        if (Version < 5)
+        {
+            ChannelSelections ??= new Dictionary<string, string>();
+
+            void EnsureSelection(string kind, string? channelId)
+            {
+                if (string.IsNullOrEmpty(channelId)) return;
+                var key = ChannelKeyHelper.BuildSelectionKey(GuildId, kind);
+                if (!ChannelSelections.ContainsKey(key))
+                {
+                    ChannelSelections[key] = channelId;
+                }
+            }
+
+            EnsureSelection(ChannelKind.Chat, ChatChannelId);
+            EnsureSelection(ChannelKind.Event, EventChannelId);
+            EnsureSelection(ChannelKind.FcChat, FcChannelId);
+            EnsureSelection(ChannelKind.OfficerChat, OfficerChannelId);
+
+            if (ChatCursors.Count > 0)
+            {
+                var migrated = new Dictionary<string, long>();
+                foreach (var kvp in ChatCursors)
+                {
+                    var channelId = kvp.Key;
+                    var cursor = kvp.Value;
+                    if (string.IsNullOrEmpty(channelId))
+                        continue;
+
+                    var kinds = new List<string>();
+                    if (!string.IsNullOrEmpty(EventChannelId) && channelId == EventChannelId)
+                        kinds.Add(ChannelKind.Event);
+                    if (!string.IsNullOrEmpty(FcChannelId) && channelId == FcChannelId)
+                        kinds.Add(ChannelKind.FcChat);
+                    if (!string.IsNullOrEmpty(OfficerChannelId) && channelId == OfficerChannelId)
+                        kinds.Add(ChannelKind.OfficerChat);
+                    if (!string.IsNullOrEmpty(ChatChannelId) && channelId == ChatChannelId)
+                        kinds.Add(ChannelKind.Chat);
+                    if (kinds.Count == 0)
+                        kinds.Add(ChannelKind.FcChat);
+
+                    foreach (var kind in kinds)
+                    {
+                        var key = ChannelKeyHelper.BuildCursorKey(GuildId, kind, channelId);
+                        if (!migrated.ContainsKey(key))
+                        {
+                            migrated[key] = cursor;
+                        }
+                    }
+                }
+                ChatCursors = migrated;
+            }
+
+            Version = 5;
             ExtensionData = null;
         }
     }
