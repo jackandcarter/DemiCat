@@ -642,6 +642,7 @@ async def save_message(
 
     if discord_msg_id is None:
         target_channel = thread_obj or base_channel
+        log_extra = {"guild_id": ctx.guild.id, "channel_id": cid}
         if target_channel and isinstance(target_channel, discord.abc.Messageable):
             for f in discord_files or []:
                 try:
@@ -657,7 +658,9 @@ async def save_message(
                 discord_msg_id = getattr(sent, "id", None)
                 if discord_msg_id is None:
                     logging.warning(
-                        "channel.send returned no id for channel %s", cid
+                        "channel.send returned no id for channel %s",
+                        cid,
+                        extra=log_extra,
                     )
                 elif sent.attachments:
                     attachments = [
@@ -670,22 +673,24 @@ async def save_message(
                     ]
             except Exception as e:
                 if isinstance(e, discord.HTTPException):
-                    logging.exception(
+                    logging.error(
                         "channel.send failed for channel %s: %s %s",
                         cid,
                         e.status,
                         e.text,
+                        extra=log_extra,
                     )
                     error_details.append(
                         f"Direct send failed: {e.status} {e.text or _discord_error(e)}"
                     )
                 else:
-                    logging.exception(
-                        "channel.send failed for channel %s", cid
+                    logging.error(
+                        "channel.send failed for channel %s",
+                        cid,
+                        extra=log_extra,
                     )
                     error_details.append(f"Direct send failed: {e}")
         else:
-            log_extra = {"guild_id": ctx.guild.id, "channel_id": cid}
             if is_officer:
                 logging.warning(
                     "Officer channel unresolved", extra=log_extra
@@ -706,7 +711,9 @@ async def save_message(
 
     if discord_msg_id is None:
         logging.warning(
-            "Failed to relay message to Discord for channel %s", cid
+            "Failed to relay message to Discord for channel %s",
+            cid,
+            extra={"guild_id": ctx.guild.id, "channel_id": cid},
         )
         detail: dict[str, object] = {"message": "Failed to relay message to Discord"}
         if error_details:
