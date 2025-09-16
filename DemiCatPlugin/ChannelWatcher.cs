@@ -96,7 +96,7 @@ public class ChannelWatcher : IDisposable
                     {
                         PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
                         PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
-                        _tokenManager.Clear("Authentication failed");
+                        _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
                     }
                     try { await Task.Delay(delay, token); } catch { }
                     delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
