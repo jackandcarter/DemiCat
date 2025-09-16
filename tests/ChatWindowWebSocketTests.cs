@@ -26,15 +26,16 @@ public class ChatWindowWebSocketTests
                 var msg = await srv.Receive(ws);
                 if (msg.Contains("\"op\":\"sub\""))
                 {
-                    await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"messages\":[{\"cursor\":1,\"op\":\"mc\",\"d\":{}}]}");
+                    await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\",\"messages\":[{\"cursor\":1,\"op\":\"mc\",\"d\":{}}]}");
                 }
             }
         });
 
         SetupServices();
-        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
-        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
 
         string? payload = null;
         bridge.MessageReceived += p => payload = p;
@@ -69,7 +70,7 @@ public class ChatWindowWebSocketTests
             {
                 var sub = await srv.Receive(ws);
                 firstSince = ExtractSince(sub);
-                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"messages\":[{\"cursor\":7,\"op\":\"mc\",\"d\":{}}]}");
+                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\",\"messages\":[{\"cursor\":7,\"op\":\"mc\",\"d\":{}}]}");
                 firstBatchSent = true;
                 await srv.Receive(ws); // ack
                 await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
@@ -86,9 +87,10 @@ public class ChatWindowWebSocketTests
         });
 
         SetupServices();
-        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
-        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
 
         bool received = false;
         bridge.MessageReceived += _ => received = true;
@@ -114,7 +116,7 @@ public class ChatWindowWebSocketTests
             var msg = await srv.Receive(ws);
             if (msg.Contains("\"op\":\"sub\""))
             {
-                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"messages\":[{\"cursor\":1,\"op\":\"ty\",\"d\":{\"id\":\"u1\",\"name\":\"Alice\"}}]}");
+                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\",\"messages\":[{\"cursor\":1,\"op\":\"ty\",\"d\":{\"id\":\"u1\",\"name\":\"Alice\"}}]}");
             }
             while (ws.State == WebSocketState.Open)
             {
@@ -123,9 +125,10 @@ public class ChatWindowWebSocketTests
         });
 
         SetupServices();
-        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
-        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
 
         DiscordUserDto? user = null;
         bridge.TypingReceived += u => user = u;
@@ -148,7 +151,7 @@ public class ChatWindowWebSocketTests
             var msg = await srv.Receive(ws);
             if (msg.Contains("\"op\":\"sub\""))
             {
-                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"messages\":[{\"cursor\":1,\"op\":\"ty\",\"d\":{\"id\":\"u1\",\"name\":\"Alice\"}}]}");
+                await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\",\"messages\":[{\"cursor\":1,\"op\":\"ty\",\"d\":{\"id\":\"u1\",\"name\":\"Alice\"}}]}");
             }
             while (ws.State == WebSocketState.Open)
             {
@@ -173,6 +176,40 @@ public class ChatWindowWebSocketTests
     }
 
     [Fact]
+    public async Task WebSocket_DropsMismatchedBatch()
+    {
+        using var server = new MockWsServer(async (ws, _, srv) =>
+        {
+            while (ws.State == WebSocketState.Open)
+            {
+                var msg = await srv.Receive(ws);
+                if (msg.Contains("\"op\":\"sub\""))
+                {
+                    await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"OFFICER_CHAT\",\"messages\":[{\"cursor\":1,\"op\":\"mc\",\"d\":{}}]}");
+                }
+            }
+        });
+
+        SetupServices();
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
+
+        string? payload = null;
+        bridge.MessageReceived += p => payload = p;
+        bridge.Start();
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
+
+        await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
+        await Task.Delay(200);
+
+        bridge.Stop();
+
+        Assert.Null(payload);
+    }
+
+    [Fact]
     public async Task WebSocket_Ping404FallsBackToHealth()
     {
         using var server = new MockWsServer(async (ws, _, srv) =>
@@ -184,9 +221,10 @@ public class ChatWindowWebSocketTests
         }) { PingStatus = 404 };
 
         SetupServices();
-        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase };
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
-        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri);
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
 
         bridge.Start();
         bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);

@@ -134,7 +134,7 @@ public class ChatWindow : IDisposable
         _emojiPicker = new EmojiPicker(_emojiService);
         _ = _emojiService.RefreshAsync();
         _useCharacterName = config.UseCharacterName;
-        _bridge = new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri);
+        _bridge = new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri, channelSelection);
         _bridge.MessageReceived += HandleBridgeMessage;
         _bridge.TypingReceived += HandleBridgeTyping;
         _bridge.Linked += HandleBridgeLinked;
