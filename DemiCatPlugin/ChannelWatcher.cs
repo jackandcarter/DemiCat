@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.WebSockets;
@@ -24,6 +25,10 @@ public class ChannelWatcher : IDisposable
     private CancellationTokenSource? _cts;
     private DateTime _lastRefresh = DateTime.MinValue;
     private readonly TimeSpan _refreshCooldown = TimeSpan.FromSeconds(2);
+    private int _retryAttempt;
+    private string? _lastErrorSignature;
+    private DateTime _lastErrorLog;
+    private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
 
     internal static ChannelWatcher? Instance { get; private set; }
 
@@ -69,16 +74,17 @@ public class ChannelWatcher : IDisposable
 
     private async Task Run(CancellationToken token)
     {
-        var delay = TimeSpan.FromSeconds(5);
+        var baseDelay = TimeSpan.FromSeconds(5);
         while (!token.IsCancellationRequested)
         {
             if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady() || !_config.Enabled)
             {
-                try { await Task.Delay(delay, token); } catch { }
-                delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
+                await DelayWithBackoff(baseDelay, token);
+                _retryAttempt = 0;
                 continue;
             }
 
+            var hadTransportError = true;
             try
             {
                 var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
@@ -98,19 +104,41 @@ public class ChannelWatcher : IDisposable
                         PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
                         _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
                     }
-                    try { await Task.Delay(delay, token); } catch { }
-                    delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
+                    await DelayWithBackoff(baseDelay, token);
+                    _retryAttempt = 0;
                     continue;
                 }
 
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);
-                var uri = BuildWebSocketUri();
+
+                Uri? uri;
+                try
+                {
+                    uri = BuildWebSocketUri();
+                }
+                catch (Exception ex)
+                {
+                    LogConnectionException(ex, "uri");
+                    await DelayWithBackoff(baseDelay, token);
+                    _retryAttempt = 0;
+                    continue;
+                }
+
+                if (!IsValidWebSocketUri(uri))
+                {
+                    LogConnectionException(new InvalidOperationException("Missing WebSocket URL"), "uri");
+                    await DelayWithBackoff(baseDelay, token);
+                    _retryAttempt = 0;
+                    continue;
+                }
+
                 PluginServices.Instance!.Log.Information("Connecting to channel watcher at {Uri}", uri);
-                await _ws.ConnectAsync(uri, token);
+                await _ws.ConnectAsync(uri!, token);
                 PluginServices.Instance!.Log.Information("Channel watcher connected to {Uri}", uri);
-                delay = TimeSpan.FromSeconds(5);
+                _retryAttempt = 0;
+                hadTransportError = false;
 
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -132,18 +160,41 @@ public class ChannelWatcher : IDisposable
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
                     PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
+                    hadTransportError = true;
                 }
+            }
+            catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+            {
             }
             catch (OperationCanceledException)
             {
-                // Swallow cancellation during shutdown
+                throw;
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException)
             {
-                if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message.Contains("403"))
+            }
+            catch (HttpRequestException ex)
+            {
+                hadTransportError = true;
+                LogConnectionException(ex, "connect");
+            }
+            catch (WebSocketException ex)
+            {
+                hadTransportError = true;
+                if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
                 {
                     PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
                 }
+                LogConnectionException(ex, "connect");
+            }
+            catch (IOException ex)
+            {
+                hadTransportError = true;
+                LogConnectionException(ex, "connect");
+            }
+            catch (Exception ex)
+            {
+                hadTransportError = true;
                 PluginServices.Instance!.Log.Error(ex, "Channel watcher loop failed");
             }
             finally
@@ -167,9 +218,72 @@ public class ChannelWatcher : IDisposable
                 });
             }
 
-            try { await Task.Delay(delay, token); } catch { }
-            delay = TimeSpan.FromSeconds(Math.Min(delay.TotalSeconds * 2, 60));
+            if (hadTransportError)
+            {
+                _retryAttempt++;
+                var retryDelay = GetRetryDelay(_retryAttempt);
+                await DelayWithBackoff(retryDelay, token);
+            }
+            else
+            {
+                _retryAttempt = 0;
+                await DelayWithBackoff(baseDelay, token);
+            }
         }
+    }
+
+    private async Task DelayWithBackoff(TimeSpan delay, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(delay, token);
+        }
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+        {
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+    }
+
+    private static TimeSpan GetRetryDelay(int attempt)
+    {
+        var cappedAttempt = Math.Max(1, attempt);
+        var baseDelay = Math.Min(15d, Math.Pow(2, cappedAttempt - 1));
+        var min = Math.Max(0.5d, baseDelay / 2d);
+        var max = Math.Max(min, baseDelay);
+        var jitter = min + (max - min) * Random.Shared.NextDouble();
+        return TimeSpan.FromSeconds(jitter);
+    }
+
+    private static bool ShouldRethrow(OperationCanceledException _, CancellationToken token)
+        => token.CanBeCanceled && token.IsCancellationRequested;
+
+    private static bool IsValidWebSocketUri(Uri? uri)
+    {
+        if (uri == null || !uri.IsAbsoluteUri)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(uri.ToString()))
+            return false;
+
+        return string.Equals(uri.Scheme, "ws", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void LogConnectionException(Exception ex, string stage)
+    {
+        var now = DateTime.UtcNow;
+        var signature = $"{stage}:{ex.GetType().FullName}:{ex.Message}";
+        if (_lastErrorSignature == signature && (now - _lastErrorLog) < ErrorLogThrottle)
+        {
+            return;
+        }
+
+        _lastErrorSignature = signature;
+        _lastErrorLog = now;
+        PluginServices.Instance!.Log.Error(ex, $"channel.ws {stage} failed");
     }
 
     internal static async Task<(string message, WebSocketMessageType messageType)> ReceiveMessageAsync(WebSocket ws, byte[] buffer, CancellationToken token)

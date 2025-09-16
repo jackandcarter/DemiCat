@@ -35,6 +35,12 @@ public class ChatBridge : IDisposable
     private long _backfillBatches;
     private int _sendCount;
     private double _sendLatencyTotal;
+    private long _disconnectCount;
+    private DateTime _lastDisconnectLog;
+    private string? _lastErrorSignature;
+    private DateTime _lastErrorLog;
+    private static readonly TimeSpan DisconnectLogThrottle = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public event Action<string>? MessageReceived;
@@ -63,9 +69,13 @@ public class ChatBridge : IDisposable
     public void Stop()
     {
         _cts?.Cancel();
+        try { _task?.GetAwaiter().GetResult(); }
+        catch (OperationCanceledException) { }
+        catch { }
         _ws?.Dispose();
         _ws = null;
         _tokenValid = false;
+        _task = null;
     }
 
     public void Dispose() => Stop();
@@ -136,19 +146,46 @@ public class ChatBridge : IDisposable
             }
 
             var forbidden = false;
+            Exception? transportError = null;
+            var failureStage = "connect";
+            var connected = false;
+            var attemptedConnect = false;
             try
             {
                 StatusChanged?.Invoke("Connecting...");
+                Uri? uri;
+                try
+                {
+                    uri = _uriBuilder();
+                }
+                catch (Exception ex)
+                {
+                    LogConnectionException(ex, "uri");
+                    StatusChanged?.Invoke("Invalid API URL");
+                    await DelayWithJitter(5, token);
+                    continue;
+                }
+
+                if (!IsValidWebSocketUri(uri))
+                {
+                    LogConnectionException(new InvalidOperationException("Missing WebSocket URL"), "uri");
+                    StatusChanged?.Invoke("Invalid API URL");
+                    await DelayWithJitter(5, token);
+                    continue;
+                }
+
                 _ws?.Dispose();
                 _ws = new ClientWebSocket();
                 _ws.Options.DangerousDeflateOptions = new WebSocketDeflateOptions();
                 _ws.Options.SetRequestHeader("Sec-WebSocket-Extensions", "permessage-deflate");
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);
-                var uri = _uriBuilder();
-                await _ws.ConnectAsync(uri, token);
+                attemptedConnect = true;
+                await _ws.ConnectAsync(uri!, token);
                 _connectedSince = DateTime.UtcNow;
                 _reconnectAttempt = 0;
                 _tokenValid = true;
+                connected = true;
+                failureStage = "receive";
                 Linked?.Invoke();
                 StatusChanged?.Invoke(string.Empty);
                 _connectCount++;
@@ -159,22 +196,60 @@ public class ChatBridge : IDisposable
 
                 await ReceiveLoop(token);
             }
+            catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+            {
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (HttpRequestException ex)
+            {
+                forbidden = ex.StatusCode == HttpStatusCode.Forbidden;
+                transportError = ex;
+                failureStage = connected ? "receive" : "connect";
+            }
+            catch (WebSocketException ex)
+            {
+                forbidden = ex.Message?.Contains("403", StringComparison.Ordinal) == true
+                    || (ex.InnerException as HttpRequestException)?.StatusCode == HttpStatusCode.Forbidden;
+                transportError = ex;
+                failureStage = connected ? "receive" : "connect";
+            }
+            catch (IOException ex)
+            {
+                transportError = ex;
+                failureStage = connected ? "receive" : "connect";
+            }
             catch (Exception ex)
             {
-                forbidden = ex is HttpRequestException hre && hre.StatusCode == HttpStatusCode.Forbidden
-                    || (ex as WebSocketException)?.Message.Contains("403") == true
-                    || (ex.InnerException as HttpRequestException)?.StatusCode == HttpStatusCode.Forbidden;
+                forbidden |= (ex.InnerException as HttpRequestException)?.StatusCode == HttpStatusCode.Forbidden;
+                transportError = ex;
+                failureStage = connected ? "receive" : "connect";
             }
             finally
             {
+                var status = _ws?.CloseStatus;
+                var description = _ws?.CloseStatusDescription;
                 _ws?.Dispose();
                 _ws = null;
-                PluginServices.Instance?.Log.Info("chat.ws disconnect");
+                if (attemptedConnect)
+                {
+                    LogDisconnect(status, description);
+                }
             }
 
             if (token.IsCancellationRequested)
             {
                 break;
+            }
+
+            if (transportError != null)
+            {
+                LogConnectionException(transportError, failureStage);
             }
 
             if (forbidden)
@@ -184,18 +259,16 @@ public class ChatBridge : IDisposable
                 _tokenValid = false;
             }
 
-            var delay = Math.Min((int)Math.Pow(2, _reconnectAttempt), 60);
             if ((DateTime.UtcNow - _connectedSince) > TimeSpan.FromSeconds(60))
             {
                 _reconnectAttempt = 0;
-                delay = 1;
             }
-            else
-            {
-                _reconnectAttempt++;
-            }
-            StatusChanged?.Invoke(forbidden ? "Forbidden – check API key/roles" : $"Reconnecting in {delay}s...");
-            await DelayWithJitter(delay, token);
+            _reconnectAttempt++;
+            var backoff = GetReconnectDelay(_reconnectAttempt);
+            StatusChanged?.Invoke(forbidden
+                ? "Forbidden – check API key/roles"
+                : $"Reconnecting in {backoff.TotalSeconds:0.#}s...");
+            await DelayWithBackoff(backoff, token);
         }
     }
 
@@ -203,26 +276,47 @@ public class ChatBridge : IDisposable
     {
         if (_ws == null) return;
         var buffer = new byte[8192];
-        while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
+        try
         {
-            using var ms = new MemoryStream();
-            WebSocketReceiveResult result;
-            do
+            while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
             {
-                result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
-                if (result.MessageType == WebSocketMessageType.Close)
+                using var ms = new MemoryStream();
+                WebSocketReceiveResult result;
+                do
                 {
-                    return;
-                }
-                ms.Write(buffer, 0, result.Count);
-                if (result.Count == buffer.Length)
-                {
-                    Array.Resize(ref buffer, buffer.Length * 2);
-                }
-            } while (!result.EndOfMessage);
+                    result = await _ws.ReceiveAsync(new ArraySegment<byte>(buffer), token);
+                    if (result.MessageType == WebSocketMessageType.Close)
+                    {
+                        return;
+                    }
+                    ms.Write(buffer, 0, result.Count);
+                    if (result.Count == buffer.Length)
+                    {
+                        Array.Resize(ref buffer, buffer.Length * 2);
+                    }
+                } while (!result.EndOfMessage);
 
-            var json = Encoding.UTF8.GetString(ms.ToArray());
-            HandleMessage(json);
+                var json = Encoding.UTF8.GetString(ms.ToArray());
+                HandleMessage(json);
+            }
+        }
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+        {
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (WebSocketException)
+        {
+            throw;
+        }
+        catch (IOException)
+        {
+            throw;
         }
     }
 
@@ -305,13 +399,34 @@ public class ChatBridge : IDisposable
         if (_ws == null || _ws.State != WebSocketState.Open)
             return;
         var bytes = Encoding.UTF8.GetBytes(json);
-        var sw = Stopwatch.StartNew();
-        await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
-        var ms = sw.Elapsed.TotalMilliseconds;
-        _sendCount++;
-        _sendLatencyTotal += ms;
-        var avg = _sendLatencyTotal / _sendCount;
-        PluginServices.Instance?.Log.Info($"chat.ws send latency_ms={ms:F1} avg_latency_ms={avg:F1} count={_sendCount}");
+        try
+        {
+            var sw = Stopwatch.StartNew();
+            await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            var ms = sw.Elapsed.TotalMilliseconds;
+            _sendCount++;
+            _sendLatencyTotal += ms;
+            var avg = _sendLatencyTotal / _sendCount;
+            PluginServices.Instance?.Log.Info($"chat.ws send latency_ms={ms:F1} avg_latency_ms={avg:F1} count={_sendCount}");
+        }
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, CancellationToken.None))
+        {
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (WebSocketException ex)
+        {
+            LogConnectionException(ex, "send");
+        }
+        catch (IOException ex)
+        {
+            LogConnectionException(ex, "send");
+        }
     }
 
     private Task AckAsync(string channel)
@@ -358,9 +473,84 @@ public class ChatBridge : IDisposable
         {
             await Task.Delay(ms, token);
         }
-        catch
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
         {
-            // ignore
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+    }
+
+    private async Task DelayWithBackoff(TimeSpan delay, CancellationToken token)
+    {
+        try
+        {
+            await Task.Delay(delay, token);
+        }
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+        {
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+    }
+
+    private TimeSpan GetReconnectDelay(int attempt)
+    {
+        var cappedAttempt = Math.Max(1, attempt);
+        var baseDelay = Math.Min(15d, Math.Pow(2, cappedAttempt - 1));
+        var min = Math.Max(0.5d, baseDelay / 2d);
+        var max = Math.Max(min, baseDelay);
+        var jitter = min + (max - min) * _random.NextDouble();
+        return TimeSpan.FromSeconds(jitter);
+    }
+
+    private static bool ShouldRethrow(OperationCanceledException _, CancellationToken token)
+        => token.CanBeCanceled && token.IsCancellationRequested;
+
+    private static bool IsValidWebSocketUri(Uri? uri)
+    {
+        if (uri == null)
+            return false;
+
+        if (!uri.IsAbsoluteUri)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(uri.ToString()))
+            return false;
+
+        return string.Equals(uri.Scheme, "ws", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private void LogDisconnect(WebSocketCloseStatus? status, string? description)
+    {
+        _disconnectCount++;
+        var now = DateTime.UtcNow;
+        if (_disconnectCount > 1 && (now - _lastDisconnectLog) < DisconnectLogThrottle)
+        {
+            return;
+        }
+
+        _lastDisconnectLog = now;
+        var statusText = status.HasValue ? $"{(int)status} {status}" : "n/a";
+        var desc = string.IsNullOrWhiteSpace(description) ? string.Empty : $" desc={description}";
+        PluginServices.Instance?.Log.Info($"chat.ws disconnect count={_disconnectCount} status={statusText}{desc}");
+    }
+
+    private void LogConnectionException(Exception ex, string stage)
+    {
+        var now = DateTime.UtcNow;
+        var signature = $"{stage}:{ex.GetType().FullName}:{ex.Message}";
+        if (_lastErrorSignature == signature && (now - _lastErrorLog) < ErrorLogThrottle)
+        {
+            return;
+        }
+
+        _lastErrorSignature = signature;
+        _lastErrorLog = now;
+        PluginServices.Instance?.Log.Error(ex, $"chat.ws {stage} failed");
     }
 }
