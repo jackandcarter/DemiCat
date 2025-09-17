@@ -52,6 +52,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private readonly Dictionary<string, PresenceDto> _presences = new();
     private bool _presenceLoadAttempted;
     private static readonly Regex MentionRegex = new("<@!?([0-9]+)>", RegexOptions.Compiled);
+    private const string DefaultWebSocketPath = "/ws/embeds";
 
     public UiRenderer(Config config, HttpClient httpClient, ChannelSelectionService channelSelection)
     {
@@ -360,11 +361,8 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _webSocket?.Dispose();
                 _webSocket = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(_webSocket, TokenManager.Instance!);
-                var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
-                var urlString = ($"{baseUrl}/ws/embeds")
-                    .Replace("http://", "ws://", StringComparison.OrdinalIgnoreCase)
-                    .Replace("https://", "wss://", StringComparison.OrdinalIgnoreCase);
-                if (!Uri.TryCreate(urlString, UriKind.Absolute, out var wsUrl) || !IsValidWebSocketUri(wsUrl))
+                var wsUrl = BuildWebSocketUri();
+                if (wsUrl == null)
                 {
                     LogWebSocketException(new InvalidOperationException("Missing WebSocket URL"), "uri");
                     ScheduleNextWebSocketAttempt();
@@ -413,6 +411,30 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         {
             _connectGate.Release();
         }
+    }
+
+    internal Uri? BuildWebSocketUri()
+    {
+        var baseUrl = (_config.ApiBaseUrl ?? string.Empty).TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            return null;
+        }
+
+        var rawPath = string.IsNullOrWhiteSpace(_config.WebSocketPath)
+            ? DefaultWebSocketPath
+            : _config.WebSocketPath.Trim();
+        var normalizedPath = "/" + rawPath.TrimStart('/');
+        var urlString = ($"{baseUrl}{normalizedPath}")
+            .Replace("http://", "ws://", StringComparison.OrdinalIgnoreCase)
+            .Replace("https://", "wss://", StringComparison.OrdinalIgnoreCase);
+
+        if (!Uri.TryCreate(urlString, UriKind.Absolute, out var wsUrl))
+        {
+            return null;
+        }
+
+        return IsValidWebSocketUri(wsUrl) ? wsUrl : null;
     }
 
     private async Task ReceiveLoop()
