@@ -8,7 +8,15 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy import select, text
 
-from demibot.db.models import Guild, User, Message, Membership, GuildChannel, ChannelKind
+from demibot.db.models import (
+    Guild,
+    User,
+    Message,
+    Membership,
+    GuildChannel,
+    ChannelKind,
+    PostedMessage,
+)
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
 import importlib.util
@@ -51,6 +59,7 @@ def test_save_and_fetch_messages(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -120,6 +129,7 @@ def test_fetch_messages_backfills_from_discord(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM users"))
             await db.execute(text("DELETE FROM guilds"))
@@ -232,6 +242,7 @@ def test_channel_not_configured(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -255,6 +266,7 @@ def test_forum_root_rejected(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -291,6 +303,7 @@ def test_thread_uses_parent_webhook(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -351,6 +364,7 @@ def test_archived_thread_rejected(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -388,6 +402,7 @@ def test_cached_webhook_without_channel(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -434,6 +449,7 @@ def test_allowed_mentions(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -506,6 +522,7 @@ def test_long_username_truncated(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -568,6 +585,7 @@ def test_message_too_long(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -596,6 +614,7 @@ def test_rest_ws_payload_parity(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -667,6 +686,7 @@ def test_multipart_message(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -779,6 +799,7 @@ def test_discord_failure_details(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -834,6 +855,7 @@ def test_save_message_invalid_channel_id():
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -859,6 +881,7 @@ def test_save_message_unresolved_channel_id(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -897,6 +920,7 @@ def test_save_message_unresolved_officer_channel(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -949,6 +973,7 @@ def test_channel_not_found_returns_error_details(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -963,7 +988,7 @@ def test_channel_not_found_returns_error_details(monkeypatch):
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
 
             async def failing_webhook(*args, **kwargs):
-                return None, None, ["Webhook boom"]
+                return None, None, ["Webhook boom"], None
 
             monkeypatch.setattr(mc, "_send_via_webhook", failing_webhook)
             monkeypatch.setattr(mc, "discord_client", None)
@@ -985,6 +1010,7 @@ def test_attachment_validation(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -1042,6 +1068,7 @@ def test_officer_flow(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -1099,6 +1126,7 @@ def test_officer_requires_role(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -1125,6 +1153,7 @@ def test_save_message_webhook_failure(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -1170,6 +1199,7 @@ def test_webhook_errors_returned(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -1187,7 +1217,7 @@ def test_webhook_errors_returned(monkeypatch):
                 return None
 
             async def dummy_webhook(*args, **kwargs):
-                return 123, [], ["Webhook init failed"]
+                return 123, [], ["Webhook init failed"], None
 
             monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
             monkeypatch.setattr(mc, "_send_via_webhook", dummy_webhook)
@@ -1205,6 +1235,7 @@ def test_webhook_cache_persist_and_load(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))
@@ -1319,10 +1350,119 @@ def test_webhook_cache_persist_and_load(monkeypatch):
     asyncio.run(_run())
 
 
+def test_posted_message_mapping_and_webhook_usage(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            guild = Guild(id=42, discord_guild_id=42, name="Guild")
+            user = User(id=99, discord_user_id=990, global_name="Alice")
+            membership = Membership(
+                guild_id=42,
+                user_id=99,
+                nickname="Alice",
+                avatar_url=None,
+            )
+            channel = GuildChannel(
+                guild_id=42,
+                channel_id=123,
+                kind=ChannelKind.FC_CHAT,
+            )
+            db.add_all([guild, user, membership, channel])
+            await db.commit()
+
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def dummy_broadcast(*args, **kwargs):
+                return None
+
+            async def fake_webhook(**kwargs):
+                return 555, None, [], "http://webhook.example"
+
+            class DummyChannel:
+                id = 123
+                guild = types.SimpleNamespace(id=42)
+                archived = False
+                parent = None
+                fetch_called = False
+
+            dummy_channel = DummyChannel()
+
+            async def fetch_message(mid: int):
+                dummy_channel.fetch_called = True
+                raise RuntimeError("fetch_message should not be used")
+
+            dummy_channel.fetch_message = fetch_message  # type: ignore[attr-defined]
+
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+            monkeypatch.setattr(mc, "_send_via_webhook", fake_webhook)
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel, raising=False)
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+            monkeypatch.setattr(
+                mc,
+                "discord_client",
+                types.SimpleNamespace(get_channel=lambda cid: dummy_channel),
+            )
+
+            body = mc.PostBody(channelId="123", content="hello")
+            result = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+            assert result["ok"] is True
+            msg_id = int(result["id"])
+
+            mapping = await db.scalar(
+                select(PostedMessage).where(PostedMessage.discord_message_id == msg_id)
+            )
+            assert mapping is not None
+            assert mapping.webhook_url == "http://webhook.example"
+            assert mapping.channel_id == 123
+
+            edit_calls: list[tuple[int, str]] = []
+            delete_calls: list[int] = []
+
+            class DummyWebhook:
+                async def edit_message(self, message_id: int, *, content: str, allowed_mentions):
+                    edit_calls.append((message_id, content))
+
+                async def delete_message(self, message_id: int):
+                    delete_calls.append(message_id)
+
+            def fake_from_url(cls, url: str, *, client=None, bot_token=None):
+                assert url == "http://webhook.example"
+                return DummyWebhook()
+
+            monkeypatch.setattr(
+                mc.discord.Webhook,
+                "from_url",
+                classmethod(fake_from_url),
+            )
+
+            await mc.edit_message("123", str(msg_id), "updated", ctx, db, is_officer=False)
+            assert edit_calls == [(msg_id, "updated")]
+            assert not dummy_channel.fetch_called
+
+            await mc.delete_message("123", str(msg_id), ctx, db, is_officer=False)
+            assert delete_calls == [msg_id]
+            assert not dummy_channel.fetch_called
+
+            remaining = await db.scalar(
+                select(PostedMessage).where(PostedMessage.discord_message_id == msg_id)
+            )
+            assert remaining is None
+
+    asyncio.run(_run())
+
+
 def test_fetch_messages_pagination():
     async def _run():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
             await db.execute(text("DELETE FROM messages"))
             await db.execute(text("DELETE FROM memberships"))
             await db.execute(text("DELETE FROM users"))

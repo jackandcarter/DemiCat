@@ -257,6 +257,33 @@ class Message(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class PostedMessage(Base):
+    __tablename__ = "posted_messages"
+    __table_args__ = (
+        Index(
+            "ix_posted_messages_guild_channel",
+            "guild_id",
+            "channel_id",
+        ),
+        UniqueConstraint(
+            "guild_id",
+            "local_message_id",
+            name="uq_posted_messages_guild_local",
+        ),
+        UniqueConstraint(
+            "discord_message_id",
+            name="uq_posted_messages_discord",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"), index=True)
+    channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
+    local_message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
+    discord_message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
+    webhook_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
 class Embed(Base):
     __tablename__ = "embeds"
 

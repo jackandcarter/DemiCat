@@ -27,7 +27,13 @@ from ..schemas import (
 from ..discord_helpers import serialize_message
 
 from ..ws import manager
-from ...db.models import Message, Membership, GuildChannel, ChannelKind
+from ...db.models import (
+    Message,
+    Membership,
+    GuildChannel,
+    ChannelKind,
+    PostedMessage,
+)
 from ..discord_client import discord_client
 
 
@@ -143,7 +149,7 @@ async def _send_via_webhook(
     view: discord.ui.View | None = None,
     db: AsyncSession,
     thread: discord.abc.Snowflake | None = None,
-) -> tuple[int | None, list[AttachmentDto] | None, list[str]]:
+) -> tuple[int | None, list[AttachmentDto] | None, list[str], str | None]:
     """Send a message via a channel webhook.
 
     ``channel`` should be the channel owning the webhook.  When ``thread`` is
@@ -151,12 +157,12 @@ async def _send_via_webhook(
     channel's webhook.
 
     ``embed`` and ``view`` are optional and allow rich messages to be sent via
-    the webhook.  Returns the Discord message id and attachments on success,
-    otherwise a list of error messages describing the failure.
+    the webhook.  Returns the Discord message id, attachments, any error
+    messages, and the webhook URL used when successful.
     """
 
     errors: list[str] = []
-    webhook_url = _channel_webhooks.get(channel_id)
+    webhook_url: str | None = _channel_webhooks.get(channel_id)
     if not webhook_url:
         webhook_url = await db.scalar(
             select(GuildChannel.webhook_url).where(
@@ -226,10 +232,10 @@ async def _send_via_webhook(
                     channel_id,
                 )
                 errors.append(f"Webhook creation failed: {e}")
-            return None, None, errors
+            return None, None, errors, webhook_url
     elif webhook is None:
         errors.append("Webhook creation failed: channel not available")
-        return None, None, errors
+        return None, None, errors, webhook_url
 
     sent = None
     try:
@@ -340,7 +346,7 @@ async def _send_via_webhook(
                     channel_id,
                 )
                 errors.append(f"Webhook retry failed: {e2}")
-            return None, None, errors
+            return None, None, errors, webhook_url
 
     discord_msg_id = getattr(sent, "id", None)
     attachments: list[AttachmentDto] | None = None
@@ -349,7 +355,7 @@ async def _send_via_webhook(
             "webhook.send returned no id for channel %s", channel_id
         )
         errors.append(f"webhook.send returned no id for channel {channel_id}")
-        return None, None, errors
+        return None, None, errors, webhook_url
     if sent.attachments:
         attachments = [
             AttachmentDto(
@@ -360,7 +366,7 @@ async def _send_via_webhook(
             for a in sent.attachments
         ]
 
-    return discord_msg_id, attachments, errors
+    return discord_msg_id, attachments, errors, webhook_url
 
 
 class PostBody(BaseModel):
@@ -627,7 +633,7 @@ async def save_message(
         username = f"{username_base} / {ctx.user.character_name}@FFXIV FC"
     username = username[:80]
 
-    discord_msg_id, attachments, webhook_errors = await _send_via_webhook(
+    discord_msg_id, attachments, webhook_errors, webhook_url = await _send_via_webhook(
         channel=base_channel,
         channel_id=getattr(base_channel, "id", cid),
         guild_id=ctx.guild.id,
@@ -671,6 +677,8 @@ async def save_message(
                         )
                         for a in sent.attachments
                     ]
+                if webhook_url is None:
+                    webhook_url = _channel_webhooks.get(cid)
             except Exception as e:
                 if isinstance(e, discord.HTTPException):
                     logging.error(
@@ -719,6 +727,27 @@ async def save_message(
         if error_details:
             detail["discord"] = error_details
         raise HTTPException(status_code=502, detail=detail)
+
+    mapping = await db.scalar(
+        select(PostedMessage).where(
+            PostedMessage.guild_id == ctx.guild.id,
+            PostedMessage.local_message_id == discord_msg_id,
+        )
+    )
+    if mapping:
+        mapping.channel_id = cid
+        mapping.discord_message_id = discord_msg_id
+        mapping.webhook_url = webhook_url
+    else:
+        db.add(
+            PostedMessage(
+                guild_id=ctx.guild.id,
+                channel_id=cid,
+                local_message_id=discord_msg_id,
+                discord_message_id=discord_msg_id,
+                webhook_url=webhook_url,
+            )
+        )
     display_name_base = nickname or (
         ctx.user.global_name or ("Officer" if is_officer else "Player")
     )
@@ -831,14 +860,44 @@ async def edit_message(
     msg.content_raw = msg.content_display = msg.content = content
     msg.edited_timestamp = datetime.utcnow()
     await db.commit()
+
+    mapping = await db.scalar(
+        select(PostedMessage).where(
+            PostedMessage.guild_id == ctx.guild.id,
+            PostedMessage.discord_message_id == int(message_id),
+        )
+    )
+
     if discord_client:
-        channel = discord_client.get_channel(cid)
-        if channel and isinstance(channel, discord.abc.Messageable):
+        webhook_done = False
+        webhook_url = getattr(mapping, "webhook_url", None) if mapping else None
+        if webhook_url:
             try:
-                discord_msg = await channel.fetch_message(int(message_id))
-                await discord_msg.edit(content=content)
+                webhook = discord.Webhook.from_url(
+                    webhook_url,
+                    client=discord_client,
+                )
+                await webhook.edit_message(
+                    int(message_id),
+                    content=content,
+                    allowed_mentions=ALLOWED_MENTIONS,
+                )
+                webhook_done = True
             except Exception:
-                pass
+                logging.exception(
+                    "Webhook edit failed for guild %s channel %s message %s",
+                    ctx.guild.id,
+                    cid,
+                    message_id,
+                )
+        if not webhook_done:
+            channel = discord_client.get_channel(cid)
+            if channel and isinstance(channel, discord.abc.Messageable):
+                try:
+                    discord_msg = await channel.fetch_message(int(message_id))
+                    await discord_msg.edit(content=content)
+                except Exception:
+                    pass
     attachments = None
     if msg.attachments_json:
         try:
@@ -938,16 +997,44 @@ async def delete_message(
         raise HTTPException(status_code=404)
     if msg.author_id != ctx.user.id:
         raise HTTPException(status_code=403)
+
+    mapping = await db.scalar(
+        select(PostedMessage).where(
+            PostedMessage.guild_id == ctx.guild.id,
+            PostedMessage.discord_message_id == int(message_id),
+        )
+    )
+    webhook_url = getattr(mapping, "webhook_url", None) if mapping else None
+
     await db.delete(msg)
+    if mapping:
+        await db.delete(mapping)
     await db.commit()
     if discord_client:
-        channel = discord_client.get_channel(cid)
-        if channel and isinstance(channel, discord.abc.Messageable):
+        webhook_done = False
+        if webhook_url:
             try:
-                discord_msg = await channel.fetch_message(int(message_id))
-                await discord_msg.delete()
+                webhook = discord.Webhook.from_url(
+                    webhook_url,
+                    client=discord_client,
+                )
+                await webhook.delete_message(int(message_id))
+                webhook_done = True
             except Exception:
-                pass
+                logging.exception(
+                    "Webhook delete failed for guild %s channel %s message %s",
+                    ctx.guild.id,
+                    cid,
+                    message_id,
+                )
+        if not webhook_done:
+            channel = discord_client.get_channel(cid)
+            if channel and isinstance(channel, discord.abc.Messageable):
+                try:
+                    discord_msg = await channel.fetch_message(int(message_id))
+                    await discord_msg.delete()
+                except Exception:
+                    pass
     await manager.broadcast_text(
         json.dumps({"id": str(message_id), "channelId": str(cid), "deleted": True}),
         ctx.guild.id,
