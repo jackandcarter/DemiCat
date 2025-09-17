@@ -25,7 +25,7 @@ from ...http.discord_helpers import (
 
 from ...http.ws import manager
 from ...http.chat_events import emit_event
-from ..utils import api_call_with_retries
+from ..utils import api_call_with_retries, get_or_create_user
 
 
 class ApolloHelper:
@@ -296,6 +296,22 @@ class Mirror(commands.Cog):
             kind, guild_id = row
             is_officer = kind == ChannelKind.OFFICER_CHAT
 
+            author_avatar = getattr(message.author, "display_avatar", None)
+            user_kwargs: dict[str, object] = {
+                "discord_user_id": message.author.id,
+                "guild_id": guild_id,
+            }
+            if hasattr(message.author, "global_name"):
+                user_kwargs["global_name"] = getattr(message.author, "global_name")
+            if hasattr(message.author, "discriminator"):
+                user_kwargs["discriminator"] = getattr(
+                    message.author, "discriminator"
+                )
+            if author_avatar is not None:
+                user_kwargs["avatar_url"] = getattr(author_avatar, "url", None)
+
+            user = await get_or_create_user(db, **user_kwargs)
+
             # Persist and broadcast the message
             dto, fragments = serialize_message(message)
             db.add(
@@ -303,7 +319,7 @@ class Mirror(commands.Cog):
                     discord_message_id=message.id,
                     channel_id=channel_id,
                     guild_id=guild_id,
-                    author_id=message.author.id,
+                    author_id=user.id,
                     author_name=dto.author_name,
                     author_avatar_url=dto.author_avatar_url,
                     content_raw=message.content,

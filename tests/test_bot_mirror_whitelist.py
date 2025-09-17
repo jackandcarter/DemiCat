@@ -25,9 +25,9 @@ sys.modules.setdefault("demibot.http", http_pkg)
 
 from demibot.discordbot.cogs import mirror as mirror_mod
 from demibot.discordbot.cogs.mirror import Mirror
-from demibot.db.models import Guild, GuildChannel, Message, ChannelKind
+from demibot.db.models import Guild, GuildChannel, Message, ChannelKind, User
 from demibot.db.session import get_session, init_db
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 
 def _fake_serialize(message):
@@ -35,7 +35,7 @@ def _fake_serialize(message):
         author_name = message.author.display_name
         author_avatar_url = None
 
-        def model_dump(self):
+        def model_dump(self, *args, **kwargs):
             return {
                 "id": str(message.id),
                 "channelId": str(message.channel.id),
@@ -70,6 +70,9 @@ class DummyAuthor:
         self.id = id
         self.display_name = f"bot{id}"
         self.name = f"bot{id}"
+        self.global_name = f"Global{id}"
+        self.discriminator = "1234"
+        self.display_avatar = SimpleNamespace(url=f"https://example.com/{id}.png")
 
 
 class DummyChannel:
@@ -97,6 +100,7 @@ async def _prepare() -> None:
     await init_db("sqlite+aiosqlite://")
     async with get_session() as db:
         await db.execute(text("DELETE FROM messages"))
+        await db.execute(text("DELETE FROM users"))
         await db.execute(text("DELETE FROM guild_channels"))
         await db.execute(text("DELETE FROM guilds"))
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
@@ -127,4 +131,24 @@ def test_unlisted_bot_ignored() -> None:
 
 def test_whitelisted_bot_persisted() -> None:
     assert asyncio.run(_send_message("999")) is True
+
+
+def test_new_user_is_created_and_linked() -> None:
+    async def _run() -> None:
+        await _prepare()
+        bot = DummyBot("sqlite+aiosqlite://")
+        mirror = Mirror(bot)
+        author = DummyAuthor(bot=False, id=321)
+        msg = DummyMessage(123, author, "hi")
+        await mirror.on_message(msg)
+        async with get_session() as db:
+            user = await db.scalar(
+                select(User).where(User.discord_user_id == author.id)
+            )
+            stored = await db.get(Message, msg.id)
+            assert user is not None
+            assert stored is not None
+            assert stored.author_id == user.id
+
+    asyncio.run(_run())
 
