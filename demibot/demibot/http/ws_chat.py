@@ -15,7 +15,7 @@ import discord
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from ..db.models import GuildChannel
+from ..db.models import GuildChannel, Guild
 from ..db.session import get_session
 from .chat_events import emit_event
 from .deps import RequestContext, api_key_auth
@@ -55,6 +55,21 @@ class ChatConnection:
     ctx: RequestContext
     channels: Set[str] = field(default_factory=set)
     cursors: Dict[str, int] = field(default_factory=dict)
+    metadata: Dict[str, "ChannelMeta"] = field(default_factory=dict)
+
+
+@dataclass
+class ChannelMeta:
+    guild_id: int | None
+    discord_guild_id: int | None
+    kind: str | None
+
+    def guild_id_value(self) -> str | None:
+        if self.discord_guild_id is not None:
+            return str(self.discord_guild_id)
+        if self.guild_id is not None:
+            return str(self.guild_id)
+        return None
 
 
 @dataclass
@@ -75,6 +90,7 @@ class ChatConnectionManager:
         self._channel_queues: Dict[str, List[dict]] = {}
         self._channel_tasks: Dict[str, asyncio.Task] = {}
         self._channel_cursors: Dict[str, int] = {}
+        self._channel_meta: Dict[str, ChannelMeta] = {}
         self._webhook_queues: Dict[int, List[PendingWebhookMessage]] = {}
         self._webhook_tasks: Dict[int, asyncio.Task] = {}
         self._send_count = 0
@@ -136,38 +152,113 @@ class ChatConnectionManager:
         channels = data.get("channels", [])
         old_channels = set(info.channels)
         new_channels: Set[str] = set()
+        expected_meta: Dict[str, tuple[str | None, str | None]] = {}
         for ch in channels:
             channel_id: str
             is_officer = False
+            expected_guild: str | None = None
+            expected_kind: str | None = None
             if isinstance(ch, dict):
-                channel_id = str(ch.get("id"))
+                raw_id = ch.get("id")
+                if raw_id is None:
+                    continue
+                channel_id = str(raw_id)
                 is_officer = bool(ch.get("officer"))
+                guild_val = ch.get("guildId")
+                if guild_val is not None:
+                    expected_guild = str(guild_val).strip()
+                    if not expected_guild:
+                        expected_guild = None
+                    elif expected_guild.lower() == "default":
+                        expected_guild = None
+                kind_val = ch.get("kind")
+                if kind_val is not None:
+                    expected_kind = str(kind_val).strip()
+                    if expected_kind:
+                        expected_kind = expected_kind.upper()
+                    else:
+                        expected_kind = None
             else:
+                if ch is None:
+                    continue
                 channel_id = str(ch)
             if is_officer and "officer" not in info.ctx.roles:
                 # Skip officer-only channels for non-officers.
                 continue
             new_channels.add(channel_id)
+            expected_meta[channel_id] = (expected_guild, expected_kind)
         removed = old_channels - new_channels
         for ch in removed:
             info.cursors.pop(ch, None)
+            info.metadata.pop(ch, None)
         added = new_channels - old_channels
-        info.channels = new_channels
-        for channel_id in added:
+        retained = old_channels - removed
+        valid_added: list[tuple[str, ChannelMeta]] = []
+        if added:
+            meta_map = await self._fetch_channel_meta_bulk(added)
+            for channel_id in added:
+                meta = meta_map.get(channel_id)
+                if meta is None:
+                    logger.info(
+                        "chat.ws subscribe drop channel=%s reason=missing_meta",
+                        channel_id,
+                    )
+                    continue
+                expected_guild, expected_kind = expected_meta.get(channel_id, (None, None))
+                actual_guild = meta.guild_id_value()
+                if expected_guild and actual_guild and expected_guild != actual_guild:
+                    logger.info(
+                        "chat.ws subscribe drop channel=%s reason=guild_mismatch expected=%s actual=%s",
+                        channel_id,
+                        expected_guild,
+                        actual_guild,
+                    )
+                    continue
+                if expected_kind and meta.kind and expected_kind != meta.kind:
+                    logger.info(
+                        "chat.ws subscribe drop channel=%s reason=kind_mismatch expected=%s actual=%s",
+                        channel_id,
+                        expected_kind,
+                        meta.kind,
+                    )
+                    continue
+                valid_added.append((channel_id, meta))
+        info.channels = retained | {channel_id for channel_id, _ in valid_added}
+        if retained:
+            missing_meta = {ch for ch in retained if ch not in info.metadata}
+            if missing_meta:
+                retained_meta = await self._fetch_channel_meta_bulk(missing_meta)
+                for ch, meta in retained_meta.items():
+                    if meta is not None:
+                        info.metadata[ch] = meta
+        for channel_id, meta in valid_added:
+            info.metadata[channel_id] = meta
+        for channel_id, _ in valid_added:
             self._sub_count += 1
             logger.info(
                 "chat.ws subscribe channel=%s count=%s",
                 channel_id,
                 self._sub_count,
             )
-            await self._send_resync(websocket, channel_id)
+        for channel_id, meta in valid_added:
+            await self._send_subscription_ack(websocket, channel_id, meta)
+            await self._send_resync(websocket, channel_id, meta)
 
     def ack(self, websocket: WebSocket, data: dict) -> None:
         info = self.connections.get(websocket)
         if info is None:
             return
-        channel = str(data.get("channel"))
-        cursor = int(data.get("cursor", 0))
+        channel_val = data.get("channel", data.get("ch"))
+        if channel_val is None:
+            return
+        channel = str(channel_val)
+        if channel not in info.channels:
+            return
+        cursor_val = data.get("cursor", data.get("cur"))
+        try:
+            cursor = int(cursor_val)
+        except (TypeError, ValueError):
+            return
         info.cursors[channel] = cursor
 
     async def send(self, channel: str, payload: dict) -> None:
@@ -181,6 +272,61 @@ class ChatConnectionManager:
                 self._flush_channel(channel)
             )
 
+    async def _fetch_channel_meta_bulk(
+        self, channel_ids: Set[str]
+    ) -> Dict[str, ChannelMeta | None]:
+        if not channel_ids:
+            return {}
+        metadata: Dict[str, ChannelMeta | None] = {ch: None for ch in channel_ids}
+        id_map: Dict[int, str] = {}
+        for ch in channel_ids:
+            try:
+                channel_int = int(ch)
+            except (TypeError, ValueError):
+                continue
+            id_map[channel_int] = ch
+        if not id_map:
+            return metadata
+        async with get_session() as db:
+            result = await db.execute(
+                select(
+                    GuildChannel.channel_id,
+                    GuildChannel.guild_id,
+                    GuildChannel.kind,
+                    Guild.discord_guild_id,
+                )
+                .join(Guild, Guild.id == GuildChannel.guild_id)
+                .where(GuildChannel.channel_id.in_(list(id_map.keys())))
+            )
+            for channel_id, guild_id, kind, discord_guild_id in result.all():
+                ch = id_map.get(channel_id)
+                if ch is None:
+                    continue
+                kind_value: str | None
+                if kind is None:
+                    kind_value = None
+                else:
+                    kind_value = (
+                        kind.value if hasattr(kind, "value") else str(kind)
+                    )
+                    kind_value = kind_value.upper() if kind_value else None
+                metadata[ch] = ChannelMeta(
+                    guild_id=guild_id,
+                    discord_guild_id=discord_guild_id,
+                    kind=kind_value,
+                )
+        for ch, meta in metadata.items():
+            if meta is not None:
+                self._channel_meta[ch] = meta
+        return metadata
+
+    async def _ensure_channel_meta(self, channel: str) -> ChannelMeta | None:
+        meta = self._channel_meta.get(channel)
+        if meta is not None:
+            return meta
+        result = await self._fetch_channel_meta_bulk({channel})
+        return result.get(channel)
+
     async def _flush_channel(self, channel: str) -> None:
         await asyncio.sleep(random.uniform(BATCH_MIN, BATCH_MAX))
         queue = self._channel_queues.pop(channel, [])
@@ -191,16 +337,44 @@ class ChatConnectionManager:
         self._backfill_total += batch_size
         self._backfill_batches += 1
         avg_backfill = self._backfill_total / self._backfill_batches
+        meta = await self._ensure_channel_meta(channel)
+        if meta is None:
+            logger.warning("chat.ws missing metadata channel=%s", channel)
+            return
+        guild_id = meta.guild_id_value()
         logger.info(
             "chat.ws broadcast channel=%s size=%s avg_backfill=%.1f",
             channel,
             batch_size,
             avg_backfill,
         )
-        message = json.dumps({"op": "batch", "channel": channel, "messages": queue})
-        targets = [
-            ws for ws, info in self.connections.items() if channel in info.channels
-        ]
+        payload = {
+            "op": "batch",
+            "guildId": guild_id,
+            "channel": channel,
+            "kind": meta.kind,
+            "messages": queue,
+        }
+        message = json.dumps(payload)
+        targets: list[WebSocket] = []
+        dropped = 0
+        for ws, info in self.connections.items():
+            if channel not in info.channels:
+                continue
+            expected = info.metadata.get(channel)
+            if expected is not None:
+                if meta.kind and expected.kind and expected.kind != meta.kind:
+                    dropped += 1
+                    continue
+                expected_guild = expected.guild_id_value()
+                if expected_guild and guild_id and expected_guild != guild_id:
+                    dropped += 1
+                    continue
+            targets.append(ws)
+        if dropped:
+            logger.info(
+                "chat.ws drop batch channel=%s dropped=%s", channel, dropped
+            )
         send_coros = [ws.send_text(message) for ws in targets]
         if send_coros:
             await asyncio.gather(*send_coros, return_exceptions=True)
@@ -352,8 +526,30 @@ class ChatConnectionManager:
         )
         return True, 0.0
 
-    async def _send_resync(self, websocket: WebSocket, channel: str) -> None:
+    async def _send_subscription_ack(
+        self, websocket: WebSocket, channel: str, meta: ChannelMeta
+    ) -> None:
+        payload = {
+            "op": "ack",
+            "channel": channel,
+            "guildId": meta.guild_id_value(),
+            "kind": meta.kind,
+        }
+        await websocket.send_text(json.dumps(payload))
+
+    async def _send_resync(
+        self,
+        websocket: WebSocket,
+        channel: str,
+        meta: ChannelMeta | None = None,
+    ) -> None:
         cursor = self._channel_cursors.get(channel, 0)
+        if meta is None:
+            meta = await self._ensure_channel_meta(channel)
+        if meta is None:
+            logger.info("chat.ws resync skipped channel=%s reason=missing_meta", channel)
+            return
+        guild_id = meta.guild_id_value()
         self._resync_count += 1
         logger.info(
             "chat.ws resync channel=%s cursor=%s count=%s",
@@ -362,12 +558,34 @@ class ChatConnectionManager:
             self._resync_count,
         )
         await websocket.send_text(
-            json.dumps({"op": "resync", "channel": channel, "cursor": cursor})
+            json.dumps(
+                {
+                    "op": "resync",
+                    "guildId": guild_id,
+                    "kind": meta.kind,
+                    "channel": channel,
+                    "cursor": cursor,
+                }
+            )
         )
 
     async def resync(self, websocket: WebSocket, data: dict) -> None:
-        channel = str(data.get("channel"))
-        await self._send_resync(websocket, channel)
+        info = self.connections.get(websocket)
+        if info is None:
+            return
+        channel_val = data.get("channel")
+        if channel_val is None:
+            return
+        channel = str(channel_val)
+        if channel not in info.channels:
+            return
+        meta = info.metadata.get(channel)
+        if meta is None:
+            meta = await self._ensure_channel_meta(channel)
+            if meta is None:
+                return
+            info.metadata[channel] = meta
+        await self._send_resync(websocket, channel, meta)
 
     async def handle(self, websocket: WebSocket, message: dict) -> None:
         op = message.get("op")
