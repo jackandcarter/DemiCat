@@ -99,6 +99,8 @@ public class Plugin : IDalamudPlugin
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
         _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
 
+        _channelSelection.ChannelChanged += HandleChannelSelectionValidation;
+
         _settings.MainWindow = _mainWindow;
         _settings.ChatWindow = _chatWindow;
         _settings.OfficerChatWindow = _officerChatWindow;
@@ -144,6 +146,8 @@ public class Plugin : IDalamudPlugin
         _tokenManager.OnLinked -= StartWatchers;
         _tokenManager.OnUnlinked -= _unlinkedHandler;
 
+        _channelSelection.ChannelChanged -= HandleChannelSelectionValidation;
+
         _channelWatcher.Dispose();
         _requestWatcher.Dispose();
         _presenceService?.Dispose();
@@ -154,6 +158,86 @@ public class Plugin : IDalamudPlugin
         _settings.Dispose();
         _avatarCache.Dispose();
         _httpClient.Dispose();
+    }
+
+    private async void HandleChannelSelectionValidation(string kind, string guildId, string oldId, string newId)
+    {
+        await ValidateChannelSelectionAsync(kind, guildId, newId);
+    }
+
+    private async Task ValidateChannelSelectionAsync(string kind, string guildId, string channelId)
+    {
+        if (string.IsNullOrWhiteSpace(channelId))
+        {
+            return;
+        }
+
+        if (
+            !string.Equals(
+                ChannelKeyHelper.NormalizeGuildId(guildId),
+                ChannelKeyHelper.NormalizeGuildId(_config.GuildId),
+                StringComparison.Ordinal
+            )
+        )
+        {
+            return;
+        }
+
+        if (!_tokenManager.IsReady())
+        {
+            return;
+        }
+
+        try
+        {
+            var response = await _channelService.ValidateAsync(kind, channelId, CancellationToken.None);
+            if (response == null)
+            {
+                return;
+            }
+
+            if (response.Ok)
+            {
+                return;
+            }
+
+            var reason = response.Reason ?? string.Empty;
+
+            if (string.Equals(reason, "WRONG_KIND", StringComparison.OrdinalIgnoreCase))
+            {
+                PluginServices.Instance?.Framework.RunOnTick(() =>
+                {
+                    _channelWatcher.TriggerRefresh(true);
+                });
+            }
+            else if (string.Equals(reason, "FORBIDDEN", StringComparison.OrdinalIgnoreCase))
+            {
+                PluginServices.Instance?.Framework.RunOnTick(() =>
+                {
+                    PluginServices.Instance?.ToastGui.ShowError(
+                        "You do not have permission to use that channel."
+                    );
+                });
+            }
+            else if (string.Equals(reason, "NOT_FOUND", StringComparison.OrdinalIgnoreCase))
+            {
+                PluginServices.Instance?.Framework.RunOnTick(() =>
+                {
+                    PluginServices.Instance?.ToastGui.ShowWarning(
+                        "Selected channel is no longer configured."
+                    );
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Warning(
+                ex,
+                "Failed to validate channel selection {ChannelId} ({Kind})",
+                channelId,
+                kind
+            );
+        }
     }
 
     private void StartWatchers()
