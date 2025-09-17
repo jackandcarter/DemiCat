@@ -7,6 +7,7 @@ using System.Numerics;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -254,13 +255,6 @@ public class EmojiPopup
     // Static lookups used elsewhere
     public static string? LookupGuildName(string id) => EmojiAssets.LookupGuildName(id);
     public static bool IsGuildEmojiAnimated(string id) => EmojiAssets.IsGuildEmojiAnimated(id);
-
-    public class UnicodeEmoji
-    {
-        public string Emoji { get; set; } = string.Empty;
-        public string Name   { get; set; } = string.Empty;
-        public string ImageUrl { get; set; } = string.Empty;
-    }
 
     public class GuildEmoji
     {
