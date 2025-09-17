@@ -162,6 +162,26 @@ public class ChatBridge : IDisposable
         return Key(normalizedGuild, normalizedKind, channel);
     }
 
+    private void UpdateChannelMetadata(string channel, string? guildId, string? kind)
+    {
+        if (string.IsNullOrEmpty(channel)) return;
+
+        var hasGuild = !string.IsNullOrWhiteSpace(guildId);
+        var hasKind = !string.IsNullOrWhiteSpace(kind);
+        if (!hasGuild && !hasKind) return;
+
+        if (_channelMetadata.TryGetValue(channel, out var existing))
+        {
+            var normalizedGuild = hasGuild ? ChannelKeyHelper.NormalizeGuildId(guildId) : existing.GuildId;
+            var normalizedKind = hasKind ? ChannelKeyHelper.NormalizeKind(kind) : existing.Kind;
+            _channelMetadata[channel] = (normalizedGuild, normalizedKind);
+        }
+        else if (hasGuild && hasKind)
+        {
+            RegisterChannelMetadata(channel, guildId, kind);
+        }
+    }
+
     private void ValidateSubscription(string channel, string? guildId, string? kind)
     {
         if (string.IsNullOrEmpty(channel) || string.IsNullOrEmpty(kind)) return;
@@ -547,7 +567,7 @@ public class ChatBridge : IDisposable
                     root.TryGetProperty("kind", out var ackKindEl);
                     var ackGuildId = ackGuildEl.ValueKind == JsonValueKind.String ? ackGuildEl.GetString() : null;
                     var ackKind = ackKindEl.ValueKind == JsonValueKind.String ? ackKindEl.GetString() : null;
-                    RegisterChannelMetadata(ackChannel, ackGuildId, ackKind);
+                    UpdateChannelMetadata(ackChannel, ackGuildId, ackKind);
                     _ackFrameCount++;
                     var ackGuildLog = ackGuildId ?? string.Empty;
                     var ackKindLog = ackKind ?? string.Empty;

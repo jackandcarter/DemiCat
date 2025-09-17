@@ -30,6 +30,11 @@ public class ChatWindowWebSocketTests
                     await srv.Send(ws, "{\"op\":\"ack\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\"}");
                     await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\",\"messages\":[{\"cursor\":1,\"op\":\"mc\",\"d\":{}}]}");
                 }
+                else if (msg.Contains("\"op\":\"ack\""))
+                {
+                    await srv.Send(ws, "{\"op\":\"ack\",\"channel\":\"1\"}");
+                    await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\",\"messages\":[{\"cursor\":2,\"op\":\"mc\",\"d\":{}}]}");
+                }
             }
         });
 
@@ -39,20 +44,22 @@ public class ChatWindowWebSocketTests
         using var client = new HttpClient();
         var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
 
-        string? payload = null;
+        var messageCount = 0;
         var ackField = typeof(ChatBridge).GetField("_ackFrameCount", BindingFlags.Instance | BindingFlags.NonPublic)!;
-        bridge.MessageReceived += p => payload = p;
+        bridge.MessageReceived += _ => Interlocked.Increment(ref messageCount);
         bridge.Start();
         bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
 
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
         await WaitUntil(() => (int)ackField.GetValue(bridge)! > 0, TimeSpan.FromSeconds(5));
-        await WaitUntil(() => payload != null, TimeSpan.FromSeconds(5));
+        await WaitUntil(() => Volatile.Read(ref messageCount) > 0, TimeSpan.FromSeconds(5));
 
         Assert.Equal(1, (int)ackField.GetValue(bridge)!);
 
         bridge.Ack("1", config.GuildId, ChannelKind.Chat);
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"ack\"")), TimeSpan.FromSeconds(5));
+        await WaitUntil(() => (int)ackField.GetValue(bridge)! > 1, TimeSpan.FromSeconds(5));
+        await WaitUntil(() => Volatile.Read(ref messageCount) > 1, TimeSpan.FromSeconds(5));
 
         await bridge.Send("1", new { text = "hi" });
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"send\"")), TimeSpan.FromSeconds(5));
@@ -61,6 +68,9 @@ public class ChatWindowWebSocketTests
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"resync\"")), TimeSpan.FromSeconds(5));
 
         bridge.Stop();
+
+        Assert.Equal(2, (int)ackField.GetValue(bridge)!);
+        Assert.Equal(2, Volatile.Read(ref messageCount));
     }
 
     [Fact]
