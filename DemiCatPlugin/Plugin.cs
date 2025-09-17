@@ -223,7 +223,7 @@ public class Plugin : IDalamudPlugin
             {
                 PluginServices.Instance?.Framework.RunOnTick(() =>
                 {
-                    PluginServices.Instance?.ToastGui.ShowWarning(
+                    PluginServices.Instance?.ToastGui.ShowError(
                         "Selected channel is no longer configured."
                     );
                 });
