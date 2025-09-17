@@ -13,7 +13,7 @@ public class FcChatWindow : ChatWindow
     private float _presenceWidth = 150f;
 
     public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, AvatarCache avatarCache)
-        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.FcChat, avatarCache)
+        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, global::DemiCatPlugin.ChannelKind.FcChat, avatarCache)
     {
         if (presence != null)
         {
