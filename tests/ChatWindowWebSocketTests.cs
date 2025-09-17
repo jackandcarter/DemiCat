@@ -27,6 +27,7 @@ public class ChatWindowWebSocketTests
                 var msg = await srv.Receive(ws);
                 if (msg.Contains("\"op\":\"sub\""))
                 {
+                    await srv.Send(ws, "{\"op\":\"ack\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\"}");
                     await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"CHAT\",\"messages\":[{\"cursor\":1,\"op\":\"mc\",\"d\":{}}]}");
                 }
             }
@@ -39,12 +40,16 @@ public class ChatWindowWebSocketTests
         var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
 
         string? payload = null;
+        var ackField = typeof(ChatBridge).GetField("_ackFrameCount", BindingFlags.Instance | BindingFlags.NonPublic)!;
         bridge.MessageReceived += p => payload = p;
         bridge.Start();
         bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
 
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
+        await WaitUntil(() => (int)ackField.GetValue(bridge)! > 0, TimeSpan.FromSeconds(5));
         await WaitUntil(() => payload != null, TimeSpan.FromSeconds(5));
+
+        Assert.Equal(1, (int)ackField.GetValue(bridge)!);
 
         bridge.Ack("1", config.GuildId, ChannelKind.Chat);
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"ack\"")), TimeSpan.FromSeconds(5));

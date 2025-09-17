@@ -35,6 +35,7 @@ public class ChatBridge : IDisposable
     private int _resyncCount;
     private long _backfillTotal;
     private long _backfillBatches;
+    private int _ackFrameCount;
     private int _sendCount;
     private double _sendLatencyTotal;
     private long _disconnectCount;
@@ -537,6 +538,20 @@ public class ChatBridge : IDisposable
                     _resyncCount++;
                     PluginServices.Instance?.Log.Info($"chat.ws resync channel={ch} count={_resyncCount}");
                     ResyncRequested?.Invoke(ch, cur);
+                    break;
+                case "ack":
+                    var ackChannel = root.TryGetProperty("channel", out var ackChannelEl) && ackChannelEl.ValueKind == JsonValueKind.String
+                        ? ackChannelEl.GetString() ?? string.Empty
+                        : string.Empty;
+                    root.TryGetProperty("guildId", out var ackGuildEl);
+                    root.TryGetProperty("kind", out var ackKindEl);
+                    var ackGuildId = ackGuildEl.ValueKind == JsonValueKind.String ? ackGuildEl.GetString() : null;
+                    var ackKind = ackKindEl.ValueKind == JsonValueKind.String ? ackKindEl.GetString() : null;
+                    RegisterChannelMetadata(ackChannel, ackGuildId, ackKind);
+                    _ackFrameCount++;
+                    var ackGuildLog = ackGuildId ?? string.Empty;
+                    var ackKindLog = ackKind ?? string.Empty;
+                    PluginServices.Instance?.Log.Info($"chat.ws ack channel={ackChannel} guild={ackGuildLog} kind={ackKindLog} count={_ackFrameCount}");
                     break;
                 case "ping":
                     _ = SendRaw("{\"op\":\"ping\"}");
