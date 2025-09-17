@@ -9,7 +9,7 @@ import asyncio
 
 import discord
 from fastapi import HTTPException, UploadFile
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -377,6 +377,21 @@ class PostBody(BaseModel):
     message_reference: MessageReferenceDto | None = Field(
         default=None, alias="messageReference"
     )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_channel_id(cls, values: object) -> object:
+        if isinstance(values, dict):
+            channel_value = values.get("channel_id")
+            for alias in ("channelId", "channel"):
+                if channel_value is None and values.get(alias) is not None:
+                    channel_value = values[alias]
+                values.pop(alias, None)
+            if channel_value is not None:
+                values["channel_id"] = channel_value
+        return values
 
 
 async def fetch_messages(
