@@ -30,6 +30,12 @@ class DummyClient:
     def __init__(self, guild):
         self._guild = guild
 
+    def is_ready(self):
+        return True
+
+    def is_closed(self):
+        return False
+
     def get_guild(self, guild_id):
         return self._guild
 
@@ -39,10 +45,21 @@ async def test_emojis_warmup_returns_empty_and_retry_after(monkeypatch):
     discord_emojis._emoji_cache.clear()
 
     class WarmupClient:
+        def __init__(self):
+            self.get_guild_called = False
+
+        def is_ready(self):
+            return False
+
+        def is_closed(self):
+            return False
+
         def get_guild(self, guild_id):
+            self.get_guild_called = True
             return None
 
-    monkeypatch.setattr(discord_emojis, "discord_client", WarmupClient())
+    client = WarmupClient()
+    monkeypatch.setattr(discord_emojis, "discord_client", client)
 
     ctx = RequestContext(
         user=SimpleNamespace(id=1),
@@ -59,6 +76,7 @@ async def test_emojis_warmup_returns_empty_and_retry_after(monkeypatch):
         discord_emojis._RETRY_AFTER_SECONDS
     )
     assert json.loads(response.body) == {"ok": True, "emojis": []}
+    assert not client.get_guild_called
 
 
 @pytest.mark.asyncio

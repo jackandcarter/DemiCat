@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 
 from ..deps import RequestContext, api_key_auth
-from ..discord_client import discord_client
+from ..discord_client import discord_client, is_discord_client_ready
 
 router = APIRouter(prefix="/api/discord", tags=["discord"])
 
@@ -43,11 +43,12 @@ async def list_emojis(ctx: RequestContext = Depends(api_key_auth)):
     if cached is not None:
         return {"ok": True, "emojis": cached}
 
-    if not discord_client:
+    client = discord_client
+    if client is None or not is_discord_client_ready(client):
         return _retry_response()
 
     try:
-        guild = discord_client.get_guild(ctx.guild.discord_guild_id)
+        guild = client.get_guild(ctx.guild.discord_guild_id)
     except Exception:  # pragma: no cover - defensive logging
         logger.exception(
             "Failed to look up guild %s", ctx.guild.discord_guild_id
