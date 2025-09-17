@@ -42,6 +42,8 @@ RETRY_BASE = 1.0  # seconds
 MAX_SEND_ATTEMPTS = 5
 
 HISTORY_LIMIT = 200
+HISTORY_CHANNEL_CAP = 500
+HISTORY_TTL_SECONDS = 10 * 60  # 10 minutes
 
 
 def _ws_request(ws: WebSocket):
@@ -95,6 +97,8 @@ class ChatConnectionManager:
         self._channel_cursors: Dict[str, int] = {}
         self._channel_meta: Dict[str, ChannelMeta] = {}
         self._channel_history: Dict[str, Deque[dict]] = {}
+        self._channel_last_touch: Dict[str, float] = {}
+        self._channel_subscribers: Dict[str, int] = {}
         self._webhook_queues: Dict[int, List[PendingWebhookMessage]] = {}
         self._webhook_tasks: Dict[int, asyncio.Task] = {}
         self._send_count = 0
@@ -127,7 +131,9 @@ class ChatConnectionManager:
                 self._ping_task = loop.create_task(self._ping_loop())
 
     def disconnect(self, websocket: WebSocket) -> None:
-        self.connections.pop(websocket, None)
+        info = self.connections.pop(websocket, None)
+        if info is not None:
+            self._release_connection_channels(info)
         self._disconnect_count += 1
         logger.info("chat.ws disconnect count=%s", self._disconnect_count)
         if not self.connections and self._ping_task is not None:
@@ -146,8 +152,89 @@ class ChatConnectionManager:
                         dead.append(ws)
                 for ws in dead:
                     self.disconnect(ws)
+                self._purge_idle_channels()
         except asyncio.CancelledError:
             pass
+
+    def _release_connection_channels(self, info: ChatConnection) -> None:
+        for channel in list(info.channels):
+            self._decrement_channel_subscriber(channel)
+        info.channels.clear()
+        info.cursors.clear()
+        info.metadata.clear()
+
+    def _increment_channel_subscriber(self, channel: str) -> None:
+        self._channel_subscribers[channel] = (
+            self._channel_subscribers.get(channel, 0) + 1
+        )
+
+    def _decrement_channel_subscriber(self, channel: str) -> None:
+        count = self._channel_subscribers.get(channel)
+        if not count:
+            return
+        if count <= 1:
+            self._channel_subscribers.pop(channel, None)
+            self._cleanup_channel(channel)
+        else:
+            self._channel_subscribers[channel] = count - 1
+
+    def _cleanup_channel(self, channel: str) -> None:
+        self._drop_channel_history(channel)
+        queue = self._channel_queues.pop(channel, None)
+        if queue:
+            queue.clear()
+        task = self._channel_tasks.pop(channel, None)
+        if task is not None and not task.done():
+            task.cancel()
+        self._channel_meta.pop(channel, None)
+        self._channel_cursors.pop(channel, None)
+        self._channel_last_touch.pop(channel, None)
+
+    def _drop_channel_history(self, channel: str) -> None:
+        self._channel_history.pop(channel, None)
+
+    def _enforce_history_caps(self) -> None:
+        now = time.time()
+        expired = [
+            channel
+            for channel, last in list(self._channel_last_touch.items())
+            if now - last > HISTORY_TTL_SECONDS
+        ]
+        for channel in expired:
+            self._drop_channel_history(channel)
+
+        if HISTORY_CHANNEL_CAP <= 0:
+            return
+        if len(self._channel_history) <= HISTORY_CHANNEL_CAP:
+            return
+
+        channels_by_touch = sorted(
+            self._channel_history.keys(),
+            key=lambda ch: self._channel_last_touch.get(ch, 0.0),
+        )
+        for channel in channels_by_touch:
+            if len(self._channel_history) <= HISTORY_CHANNEL_CAP:
+                break
+            if self._channel_subscribers.get(channel):
+                continue
+            self._drop_channel_history(channel)
+
+        if len(self._channel_history) <= HISTORY_CHANNEL_CAP:
+            return
+
+        for channel in channels_by_touch:
+            if len(self._channel_history) <= HISTORY_CHANNEL_CAP:
+                break
+            self._drop_channel_history(channel)
+
+    def _purge_idle_channels(self) -> None:
+        now = time.time()
+        for channel, last in list(self._channel_last_touch.items()):
+            if now - last <= HISTORY_TTL_SECONDS:
+                continue
+            if self._channel_subscribers.get(channel):
+                continue
+            self._cleanup_channel(channel)
 
     async def sub(self, websocket: WebSocket, data: dict) -> None:
         info = self.connections.get(websocket)
@@ -213,6 +300,7 @@ class ChatConnectionManager:
         for ch in removed:
             info.cursors.pop(ch, None)
             info.metadata.pop(ch, None)
+            self._decrement_channel_subscriber(ch)
         added = new_channels - old_channels
         retained = old_channels - removed
         valid_added: list[tuple[str, ChannelMeta]] = []
@@ -246,6 +334,8 @@ class ChatConnectionManager:
                     continue
                 valid_added.append((channel_id, meta))
         info.channels = retained | {channel_id for channel_id, _ in valid_added}
+        for channel_id, _ in valid_added:
+            self._increment_channel_subscriber(channel_id)
         if retained:
             missing_meta = {ch for ch in retained if ch not in info.metadata}
             if missing_meta:
@@ -386,6 +476,8 @@ class ChatConnectionManager:
             history.append(message)
             while len(history) > HISTORY_LIMIT:
                 history.popleft()
+        self._channel_last_touch[channel] = time.time()
+        self._enforce_history_caps()
         guild_id = meta.guild_id_value()
         logger.info(
             "chat.ws batch guild=%s kind=%s channel=%s size=%s",

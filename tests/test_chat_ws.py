@@ -1,4 +1,5 @@
 import asyncio
+import itertools
 import json
 import types
 import pytest
@@ -289,3 +290,131 @@ def test_chat_ws_history_cap(monkeypatch):
 
     _run(scenario())
 
+
+def test_chat_ws_unsubscribe_cleans_channel_state(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(character_name=None),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=1),
+            key=types.SimpleNamespace(),
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+        channel_id = "99"
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=1, kind="CHAT")
+
+        async def fake_fetch(channels):
+            return {ch: meta for ch in channels}
+
+        monkeypatch.setattr(manager, "_fetch_channel_meta_bulk", fake_fetch)
+
+        await manager.sub(ws, {"channels": [{"id": channel_id}]})
+        assert manager._channel_subscribers[channel_id] == 1
+
+        manager._channel_history[channel_id] = deque([{"cursor": 1}])
+        manager._channel_last_touch[channel_id] = 0.0
+        manager._channel_queues[channel_id] = [{"cursor": 2}]
+        loop = asyncio.get_running_loop()
+        task = loop.create_task(asyncio.sleep(60))
+        manager._channel_tasks[channel_id] = task
+        manager._channel_meta[channel_id] = meta
+        manager._channel_cursors[channel_id] = 7
+
+        await manager.sub(ws, {"channels": []})
+        await asyncio.sleep(0)
+
+        assert channel_id not in manager._channel_history
+        assert channel_id not in manager._channel_tasks
+        assert channel_id not in manager._channel_queues
+        assert channel_id not in manager._channel_meta
+        assert channel_id not in manager._channel_cursors
+        assert channel_id not in manager._channel_subscribers
+        assert channel_id not in manager._channel_last_touch
+        assert task.cancelled()
+
+    _run(scenario())
+
+
+def test_chat_ws_history_global_cap(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=1, kind="CHAT")
+
+        async def fake_sleep(delay):
+            return None
+
+        monkeypatch.setattr(ws_chat.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(ws_chat.random, "uniform", lambda a, b: 0.0)
+        clock = itertools.count()
+        monkeypatch.setattr(ws_chat.time, "time", lambda: next(clock) / 10)
+
+        total_channels = ws_chat.HISTORY_CHANNEL_CAP + 5
+        for idx in range(total_channels):
+            channel = str(idx)
+            manager._channel_meta[channel] = meta
+            manager._channel_queues[channel] = [
+                {"cursor": 1, "op": "mc", "d": {"id": idx}}
+            ]
+            await manager._flush_channel(channel)
+
+        assert len(manager._channel_history) <= ws_chat.HISTORY_CHANNEL_CAP
+        remaining = {int(ch) for ch in manager._channel_history.keys()}
+        assert remaining
+        assert min(remaining) >= total_channels - ws_chat.HISTORY_CHANNEL_CAP
+
+    _run(scenario())
+
+
+def test_chat_ws_history_ttl(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=1, kind="CHAT")
+        old_channel = "old"
+        manager._channel_history[old_channel] = deque([{"cursor": 1}])
+        manager._channel_last_touch[old_channel] = 0.0
+
+        async def fake_sleep(delay):
+            return None
+
+        monkeypatch.setattr(ws_chat.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(ws_chat.random, "uniform", lambda a, b: 0.0)
+        current_time = ws_chat.HISTORY_TTL_SECONDS + 10
+        monkeypatch.setattr(ws_chat.time, "time", lambda: current_time)
+
+        new_channel = "new"
+        manager._channel_meta[new_channel] = meta
+        manager._channel_queues[new_channel] = [
+            {"cursor": 1, "op": "mc", "d": {"id": "fresh"}}
+        ]
+
+        await manager._flush_channel(new_channel)
+
+        assert old_channel not in manager._channel_history
+        assert manager._channel_last_touch.get(old_channel) == 0.0
+
+    _run(scenario())
+
+
+def test_chat_ws_idle_purge(monkeypatch):
+    manager = ws_chat.ChatConnectionManager()
+    channel_id = "314"
+    manager._channel_history[channel_id] = deque([{"cursor": 1}])
+    manager._channel_last_touch[channel_id] = 0.0
+    manager._channel_meta[channel_id] = ws_chat.ChannelMeta(
+        guild_id=1, discord_guild_id=1, kind="CHAT"
+    )
+    manager._channel_cursors[channel_id] = 3
+
+    monkeypatch.setattr(
+        ws_chat.time,
+        "time",
+        lambda: ws_chat.HISTORY_TTL_SECONDS + 20,
+    )
+
+    manager._purge_idle_channels()
+
+    assert channel_id not in manager._channel_history
+    assert channel_id not in manager._channel_meta
+    assert channel_id not in manager._channel_cursors
