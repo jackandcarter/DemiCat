@@ -59,5 +59,81 @@ public class ChannelService
             }
         }
     }
+
+    public async Task<ChannelValidationResponse?> ValidateAsync(
+        string kind,
+        string channelId,
+        CancellationToken ct
+    )
+    {
+        if (string.IsNullOrWhiteSpace(channelId))
+        {
+            return null;
+        }
+
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return null;
+        }
+
+        var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
+        var url =
+            $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/validate?kind={normalizedKind}";
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        linkedCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+        try
+        {
+            var response = await _httpClient.SendAsync(request, linkedCts.Token);
+            response.EnsureSuccessStatusCode();
+
+            var stream = await response.Content.ReadAsStreamAsync(linkedCts.Token);
+            var result = await JsonSerializer.DeserializeAsync<ChannelValidationResponse>(
+                stream,
+                JsonOpts,
+                linkedCts.Token
+            );
+
+            if (result != null && !string.IsNullOrEmpty(result.Kind))
+            {
+                result.Kind = ChannelKeyHelper.NormalizeKind(result.Kind);
+            }
+
+            return result;
+        }
+        catch (HttpRequestException ex)
+        {
+            PluginServices.Instance?.Log.Warning(
+                ex,
+                "Channel validation request failed for {ChannelId} ({Kind})",
+                channelId,
+                kind
+            );
+        }
+        catch (TaskCanceledException ex)
+        {
+            PluginServices.Instance?.Log.Warning(
+                ex,
+                "Channel validation timed out for {ChannelId} ({Kind})",
+                channelId,
+                kind
+            );
+        }
+        catch (JsonException ex)
+        {
+            PluginServices.Instance?.Log.Warning(
+                ex,
+                "Channel validation parse failed for {ChannelId} ({Kind})",
+                channelId,
+                kind
+            );
+        }
+
+        return null;
+    }
 }
 

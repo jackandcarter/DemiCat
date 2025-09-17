@@ -12,7 +12,11 @@ from demibot.http.deps import RequestContext
 from demibot.http.routes import channels as channel_routes
 
 
-def _setup_db(path: str) -> None:
+def _setup_db(
+    path: str,
+    *,
+    extra_channels: list[tuple[int, ChannelKind, str | None]] | None = None,
+) -> None:
     db_path = Path(path)
     if db_path.exists():
         db_path.unlink()
@@ -25,11 +29,24 @@ def _setup_db(path: str) -> None:
         async with get_session() as db:
             guild = Guild(id=1, discord_guild_id=1, name="Test")
             db.add(guild)
-            db.add(
+            channels = [
                 GuildChannel(
-                    guild_id=guild.id, channel_id=100, kind=ChannelKind.EVENT, name="12345"
+                    guild_id=guild.id,
+                    channel_id=100,
+                    kind=ChannelKind.EVENT,
+                    name="12345",
                 )
-            )
+            ]
+            for channel_id, kind, name in extra_channels or []:
+                channels.append(
+                    GuildChannel(
+                        guild_id=guild.id,
+                        channel_id=channel_id,
+                        kind=kind,
+                        name=name,
+                    )
+                )
+            db.add_all(channels)
             await db.commit()
 
     asyncio.run(populate())
@@ -178,4 +195,98 @@ def test_get_channels_skips_forum_and_archived(monkeypatch):
 
     data = asyncio.run(run())
     assert data == [{"id": "201", "name": "parent / thread"}]
+
+
+def test_validate_channel_success_and_wrong_kind():
+    _setup_db("test_channels_validate.db")
+
+    class Dummy:
+        pass
+
+    async def run():
+        async with get_session() as db:
+            guild = (await db.execute(select(Guild).where(Guild.id == 1))).scalar_one()
+            ctx = RequestContext(user=Dummy(), guild=guild, key=Dummy(), roles=[])
+            ok_resp = await channel_routes.validate_channel(
+                100, "EVENT", ctx=ctx, db=db
+            )
+            wrong_kind = await channel_routes.validate_channel(
+                100, "FC_CHAT", ctx=ctx, db=db
+            )
+            return (
+                json.loads(ok_resp.body.decode()),
+                json.loads(wrong_kind.body.decode()),
+            )
+
+    ok_data, wrong_data = asyncio.run(run())
+    assert ok_data == {
+        "ok": True,
+        "guildId": "1",
+        "kind": ChannelKind.EVENT.value,
+        "name": "12345",
+    }
+    assert wrong_data == {"ok": False, "reason": "WRONG_KIND"}
+
+
+def test_validate_channel_invalid_kind_and_missing():
+    _setup_db("test_channels_validate_missing.db")
+
+    class Dummy:
+        pass
+
+    async def run():
+        async with get_session() as db:
+            guild = (await db.execute(select(Guild).where(Guild.id == 1))).scalar_one()
+            ctx = RequestContext(user=Dummy(), guild=guild, key=Dummy(), roles=[])
+            invalid = await channel_routes.validate_channel(
+                100, "unknown", ctx=ctx, db=db
+            )
+            missing = await channel_routes.validate_channel(
+                999, "EVENT", ctx=ctx, db=db
+            )
+            return (
+                json.loads(invalid.body.decode()),
+                json.loads(missing.body.decode()),
+            )
+
+    invalid_data, missing_data = asyncio.run(run())
+    assert invalid_data == {"ok": False, "reason": "INVALID_KIND"}
+    assert missing_data == {"ok": False, "reason": "NOT_FOUND"}
+
+
+def test_validate_channel_officer_requires_role():
+    _setup_db(
+        "test_channels_validate_officer.db",
+        extra_channels=[(200, ChannelKind.OFFICER_CHAT, "officer")],
+    )
+
+    class Dummy:
+        pass
+
+    async def run():
+        async with get_session() as db:
+            guild = (await db.execute(select(Guild).where(Guild.id == 1))).scalar_one()
+            no_role_ctx = RequestContext(user=Dummy(), guild=guild, key=Dummy(), roles=[])
+            forbidden = await channel_routes.validate_channel(
+                200, "OFFICER_CHAT", ctx=no_role_ctx, db=db
+            )
+            officer_ctx = RequestContext(
+                user=Dummy(), guild=guild, key=Dummy(), roles=["officer"]
+            )
+            allowed = await channel_routes.validate_channel(
+                200, "OFFICER_CHAT", ctx=officer_ctx, db=db
+            )
+            return (
+                json.loads(forbidden.body.decode()),
+                json.loads(allowed.body.decode()),
+            )
+
+    forbidden_data, allowed_data = asyncio.run(run())
+    assert forbidden_data == {"ok": False, "reason": "FORBIDDEN"}
+    assert allowed_data == {
+        "ok": True,
+        "guildId": "1",
+        "kind": ChannelKind.OFFICER_CHAT.value,
+        "name": "officer",
+    }
 

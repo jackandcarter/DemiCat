@@ -32,6 +32,26 @@ class JSONResponse(FastAPIJSONResponse):
         ).encode("utf-8")
 
 
+def _parse_channel_kind(kind: str | None) -> ChannelKind | None:
+    if not kind:
+        return None
+    value = kind.strip()
+    if not value:
+        return None
+    try:
+        return ChannelKind(value)
+    except ValueError:
+        pass
+    try:
+        return ChannelKind[value.upper()]
+    except KeyError:
+        pass
+    try:
+        return ChannelKind(value.lower())
+    except ValueError:
+        return None
+
+
 @router.get("/channels")
 async def get_channels(
     kind: str | None = None,
@@ -54,15 +74,18 @@ async def get_channels(
                     channel_obj = None
 
         if channel_obj is not None:
-            if isinstance(
-                channel_obj,
-                (
-                    discord.CategoryChannel,
-                    discord.VoiceChannel,
-                    discord.StageChannel,
-                    discord.ForumChannel,
-                ),
-            ):
+            invalid_types = tuple(
+                filter(
+                    None,
+                    (
+                        getattr(discord, "CategoryChannel", None),
+                        getattr(discord, "VoiceChannel", None),
+                        getattr(discord, "StageChannel", None),
+                        getattr(discord, "ForumChannel", None),
+                    ),
+                )
+            )
+            if invalid_types and isinstance(channel_obj, invalid_types):
                 await db.execute(
                     delete(GuildChannel).where(
                         GuildChannel.guild_id == ctx.guild.id,
@@ -198,6 +221,47 @@ async def get_channels(
         await db.commit()
         await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
     return JSONResponse(content=by_kind, ensure_ascii=False)
+
+
+@router.get("/channels/{channel_id}/validate")
+async def validate_channel(
+    channel_id: int,
+    kind: str,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    channel_kind = _parse_channel_kind(kind)
+    if channel_kind is None:
+        return JSONResponse({"ok": False, "reason": "INVALID_KIND"})
+
+    result = await db.execute(
+        select(GuildChannel).where(
+            GuildChannel.guild_id == ctx.guild.id,
+            GuildChannel.channel_id == channel_id,
+        )
+    )
+    guild_channel = result.scalar_one_or_none()
+    if guild_channel is None:
+        return JSONResponse({"ok": False, "reason": "NOT_FOUND"})
+    if guild_channel.kind != channel_kind:
+        return JSONResponse({"ok": False, "reason": "WRONG_KIND"})
+
+    if guild_channel.kind in {
+        ChannelKind.OFFICER_CHAT,
+        ChannelKind.OFFICER_VISIBLE,
+    } and "officer" not in ctx.roles:
+        return JSONResponse({"ok": False, "reason": "FORBIDDEN"})
+
+    name = guild_channel.name or str(channel_id)
+    return JSONResponse(
+        {
+            "ok": True,
+            "guildId": str(ctx.guild.discord_guild_id),
+            "kind": guild_channel.kind.value,
+            "name": name,
+        },
+        ensure_ascii=False,
+    )
 
 
 @router.post("/channels/refresh")
