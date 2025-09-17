@@ -1,6 +1,11 @@
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Optional, TypeVar
+from typing import Any, Awaitable, Callable, Optional, TypeVar, cast
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from ..db.models import Membership, User
 
 try:  # optional dependencies for testing environments
     import aiohttp  # type: ignore
@@ -15,6 +20,8 @@ except Exception:  # pragma: no cover
 T = TypeVar("T")
 
 _logger = logging.getLogger(__name__)
+
+_MISSING = object()
 
 
 async def api_call_with_retries(
@@ -67,3 +74,55 @@ async def api_call_with_retries(
             delay = base_delay * (2 ** attempt)
             attempt += 1
             await asyncio.sleep(delay)
+
+
+async def get_or_create_user(
+    db: AsyncSession,
+    *,
+    discord_user_id: int,
+    global_name: str | None | object = _MISSING,
+    discriminator: str | None | object = _MISSING,
+    avatar_url: str | None | object = _MISSING,
+    guild_id: int | None = None,
+) -> User:
+    """Ensure a :class:`User` exists for the given Discord user id.
+
+    The returned ORM instance belongs to ``db`` and has up-to-date
+    ``global_name`` and ``discriminator`` fields.  When ``avatar_url`` and
+    ``guild_id`` are provided any existing membership row will also be updated.
+    No commit is issued; callers are expected to manage transactions.
+    """
+
+    result = await db.execute(
+        select(User).where(User.discord_user_id == discord_user_id)
+    )
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        user = User(
+            discord_user_id=discord_user_id,
+            global_name=global_name,
+            discriminator=discriminator,
+        )
+        bind = db.get_bind()
+        if bind is not None and bind.dialect.name == "sqlite":
+            user.id = discord_user_id
+        db.add(user)
+        await db.flush()
+    else:
+        if global_name is not _MISSING and user.global_name != global_name:
+            user.global_name = cast(Optional[str], global_name)
+        if discriminator is not _MISSING and user.discriminator != discriminator:
+            user.discriminator = cast(Optional[str], discriminator)
+
+    if guild_id is not None and avatar_url is not _MISSING:
+        membership = await db.scalar(
+            select(Membership).where(
+                Membership.guild_id == guild_id,
+                Membership.user_id == user.id,
+            )
+        )
+        if membership and membership.avatar_url != avatar_url:
+            membership.avatar_url = cast(Optional[str], avatar_url)
+
+    return user

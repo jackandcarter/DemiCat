@@ -27,6 +27,7 @@ from ..schemas import (
 from ..discord_helpers import serialize_message
 
 from ..ws import manager
+from ...discordbot.utils import get_or_create_user
 from ...db.models import (
     Message,
     Membership,
@@ -429,12 +430,26 @@ async def fetch_messages(
                 if await db.get(Message, msg.id):
                     continue
                 dto, fragments = serialize_message(msg)
+                author_avatar = getattr(msg.author, "display_avatar", None)
+                user_kwargs: dict[str, object] = {
+                    "discord_user_id": msg.author.id,
+                    "guild_id": ctx.guild.id,
+                }
+                if hasattr(msg.author, "global_name"):
+                    user_kwargs["global_name"] = getattr(msg.author, "global_name")
+                if hasattr(msg.author, "discriminator"):
+                    user_kwargs["discriminator"] = getattr(
+                        msg.author, "discriminator"
+                    )
+                if author_avatar is not None:
+                    user_kwargs["avatar_url"] = getattr(author_avatar, "url", None)
+                user = await get_or_create_user(db, **user_kwargs)
                 db.add(
                     Message(
                         discord_message_id=msg.id,
                         channel_id=msg.channel.id,
                         guild_id=ctx.guild.id,
-                        author_id=msg.author.id,
+                        author_id=user.id,
                         author_name=dto.author_name,
                         author_avatar_url=dto.author_avatar_url,
                         content_raw=msg.content,

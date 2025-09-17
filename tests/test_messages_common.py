@@ -238,6 +238,113 @@ def test_fetch_messages_backfills_from_discord(monkeypatch):
     asyncio.run(_run())
 
 
+def test_backfill_creates_missing_user(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
+            db.add(User(id=1, discord_user_id=10, global_name="Requester"))
+            await db.commit()
+            guild = await db.get(Guild, 1)
+            requester = await db.get(User, 1)
+            ctx = RequestContext(user=requester, guild=guild, key=DummyKey(), roles=[])
+
+            author_id = 222
+
+            def fake_serialize(message):
+                dto = types.SimpleNamespace(
+                    id=str(message.id),
+                    channel_id=str(message.channel.id),
+                    author_name=message.author.display_name,
+                    author_avatar_url=getattr(
+                        getattr(message.author, "display_avatar", None), "url", None
+                    ),
+                    timestamp=message.created_at,
+                    content=message.content,
+                    attachments=None,
+                    mentions=None,
+                    author=None,
+                    embeds=None,
+                    reference=None,
+                    components=None,
+                    reactions=None,
+                    edited_timestamp=None,
+                )
+                fragments = {
+                    "attachments_json": None,
+                    "mentions_json": None,
+                    "author_json": "{}",
+                    "embeds_json": None,
+                    "reference_json": None,
+                    "components_json": None,
+                    "reactions_json": None,
+                }
+                return dto, fragments
+
+            monkeypatch.setattr(mc, "serialize_message", fake_serialize)
+
+            message = types.SimpleNamespace(
+                id=99,
+                channel=types.SimpleNamespace(id=123),
+                author=types.SimpleNamespace(
+                    id=author_id,
+                    display_name="BackfillUser",
+                    global_name="BackfillUser",
+                    discriminator="5678",
+                    display_avatar=types.SimpleNamespace(
+                        url="https://example.com/backfill.png"
+                    ),
+                ),
+                created_at=datetime(2024, 1, 3),
+                content="from history",
+                attachments=[],
+                mentions=[],
+                role_mentions=[],
+                channel_mentions=[],
+                embeds=[],
+                reference=None,
+                components=[],
+                reactions=[],
+                edited_at=None,
+            )
+
+            class DummyChannel:
+                def __init__(self, messages):
+                    self.messages = messages
+
+                def history(self, limit=None):
+                    async def gen():
+                        for item in self.messages[: limit or len(self.messages)]:
+                            yield item
+
+                    return gen()
+
+            dummy_channel = DummyChannel([message])
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return dummy_channel
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+
+            data = await mc.fetch_messages("123", ctx, db, is_officer=False, limit=1)
+            assert len(data) == 1
+
+            user = await db.scalar(select(User).where(User.discord_user_id == author_id))
+            stored = await db.get(Message, message.id)
+            assert user is not None
+            assert stored is not None
+            assert stored.author_id == user.id
+
+    asyncio.run(_run())
+
+
 def test_channel_not_configured(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
