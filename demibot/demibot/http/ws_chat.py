@@ -7,8 +7,9 @@ import json
 import logging
 import random
 import time
+from collections import deque
 from dataclasses import dataclass, field
-from typing import Dict, List, Set
+from typing import Deque, Dict, List, Set
 from types import SimpleNamespace
 
 import discord
@@ -39,6 +40,8 @@ MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 # Retry configuration for Discord webhook sends.
 RETRY_BASE = 1.0  # seconds
 MAX_SEND_ATTEMPTS = 5
+
+HISTORY_LIMIT = 200
 
 
 def _ws_request(ws: WebSocket):
@@ -91,6 +94,7 @@ class ChatConnectionManager:
         self._channel_tasks: Dict[str, asyncio.Task] = {}
         self._channel_cursors: Dict[str, int] = {}
         self._channel_meta: Dict[str, ChannelMeta] = {}
+        self._channel_history: Dict[str, Deque[dict]] = {}
         self._webhook_queues: Dict[int, List[PendingWebhookMessage]] = {}
         self._webhook_tasks: Dict[int, asyncio.Task] = {}
         self._send_count = 0
@@ -153,12 +157,14 @@ class ChatConnectionManager:
         old_channels = set(info.channels)
         new_channels: Set[str] = set()
         expected_meta: Dict[str, tuple[str | None, str | None]] = {}
+        since_map: Dict[str, int | None] = {}
         for ch in channels:
             channel_id: str
             is_officer = False
             expected_guild: str | None = None
             expected_kind: str | None = None
             since_value: str | int | None = None
+            since_parsed: int | None = None
             if isinstance(ch, dict):
                 raw_id = ch.get("id")
                 if raw_id is None:
@@ -197,6 +203,12 @@ class ChatConnectionManager:
                 continue
             new_channels.add(channel_id)
             expected_meta[channel_id] = (expected_guild, expected_kind)
+            if since_value is not None:
+                try:
+                    since_parsed = int(str(since_value).strip())
+                except (TypeError, ValueError):
+                    since_parsed = None
+            since_map[channel_id] = since_parsed
         removed = old_channels - new_channels
         for ch in removed:
             info.cursors.pop(ch, None)
@@ -250,6 +262,25 @@ class ChatConnectionManager:
                 channel_id,
                 self._sub_count,
             )
+        for channel_id, meta in valid_added:
+            history = list(self._channel_history.get(channel_id, ()))
+            since = since_map.get(channel_id)
+            if since is not None:
+                filtered_history: list[dict] = []
+                for msg in history:
+                    cursor = msg.get("cursor")
+                    if cursor is not None and cursor > since:
+                        filtered_history.append(msg)
+                history = filtered_history
+            if history:
+                payload = {
+                    "op": "batch",
+                    "guildId": meta.guild_id_value(),
+                    "channel": channel_id,
+                    "kind": meta.kind,
+                    "messages": history,
+                }
+                await websocket.send_text(json.dumps(payload))
         for channel_id, meta in valid_added:
             await self._send_subscription_ack(websocket, channel_id, meta)
             await self._send_resync(websocket, channel_id, meta)
@@ -350,6 +381,11 @@ class ChatConnectionManager:
         if meta is None:
             logger.warning("chat.ws missing metadata channel=%s", channel)
             return
+        history = self._channel_history.setdefault(channel, deque())
+        for message in queue:
+            history.append(message)
+            while len(history) > HISTORY_LIMIT:
+                history.popleft()
         guild_id = meta.guild_id_value()
         logger.info(
             "chat.ws batch guild=%s kind=%s channel=%s size=%s",
