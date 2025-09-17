@@ -114,3 +114,77 @@ def test_chat_ws_missing_token():
 
     _run(scenario())
 
+
+def test_chat_ws_frames_include_metadata(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=321, kind="CHAT")
+
+        await manager._send_subscription_ack(ws, "42", meta)
+        ack = json.loads(ws.sent[-1])
+        assert ack["guildId"] == "321"
+        assert ack["kind"] == "CHAT"
+
+        await manager._send_resync(ws, "42", meta)
+        resync = json.loads(ws.sent[-1])
+        assert resync["guildId"] == "321"
+        assert resync["kind"] == "CHAT"
+
+        ws.sent.clear()
+
+        ctx = RequestContext(
+            user=types.SimpleNamespace(character_name=None),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=321),
+            key=types.SimpleNamespace(),
+            roles=[],
+        )
+        info = ws_chat.ChatConnection(ctx=ctx)
+        info.channels.add("42")
+        info.metadata["42"] = meta
+        manager.connections[ws] = info
+        manager._channel_meta["42"] = meta
+        manager._channel_queues["42"] = [{"cursor": 7, "op": "mc", "d": {}}]
+
+        async def fake_sleep(delay):
+            return None
+
+        monkeypatch.setattr(ws_chat.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(ws_chat.random, "uniform", lambda a, b: 0.0)
+
+        await manager._flush_channel("42")
+        batch = json.loads(ws.sent[-1])
+        assert batch["guildId"] == "321"
+        assert batch["kind"] == "CHAT"
+
+    _run(scenario())
+
+
+def test_chat_ws_mixed_channel_batch_rejected(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(character_name=None),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=1),
+            key=types.SimpleNamespace(),
+            roles=[],
+        )
+        info = ws_chat.ChatConnection(ctx=ctx)
+        info.channels.add("42")
+        info.metadata["42"] = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=None, kind="FC_CHAT")
+        manager.connections[ws] = info
+        manager._channel_meta["42"] = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=None, kind="CHAT")
+        manager._channel_queues["42"] = [{"cursor": 1, "op": "mc", "d": {}}]
+
+        async def fake_sleep(delay):
+            return None
+
+        monkeypatch.setattr(ws_chat.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(ws_chat.random, "uniform", lambda a, b: 0.0)
+
+        await manager._flush_channel("42")
+        assert ws.sent == []
+
+    _run(scenario())
+

@@ -43,9 +43,12 @@ public class ChatBridge : IDisposable
     private DateTime _lastErrorLog;
     private string? _lastSubscribeMismatchSignature;
     private DateTime _lastSubscribeMismatchLog;
+    private string? _lastBatchDropSignature;
+    private DateTime _lastBatchDropLog;
     private static readonly TimeSpan DisconnectLogThrottle = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SubscribeMismatchThrottle = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan BatchDropThrottle = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
     public event Action<string>? MessageReceived;
@@ -234,6 +237,14 @@ public class ChatBridge : IDisposable
         {
             message += $" expected_channel={expectedChannel}";
         }
+        var now = DateTime.UtcNow;
+        var signature = $"{channel}:{guildId}:{kind}:{reason}:{expectedGuild ?? string.Empty}:{expectedKind ?? string.Empty}:{expectedChannel ?? string.Empty}";
+        if (_lastBatchDropSignature == signature && (now - _lastBatchDropLog) < BatchDropThrottle)
+        {
+            return;
+        }
+        _lastBatchDropSignature = signature;
+        _lastBatchDropLog = now;
         PluginServices.Instance?.Log.Warning(message);
     }
 

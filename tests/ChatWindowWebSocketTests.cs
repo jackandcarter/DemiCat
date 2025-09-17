@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
 using DemiCatPlugin;
 using Dalamud.Plugin.Services;
 using Xunit;
@@ -31,7 +32,7 @@ public class ChatWindowWebSocketTests
             }
         });
 
-        SetupServices();
+        _ = SetupServices();
         var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
         var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
@@ -86,7 +87,7 @@ public class ChatWindowWebSocketTests
             }
         });
 
-        SetupServices();
+        _ = SetupServices();
         var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
         var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
@@ -124,7 +125,7 @@ public class ChatWindowWebSocketTests
             }
         });
 
-        SetupServices();
+        _ = SetupServices();
         var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
         var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
@@ -159,7 +160,7 @@ public class ChatWindowWebSocketTests
             }
         });
 
-        SetupServices();
+        _ = SetupServices();
         var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
         using var client = new HttpClient();
         var tm = new TokenManager();
@@ -185,12 +186,15 @@ public class ChatWindowWebSocketTests
                 var msg = await srv.Receive(ws);
                 if (msg.Contains("\"op\":\"sub\""))
                 {
-                    await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"OFFICER_CHAT\",\"messages\":[{\"cursor\":1,\"op\":\"mc\",\"d\":{}}]}");
+                    const string payload = "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"\",\"kind\":\"OFFICER_CHAT\",\"messages\":[{\"cursor\":1,\"op\":\"mc\",\"d\":{}}]}";
+                    await srv.Send(ws, payload);
+                    await Task.Delay(50);
+                    await srv.Send(ws, payload);
                 }
             }
         });
 
-        SetupServices();
+        var log = SetupServices();
         var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
         var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
@@ -202,7 +206,12 @@ public class ChatWindowWebSocketTests
         bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
 
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
+        await WaitUntil(() => log.WarningCount > 0, TimeSpan.FromSeconds(5));
+        var warnings = log.SnapshotWarnings().Where(w => w.Contains("chat.ws drop batch")).ToList();
+        Assert.Single(warnings);
         await Task.Delay(200);
+        var throttled = log.SnapshotWarnings().Where(w => w.Contains("chat.ws drop batch")).ToList();
+        Assert.Single(throttled);
 
         bridge.Stop();
 
@@ -220,7 +229,7 @@ public class ChatWindowWebSocketTests
             }
         }) { PingStatus = 404 };
 
-        SetupServices();
+        _ = SetupServices();
         var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
         var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
@@ -232,6 +241,53 @@ public class ChatWindowWebSocketTests
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
 
         bridge.Stop();
+    }
+
+    [Fact]
+    public async Task WebSocket_AckStoresCursorWithScopedKey()
+    {
+        using var server = new MockWsServer(async (ws, _, srv) =>
+        {
+            while (ws.State == WebSocketState.Open)
+            {
+                var msg = await srv.Receive(ws);
+                if (msg.Contains("\"op\":\"sub\""))
+                {
+                    await srv.Send(ws, "{\"op\":\"batch\",\"channel\":\"1\",\"guildId\":\"guild-1\",\"kind\":\"CHAT\",\"messages\":[{\"cursor\":42,\"op\":\"mc\",\"d\":{}}]}");
+                }
+                await Task.Delay(20);
+            }
+        });
+
+        _ = SetupServices();
+        var config = new Config { GuildId = "guild-1", EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
+
+        bool received = false;
+        bridge.MessageReceived += _ => received = true;
+
+        bridge.Start();
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
+
+        try
+        {
+            await WaitUntil(() => received, TimeSpan.FromSeconds(5));
+            bridge.Ack("1", config.GuildId, ChannelKind.Chat);
+            await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"ack\"")), TimeSpan.FromSeconds(5));
+            var key = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
+            await WaitUntil(() => config.ChatCursors.ContainsKey(key), TimeSpan.FromSeconds(5));
+
+            Assert.True(config.ChatCursors.TryGetValue(key, out var cursor));
+            Assert.Equal(42, cursor);
+            Assert.All(config.ChatCursors.Keys, k => Assert.Equal(3, k.Split(':').Length));
+            Assert.DoesNotContain(config.ChatCursors.Keys, k => k == "1");
+        }
+        finally
+        {
+            bridge.Stop();
+        }
     }
 
     private static int ExtractSince(string json)
@@ -265,13 +321,14 @@ public class ChatWindowWebSocketTests
         }
     }
 
-    private static void SetupServices()
+    private static TestLog SetupServices()
     {
         var ps = new PluginServices();
         var framework = new TestFramework();
         var log = new TestLog();
-        typeof(PluginServices).GetProperty("Framework", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(ps, framework);
-        typeof(PluginServices).GetProperty("Log", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(ps, log);
+        typeof(PluginServices).GetProperty("Framework", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(ps, framework);
+        typeof(PluginServices).GetProperty("Log", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(ps, log);
+        return log;
     }
 
     private class TestFramework : IFramework
@@ -283,18 +340,43 @@ public class ChatWindowWebSocketTests
 
     private class TestLog : IPluginLog
     {
+        private readonly List<string> _warnings = new();
+
+        public int WarningCount
+        {
+            get
+            {
+                lock (_warnings)
+                    return _warnings.Count;
+            }
+        }
+
+        public List<string> SnapshotWarnings()
+        {
+            lock (_warnings)
+                return new List<string>(_warnings);
+        }
+
         public void Verbose(string message) { }
         public void Verbose(string message, Exception exception) { }
         public void Debug(string message) { }
         public void Debug(string message, Exception exception) { }
         public void Info(string message) { }
         public void Info(string message, Exception exception) { }
-        public void Warning(string message) { }
-        public void Warning(string message, Exception exception) { }
+        public void Warning(string message) => AddWarning(message);
+        public void Warning(string message, Exception exception) => AddWarning(message);
         public void Error(string message) { }
         public void Error(Exception exception, string message) { }
         public void Fatal(string message) { }
         public void Fatal(string message, Exception exception) { }
+
+        private void AddWarning(string message)
+        {
+            lock (_warnings)
+            {
+                _warnings.Add(message);
+            }
+        }
     }
 
     private class MockWsServer : IDisposable
