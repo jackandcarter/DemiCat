@@ -56,13 +56,50 @@ namespace DemiCatPlugin.Emoji
                 ? _svc.Custom
                 : _svc.Custom.Where(c => c.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
 
-            int col = 0;
+            const int columns = 8;
+            var col = 0;
             foreach (var e in items)
             {
-                var label = e.Animated ? $":{e.Name}: (gif)" : $":{e.Name}:";
-                if (ImGui.Button(label, new(size * 3.2f, size)))
-                { EmojiInsert.InsertCustom(ref targetText, e); }
-                if (++col % 3 != 0) ImGui.SameLine();
+                if (col == 0) ImGui.BeginGroup();
+
+                var tooltip = e.Animated ? $":{e.Name}: (gif)" : $":{e.Name}:";
+                void Insert() => EmojiInsert.InsertCustom(ref targetText, e);
+                WebTextureCache.Get(e.ImageUrl, tex =>
+                {
+                    if (tex != null)
+                    {
+                        WebTextureCache.DrawImageButton($"custom_{e.Id}", tex, new(size, size), Insert);
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip(tooltip);
+                    }
+                    else
+                    {
+                        if (ImGui.Button(tooltip, new(size * 3.2f, size)))
+                        {
+                            Insert();
+                        }
+                        if (ImGui.IsItemHovered())
+                            ImGui.SetTooltip(tooltip);
+                    }
+                });
+
+                col++;
+                if (col >= columns)
+                {
+                    ImGui.NewLine();
+                    ImGui.EndGroup();
+                    col = 0;
+                }
+                else
+                {
+                    ImGui.SameLine();
+                }
+            }
+
+            if (col != 0)
+            {
+                ImGui.NewLine();
+                ImGui.EndGroup();
             }
         }
     }
