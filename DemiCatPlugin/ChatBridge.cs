@@ -636,15 +636,35 @@ public class ChatBridge : IDisposable
     {
         if (_ws == null || _ws.State != WebSocketState.Open || _subs.Count == 0)
             return Task.CompletedTask;
-        var chans = new List<object>();
+        var chans = new List<Dictionary<string, object?>>();
         foreach (var kvp in _channelMetadata)
         {
             var channelId = kvp.Key;
             var meta = kvp.Value;
             var key = Key(meta.GuildId, meta.Kind, channelId);
             if (!_subs.Contains(key)) continue;
+
             _config.ChatCursors.TryGetValue(key, out var since);
-            chans.Add(new { id = channelId, since });
+
+            var channel = new Dictionary<string, object?>
+            {
+                ["id"] = channelId,
+                ["since"] = since,
+            };
+
+            var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(meta.GuildId);
+            if (!string.IsNullOrEmpty(normalizedGuild))
+            {
+                channel["guildId"] = normalizedGuild;
+            }
+
+            var normalizedKind = ChannelKeyHelper.NormalizeKind(meta.Kind);
+            if (!string.IsNullOrEmpty(normalizedKind))
+            {
+                channel["kind"] = normalizedKind;
+            }
+
+            chans.Add(channel);
         }
         if (chans.Count == 0) return Task.CompletedTask;
         var json = JsonSerializer.Serialize(new { op = "sub", channels = chans });
