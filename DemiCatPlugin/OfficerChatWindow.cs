@@ -21,7 +21,7 @@ public class OfficerChatWindow : ChatWindow
     private bool _subscribed;
 
     public OfficerChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, AvatarCache avatarCache)
-        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, ChannelKind.OfficerChat, avatarCache)
+        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, global::DemiCatPlugin.ChannelKind.OfficerChat, avatarCache)
     {
         _bridge.StatusChanged += s =>
         {
@@ -209,7 +209,7 @@ public class OfficerChatWindow : ChatWindow
 
         try
         {
-            var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(ChannelKind.OfficerChat, CancellationToken.None)).ToList());
+            var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(global::DemiCatPlugin.ChannelKind.OfficerChat, CancellationToken.None)).ToList());
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
                 return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
