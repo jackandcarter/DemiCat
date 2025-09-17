@@ -134,6 +134,96 @@ public class ChatWindowWebSocketTests
     }
 
     [Fact]
+    public async Task WebSocket_DefaultGuildMetadataUpgradesAcrossReconnect()
+    {
+        const string ActualGuild = "guild-123";
+        string? firstGuild = null;
+        string? secondGuild = null;
+        var secondBatchSent = false;
+
+        using var server = new MockWsServer(async (ws, idx, srv) =>
+        {
+            if (idx == 1)
+            {
+                var sub = await srv.Receive(ws);
+                firstGuild = ExtractGuild(sub);
+
+                var ack = JsonSerializer.Serialize(new { op = "ack", channel = "1", guildId = ActualGuild, kind = "CHAT" });
+                await srv.Send(ws, ack);
+                var batch = JsonSerializer.Serialize(new
+                {
+                    op = "batch",
+                    channel = "1",
+                    guildId = ActualGuild,
+                    kind = "CHAT",
+                    messages = new[] { new { cursor = 1, op = "mc", d = new { } } }
+                });
+                await srv.Send(ws, batch);
+
+                await Task.Delay(100);
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+            }
+            else
+            {
+                try
+                {
+                    var sub = await srv.Receive(ws).WaitAsync(TimeSpan.FromSeconds(5));
+                    secondGuild = ExtractGuild(sub);
+
+                    var ack = JsonSerializer.Serialize(new { op = "ack", channel = "1", guildId = ActualGuild, kind = "CHAT" });
+                    await srv.Send(ws, ack);
+                    var batch = JsonSerializer.Serialize(new
+                    {
+                        op = "batch",
+                        channel = "1",
+                        guildId = ActualGuild,
+                        kind = "CHAT",
+                        messages = new[] { new { cursor = 2, op = "mc", d = new { } } }
+                    });
+                    await srv.Send(ws, batch);
+                    secondBatchSent = true;
+                }
+                catch (TimeoutException)
+                {
+                    secondGuild = string.Empty;
+                }
+
+                while (ws.State == WebSocketState.Open)
+                {
+                    await Task.Delay(50);
+                }
+            }
+        });
+
+        _ = SetupServices();
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
+
+        var messageCount = 0;
+        bridge.MessageReceived += _ => Interlocked.Increment(ref messageCount);
+
+        bridge.Start();
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
+
+        try
+        {
+            await WaitUntil(() => firstGuild != null && Volatile.Read(ref messageCount) > 0, TimeSpan.FromSeconds(5));
+            await WaitUntil(() => secondGuild != null, TimeSpan.FromSeconds(10));
+            await WaitUntil(() => secondBatchSent && Volatile.Read(ref messageCount) > 1, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            bridge.Stop();
+        }
+
+        Assert.Equal(ChannelKeyHelper.NormalizeGuildId(config.GuildId), firstGuild);
+        Assert.Equal(ActualGuild, secondGuild);
+        Assert.Equal(2, Volatile.Read(ref messageCount));
+    }
+
+    [Fact]
     public async Task WebSocket_TypingEventRaises()
     {
         using var server = new MockWsServer(async (ws, _, srv) =>
@@ -319,6 +409,17 @@ public class ChatWindowWebSocketTests
         using var doc = JsonDocument.Parse(json);
         var ch = doc.RootElement.GetProperty("channels")[0];
         return ch.TryGetProperty("since", out var since) ? since.GetInt32() : 0;
+    }
+
+    private static string? ExtractGuild(string json)
+    {
+        using var doc = JsonDocument.Parse(json);
+        var ch = doc.RootElement.GetProperty("channels")[0];
+        if (ch.TryGetProperty("guildId", out var guild) && guild.ValueKind == JsonValueKind.String)
+        {
+            return guild.GetString();
+        }
+        return null;
     }
 
     private static List<string> GetTypingUsers(ChatWindow window)

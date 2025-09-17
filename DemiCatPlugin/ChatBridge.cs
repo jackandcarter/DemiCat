@@ -158,8 +158,53 @@ public class ChatBridge : IDisposable
         if (string.IsNullOrEmpty(channel)) return string.Empty;
         var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
         var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
-        _channelMetadata[channel] = (normalizedGuild, normalizedKind);
-        return Key(normalizedGuild, normalizedKind, channel);
+        return StoreChannelMetadata(channel, normalizedGuild, normalizedKind);
+    }
+
+    private string StoreChannelMetadata(string channel, string normalizedGuild, string normalizedKind)
+    {
+        var newKey = Key(normalizedGuild, normalizedKind, channel);
+        if (_channelMetadata.TryGetValue(channel, out var existing))
+        {
+            var oldKey = Key(existing.GuildId, existing.Kind, channel);
+            _channelMetadata[channel] = (normalizedGuild, normalizedKind);
+            if (!string.Equals(existing.GuildId, normalizedGuild, StringComparison.Ordinal) ||
+                !string.Equals(existing.Kind, normalizedKind, StringComparison.Ordinal))
+            {
+                UpdateSubscriptionKey(oldKey, newKey);
+            }
+        }
+        else
+        {
+            _channelMetadata[channel] = (normalizedGuild, normalizedKind);
+        }
+        return newKey;
+    }
+
+    private void UpdateSubscriptionKey(string oldKey, string newKey)
+    {
+        if (_subs.Remove(oldKey))
+        {
+            _subs.Add(newKey);
+        }
+
+        if (_cursors.TryGetValue(oldKey, out var cursor))
+        {
+            _cursors.Remove(oldKey);
+            _cursors[newKey] = cursor;
+        }
+
+        if (_acked.TryGetValue(oldKey, out var acked))
+        {
+            _acked.Remove(oldKey);
+            _acked[newKey] = acked;
+        }
+
+        if (_config.ChatCursors.TryGetValue(oldKey, out var stored))
+        {
+            _config.ChatCursors.Remove(oldKey);
+            _config.ChatCursors[newKey] = stored;
+        }
     }
 
     private void UpdateChannelMetadata(string channel, string? guildId, string? kind)
@@ -174,7 +219,7 @@ public class ChatBridge : IDisposable
         {
             var normalizedGuild = hasGuild ? ChannelKeyHelper.NormalizeGuildId(guildId) : existing.GuildId;
             var normalizedKind = hasKind ? ChannelKeyHelper.NormalizeKind(kind) : existing.Kind;
-            _channelMetadata[channel] = (normalizedGuild, normalizedKind);
+            StoreChannelMetadata(channel, normalizedGuild, normalizedKind);
         }
         else if (hasGuild && hasKind)
         {
@@ -220,8 +265,13 @@ public class ChatBridge : IDisposable
 
         if (_channelMetadata.TryGetValue(channel, out var meta))
         {
-            if (!string.Equals(meta.GuildId, normalizedGuild, StringComparison.Ordinal) ||
-                !string.Equals(meta.Kind, normalizedKind, StringComparison.Ordinal))
+            var defaultGuildSentinel = ChannelKeyHelper.NormalizeGuildId(null);
+            var hasStoredGuild = !string.IsNullOrEmpty(meta.GuildId) &&
+                !string.Equals(meta.GuildId, defaultGuildSentinel, StringComparison.Ordinal);
+            var hasStoredKind = !string.IsNullOrEmpty(meta.Kind);
+            var guildMismatch = hasStoredGuild && !string.Equals(meta.GuildId, normalizedGuild, StringComparison.Ordinal);
+            var kindMismatch = hasStoredKind && !string.Equals(meta.Kind, normalizedKind, StringComparison.Ordinal);
+            if (guildMismatch || kindMismatch)
             {
                 LogBatchDrop(op, channel, normalizedGuild, normalizedKind, "metadata_mismatch", meta.GuildId, meta.Kind, null);
                 return false;
