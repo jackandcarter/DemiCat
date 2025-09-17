@@ -125,7 +125,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         StartPolling();
         await RefreshChannels();
         await LoadPresences();
-        await ConnectWebSocket();
+        StartWebSocketConnectTask();
     }
 
     public void StopNetworking()
@@ -169,7 +169,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                         Math.Min(baseInterval.TotalSeconds * Math.Pow(2, _failureCount), 300));
                 if ((_webSocket == null || _webSocket.State != WebSocketState.Open) && DateTime.UtcNow >= _nextWebSocketAttempt)
                 {
-                    _ = ConnectWebSocket();
+                    StartWebSocketConnectTask();
                 }
             }
         }
@@ -177,6 +177,23 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         {
             // ignored
         }
+    }
+
+    private void StartWebSocketConnectTask()
+    {
+        async Task RunAsync()
+        {
+            try
+            {
+                await ConnectWebSocket();
+            }
+            catch (Exception ex)
+            {
+                LogWebSocketException(ex, "connect.task");
+            }
+        }
+
+        _ = RunAsync();
     }
 
     private async Task LoadPresences()
