@@ -121,7 +121,14 @@ public class ChatBridge : IDisposable
     {
         if (!string.IsNullOrEmpty(channel))
         {
-            RegisterChannelMetadata(channel, guildId, kind);
+            if (_channelMetadata.ContainsKey(channel))
+            {
+                UpdateChannelMetadata(channel, guildId, kind);
+            }
+            else
+            {
+                RegisterChannelMetadata(channel, guildId, kind);
+            }
         }
         _ = AckAsync(channel);
     }
@@ -163,22 +170,37 @@ public class ChatBridge : IDisposable
 
     private string StoreChannelMetadata(string channel, string normalizedGuild, string normalizedKind)
     {
-        var newKey = Key(normalizedGuild, normalizedKind, channel);
         if (_channelMetadata.TryGetValue(channel, out var existing))
         {
+            var defaultGuild = ChannelKeyHelper.NormalizeGuildId(null);
+            var effectiveGuild = normalizedGuild;
+            if (string.Equals(normalizedGuild, defaultGuild, StringComparison.Ordinal) &&
+                !string.Equals(existing.GuildId, defaultGuild, StringComparison.Ordinal))
+            {
+                effectiveGuild = existing.GuildId;
+            }
+
+            var effectiveKind = normalizedKind;
+            if (string.IsNullOrEmpty(normalizedKind) && !string.IsNullOrEmpty(existing.Kind))
+            {
+                effectiveKind = existing.Kind;
+            }
+
             var oldKey = Key(existing.GuildId, existing.Kind, channel);
-            _channelMetadata[channel] = (normalizedGuild, normalizedKind);
-            if (!string.Equals(existing.GuildId, normalizedGuild, StringComparison.Ordinal) ||
-                !string.Equals(existing.Kind, normalizedKind, StringComparison.Ordinal))
+            var newKey = Key(effectiveGuild, effectiveKind, channel);
+            _channelMetadata[channel] = (effectiveGuild, effectiveKind);
+            if (!string.Equals(oldKey, newKey, StringComparison.Ordinal))
             {
                 UpdateSubscriptionKey(oldKey, newKey);
             }
+            return newKey;
         }
         else
         {
+            var newKey = Key(normalizedGuild, normalizedKind, channel);
             _channelMetadata[channel] = (normalizedGuild, normalizedKind);
+            return newKey;
         }
-        return newKey;
     }
 
     private void UpdateSubscriptionKey(string oldKey, string newKey)

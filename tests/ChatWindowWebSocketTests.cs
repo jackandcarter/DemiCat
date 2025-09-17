@@ -224,6 +224,116 @@ public class ChatWindowWebSocketTests
     }
 
     [Fact]
+    public async Task WebSocket_AckWithEmptyGuildPreservesUpgradedMetadata()
+    {
+        const string ActualGuild = "guild-456";
+        const int CursorValue = 7;
+        var ackReceived = 0;
+
+        using var server = new MockWsServer(async (ws, idx, srv) =>
+        {
+            if (idx == 1)
+            {
+                await srv.Receive(ws);
+                var ack = JsonSerializer.Serialize(new { op = "ack", channel = "1", guildId = ActualGuild, kind = "CHAT" });
+                await srv.Send(ws, ack);
+                var batch = JsonSerializer.Serialize(new
+                {
+                    op = "batch",
+                    channel = "1",
+                    guildId = ActualGuild,
+                    kind = "CHAT",
+                    messages = new[] { new { cursor = CursorValue, op = "mc", d = new { } } }
+                });
+                await srv.Send(ws, batch);
+
+                try
+                {
+                    var ackMsg = await srv.Receive(ws).WaitAsync(TimeSpan.FromSeconds(5));
+                    if (ackMsg.Contains("\"op\":\"ack\""))
+                    {
+                        Volatile.Write(ref ackReceived, 1);
+                    }
+                }
+                catch (TimeoutException)
+                {
+                    Volatile.Write(ref ackReceived, -1);
+                }
+
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "bye", CancellationToken.None);
+            }
+            else
+            {
+                await srv.Receive(ws);
+                var ack = JsonSerializer.Serialize(new { op = "ack", channel = "1", guildId = ActualGuild, kind = "CHAT" });
+                await srv.Send(ws, ack);
+                var batch = JsonSerializer.Serialize(new
+                {
+                    op = "batch",
+                    channel = "1",
+                    guildId = ActualGuild,
+                    kind = "CHAT",
+                    messages = new[] { new { cursor = CursorValue + 1, op = "mc", d = new { } } }
+                });
+                await srv.Send(ws, batch);
+
+                while (ws.State == WebSocketState.Open)
+                {
+                    await Task.Delay(50);
+                }
+            }
+        });
+
+        _ = SetupServices();
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
+
+        var messageCount = 0;
+        bridge.MessageReceived += _ => Interlocked.Increment(ref messageCount);
+
+        bridge.Start();
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
+
+        try
+        {
+            await WaitUntil(() => Volatile.Read(ref messageCount) > 0, TimeSpan.FromSeconds(5));
+            bridge.Ack("1", config.GuildId, ChannelKind.Chat);
+            await WaitUntil(() => Volatile.Read(ref ackReceived) != 0, TimeSpan.FromSeconds(5));
+            Assert.Equal(1, Volatile.Read(ref ackReceived));
+
+            await WaitUntil(() => server.Received.Count(m => m.Contains("\"op\":\"sub\"")) >= 2, TimeSpan.FromSeconds(10));
+            await WaitUntil(() => Volatile.Read(ref messageCount) > 1, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            bridge.Stop();
+        }
+
+        var subFrames = server.Received.Where(m => m.Contains("\"op\":\"sub\""))
+            .ToList();
+        Assert.True(subFrames.Count >= 2);
+
+        var firstGuild = ExtractGuild(subFrames[0]);
+        var secondGuild = ExtractGuild(subFrames[^1]);
+
+        Assert.Equal(ChannelKeyHelper.NormalizeGuildId(config.GuildId), firstGuild);
+        Assert.Equal(ActualGuild, secondGuild);
+
+        var secondSince = ExtractSince(subFrames[^1]);
+        Assert.Equal(CursorValue, secondSince);
+
+        var upgradedKey = ChannelKeyHelper.BuildCursorKey(ActualGuild, ChannelKind.Chat, "1");
+        Assert.Contains(upgradedKey, config.ChatCursors.Keys);
+        var defaultKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
+        if (!string.Equals(upgradedKey, defaultKey, StringComparison.Ordinal))
+        {
+            Assert.DoesNotContain(defaultKey, config.ChatCursors.Keys);
+        }
+    }
+
+    [Fact]
     public async Task WebSocket_TypingEventRaises()
     {
         using var server = new MockWsServer(async (ws, _, srv) =>
