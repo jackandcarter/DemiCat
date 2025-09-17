@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ..discord_client import discord_client
+from ..discord_client import discord_client, is_discord_client_ready
 from ...db.models import UnicodeEmoji
 
 router = APIRouter(prefix="/api")
@@ -25,20 +25,23 @@ async def get_emojis(ctx: RequestContext = Depends(api_key_auth)) -> List[dict]:
         data, ts = cache_entry
         if monotonic() - ts < _CACHE_TTL:
             return data
-    if discord_client:
-        guild = discord_client.get_guild(ctx.guild.discord_guild_id)
-        if guild is not None:
-            data = [
-                {
-                    "id": str(e.id),
-                    "name": e.name,
-                    "isAnimated": bool(getattr(e, "animated", False)),
-                    "imageUrl": str(e.url),
-                }
-                for e in guild.emojis
-            ]
-            _emoji_cache[ctx.guild.id] = (data, monotonic())
-            return data
+    client = discord_client
+    if client is None or not is_discord_client_ready(client):
+        return []
+
+    guild = client.get_guild(ctx.guild.discord_guild_id)
+    if guild is not None:
+        data = [
+            {
+                "id": str(e.id),
+                "name": e.name,
+                "isAnimated": bool(getattr(e, "animated", False)),
+                "imageUrl": str(e.url),
+            }
+            for e in guild.emojis
+        ]
+        _emoji_cache[ctx.guild.id] = (data, monotonic())
+        return data
     return []
 
 
@@ -51,20 +54,23 @@ async def get_guild_emojis(
         data, ts = cache_entry
         if monotonic() - ts < _CACHE_TTL:
             return data
-    if discord_client:
-        guild = discord_client.get_guild(guild_id)
-        if guild is not None:
-            data = [
-                {
-                    "id": str(e.id),
-                    "name": e.name,
-                    "isAnimated": bool(getattr(e, "animated", False)),
-                    "imageUrl": str(e.url),
-                }
-                for e in guild.emojis
-            ]
-            _emoji_cache[guild_id] = (data, monotonic())
-            return data
+    client = discord_client
+    if client is None or not is_discord_client_ready(client):
+        return []
+
+    guild = client.get_guild(guild_id)
+    if guild is not None:
+        data = [
+            {
+                "id": str(e.id),
+                "name": e.name,
+                "isAnimated": bool(getattr(e, "animated", False)),
+                "imageUrl": str(e.url),
+            }
+            for e in guild.emojis
+        ]
+        _emoji_cache[guild_id] = (data, monotonic())
+        return data
     return []
 
 
