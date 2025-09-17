@@ -290,7 +290,7 @@ async def create_event(
                     },
                 )
                 if thread_obj:
-                    msg_id, _, _ = await _send_via_webhook(
+                    msg_id, _, _, _ = await _send_via_webhook(
                         channel=base_channel,
                         channel_id=base_channel.id,
                         guild_id=ctx.guild.id,

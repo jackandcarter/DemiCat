@@ -90,7 +90,7 @@ def test_create_event_thread_uses_webhook() -> None:
 
         async def fake_webhook(**kwargs):
             captured.update(kwargs)
-            return 123, None, []
+            return 123, None, [], None
 
         body = CreateEventBody(channelId="456", title="T", description="d")
         ctx = SimpleNamespace(guild=SimpleNamespace(id=1), roles=[])
