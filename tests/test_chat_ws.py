@@ -2,6 +2,7 @@ import asyncio
 import json
 import types
 import pytest
+from collections import deque
 from contextlib import asynccontextmanager
 from fastapi import HTTPException, WebSocketDisconnect
 import os
@@ -43,6 +44,11 @@ class StubWebSocket:
 
 
 class DummySession:
+    async def execute(self, *args, **kwargs):
+        return types.SimpleNamespace(
+            all=lambda: [(1, 1, "CHAT", 1)]
+        )
+
     async def close(self):  # pragma: no cover - trivial
         pass
 
@@ -74,8 +80,8 @@ def test_chat_ws_role_access(monkeypatch):
 
         await ws_chat.websocket_endpoint_chat(ws)
         if expect_resync:
-            assert len(ws.sent) == 1
-            assert json.loads(ws.sent[0])["op"] == "resync"
+            assert ws.sent
+            assert any(json.loads(msg)["op"] == "resync" for msg in ws.sent)
         else:
             assert ws.sent == []
 
@@ -185,6 +191,101 @@ def test_chat_ws_mixed_channel_batch_rejected(monkeypatch):
 
         await manager._flush_channel("42")
         assert ws.sent == []
+
+    _run(scenario())
+
+
+def test_chat_ws_subscription_backfill(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(character_name="tester"),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=999),
+            key=types.SimpleNamespace(),
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+        channel_id = "123"
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=999, kind="CHAT")
+        manager._channel_history[channel_id] = deque(
+            [
+                {"cursor": 1, "op": "mc", "d": {"id": "old"}},
+                {"cursor": 2, "op": "mc", "d": {"id": "new1"}},
+                {"cursor": 3, "op": "mc", "d": {"id": "new2"}},
+            ]
+        )
+        manager._channel_cursors[channel_id] = 3
+
+        async def fake_fetch(channels):
+            assert channels == {channel_id}
+            manager._channel_meta[channel_id] = meta
+            return {channel_id: meta}
+
+        monkeypatch.setattr(manager, "_fetch_channel_meta_bulk", fake_fetch)
+
+        await manager.sub(
+            ws,
+            {
+                "channels": [
+                    {
+                        "id": channel_id,
+                        "since": 1,
+                    }
+                ]
+            },
+        )
+
+        assert len(ws.sent) == 3
+        backfill = json.loads(ws.sent[0])
+        assert backfill["op"] == "batch"
+        assert backfill["channel"] == channel_id
+        assert backfill["guildId"] == "999"
+        assert [msg["cursor"] for msg in backfill["messages"]] == [2, 3]
+        assert ws.sent[1] != ws.sent[0]
+        assert json.loads(ws.sent[1])["op"] == "ack"
+        assert json.loads(ws.sent[2])["op"] == "resync"
+
+    _run(scenario())
+
+
+def test_chat_ws_history_cap(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(character_name=None),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=555),
+            key=types.SimpleNamespace(),
+            roles=[],
+        )
+        info = ws_chat.ChatConnection(ctx=ctx)
+        channel_id = "55"
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=555, kind="CHAT")
+        info.channels.add(channel_id)
+        info.metadata[channel_id] = meta
+        manager.connections[ws] = info
+        manager._channel_meta[channel_id] = meta
+
+        total = ws_chat.HISTORY_LIMIT + 5
+        manager._channel_queues[channel_id] = [
+            {"cursor": idx + 1, "op": "mc", "d": {"id": idx + 1}}
+            for idx in range(total)
+        ]
+
+        async def fake_sleep(delay):
+            return None
+
+        monkeypatch.setattr(ws_chat.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(ws_chat.random, "uniform", lambda a, b: 0.0)
+
+        await manager._flush_channel(channel_id)
+
+        history = manager._channel_history[channel_id]
+        assert len(history) == ws_chat.HISTORY_LIMIT
+        assert [msg["cursor"] for msg in history] == list(
+            range(total - ws_chat.HISTORY_LIMIT + 1, total + 1)
+        )
 
     _run(scenario())
 
