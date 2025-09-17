@@ -63,6 +63,8 @@ public class EventView : IDisposable
 
     public string ChannelId => _dto.ChannelId?.ToString() ?? string.Empty;
 
+    public string GuildId => _dto.GuildId ?? string.Empty;
+
     public IReadOnlyList<EmbedButtonDto>? Buttons => _dto.Buttons;
 
     public void Draw()

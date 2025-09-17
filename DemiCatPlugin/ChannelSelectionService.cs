@@ -5,6 +5,8 @@ namespace DemiCatPlugin;
 
 public class ChannelSelectionService
 {
+    private const string EventSelectionPrefix = "Event:";
+    private static readonly string NormalizedEventKind = ChannelKeyHelper.NormalizeKind(ChannelKind.Event);
     private readonly Config _config;
 
     public ChannelSelectionService(Config config)
@@ -15,12 +17,33 @@ public class ChannelSelectionService
 
     public event Action<string, string, string, string>? ChannelChanged;
 
+    private static string BuildEventSelectionKey(string normalizedGuildId)
+        => $"{EventSelectionPrefix}{normalizedGuildId}";
+
     public string GetChannel(string kind, string? guildId)
+        => GetChannel(kind, guildId, out _);
+
+    public string GetChannel(string kind, string? guildId, out bool hasStoredSelection)
     {
         guildId ??= string.Empty;
-        var key = ChannelKeyHelper.BuildSelectionKey(guildId, kind);
-        if (_config.ChannelSelections.TryGetValue(key, out var id))
+        hasStoredSelection = false;
+        var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
+        var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
+
+        if (normalizedKind == NormalizedEventKind)
         {
+            var scopedKey = BuildEventSelectionKey(normalizedGuild);
+            if (_config.ChannelSelections.TryGetValue(scopedKey, out var scopedId) && !string.IsNullOrEmpty(scopedId))
+            {
+                hasStoredSelection = true;
+                return scopedId;
+            }
+        }
+
+        var key = ChannelKeyHelper.BuildSelectionKey(guildId, kind);
+        if (_config.ChannelSelections.TryGetValue(key, out var id) && !string.IsNullOrEmpty(id))
+        {
+            hasStoredSelection = normalizedKind != NormalizedEventKind;
             return id;
         }
 
@@ -29,30 +52,53 @@ public class ChannelSelectionService
             return string.Empty;
         }
 
-        return kind switch
+        return (kind switch
         {
             ChannelKind.Event => _config.EventChannelId,
             ChannelKind.FcChat => _config.FcChannelId,
             ChannelKind.OfficerChat => _config.OfficerChannelId,
             ChannelKind.Chat => _config.ChatChannelId,
             _ => string.Empty
-        } ?? string.Empty;
+        }) ?? string.Empty;
     }
 
     public void SetChannel(string kind, string? guildId, string id)
     {
         guildId ??= string.Empty;
-        var old = GetChannel(kind, guildId);
-        if (old == id) return;
+        var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
+        var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
+        var old = GetChannel(kind, guildId, out _);
+        var scopedKey = normalizedKind == NormalizedEventKind ? BuildEventSelectionKey(normalizedGuild) : null;
+
+        if (old == id)
+        {
+            if (scopedKey == null)
+            {
+                return;
+            }
+
+            if (_config.ChannelSelections.TryGetValue(scopedKey, out var existingScoped) && existingScoped == id)
+            {
+                return;
+            }
+        }
 
         var key = ChannelKeyHelper.BuildSelectionKey(guildId, kind);
         if (string.IsNullOrEmpty(id))
         {
             _config.ChannelSelections.Remove(key);
+            if (scopedKey != null)
+            {
+                _config.ChannelSelections.Remove(scopedKey);
+            }
         }
         else
         {
             _config.ChannelSelections[key] = id;
+            if (scopedKey != null)
+            {
+                _config.ChannelSelections[scopedKey] = id;
+            }
         }
 
         if (ChannelKeyHelper.IsDefaultGuild(guildId))

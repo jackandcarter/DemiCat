@@ -715,6 +715,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
 
         var channelId = ChannelId;
+        var currentGuildId = ChannelKeyHelper.NormalizeGuildId(_config.GuildId);
         if (string.IsNullOrWhiteSpace(channelId))
         {
             ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
@@ -727,7 +728,9 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         lock (_embedLock)
         {
             embeds = _embeds.Values
-                .Where(v => v != null && v.ChannelId == channelId)
+                .Where(v => v != null
+                    && v.ChannelId == channelId
+                    && string.Equals(ChannelKeyHelper.NormalizeGuildId(v.GuildId), currentGuildId, StringComparison.Ordinal))
                 .ToList();
         }
 
@@ -836,24 +839,44 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             {
                 _channels.Clear();
                 _channels.AddRange(eventChannels);
-                var current = ChannelId;
-                if (!string.IsNullOrEmpty(current))
-                {
-                    _selectedIndex = _channels.FindIndex(c => c != null && c.Id == current);
-                    if (_selectedIndex < 0) _selectedIndex = 0;
-                }
-                if (_channels.Count > 0)
-                {
-                    if (_selectedIndex < 0 || _selectedIndex >= _channels.Count)
-                    {
-                        _selectedIndex = Math.Clamp(_selectedIndex, 0, _channels.Count - 1);
-                    }
 
-                    var selectedChannel = _channels[_selectedIndex];
-                    if (!string.IsNullOrEmpty(selectedChannel?.Id))
+                var guildId = _config.GuildId;
+                var selectedChannelId = _channelSelection.GetChannel(ChannelKind.Event, guildId, out var hasStoredSelection);
+                var usedFallback = !hasStoredSelection && !string.IsNullOrEmpty(selectedChannelId);
+                var targetIndex = -1;
+                if (!string.IsNullOrEmpty(selectedChannelId))
+                {
+                    targetIndex = _channels.FindIndex(c => c != null && c.Id == selectedChannelId);
+                }
+
+                string? ensureChannelId = null;
+                if (targetIndex >= 0)
+                {
+                    _selectedIndex = targetIndex;
+                    if (usedFallback)
                     {
-                        _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, selectedChannel.Id);
+                        ensureChannelId = selectedChannelId;
                     }
+                }
+                else if (_channels.Count > 0)
+                {
+                    _selectedIndex = 0;
+                    ensureChannelId = _channels[_selectedIndex]?.Id;
+                }
+                else
+                {
+                    _selectedIndex = -1;
+                }
+
+                if (_channels.Count > 0 && (_selectedIndex < 0 || _selectedIndex >= _channels.Count))
+                {
+                    _selectedIndex = Math.Clamp(_selectedIndex, 0, _channels.Count - 1);
+                    ensureChannelId ??= _channels[_selectedIndex]?.Id;
+                }
+
+                if (!string.IsNullOrEmpty(ensureChannelId))
+                {
+                    _channelSelection.SetChannel(ChannelKind.Event, guildId, ensureChannelId);
                 }
                 _channelsLoaded = true;
                 _channelFetchFailed = false;

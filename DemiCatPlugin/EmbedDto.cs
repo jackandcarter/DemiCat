@@ -26,6 +26,7 @@ public class EmbedDto
     public int? VideoHeight { get; set; }
     public List<EmbedButtonDto>? Buttons { get; set; }
     public ulong? ChannelId { get; set; }
+    public string? GuildId { get; set; }
     public List<ulong>? Mentions { get; set; }
 }
 
