@@ -534,9 +534,21 @@ async def rsvp_event(
             "request": body.model_dump(mode="json"),
         },
     )
-    embed = (await db.execute(select(Embed).where(Embed.discord_message_id == message_id))).scalar_one_or_none()
-    if embed:
-        channel_id = embed.channel_id
+    embed = (
+        await db.execute(select(Embed).where(Embed.discord_message_id == message_id))
+    ).scalar_one_or_none()
+    if embed is None:
+        logger.warning(
+            "RSVP embed not found",  # pragma: no cover - simple log guard
+            extra={
+                "event_id": event_id,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+            },
+        )
+        raise HTTPException(status_code=404)
+
+    channel_id = embed.channel_id
     labels: Dict[str, str] = {}
     order: List[str] = []
     limits: Dict[str, int] = {}
@@ -548,8 +560,7 @@ async def rsvp_event(
         if b.max_signups is not None:
             limits[b.tag] = b.max_signups
 
-    if embed:
-        payload = json.loads(embed.payload_json)
+    payload = json.loads(embed.payload_json)
 
     stmt = select(EventSignup).where(
         EventSignup.discord_message_id == message_id,
@@ -615,18 +626,17 @@ async def rsvp_event(
         display = name or discrim or str(uid)
         summary.setdefault(c, []).append(display)
 
-    if embed:
-        payload["fields"] = summarize(summary, labels, order or list(summary.keys()))
-        embed.payload_json = json.dumps(payload)
-        await db.commit()
-        kind = (
-            await db.execute(
-                select(GuildChannel.kind).where(
-                    GuildChannel.guild_id == embed.guild_id,
-                    GuildChannel.channel_id == embed.channel_id,
-                )
+    payload["fields"] = summarize(summary, labels, order or list(summary.keys()))
+    embed.payload_json = json.dumps(payload)
+    await db.commit()
+    kind = (
+        await db.execute(
+            select(GuildChannel.kind).where(
+                GuildChannel.guild_id == embed.guild_id,
+                GuildChannel.channel_id == embed.channel_id,
             )
-        ).scalar_one_or_none()
+        )
+    ).scalar_one_or_none()
     try:
         await manager.broadcast_text(
             json.dumps(payload),
@@ -652,7 +662,7 @@ async def rsvp_event(
                 "error": str(exc),
             },
         )
-    await emit_event({"channel": embed.channel_id, "op": "eu", "d": payload})
+    await emit_event({"channel": channel_id, "op": "eu", "d": payload})
 
     return {"ok": True}
 
