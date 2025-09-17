@@ -134,7 +134,7 @@ public class ChatBridge : IDisposable
 
     public void Resync(string channel)
     {
-        var json = JsonSerializer.Serialize(new { op = "resync", ch = channel });
+        var json = JsonSerializer.Serialize(new { op = "resync", channel });
         PluginServices.Instance?.Log.Info($"chat.ws resync channel={channel}");
         _resyncCount++;
         _ = SendRaw(json);

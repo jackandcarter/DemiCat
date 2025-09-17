@@ -66,6 +66,15 @@ public class ChatWindowWebSocketTests
 
         bridge.Resync("1");
         await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"resync\"")), TimeSpan.FromSeconds(5));
+        var resyncFrame = server.Received.Last(m => m.Contains("\"op\":\"resync\""));
+        using (var doc = JsonDocument.Parse(resyncFrame))
+        {
+            var root = doc.RootElement;
+            Assert.Equal("resync", root.GetProperty("op").GetString());
+            Assert.True(root.TryGetProperty("channel", out var channelProp));
+            Assert.Equal("1", channelProp.GetString());
+            Assert.False(root.TryGetProperty("ch", out _));
+        }
 
         bridge.Stop();
 
