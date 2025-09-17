@@ -158,6 +158,7 @@ class ChatConnectionManager:
             is_officer = False
             expected_guild: str | None = None
             expected_kind: str | None = None
+            since_value: str | int | None = None
             if isinstance(ch, dict):
                 raw_id = ch.get("id")
                 if raw_id is None:
@@ -178,10 +179,19 @@ class ChatConnectionManager:
                         expected_kind = expected_kind.upper()
                     else:
                         expected_kind = None
+                if "since" in ch:
+                    since_value = ch.get("since")
             else:
                 if ch is None:
                     continue
                 channel_id = str(ch)
+            logger.info(
+                "chat.ws sub request guild=%s kind=%s channel=%s since=%s",
+                expected_guild,
+                expected_kind,
+                channel_id,
+                since_value,
+            )
             if is_officer and "officer" not in info.ctx.roles:
                 # Skip officer-only channels for non-officers.
                 continue
@@ -336,17 +346,17 @@ class ChatConnectionManager:
         batch_size = len(queue)
         self._backfill_total += batch_size
         self._backfill_batches += 1
-        avg_backfill = self._backfill_total / self._backfill_batches
         meta = await self._ensure_channel_meta(channel)
         if meta is None:
             logger.warning("chat.ws missing metadata channel=%s", channel)
             return
         guild_id = meta.guild_id_value()
         logger.info(
-            "chat.ws broadcast channel=%s size=%s avg_backfill=%.1f",
+            "chat.ws batch guild=%s kind=%s channel=%s size=%s",
+            guild_id,
+            meta.kind,
             channel,
             batch_size,
-            avg_backfill,
         )
         payload = {
             "op": "batch",
@@ -357,24 +367,29 @@ class ChatConnectionManager:
         }
         message = json.dumps(payload)
         targets: list[WebSocket] = []
-        dropped = 0
         for ws, info in self.connections.items():
             if channel not in info.channels:
                 continue
             expected = info.metadata.get(channel)
             if expected is not None:
                 if meta.kind and expected.kind and expected.kind != meta.kind:
-                    dropped += 1
+                    logger.info(
+                        "chat.ws drop batch reason=kind_mismatch channel=%s got=%s expect=%s",
+                        channel,
+                        meta.kind,
+                        expected.kind,
+                    )
                     continue
                 expected_guild = expected.guild_id_value()
                 if expected_guild and guild_id and expected_guild != guild_id:
-                    dropped += 1
+                    logger.info(
+                        "chat.ws drop batch reason=guild_mismatch channel=%s got=%s expect=%s",
+                        channel,
+                        guild_id,
+                        expected_guild,
+                    )
                     continue
             targets.append(ws)
-        if dropped:
-            logger.info(
-                "chat.ws drop batch channel=%s dropped=%s", channel, dropped
-            )
         send_coros = [ws.send_text(message) for ws in targets]
         if send_coros:
             await asyncio.gather(*send_coros, return_exceptions=True)
@@ -480,6 +495,19 @@ class ChatConnectionManager:
             for name, data in msg.attachments
         ]
         start = time.perf_counter()
+        channel_str = str(msg.channel_id)
+        meta = await self._ensure_channel_meta(channel_str)
+        guild_id = meta.guild_id_value() if meta is not None else None
+        kind = meta.kind if meta is not None else None
+        total_bytes = len(msg.content.encode("utf-8"))
+        total_bytes += sum(len(data) for _, data in msg.attachments)
+        logger.info(
+            "chat.http send guild=%s kind=%s channel=%s bytes=%s",
+            guild_id,
+            kind,
+            msg.channel_id,
+            total_bytes,
+        )
         try:
             sent = await webhook.send(
                 msg.content,
@@ -529,12 +557,19 @@ class ChatConnectionManager:
     async def _send_subscription_ack(
         self, websocket: WebSocket, channel: str, meta: ChannelMeta
     ) -> None:
+        guild_id = meta.guild_id_value()
         payload = {
             "op": "ack",
             "channel": channel,
-            "guildId": meta.guild_id_value(),
+            "guildId": guild_id,
             "kind": meta.kind,
         }
+        logger.info(
+            "chat.ws sub ack guild=%s kind=%s channel=%s",
+            guild_id,
+            meta.kind,
+            channel,
+        )
         await websocket.send_text(json.dumps(payload))
 
     async def _send_resync(
