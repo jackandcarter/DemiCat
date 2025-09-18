@@ -16,7 +16,8 @@ def test_create_request_persists_lowercase_status(monkeypatch):
     async def _setup():
         await init_db("sqlite+aiosqlite://")
         async with get_session() as db:
-            db.add_all([user, guild])
+            await db.merge(user)
+            await db.merge(guild)
             await db.commit()
 
     asyncio.run(_setup())
