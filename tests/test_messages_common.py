@@ -98,15 +98,19 @@ def test_save_and_fetch_messages(monkeypatch):
                 async def create_webhook(self, name: str):
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="123", content="hello")
+            body = mc.PostBody(channel_id="123", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
 
@@ -221,10 +225,14 @@ def test_fetch_messages_backfills_from_discord(monkeypatch):
 
             dummy_channel = DummyChannel(msgs)
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return dummy_channel
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
 
@@ -326,10 +334,14 @@ def test_backfill_creates_missing_user(monkeypatch):
 
             dummy_channel = DummyChannel([message])
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return dummy_channel
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
 
@@ -361,7 +373,7 @@ def test_channel_not_configured(monkeypatch):
             guild = await db.get(Guild, 99)
             user = await db.get(User, 99)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
-            body = mc.PostBody(channelId="123", content="hi")
+            body = mc.PostBody(channel_id="123", content="hi")
             with pytest.raises(HTTPException) as exc:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert exc.value.status_code == 400
@@ -394,11 +406,13 @@ def test_forum_root_rejected(monkeypatch):
                 def get_channel(self, cid: int):
                     return DummyForum()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord, "ForumChannel", DummyForum)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="1", content="hi")
+            body = mc.PostBody(channel_id="1", content="hi")
             with pytest.raises(HTTPException) as exc:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert exc.value.status_code == 400
@@ -448,16 +462,20 @@ def test_thread_uses_parent_webhook(monkeypatch):
                     captured["created_on_thread"] = True
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyParent, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyThread()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyParent)
             monkeypatch.setattr(mc.discord, "Thread", DummyThread)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="456", content="hello")
+            body = mc.PostBody(channel_id="456", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
             assert isinstance(captured.get("thread"), DummyThread)
@@ -492,11 +510,13 @@ def test_archived_thread_rejected(monkeypatch):
                 def get_channel(self, cid: int):
                     return DummyThread()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord, "Thread", DummyThread)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="456", content="hello")
+            body = mc.PostBody(channel_id="456", content="hello")
             with pytest.raises(HTTPException) as exc:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert exc.value.status_code == 400
@@ -538,12 +558,14 @@ def test_cached_webhook_without_channel(monkeypatch):
             class DummyClient:
                 def get_channel(self, cid: int):
                     return None
+                async def fetch_channel(self, cid: int):
+                    return None
 
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord, "Webhook", DummyWebhookCls)
             monkeypatch.setattr(mc, "_channel_webhooks", {123: "http://example.com"})
 
-            body = mc.PostBody(channelId="123", content="hello")
+            body = mc.PostBody(channel_id="123", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
             assert captured.get("sent") is True
@@ -595,10 +617,14 @@ def test_allowed_mentions(monkeypatch):
                     captured["allowed_mentions"] = kwargs.get("allowed_mentions")
                     return types.SimpleNamespace(id=1, attachments=[])
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             async def dummy_broadcast(
                 message: str,
                 guild_id: int,
@@ -612,7 +638,7 @@ def test_allowed_mentions(monkeypatch):
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="123", content="@everyone hello @here")
+            body = mc.PostBody(channel_id="123", content="@everyone hello @here")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
 
@@ -672,15 +698,19 @@ def test_long_username_truncated(monkeypatch):
                 async def create_webhook(self, name: str):
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="123", content="hello")
+            body = mc.PostBody(channel_id="123", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
             assert len(captured["username"]) == 80
@@ -705,7 +735,7 @@ def test_message_too_long(monkeypatch):
             guild = await db.get(Guild, 42)
             user = await db.get(User, 42)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
-            body = mc.PostBody(channelId="123", content="x" * 2001)
+            body = mc.PostBody(channel_id="123", content="x" * 2001)
             with pytest.raises(HTTPException) as exc:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert exc.value.status_code == 400
@@ -758,15 +788,19 @@ def test_rest_ws_payload_parity(monkeypatch):
                 async def create_webhook(self, name: str):
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="123", content="hello")
+            body = mc.PostBody(channel_id="123", content="hello")
             await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             rest_data = await mc.fetch_messages("123", ctx, db, is_officer=False)
             assert len(rest_data) == 1
@@ -880,10 +914,14 @@ def test_multipart_message(monkeypatch):
                 async def create_webhook(self, name: str):
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
@@ -892,7 +930,7 @@ def test_multipart_message(monkeypatch):
             import io
 
             upload = UploadFile(filename="a.txt", file=io.BytesIO(b"hi"))
-            body = mc.PostBody(channelId="123", content="hello")
+            body = mc.PostBody(channel_id="123", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT, files=[upload])
             assert res["ok"] is True
 
@@ -937,15 +975,19 @@ def test_discord_failure_details(monkeypatch):
                 async def send(self, *args, **kwargs):
                     raise mc.discord.HTTPException(DummyResponse(), {"message": "Forbidden", "code": 50013})
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="123", content="oops")
+            body = mc.PostBody(channel_id="123", content="oops")
             with pytest.raises(HTTPException) as ex:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert ex.value.status_code == 502
@@ -975,7 +1017,7 @@ def test_save_message_invalid_channel_id():
             user = await db.get(User, 9)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
 
-            body = mc.PostBody(channelId="abc", content="hi")
+            body = mc.PostBody(channel_id="abc", content="hi")
             with pytest.raises(HTTPException) as ex:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert ex.value.status_code == 400
@@ -1005,14 +1047,13 @@ def test_save_message_unresolved_channel_id(monkeypatch):
             class DummyClient:
                 def get_channel(self, cid: int):
                     return None
-
                 async def fetch_channel(self, cid: int):
                     return None
 
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="456", content="hi")
+            body = mc.PostBody(channel_id="456", content="hi")
             with pytest.raises(HTTPException) as ex:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert ex.value.status_code == 404
@@ -1052,14 +1093,13 @@ def test_save_message_unresolved_officer_channel(monkeypatch):
             class DummyClient:
                 def get_channel(self, cid: int):
                     return None
-
                 async def fetch_channel(self, cid: int):
                     return None
 
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="789", content="hi")
+            body = mc.PostBody(channel_id="789", content="hi")
             with pytest.raises(HTTPException) as ex:
                 await mc.save_message(
                     body,
@@ -1101,7 +1141,7 @@ def test_channel_not_found_returns_error_details(monkeypatch):
             monkeypatch.setattr(mc, "discord_client", None)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="123", content="hi")
+            body = mc.PostBody(channel_id="123", content="hi")
             with pytest.raises(HTTPException) as ex:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert ex.value.status_code == 404
@@ -1147,10 +1187,14 @@ def test_attachment_validation(monkeypatch):
                 async def create_webhook(self, name: str):
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
@@ -1158,7 +1202,7 @@ def test_attachment_validation(monkeypatch):
             from fastapi import UploadFile
             import io
 
-            body = mc.PostBody(channelId="123", content="hello")
+            body = mc.PostBody(channel_id="123", content="hello")
 
             uploads = [UploadFile(filename=f"{i}.txt", file=io.BytesIO(b"hi")) for i in range(11)]
             with pytest.raises(HTTPException):
@@ -1206,15 +1250,19 @@ def test_officer_flow(monkeypatch):
                 async def create_webhook(self, name: str):
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="123", content="secret")
+            body = mc.PostBody(channel_id="123", content="secret")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.OFFICER_CHAT)
             assert res["ok"] is True
 
@@ -1247,7 +1295,7 @@ def test_officer_requires_role(monkeypatch):
             user = await db.get(User, 3)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
 
-            body = mc.PostBody(channelId="123", content="secret")
+            body = mc.PostBody(channel_id="123", content="secret")
             with pytest.raises(HTTPException):
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.OFFICER_CHAT)
             with pytest.raises(HTTPException):
@@ -1284,15 +1332,19 @@ def test_save_message_webhook_failure(monkeypatch):
                 async def create_webhook(self, name: str):
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
-            body = mc.PostBody(channelId="123", content="oops")
+            body = mc.PostBody(channel_id="123", content="oops")
             with pytest.raises(HTTPException) as exc:
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert exc.value.status_code == 502
@@ -1330,7 +1382,7 @@ def test_webhook_errors_returned(monkeypatch):
             monkeypatch.setattr(mc, "_send_via_webhook", dummy_webhook)
             monkeypatch.setattr(mc, "discord_client", None)
 
-            body = mc.PostBody(channelId="123", content="hello")
+            body = mc.PostBody(channel_id="123", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
             assert res.get("detail", {}).get("discord") == ["Webhook init failed"]
@@ -1384,10 +1436,14 @@ def test_webhook_cache_persist_and_load(monkeypatch):
                     create_calls += 1
                     return DummyWebhook()
 
+            monkeypatch.setattr(mc.discord, "TextChannel", DummyChannel, raising=False)
+
             class DummyClient:
                 def get_channel(self, cid: int):
                     return DummyChannel()
 
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
             monkeypatch.setattr(mc, "_channel_webhooks", {})
@@ -1427,7 +1483,7 @@ def test_webhook_cache_persist_and_load(monkeypatch):
 
             monkeypatch.setattr(mc, "serialize_message", fake_serialize_message)
 
-            body = mc.PostBody(channelId="321", content="hello")
+            body = mc.PostBody(channel_id="321", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
 
@@ -1449,7 +1505,7 @@ def test_webhook_cache_persist_and_load(monkeypatch):
                 lambda url, client=None: DummyWebhook(),
             )
 
-            body2 = mc.PostBody(channelId="321", content="again")
+            body2 = mc.PostBody(channel_id="321", content="again")
             res2 = await mc.save_message(body2, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res2["ok"] is True
             assert create_calls == 1
@@ -1517,7 +1573,7 @@ def test_posted_message_mapping_and_webhook_usage(monkeypatch):
                 types.SimpleNamespace(get_channel=lambda cid: dummy_channel),
             )
 
-            body = mc.PostBody(channelId="123", content="hello")
+            body = mc.PostBody(channel_id="123", content="hello")
             result = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert result["ok"] is True
             msg_id = int(result["id"])
