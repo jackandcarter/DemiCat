@@ -33,6 +33,7 @@ spec = importlib.util.spec_from_file_location(
 )
 mc = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mc)  # type: ignore
+sys.modules["demibot.http.routes._messages_common"] = mc
 mc.PostBody.model_rebuild(
     _types_namespace={"MessageReferenceDto": mc.MessageReferenceDto}
 )
@@ -53,6 +54,9 @@ mc.ChatMessage.model_rebuild(
 
 class DummyKey:
     pass
+
+
+import demibot.http.ws_chat as ws_chat
 
 
 def test_save_and_fetch_messages(monkeypatch):
@@ -125,6 +129,109 @@ def test_save_and_fetch_messages(monkeypatch):
             assert len(data) == 1 and data[0]["content"] == "hello"
             assert data[0]["authorName"] == "AliceNick"
             assert data[0]["authorAvatarUrl"] == "http://example.com/avatar.png"
+
+    asyncio.run(_run())
+
+
+def test_ws_handle_send_creates_webhook(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=77, discord_guild_id=770, name="Guild"))
+            db.add(
+                User(
+                    id=77,
+                    discord_user_id=770,
+                    global_name="BridgeUser",
+                    character_name="Hero",
+                )
+            )
+            db.add(
+                Membership(
+                    guild_id=77,
+                    user_id=77,
+                    nickname="BridgeUser",
+                    avatar_url=None,
+                )
+            )
+            db.add(
+                GuildChannel(
+                    guild_id=77,
+                    channel_id=555,
+                    kind=ChannelKind.CHAT,
+                )
+            )
+            await db.commit()
+            guild = await db.get(Guild, 77)
+            user = await db.get(User, 77)
+
+        ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+        manager = ws_chat.ChatConnectionManager()
+        websocket = object()
+        manager.connections[websocket] = ws_chat.ChatConnection(ctx=ctx)
+
+        monkeypatch.setattr(mc, "_channel_webhooks", {})
+        monkeypatch.setattr(ws_chat, "_channel_webhooks", mc._channel_webhooks)
+
+        class DummyChannel:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def create_webhook(self, name: str):
+                self.calls += 1
+                url = f"https://example.com/webhook/{self.calls}"
+                created_urls.append(url)
+                return types.SimpleNamespace(url=url)
+
+        created_urls: list[str] = []
+        dummy_channel = DummyChannel()
+
+        class DummyClient:
+            def get_channel(self, cid: int):
+                assert cid == 555
+                return dummy_channel
+
+        monkeypatch.setattr(ws_chat, "discord_client", DummyClient())
+        monkeypatch.setattr(ws_chat.discord.abc, "Messageable", DummyChannel, raising=False)
+
+        sent_messages: list[ws_chat.PendingWebhookMessage] = []
+
+        async def fake_send_webhook(msg: ws_chat.PendingWebhookMessage):
+            sent_messages.append(msg)
+            return True, 0.0
+
+        async def immediate_queue(msg: ws_chat.PendingWebhookMessage):
+            queue = manager._webhook_queues.setdefault(msg.channel_id, [])
+            queue.append(msg)
+            await manager._process_webhook_queue(msg.channel_id)
+
+        monkeypatch.setattr(manager, "_send_webhook", fake_send_webhook)
+        monkeypatch.setattr(manager, "_queue_webhook", immediate_queue)
+
+        await manager._handle_send(
+            websocket,
+            {"ch": 555, "d": {"content": "hello from bridge", "attachments": []}},
+        )
+
+        assert created_urls, "webhook should be created for bridge send"
+        assert sent_messages, "bridge message should be dispatched"
+        assert sent_messages[0].webhook_url == created_urls[0]
+
+        async with get_session() as verify_db:
+            stored_url = await verify_db.scalar(
+                select(GuildChannel.webhook_url).where(
+                    GuildChannel.guild_id == 77,
+                    GuildChannel.channel_id == 555,
+                )
+            )
+        assert stored_url == created_urls[0]
+        assert mc._channel_webhooks[555] == created_urls[0]
 
     asyncio.run(_run())
 
