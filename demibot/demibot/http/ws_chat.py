@@ -7,7 +7,7 @@ import json
 import logging
 import random
 import time
-from collections import deque
+from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, List, Set
 from types import SimpleNamespace
@@ -16,7 +16,7 @@ import discord
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from ..db.models import GuildChannel, Guild
+from ..db.models import GuildChannel, Guild, ChannelKind
 from ..db.session import get_session
 from .chat_events import emit_event
 from .deps import RequestContext, api_key_auth
@@ -430,6 +430,7 @@ class ChatConnectionManager:
                 .join(Guild, Guild.id == GuildChannel.guild_id)
                 .where(GuildChannel.channel_id.in_(list(id_map.keys())))
             )
+            rows_by_channel: Dict[str, List[ChannelMeta]] = defaultdict(list)
             for channel_id, guild_id, kind, discord_guild_id in result.all():
                 ch = id_map.get(channel_id)
                 if ch is None:
@@ -442,14 +443,37 @@ class ChatConnectionManager:
                         kind.value if hasattr(kind, "value") else str(kind)
                     )
                     kind_value = kind_value.upper() if kind_value else None
-                metadata[ch] = ChannelMeta(
-                    guild_id=guild_id,
-                    discord_guild_id=discord_guild_id,
-                    kind=kind_value,
+                rows_by_channel[ch].append(
+                    ChannelMeta(
+                        guild_id=guild_id,
+                        discord_guild_id=discord_guild_id,
+                        kind=kind_value,
+                    )
                 )
+        chat_kind_value = ChannelKind.CHAT.value.upper()
+
+        def kind_priority(kind: str | None) -> int:
+            if not kind:
+                return 0
+            if kind == chat_kind_value:
+                return 1
+            return 2
+
+        for ch, candidates in rows_by_channel.items():
+            if not candidates:
+                continue
+            metadata[ch] = max(candidates, key=lambda meta: kind_priority(meta.kind))
+
         for ch, meta in metadata.items():
-            if meta is not None:
-                self._channel_meta[ch] = meta
+            if meta is None:
+                continue
+            existing = self._channel_meta.get(ch)
+            if existing is not None and kind_priority(existing.kind) > kind_priority(
+                meta.kind
+            ):
+                metadata[ch] = existing
+                continue
+            self._channel_meta[ch] = meta
         return metadata
 
     async def _ensure_channel_meta(self, channel: str) -> ChannelMeta | None:
