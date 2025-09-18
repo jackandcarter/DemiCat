@@ -23,12 +23,15 @@ public class TemplatesWindow
     private readonly ChannelService _channelService;
     private readonly List<TemplateItem> _templates = new();
     private bool _templatesLoaded;
+    private bool _templatesLoading;
+    private bool _templatesReloadPending;
     private int _selectedIndex = -1;
     private bool _showPreview;
     private EventView? _previewEvent;
     private string? _lastResult;
     private readonly List<ChannelDto> _channels = new();
     private bool _channelsLoaded;
+    private bool _channelsLoading;
     private bool _channelFetchFailed;
     private string _channelErrorMessage = string.Empty;
     private int _channelIndex;
@@ -38,6 +41,7 @@ public class TemplatesWindow
     private readonly List<RoleDto> _roles = new();
     private readonly HashSet<string> _mentions = new();
     private bool _rolesLoaded;
+    private bool _rolesLoading;
     private ButtonRows _buttonRows = new(new()
     {
         new() { new ButtonData { Label = "RSVP: Yes" }, new ButtonData { Label = "RSVP: Maybe" } },
@@ -57,7 +61,18 @@ public class TemplatesWindow
         if (token != null)
         {
             _bridge = new ChatBridge(config, httpClient, token, BuildWebSocketUri, channelSelection);
-            _bridge.TemplatesUpdated += () => _ = LoadTemplates();
+            _bridge.TemplatesUpdated += () =>
+            {
+                if (_templatesLoading)
+                {
+                    _templatesReloadPending = true;
+                    _templatesLoaded = false;
+                    return;
+                }
+
+                _templatesLoaded = false;
+                _ = LoadTemplates();
+            };
         }
         _channelSelection.ChannelChanged += HandleChannelChanged;
     }
@@ -103,16 +118,16 @@ public class TemplatesWindow
             return;
         }
 
-        if (!_rolesLoaded)
+        if (!_rolesLoaded && !_rolesLoading)
         {
             _ = LoadRoles();
         }
 
-        if (!_channelsLoaded)
+        if (!_channelsLoaded && !_channelsLoading)
         {
             _ = FetchChannels();
         }
-        if (!_templatesLoaded)
+        if (!_templatesLoaded && !_templatesLoading)
         {
             _ = LoadTemplates();
         }
@@ -330,20 +345,32 @@ public class TemplatesWindow
 
     private async Task FetchChannels(bool refreshed = false)
     {
+        if (_channelsLoading)
+        {
+            return;
+        }
+
+        _channelsLoading = true;
         if (!_config.Templates)
         {
             _channelsLoaded = true;
+            _channelsLoading = false;
             return;
         }
 
         try
         {
             var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList());
-            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
+            {
+                _channelsLoading = false;
+                return;
+            }
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(channels);
                 _channelsLoaded = true;
+                _channelsLoading = false;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
             });
@@ -356,6 +383,7 @@ public class TemplatesWindow
                 _channelFetchFailed = true;
                 _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
+                _channelsLoading = false;
             });
         }
     }
@@ -378,12 +406,27 @@ public class TemplatesWindow
 
     private async Task LoadRoles()
     {
-        await RoleCache.EnsureLoaded(_httpClient, _config);
+        if (_rolesLoading)
+        {
+            return;
+        }
+
+        _rolesLoading = true;
+        try
+        {
+            await RoleCache.EnsureLoaded(_httpClient, _config);
+        }
+        catch
+        {
+            _rolesLoading = false;
+            throw;
+        }
         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
         {
             _roles.Clear();
             _roles.AddRange(RoleCache.Roles);
             _rolesLoaded = true;
+            _rolesLoading = false;
         });
     }
 
@@ -554,17 +597,29 @@ public class TemplatesWindow
 
     private async Task LoadTemplates()
     {
+        if (_templatesLoading)
+        {
+            _templatesReloadPending = true;
+            return;
+        }
+
+        _templatesLoading = true;
+        _templatesReloadPending = false;
         if (!_config.Templates)
         {
             _templatesLoaded = true;
+            _templatesLoading = false;
             return;
         }
+        _templatesLoaded = false;
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _templatesLoaded = true;
+                _templatesLoading = false;
                 _lastResult = "Invalid API URL";
+                MaybeReloadTemplates();
             });
             return;
         }
@@ -579,9 +634,11 @@ public class TemplatesWindow
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _templatesLoaded = true;
+                    _templatesLoading = false;
                     _lastResult = string.IsNullOrEmpty(bodyText)
                         ? "Failed to load templates"
                         : $"Failed to load templates: {(int)response!.StatusCode} {bodyText}";
+                    MaybeReloadTemplates();
                 });
                 return;
             }
@@ -593,6 +650,8 @@ public class TemplatesWindow
                 _templates.Clear();
                 _templates.AddRange(items);
                 _templatesLoaded = true;
+                _templatesLoading = false;
+                MaybeReloadTemplates();
             });
         }
         catch
@@ -600,8 +659,19 @@ public class TemplatesWindow
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _templatesLoaded = true;
+                _templatesLoading = false;
                 _lastResult = "Failed to load templates";
+                MaybeReloadTemplates();
             });
+        }
+    }
+
+    private void MaybeReloadTemplates()
+    {
+        if (_templatesReloadPending)
+        {
+            _templatesReloadPending = false;
+            _ = LoadTemplates();
         }
     }
 
