@@ -59,6 +59,19 @@ class DummyKey:
 import demibot.http.ws_chat as ws_chat
 
 
+captured_events: list[dict] = []
+
+
+@pytest.fixture(autouse=True)
+def capture_emit_events(monkeypatch):
+    captured_events.clear()
+
+    async def dummy_emit_event(event: dict) -> None:
+        captured_events.append(event)
+
+    monkeypatch.setattr(mc, "emit_event", dummy_emit_event)
+
+
 def test_save_and_fetch_messages(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
@@ -117,6 +130,13 @@ def test_save_and_fetch_messages(monkeypatch):
             body = mc.PostBody(channel_id="123", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
             assert res["ok"] is True
+
+            assert captured_events
+            event = captured_events[0]
+            assert event["channel"] == "123"
+            assert event["op"] == "mc"
+            assert event["d"]["content"] == "hello"
+            assert event["d"]["channelId"] == "123"
 
             msg = (await db.execute(select(Message))).scalar_one()
             assert msg.is_officer is False
@@ -1846,9 +1866,20 @@ def test_posted_message_mapping_and_webhook_usage(monkeypatch):
             assert edit_calls == [(msg_id, "updated")]
             assert not dummy_channel.fetch_called
 
+            edit_event = captured_events[-1]
+            assert edit_event["op"] == "mu"
+            assert edit_event["channel"] == "123"
+            assert edit_event["d"]["id"] == str(msg_id)
+            assert edit_event["d"]["content"] == "updated"
+
             await mc.delete_message("123", str(msg_id), ctx, db, is_officer=False)
             assert delete_calls == [msg_id]
             assert not dummy_channel.fetch_called
+
+            delete_event = captured_events[-1]
+            assert delete_event["op"] == "md"
+            assert delete_event["channel"] == "123"
+            assert delete_event["d"]["id"] == str(msg_id)
 
             remaining = await db.scalar(
                 select(PostedMessage).where(PostedMessage.discord_message_id == msg_id)
