@@ -164,7 +164,7 @@ public class ChatBridge : IDisposable
 
     public Task Send(string channel, object payload)
     {
-        var json = JsonSerializer.Serialize(new { op = "send", ch = channel, d = payload });
+        var json = JsonSerializer.Serialize(new { op = "send", channel, d = payload });
         return SendRaw(json);
     }
 
@@ -731,7 +731,7 @@ public class ChatBridge : IDisposable
         if (_acked.TryGetValue(key, out var acked) && acked == cursor) return Task.CompletedTask;
         _acked[key] = cursor;
         _config.ChatCursors[key] = cursor;
-        var json = JsonSerializer.Serialize(new { op = "ack", ch = channel, cur = cursor });
+        var json = JsonSerializer.Serialize(new { op = "ack", channel, cur = cursor });
         return SendRaw(json);
     }
 
