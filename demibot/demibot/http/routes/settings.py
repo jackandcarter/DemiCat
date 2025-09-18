@@ -10,5 +10,6 @@ async def get_settings():
         "templates": True,
         "requests": True,
         "officer": True,
+        "enableFcChat": True,
         "fcSyncShell": False,
     }
