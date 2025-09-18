@@ -97,14 +97,16 @@ async def create_webhook_for_channel(
 
     webhook_url = created.url
     _channel_webhooks[channel_id] = webhook_url
-    gc = await db.scalar(
+    result = await db.execute(
         select(GuildChannel).where(
             GuildChannel.guild_id == guild_id,
             GuildChannel.channel_id == channel_id,
         )
     )
-    if gc:
-        gc.webhook_url = webhook_url
+    rows = result.scalars().all()
+    if rows:
+        for gc in rows:
+            gc.webhook_url = webhook_url
     else:
         db.add(
             GuildChannel(
@@ -219,6 +221,7 @@ async def _send_via_webhook(
     username: str,
     avatar: str | None,
     files: list[discord.File] | None,
+    channel_kind: ChannelKind | None = None,
     embed: discord.Embed | None = None,
     view: discord.ui.View | None = None,
     db: AsyncSession,
@@ -238,12 +241,14 @@ async def _send_via_webhook(
     errors: list[str] = []
     webhook_url: str | None = _channel_webhooks.get(channel_id)
     if not webhook_url:
-        webhook_url = await db.scalar(
-            select(GuildChannel.webhook_url).where(
-                GuildChannel.guild_id == guild_id,
-                GuildChannel.channel_id == channel_id,
-            )
+        stmt = select(GuildChannel.webhook_url).where(
+            GuildChannel.guild_id == guild_id,
+            GuildChannel.channel_id == channel_id,
+            GuildChannel.webhook_url.is_not(None),
         )
+        if channel_kind is not None:
+            stmt = stmt.where(GuildChannel.kind == channel_kind)
+        webhook_url = await db.scalar(stmt)
         if webhook_url:
             _channel_webhooks[channel_id] = webhook_url
 
@@ -694,6 +699,7 @@ async def save_message(
         username=username,
         avatar=avatar,
         files=discord_files,
+        channel_kind=channel_kind,
         db=db,
         thread=thread_obj,
     )
