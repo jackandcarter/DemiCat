@@ -756,7 +756,9 @@ public class ChatBridge : IDisposable
             };
 
             var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(meta.GuildId);
-            if (!string.IsNullOrEmpty(normalizedGuild))
+            var defaultGuildSentinel = ChannelKeyHelper.NormalizeGuildId(null);
+            if (!string.IsNullOrEmpty(normalizedGuild) &&
+                !string.Equals(normalizedGuild, defaultGuildSentinel, StringComparison.Ordinal))
             {
                 channel["guildId"] = normalizedGuild;
             }
@@ -764,7 +766,7 @@ public class ChatBridge : IDisposable
             var normalizedKind = ChannelKeyHelper.NormalizeKind(meta.Kind);
             if (!string.IsNullOrEmpty(normalizedKind))
             {
-                channel["kind"] = normalizedKind;
+                channel["kind"] = normalizedKind.ToLowerInvariant();
             }
 
             chans.Add(channel);
