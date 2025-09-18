@@ -429,7 +429,15 @@ class Request(Base):
             validate_strings=True,
         )
     )
-    urgency: Mapped[Urgency] = mapped_column(SAEnum(Urgency))
+    urgency: Mapped[Urgency] = mapped_column(
+        SAEnum(
+            Urgency,
+            name="urgency",
+            values_callable=lambda e: [v.value for v in e],
+            native_enum=False,
+            validate_strings=True,
+        )
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
