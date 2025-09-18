@@ -847,15 +847,7 @@ public class ChatWindow : IDisposable
                 var messageReference = new MessageBuilder()
                     .WithMessageReference(_replyToId, channelId)
                     .BuildMessageReference();
-                var body = new
-                {
-                    content,
-                    useCharacterName = _useCharacterName,
-                    messageReference
-                };
-                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages";
-                request = new HttpRequestMessage(HttpMethod.Post, url);
-                request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+                request = BuildTextMessageRequest(channelId, content, messageReference);
             }
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             PluginServices.Instance!.Log.Information($"Sending message to channel {channelId}");
@@ -982,6 +974,24 @@ public class ChatWindow : IDisposable
                 _lastError = "Failed to send message";
             });
         }
+    }
+
+    protected virtual HttpRequestMessage BuildTextMessageRequest(string channelId, string content, object? messageReference)
+    {
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages";
+        var body = new Dictionary<string, object?>
+        {
+            ["content"] = content,
+            ["useCharacterName"] = _useCharacterName
+        };
+        if (messageReference != null)
+        {
+            body["messageReference"] = messageReference;
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        return request;
     }
 
     protected virtual async Task<HttpRequestMessage> BuildMultipartRequest(string content)
