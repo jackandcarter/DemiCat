@@ -84,11 +84,40 @@ public class ChatBridge : IDisposable
         catch { }
         _ws?.Dispose();
         _ws = null;
+        _cts?.Dispose();
+        _cts = null;
         _tokenValid = false;
         _task = null;
+        ResetState();
     }
 
     public void Dispose() => Stop();
+
+    private void ResetState()
+    {
+        _subs.Clear();
+        _channelMetadata.Clear();
+        _cursors.Clear();
+        _acked.Clear();
+        _reconnectAttempt = 0;
+        _connectCount = 0;
+        _reconnectCount = 0;
+        _resyncCount = 0;
+        _backfillTotal = 0;
+        _backfillBatches = 0;
+        _ackFrameCount = 0;
+        _sendCount = 0;
+        _sendLatencyTotal = 0;
+        _disconnectCount = 0;
+        _connectedSince = default;
+        _lastDisconnectLog = default;
+        _lastErrorSignature = null;
+        _lastErrorLog = default;
+        _lastSubscribeMismatchSignature = null;
+        _lastSubscribeMismatchLog = default;
+        _lastBatchDropSignature = null;
+        _lastBatchDropLog = default;
+    }
 
     public bool IsReady() => _tokenValid && _ws?.State == WebSocketState.Open;
 
@@ -361,6 +390,7 @@ public class ChatBridge : IDisposable
             if (!await ValidateToken(token))
             {
                 _tokenManager.Clear("Invalid API key");
+                ResetState();
                 Unlinked?.Invoke();
                 StatusChanged?.Invoke("Authentication failed");
                 await DelayWithJitter(5, token);
@@ -477,6 +507,7 @@ public class ChatBridge : IDisposable
             if (forbidden)
             {
                 _tokenManager.Clear("Invalid API key");
+                ResetState();
                 Unlinked?.Invoke();
                 _tokenValid = false;
             }
