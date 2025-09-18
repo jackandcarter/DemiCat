@@ -420,7 +420,15 @@ class Request(Base):
             native_enum=False,
         )
     )
-    status: Mapped[RequestStatus] = mapped_column(SAEnum(RequestStatus))
+    status: Mapped[RequestStatus] = mapped_column(
+        SAEnum(
+            RequestStatus,
+            name="request_status",
+            values_callable=lambda e: [v.value for v in e],
+            native_enum=False,
+            validate_strings=True,
+        )
+    )
     urgency: Mapped[Urgency] = mapped_column(SAEnum(Urgency))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
