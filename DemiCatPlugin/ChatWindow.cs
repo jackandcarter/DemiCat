@@ -979,18 +979,21 @@ public class ChatWindow : IDisposable
     protected virtual HttpRequestMessage BuildTextMessageRequest(string channelId, string content, object? messageReference)
     {
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages";
-        var body = new Dictionary<string, object?>
+        var fields = new List<KeyValuePair<string, string>>
         {
-            ["content"] = content,
-            ["useCharacterName"] = _useCharacterName
+            new("content", content),
+            new("useCharacterName", _useCharacterName ? "true" : "false")
         };
         if (messageReference != null)
         {
-            body["messageReference"] = messageReference;
+            var referenceJson = JsonSerializer.Serialize(messageReference);
+            fields.Add(new("message_reference", referenceJson));
         }
 
-        var request = new HttpRequestMessage(HttpMethod.Post, url);
-        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        var request = new HttpRequestMessage(HttpMethod.Post, url)
+        {
+            Content = new FormUrlEncodedContent(fields)
+        };
         return request;
     }
 
