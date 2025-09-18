@@ -66,8 +66,5 @@ async def list_emojis(ctx: RequestContext = Depends(api_key_auth)):
         )
         return _retry_response()
 
-    if not emojis:
-        return _retry_response()
-
     _emoji_cache[ctx.guild.id] = emojis
     return {"ok": True, "emojis": emojis}

@@ -153,7 +153,7 @@ namespace DemiCatPlugin.Emoji
                     break;
                 }
 
-                var shouldRetry = ShouldRetry(result.ok, result.list, result.status);
+                var shouldRetry = ShouldRetry(result.ok, result.list, result.status, result.retryAfterSeconds);
                 var nextDelay = shouldRetry && !ct.IsCancellationRequested
                     ? GetNextDelay(attempt, result.retryAfterSeconds)
                     : (TimeSpan?)null;
@@ -218,11 +218,16 @@ namespace DemiCatPlugin.Emoji
             return TimeSpan.FromSeconds(jitter);
         }
 
-        private static bool ShouldRetry(bool ok, List<CustomEmoji> list, HttpStatusCode status)
+        private static bool ShouldRetry(bool ok, List<CustomEmoji> list, HttpStatusCode status, int? retryAfterSeconds)
         {
             if (ok)
             {
-                return list.Count == 0;
+                if (list.Count == 0)
+                {
+                    return retryAfterSeconds.HasValue;
+                }
+
+                return false;
             }
 
             if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden)
