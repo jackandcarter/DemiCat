@@ -844,13 +844,17 @@ public class ChatWindow : IDisposable
             }
             else
             {
-                var body = new MessageBuilder()
-                    .WithChannelId(channelId)
-                    .WithContent(content)
-                    .UseCharacterName(_useCharacterName)
+                var messageReference = new MessageBuilder()
                     .WithMessageReference(_replyToId, channelId)
-                    .Build();
-                request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}");
+                    .BuildMessageReference();
+                var body = new
+                {
+                    content,
+                    useCharacterName = _useCharacterName,
+                    messageReference
+                };
+                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages";
+                request = new HttpRequestMessage(HttpMethod.Post, url);
                 request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
             }
             ApiHelpers.AddAuthHeader(request, _tokenManager);
