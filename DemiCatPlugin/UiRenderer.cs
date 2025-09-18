@@ -456,7 +456,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                     result = await _webSocket.ReceiveAsync(buffer, CancellationToken.None);
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
+                        await CloseWebSocketGracefully(_webSocket, CancellationToken.None);
                         return;
                     }
                     ms.Write(buffer, 0, result.Count);
@@ -533,6 +533,37 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         catch (IOException ex)
         {
             LogWebSocketException(ex, "receive");
+        }
+    }
+
+    internal static async Task CloseWebSocketGracefully(WebSocket socket, CancellationToken token)
+    {
+        if (socket == null)
+        {
+            return;
+        }
+
+        var state = socket.State;
+        if (state != WebSocketState.Open && state != WebSocketState.CloseReceived)
+        {
+            return;
+        }
+
+        try
+        {
+            await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, string.Empty, token);
+        }
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+        {
+        }
+        catch (WebSocketException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
         }
     }
 
