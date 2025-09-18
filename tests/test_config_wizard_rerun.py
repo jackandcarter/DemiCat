@@ -48,6 +48,8 @@ class DummyGuild:
             DummyChannel(1, "one"),
             DummyChannel(2, "two"),
             DummyChannel(3, "three"),
+            DummyChannel(4, "four"),
+            DummyChannel(5, "five"),
         ]
 
     def get_role(self, rid: int):
@@ -100,30 +102,51 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
         view1.mention_role_ids = [42]
         await view1.on_finish(DummyInteraction())
 
+        async with get_session() as db:
+            guild_chan = (await db.execute(select(GuildChannel))).scalars().first()
+            assert guild_chan is not None
+            db.add(
+                GuildChannel(
+                    guild_id=guild_chan.guild_id,
+                    channel_id=5,
+                    kind=ChannelKind.CHAT,
+                    name="five",
+                )
+            )
+            await db.commit()
+
         # Second run of the wizard should succeed without IntegrityError
         view2 = ConfigWizard(guild, "title", "final", "done")
-        # Use the same channel IDs but rotate the assignments to ensure the
-        # previous rows are replaced cleanly.
-        view2.event_channel_ids = [2]
-        view2.fc_chat_channel_ids = [3]
-        view2.officer_chat_channel_ids = [1]
+        # Change only the FC chat selection to ensure the previous FC
+        # channel rows are replaced cleanly while leaving other kinds intact.
+        view2.event_channel_ids = [1]
+        view2.fc_chat_channel_ids = [4]
+        view2.officer_chat_channel_ids = [3]
         view2.officer_role_ids = [42]
         view2.mention_role_ids = [42]
         await view2.on_finish(DummyInteraction())
 
         async with get_session() as db:
             chans = (
-                await db.execute(select(GuildChannel).order_by(GuildChannel.channel_id))
+                await db.execute(
+                    select(GuildChannel).order_by(
+                        GuildChannel.channel_id, GuildChannel.kind
+                    )
+                )
             ).scalars().all()
-            assert len(chans) == 3
+            assert len(chans) == 4
+            fc_channels = [
+                chan.channel_id for chan in chans if chan.kind == ChannelKind.FC_CHAT
+            ]
+            assert fc_channels == [4]
             channel_map = {
-                chan.channel_id: (chan.kind, chan.name)
-                for chan in chans
+                (chan.channel_id, chan.kind): chan.name for chan in chans
             }
             assert channel_map == {
-                1: (ChannelKind.OFFICER_CHAT, "one"),
-                2: (ChannelKind.EVENT, "two"),
-                3: (ChannelKind.FC_CHAT, "three"),
+                (1, ChannelKind.EVENT): "one",
+                (3, ChannelKind.OFFICER_CHAT): "three",
+                (4, ChannelKind.FC_CHAT): "four",
+                (5, ChannelKind.CHAT): "five",
             }
 
     asyncio.run(_run())
