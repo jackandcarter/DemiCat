@@ -24,6 +24,7 @@ from .discord_client import discord_client
 from .discord_helpers import serialize_message
 from .schemas import EmbedDto, EmbedButtonDto
 from .validation import validate_embed_payload
+from .routes._messages_common import create_webhook_for_channel, _channel_webhooks
 
 logger = logging.getLogger(__name__)
 
@@ -779,9 +780,50 @@ class ChatConnectionManager:
                     GuildChannel.channel_id == channel_id,
                 )
             )
+            if not webhook_url:
+                if not discord_client:
+                    logger.warning(
+                        "chat.ws missing webhook channel=%s reason=no_client",
+                        channel_id,
+                    )
+                    return
+                channel_obj = discord_client.get_channel(channel_id)
+                if not isinstance(channel_obj, discord.abc.Messageable):
+                    logger.warning(
+                        "chat.ws missing webhook channel=%s reason=no_channel",
+                        channel_id,
+                    )
+                    return
+                try:
+                    _, created_url, creation_errors = await create_webhook_for_channel(
+                        channel=channel_obj,
+                        channel_id=channel_id,
+                        guild_id=info.ctx.guild.id,
+                        db=db,
+                    )
+                except HTTPException:
+                    logger.warning(
+                        "chat.ws missing webhook channel=%s reason=forbidden",
+                        channel_id,
+                    )
+                    return
+                if creation_errors:
+                    logger.warning(
+                        "chat.ws webhook creation errors channel=%s errors=%s",
+                        channel_id,
+                        creation_errors,
+                    )
+                if not created_url:
+                    logger.warning(
+                        "chat.ws missing webhook channel=%s", channel_id
+                    )
+                    return
+                webhook_url = created_url
+                await db.commit()
         if not webhook_url:
             logger.warning("chat.ws missing webhook channel=%s", channel_id)
             return
+        _channel_webhooks[channel_id] = webhook_url
         if len(attachments) > MAX_ATTACHMENTS:
             logger.warning("chat.ws too many attachments channel=%s", channel_id)
             return
