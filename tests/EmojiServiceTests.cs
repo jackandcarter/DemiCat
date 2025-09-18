@@ -38,7 +38,7 @@ public class EmojiServiceTests
 
         await service.RefreshAsync();
 
-        Assert.Equal(1, handler.CallCount);
+        Assert.Equal(0, handler.CallCount);
         Assert.Empty(service.Custom);
         Assert.Equal(1, updates);
     }

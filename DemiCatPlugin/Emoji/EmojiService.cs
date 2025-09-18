@@ -19,6 +19,7 @@ namespace DemiCatPlugin.Emoji
         private string? _lastLoopErrorSignature;
         private DateTime _lastLoopErrorLoggedAt;
         private static readonly TimeSpan LoopErrorThrottle = TimeSpan.FromSeconds(30);
+        private const bool EmojisEnabled = false; // Temporarily disable custom emoji syncing until feature is redesigned.
 
         public List<CustomEmoji> Custom { get; private set; } = new();
 
@@ -29,6 +30,20 @@ namespace DemiCatPlugin.Emoji
 
         public Task RefreshAsync(CancellationToken ct = default)
         {
+            if (!EmojisEnabled)
+            {
+                lock (_refreshLock)
+                {
+                    _refreshCancellation?.Cancel();
+                    _refreshCancellation?.Dispose();
+                    _refreshCancellation = null;
+                }
+
+                Custom = new();
+                PublishUpdate();
+                return Task.CompletedTask;
+            }
+
             CancellationTokenSource linked;
             lock (_refreshLock)
             {
