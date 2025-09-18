@@ -14,6 +14,7 @@ using System.Threading;
 using System.Text.RegularExpressions;
 using DiscordHelper;
 using Dalamud.Bindings.ImGui;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -25,6 +26,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private readonly object _embedLock = new();
     private readonly List<EmbedDto> _embedDtos = new();
     private readonly ChannelSelectionService _channelSelection;
+    private readonly EmojiManager _emojiManager;
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _pollCts;
     private readonly List<ChannelDto> _channels = new();
@@ -54,11 +56,12 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private static readonly Regex MentionRegex = new("<@!?([0-9]+)>", RegexOptions.Compiled);
     private const string DefaultWebSocketPath = "/ws/embeds";
 
-    public UiRenderer(Config config, HttpClient httpClient, ChannelSelectionService channelSelection)
+    public UiRenderer(Config config, HttpClient httpClient, ChannelSelectionService channelSelection, EmojiManager emojiManager)
     {
         _config = config;
         _httpClient = httpClient;
         _channelSelection = channelSelection;
+        _emojiManager = emojiManager;
         _channelSelection.ChannelChanged += HandleChannelChanged;
     }
 
@@ -649,7 +652,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 }
                 else
                 {
-                    _embeds[dto.Id] = new EventView(dto, _config, _httpClient, RefreshEmbeds);
+                    _embeds[dto.Id] = new EventView(dto, _config, _httpClient, RefreshEmbeds, _emojiManager);
                 }
             }
 

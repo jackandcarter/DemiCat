@@ -11,6 +11,7 @@ using Dalamud.Plugin;
 using Dalamud.IoC;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.Avatars;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -32,6 +33,7 @@ public class Plugin : IDalamudPlugin
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
     private readonly ChannelSelectionService _channelSelection;
+    private readonly EmojiManager _emojiManager;
 
     private Config _config = null!;
     private readonly HttpClient _httpClient;
@@ -70,7 +72,8 @@ public class Plugin : IDalamudPlugin
         PingService.Instance = new PingService(_httpClient, _config, _tokenManager);
 
         _channelSelection = new ChannelSelectionService(_config);
-        _ui = new UiRenderer(_config, _httpClient, _channelSelection);
+        _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
+        _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
 
         _presenceService = _config.SyncedChat && _config.EnableFcChat
@@ -79,8 +82,8 @@ public class Plugin : IDalamudPlugin
 
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
         _avatarCache = new AvatarCache(TextureProvider, _httpClient);
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache);
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
 
         _presenceService?.Reset();
 
@@ -93,7 +96,8 @@ public class Plugin : IDalamudPlugin
             _httpClient,
             _channelService,
             _channelSelection,
-            () => RefreshRoles(_services.Log)
+            () => RefreshRoles(_services.Log),
+            _emojiManager
         );
 
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
@@ -157,6 +161,7 @@ public class Plugin : IDalamudPlugin
         _ui.DisposeAsync().GetAwaiter().GetResult();
         _settings.Dispose();
         _avatarCache.Dispose();
+        _emojiManager.Dispose();
         _httpClient.Dispose();
     }
 

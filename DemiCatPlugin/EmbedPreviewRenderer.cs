@@ -5,6 +5,7 @@ using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using DiscordHelper;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -12,7 +13,7 @@ public static class EmbedPreviewRenderer
 {
     private static readonly Dictionary<string, ISharedImmediateTexture?> TextureCache = new();
 
-    public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, Action<string>? onButtonClick = null)
+    public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null)
     {
         var stripeWidth = 4f;
         var indent = stripeWidth + 4f;
@@ -127,7 +128,7 @@ public static class EmbedPreviewRenderer
 
                     if (!string.IsNullOrEmpty(button.Emoji))
                     {
-                        EmojiUtils.DrawEmoji(button.Emoji);
+                        EmojiRenderer.Draw(button.Emoji, emojiManager);
                         ImGui.SameLine();
                     }
 

@@ -12,6 +12,7 @@ using System.Collections.Generic;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 using DemiCat.UI;
+using DemiCatPlugin.Emoji;
 using static DemiCat.UI.IdHelpers;
 
 namespace DemiCatPlugin;
@@ -21,6 +22,7 @@ public class TemplatesWindow
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly ChannelService _channelService;
+    private readonly EmojiManager _emojiManager;
     private readonly List<TemplateItem> _templates = new();
     private bool _templatesLoaded;
     private bool _templatesLoading;
@@ -51,11 +53,12 @@ public class TemplatesWindow
     private readonly ChatBridge? _bridge;
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
-    public TemplatesWindow(Config config, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection)
+    public TemplatesWindow(Config config, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection, EmojiManager emojiManager)
     {
         _config = config;
         _httpClient = httpClient;
         _channelService = channelService;
+        _emojiManager = emojiManager;
         _channelSelection = channelSelection;
         var token = TokenManager.Instance;
         if (token != null)
@@ -321,7 +324,7 @@ public class TemplatesWindow
     internal void OpenPreview(Template tmpl)
     {
         _previewEvent?.Dispose();
-        _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask);
+        _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask, _emojiManager);
         _showPreview = true;
     }
 
@@ -484,7 +487,7 @@ public class TemplatesWindow
                     MakeCustomId(label, x.RowIndex, x.ColIndex),
                     x.RowIndex,
                     (int)(b?.Style ?? x.Data.Style),
-                    EmojiUtils.Normalize(b?.Emoji ?? x.Data.Emoji),
+                    EmojiFormatter.Normalize(_emojiManager, b?.Emoji ?? x.Data.Emoji),
                     b?.MaxSignups ?? x.Data.MaxSignups,
                     Math.Min(b?.Width ?? x.Data.Width ?? ButtonSizeHelper.ComputeWidth(label), ButtonSizeHelper.Max));
             })
