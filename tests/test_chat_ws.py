@@ -196,6 +196,64 @@ def test_chat_ws_mixed_channel_batch_rejected(monkeypatch):
     _run(scenario())
 
 
+def test_chat_ws_subscription_prefers_specific_kind(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(character_name=None),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=777),
+            key=types.SimpleNamespace(),
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+
+        class MultiRowSession:
+            async def execute(self, *args, **kwargs):
+                return types.SimpleNamespace(
+                    all=lambda: [
+                        (123, 1, types.SimpleNamespace(value="chat"), 777),
+                        (123, 1, types.SimpleNamespace(value="fc_chat"), 777),
+                    ]
+                )
+
+            async def close(self):  # pragma: no cover - trivial
+                pass
+
+        @asynccontextmanager
+        async def fake_get_session():
+            yield MultiRowSession()
+
+        monkeypatch.setattr(ws_chat, "get_session", fake_get_session)
+
+        await manager.sub(
+            ws,
+            {
+                "channels": [
+                    {
+                        "id": "123",
+                        "kind": "FC_CHAT",
+                    }
+                ]
+            },
+        )
+
+        info = manager.connections[ws]
+        assert "123" in info.channels
+        meta = info.metadata["123"]
+        assert meta.kind == "FC_CHAT"
+        assert manager._channel_meta["123"].kind == "FC_CHAT"
+        assert len(ws.sent) == 2
+        ack = json.loads(ws.sent[0])
+        resync = json.loads(ws.sent[1])
+        assert ack["kind"] == "FC_CHAT"
+        assert resync["kind"] == "FC_CHAT"
+        assert ack["guildId"] == "777"
+        assert resync["guildId"] == "777"
+
+    _run(scenario())
+
+
 def test_chat_ws_subscription_backfill(monkeypatch):
     async def scenario():
         manager = ws_chat.ChatConnectionManager()
