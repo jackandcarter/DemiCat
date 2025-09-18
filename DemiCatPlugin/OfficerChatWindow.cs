@@ -87,6 +87,25 @@ public class OfficerChatWindow : ChatWindow
 
     protected override string MessagesPath => "/api/officer-messages";
 
+    protected override HttpRequestMessage BuildTextMessageRequest(string channelId, string content, object? messageReference)
+    {
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}";
+        var body = new Dictionary<string, object?>
+        {
+            ["channelId"] = channelId,
+            ["content"] = content,
+            ["useCharacterName"] = _useCharacterName
+        };
+        if (messageReference != null)
+        {
+            body["messageReference"] = messageReference;
+        }
+
+        var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
+        return request;
+    }
+
     protected override async Task<HttpRequestMessage> BuildMultipartRequest(string content)
     {
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}";
