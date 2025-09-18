@@ -1,35 +1,43 @@
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections.Generic;
+using System.Reflection;
+using Dalamud.Plugin.Services;
 using DemiCatPlugin;
-using Dalamud.Interface.Textures;
-using Moq;
+using DemiCatPlugin.Emoji;
 using Xunit;
 
-public class EmojiPopupGuildTests
+public class EmojiFormatterTests
 {
-    private class StubHandler : HttpMessageHandler
+    private sealed class StubHandler : HttpMessageHandler
     {
-        private readonly string _response;
-        public StubHandler(string response) => _response = response;
+        private readonly HttpStatusCode _status;
+        private readonly string _content;
+
+        public StubHandler(HttpStatusCode status, string content)
+        {
+            _status = status;
+            _content = content;
+        }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
-            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            => Task.FromResult(new HttpResponseMessage(_status)
             {
-                Content = new StringContent(_response)
+                Content = new StringContent(_content, Encoding.UTF8, "application/json")
             });
     }
 
-    private class TestFramework : Dalamud.Plugin.Services.IFramework
+    private sealed class TestFramework : IFramework
     {
-        public event Dalamud.Plugin.Services.FrameworkUpdateDelegate? Update { add { } remove {}} 
-        public Dalamud.Plugin.Services.FrameworkUpdateType CurrentUpdateType => Dalamud.Plugin.Services.FrameworkUpdateType.None;
-        public void RunOnTick(System.Action action, Dalamud.Plugin.Services.FrameworkUpdatePriority priority = Dalamud.Plugin.Services.FrameworkUpdatePriority.Normal) => action();
+        public event FrameworkUpdateDelegate? Update { add { } remove { } }
+        public FrameworkUpdateType CurrentUpdateType => FrameworkUpdateType.None;
+        public void RunOnTick(System.Action action, FrameworkUpdatePriority priority = FrameworkUpdatePriority.Normal)
+            => action();
     }
 
-    private class TestLog : Dalamud.Plugin.Services.IPluginLog
+    private sealed class TestLog : IPluginLog
     {
         public void Verbose(string message) { }
         public void Verbose(string message, System.Exception exception) { }
@@ -45,36 +53,61 @@ public class EmojiPopupGuildTests
         public void Fatal(System.Exception exception, string message) { }
     }
 
-    [Fact]
-    public async Task FetchGuild_CachesTextures()
+    private static void SetupPluginServices()
     {
-        var json = "[{\"id\":\"1\",\"name\":\"foo\",\"isAnimated\":false,\"imageUrl\":\"http://image\"}]";
+        var services = new PluginServices();
+        typeof(PluginServices).GetProperty("Framework", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(services, new TestFramework());
+        typeof(PluginServices).GetProperty("Log", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(services, new TestLog());
+    }
+
+    [Fact]
+    public async Task RefreshUnicodeAsyncLoadsEmojiMetadata()
+    {
+        SetupPluginServices();
+        var json = "[{\"emoji\":\"😀\",\"name\":\"grin\",\"imageUrl\":\"http://image\"}]";
+        using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, json));
         var config = new Config { ApiBaseUrl = "http://host", GuildId = "1" };
-        var http = new HttpClient(new StubHandler(json));
-        var popup = new EmojiPopup(config, http);
+        using var manager = new EmojiManager(client, new TokenManager(), config);
 
-        // Make PluginServices ready for RunOnTick
-        var ps = new PluginServices();
-        var framework = new TestFramework();
-        var log = new TestLog();
-        typeof(PluginServices).GetProperty("Framework", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(ps, framework);
-        typeof(PluginServices).GetProperty("Log", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.SetValue(ps, log);
+        await manager.RefreshUnicodeAsync();
 
-        var urls = new List<string>();
-        WebTextureCache.FetchOverride = (url, cb) =>
-        {
-            if (url != null) urls.Add(url);
-            cb(new Mock<ISharedImmediateTexture>().Object);
-            return null;
-        };
+        var emoji = Assert.Single(manager.Unicode);
+        Assert.Equal("😀", emoji.Emoji);
+        Assert.Equal("grin", emoji.Name);
+        Assert.Equal("http://image", emoji.ImageUrl);
+        var status = manager.UnicodeStatus;
+        Assert.False(status.Loading);
+        Assert.True(status.Loaded);
+        Assert.False(status.HasError);
+    }
 
-        var fetch = typeof(EmojiPopup).GetMethod("FetchGuild", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        await (Task)fetch!.Invoke(popup, null)!;
+    [Fact]
+    public void NormalizeMissingCustomEmojiFallsBackToPlaceholder()
+    {
+        SetupPluginServices();
+        using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, "[]"));
+        var config = new Config { ApiBaseUrl = "http://host", GuildId = "1" };
+        using var manager = new EmojiManager(client, new TokenManager(), config);
 
-        popup.PreloadGuildTextures();
+        var token = EmojiFormatter.CreateCustomToken("123");
+        var normalized = EmojiFormatter.Normalize(manager, token);
 
-        Assert.Equal(new[] { "http://image" }, urls);
-        Assert.Equal("foo", EmojiPopup.LookupGuildName("1"));
-        WebTextureCache.FetchOverride = null;
+        Assert.Equal("<:emoji:123>", normalized);
+    }
+
+    [Fact]
+    public void NormalizeStandardEmojiReturnsInput()
+    {
+        SetupPluginServices();
+        using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, "[]"));
+        var config = new Config { ApiBaseUrl = "http://host", GuildId = "1" };
+        using var manager = new EmojiManager(client, new TokenManager(), config);
+
+        const string smile = "😀";
+        var normalized = EmojiFormatter.Normalize(manager, smile);
+
+        Assert.Equal(smile, normalized);
     }
 }

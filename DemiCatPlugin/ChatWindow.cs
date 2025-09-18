@@ -48,7 +48,7 @@ public class ChatWindow : IDisposable
     protected string _editingChannelId = string.Empty;
     protected string _editContent = string.Empty;
     private static readonly string[] DefaultReactions = new[] { "👍", "👎", "❤️" };
-    private readonly EmojiService _emojiService;
+    private readonly EmojiManager _emojiManager;
     private readonly EmojiPicker _emojiPicker;
     private readonly Dictionary<string, EmojiData> _emojiCatalog = new();
     protected readonly ChatBridge _bridge;
@@ -120,7 +120,16 @@ public class ChatWindow : IDisposable
 
     protected virtual string MessagesPath => "/api/messages";
 
-    public ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, string channelKind, AvatarCache? avatarCache)
+    public ChatWindow(
+        Config config,
+        HttpClient httpClient,
+        DiscordPresenceService? presence,
+        TokenManager tokenManager,
+        ChannelService channelService,
+        ChannelSelectionService channelSelection,
+        string channelKind,
+        AvatarCache? avatarCache,
+        EmojiManager emojiManager)
     {
         _config = config;
         _httpClient = httpClient;
@@ -130,9 +139,10 @@ public class ChatWindow : IDisposable
         _channelSelection = channelSelection;
         _avatarCache = avatarCache;
         _channelKind = channelKind;
-        _emojiService = new EmojiService(httpClient, tokenManager, config);
-        _emojiPicker = new EmojiPicker(_emojiService);
-        _ = _emojiService.RefreshAsync();
+        _emojiManager = emojiManager;
+        _emojiPicker = new EmojiPicker(_emojiManager);
+        _ = _emojiManager.EnsureUnicodeAsync();
+        _ = _emojiManager.EnsureCustomAsync();
         _useCharacterName = config.UseCharacterName;
         _bridge = new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri, channelSelection);
         _bridge.MessageReceived += HandleBridgeMessage;
@@ -151,7 +161,16 @@ public class ChatWindow : IDisposable
 
 #if TEST
     internal ChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService)
-        : this(config, httpClient, presence, tokenManager, channelService, new ChannelSelectionService(config), ChannelKind.Chat, null)
+        : this(
+            config,
+            httpClient,
+            presence,
+            tokenManager,
+            channelService,
+            new ChannelSelectionService(config),
+            ChannelKind.Chat,
+            null,
+            new EmojiManager(httpClient, tokenManager, config))
     {
     }
 #endif
@@ -317,7 +336,7 @@ public class ChatWindow : IDisposable
                 {
                     foreach (var embed in msg.Embeds)
                     {
-                        EmbedRenderer.Draw(embed, LoadTexture, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
+                        EmbedRenderer.Draw(embed, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
                     }
                 }
                 if (msg.Attachments != null)
@@ -361,7 +380,7 @@ public class ChatWindow : IDisposable
                         RowIndex = c.RowIndex
                     }).ToList();
                     var pseudo = new EmbedDto { Id = msg.Id + "_components", Buttons = buttons };
-                    EmbedRenderer.Draw(pseudo, LoadTexture, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
+                    EmbedRenderer.Draw(pseudo, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
                 }
                 ImGui.Spacing();
                 if (msg.Reactions != null && msg.Reactions.Count > 0)

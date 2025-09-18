@@ -4,6 +4,7 @@ using DiscordHelper;
 using System.Numerics;
 using System.Net.Http;
 using DemiCat.UI;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -13,10 +14,12 @@ public class SignupOptionEditor
     private Template.TemplateButton _working = new();
     private Action<Template.TemplateButton>? _onSave;
     private readonly EmojiPopup _emojiPopup;
+    private readonly EmojiManager _emojiManager;
 
-    public SignupOptionEditor(Config config, HttpClient httpClient)
+    public SignupOptionEditor(Config config, HttpClient httpClient, EmojiManager emojiManager)
     {
-        _emojiPopup = new EmojiPopup(config, httpClient);
+        _emojiManager = emojiManager;
+        _emojiPopup = new EmojiPopup(emojiManager);
     }
 
     public void Open(Template.TemplateButton button, Action<Template.TemplateButton> onSave)
@@ -59,7 +62,7 @@ public class SignupOptionEditor
 
             if (!string.IsNullOrWhiteSpace(_working.Emoji))
             {
-                EmojiUtils.DrawEmoji(_working.Emoji);
+                EmojiRenderer.Draw(_working.Emoji, _emojiManager);
                 ImGui.SameLine();
             }
             var max = _working.MaxSignups ?? 0;

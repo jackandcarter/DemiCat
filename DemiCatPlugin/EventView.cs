@@ -12,6 +12,7 @@ using Dalamud.Bindings.ImGui;
 using StbImageSharp;
 using System.Diagnostics;
 using System.Linq;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -20,6 +21,7 @@ public class EventView : IDisposable
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly Func<Task> _refresh;
+    private readonly EmojiManager _emojiManager;
 
     private EmbedDto _dto;
     private ISharedImmediateTexture? _authorIcon;
@@ -28,11 +30,12 @@ public class EventView : IDisposable
     private ISharedImmediateTexture? _footerIcon;
     private string? _lastResult;
 
-    public EventView(EmbedDto dto, Config config, HttpClient httpClient, Func<Task> refresh)
+    public EventView(EmbedDto dto, Config config, HttpClient httpClient, Func<Task> refresh, EmojiManager emojiManager)
     {
         _config = config;
         _httpClient = httpClient;
         _refresh = refresh;
+        _emojiManager = emojiManager;
         _dto = dto;
         LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t);
         LoadTexture(dto.FooterIconUrl, t => _footerIcon = t);
@@ -220,7 +223,7 @@ public class EventView : IDisposable
                     var button = buttons[i];
                     if (!string.IsNullOrEmpty(button.Emoji))
                     {
-                        EmojiUtils.DrawEmoji(button.Emoji);
+                        EmojiRenderer.Draw(button.Emoji, _emojiManager);
                         ImGui.SameLine();
                     }
                     var id = button.CustomId ?? button.Label;

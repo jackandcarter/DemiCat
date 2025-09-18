@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using System.Numerics;
 using DemiCatPlugin.Avatars;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -12,8 +13,25 @@ public class FcChatWindow : ChatWindow
     private readonly PresenceSidebar? _presenceSidebar;
     private float _presenceWidth = 150f;
 
-    public FcChatWindow(Config config, HttpClient httpClient, DiscordPresenceService? presence, TokenManager tokenManager, ChannelService channelService, ChannelSelectionService channelSelection, AvatarCache avatarCache)
-        : base(config, httpClient, presence, tokenManager, channelService, channelSelection, global::DemiCatPlugin.ChannelKind.FcChat, avatarCache)
+    public FcChatWindow(
+        Config config,
+        HttpClient httpClient,
+        DiscordPresenceService? presence,
+        TokenManager tokenManager,
+        ChannelService channelService,
+        ChannelSelectionService channelSelection,
+        AvatarCache avatarCache,
+        EmojiManager emojiManager)
+        : base(
+            config,
+            httpClient,
+            presence,
+            tokenManager,
+            channelService,
+            channelSelection,
+            global::DemiCatPlugin.ChannelKind.FcChat,
+            avatarCache,
+            emojiManager)
     {
         if (presence != null)
         {

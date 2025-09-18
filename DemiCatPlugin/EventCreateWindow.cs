@@ -13,6 +13,7 @@ using System.Globalization;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 using DemiCat.UI;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -21,6 +22,7 @@ public class EventCreateWindow
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly ChannelService _channelService;
+    private readonly EmojiManager _emojiManager;
 
     private string _title = string.Empty;
     private string _description = string.Empty;
@@ -57,13 +59,14 @@ public class EventCreateWindow
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public EventCreateWindow(Config config, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection)
+    public EventCreateWindow(Config config, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection, EmojiManager emojiManager)
     {
         _config = config;
         _httpClient = httpClient;
         _channelService = channelService;
+        _emojiManager = emojiManager;
         _channelSelection = channelSelection;
-        _optionEditor = new SignupOptionEditor(config, httpClient);
+        _optionEditor = new SignupOptionEditor(config, httpClient, emojiManager);
         ResetDefaultButtons();
         _channelSelection.ChannelChanged += HandleChannelChanged;
     }
@@ -195,7 +198,7 @@ public class EventCreateWindow
             ImGui.SameLine();
             if (!string.IsNullOrWhiteSpace(button.Emoji))
             {
-                EmojiUtils.DrawEmoji(button.Emoji);
+                EmojiRenderer.Draw(button.Emoji, _emojiManager);
                 ImGui.SameLine();
             }
             ImGui.TextUnformatted($"{button.Label} ({button.Tag})");
@@ -280,7 +283,7 @@ public class EventCreateWindow
         }
         _preview = BuildPreview();
         ImGui.Separator();
-        EmbedPreviewRenderer.Draw(_preview, (_, __) => { });
+        EmbedPreviewRenderer.Draw(_preview, (_, __) => { }, _emojiManager);
 
         if (!_schedulesLoaded)
         {
@@ -469,7 +472,7 @@ public class EventCreateWindow
                     Tag = b.Tag,
                     Include = b.Include,
                     Label = b.Label,
-                    Emoji = EmojiUtils.Normalize(b.Emoji) ?? string.Empty,
+                    Emoji = EmojiFormatter.Normalize(_emojiManager, b.Emoji) ?? string.Empty,
                     Style = b.Style,
                     MaxSignups = b.MaxSignups,
                     Width = b.Width
@@ -628,7 +631,7 @@ public class EventCreateWindow
                     Tag = b.Tag,
                     Include = b.Include,
                     Label = b.Label,
-                    Emoji = EmojiUtils.Normalize(b.Emoji) ?? string.Empty,
+                    Emoji = EmojiFormatter.Normalize(_emojiManager, b.Emoji) ?? string.Empty,
                     Style = b.Style,
                     MaxSignups = b.MaxSignups,
                     Width = b.Width
@@ -767,7 +770,7 @@ public class EventCreateWindow
                 Tag = b.Tag,
                 Include = b.Include,
                 Label = b.Label,
-                Emoji = EmojiUtils.Normalize(b.Emoji) ?? string.Empty,
+                Emoji = EmojiFormatter.Normalize(_emojiManager, b.Emoji) ?? string.Empty,
                 Style = b.Style,
                 MaxSignups = b.MaxSignups,
                 Width = b.Width

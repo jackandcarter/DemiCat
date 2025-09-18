@@ -1,69 +1,248 @@
 using System;
-using System.Linq;
+using System.Collections.Generic;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
-namespace DemiCatPlugin.Emoji
+namespace DemiCatPlugin.Emoji;
+
+public sealed class EmojiPicker
 {
-    public sealed class EmojiPicker
+    private readonly EmojiManager _manager;
+    private EmojiTab _tab;
+    private string _search = string.Empty;
+
+    private enum EmojiTab
     {
-        private readonly EmojiService _svc;
-        private int _tabIndex; // 0=Standard, 1=Custom
-        private string _search = "";
+        Standard,
+        Custom
+    }
 
-        public EmojiPicker(EmojiService svc) => _svc = svc;
+    public EmojiPicker(EmojiManager manager) => _manager = manager;
 
-        public void Draw(ref string targetText, float buttonSize = 28f)
+    public void Draw(ref string targetText, float buttonSize = 28f)
+    {
+        var previous = _tab;
+        if (ImGui.BeginTabBar("##dc_emoji_tabs"))
         {
-            var prev = _tabIndex;
-            if (ImGui.BeginTabBar("##dc_emoji_tabs"))
+            if (ImGui.BeginTabItem("Standard"))
             {
-                if (ImGui.BeginTabItem("Standard")) { _tabIndex = 0; DrawStandard(ref targetText, buttonSize); ImGui.EndTabItem(); }
-                if (ImGui.BeginTabItem("Custom"))   { _tabIndex = 1; DrawCustom(ref targetText, buttonSize);   ImGui.EndTabItem(); }
-                ImGui.EndTabBar();
+                _tab = EmojiTab.Standard;
+                DrawStandard(ref targetText, buttonSize);
+                ImGui.EndTabItem();
             }
-            if (prev != _tabIndex)
-                _search = string.Empty;
+
+            if (ImGui.BeginTabItem("Custom"))
+            {
+                _tab = EmojiTab.Custom;
+                DrawCustom(ref targetText, buttonSize);
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
         }
 
-        private void DrawStandard(ref string targetText, float size)
+        if (_tab != previous)
         {
-            ImGui.InputTextWithHint("##search_std", "Search…", ref _search, 64);
-            ImGui.Separator();
+            _search = string.Empty;
+        }
+    }
 
-            var items = string.IsNullOrWhiteSpace(_search)
-                ? EmojiStrings.Popular
-                : EmojiStrings.Popular.Where(p => p.Label.Contains(_search, StringComparison.OrdinalIgnoreCase)
-                                               || p.Emoji.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToArray();
+    private void DrawStandard(ref string targetText, float size)
+    {
+        ImGui.InputTextWithHint("##emoji_std_search", "Search…", ref _search, 64);
+        ImGui.Separator();
 
-            int col = 0;
-            foreach (var (emoji, label) in items)
+        if (!_manager.CanLoadStandard)
+        {
+            ImGui.TextDisabled("Link DemiCat to load emoji.");
+            return;
+        }
+
+        _ = _manager.EnsureUnicodeAsync();
+
+        var status = _manager.UnicodeStatus;
+        var items = _manager.Unicode;
+        IReadOnlyList<UnicodeEmoji> filtered = items;
+
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var matches = new List<UnicodeEmoji>();
+            foreach (var emoji in items)
             {
-                if (ImGui.Button(emoji, new(size, size)))
-                { EmojiInsert.InsertUnicode(ref targetText, emoji); }
-                if (++col % 10 != 0) ImGui.SameLine();
+                if (emoji.Name.Contains(_search, StringComparison.OrdinalIgnoreCase) ||
+                    emoji.Emoji.Contains(_search, StringComparison.OrdinalIgnoreCase))
+                {
+                    matches.Add(emoji);
+                }
+            }
+            filtered = matches;
+        }
+
+        if (filtered.Count == 0)
+        {
+            if (status.Loading)
+            {
+                ImGui.TextDisabled("Loading emoji…");
+            }
+            else if (status.HasError)
+            {
+                DrawError(status.Error!);
+            }
+            else
+            {
+                ImGui.TextDisabled(string.IsNullOrWhiteSpace(_search) ? "No emoji available." : "No matches.");
+            }
+            return;
+        }
+
+        ImGui.BeginChild("##emoji_std_grid", new Vector2(0, 220f), false);
+        var avail = ImGui.GetContentRegionAvail().X;
+        var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (size + 4f)));
+        var column = 0;
+
+        for (var i = 0; i < filtered.Count; i++)
+        {
+            if (column >= columns)
+            {
+                ImGui.NewLine();
+                column = 0;
+            }
+
+            var emoji = filtered[i];
+            ImGui.PushID(i);
+            if (ImGui.Button(emoji.Emoji, new Vector2(size, size)))
+            {
+                EmojiFormatter.InsertUnicode(ref targetText, emoji);
+            }
+            if (!string.IsNullOrEmpty(emoji.Name) && ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(emoji.Name);
+            }
+            ImGui.PopID();
+
+            column++;
+            if (column < columns)
+            {
+                ImGui.SameLine();
             }
         }
 
-        private void DrawCustom(ref string targetText, float size)
+        ImGui.EndChild();
+    }
+
+    private void DrawCustom(ref string targetText, float size)
+    {
+        ImGui.InputTextWithHint("##emoji_custom_search", "Search :name:", ref _search, 64);
+        ImGui.SameLine();
+        var canLoad = _manager.CanLoadCustom;
+        if (!canLoad) ImGui.BeginDisabled();
+        if (ImGui.Button("Refresh"))
         {
-            ImGui.InputTextWithHint("##search_cus", "Search :name:", ref _search, 64);
-            ImGui.SameLine();
-            if (ImGui.Button("Refresh")) _ = _svc.RefreshAsync();
+            _ = _manager.RefreshCustomAsync();
+        }
+        if (!canLoad) ImGui.EndDisabled();
+        ImGui.Separator();
 
-            ImGui.Separator();
+        if (!canLoad)
+        {
+            ImGui.TextDisabled("Set GuildId in config to enable server emoji.");
+            return;
+        }
 
-            var items = string.IsNullOrWhiteSpace(_search)
-                ? _svc.Custom
-                : _svc.Custom.Where(c => c.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)).ToList();
+        _ = _manager.EnsureCustomAsync();
 
-            int col = 0;
-            foreach (var e in items)
+        var status = _manager.CustomStatus;
+        IReadOnlyList<CustomEmoji> items = _manager.Custom;
+
+        if (!string.IsNullOrWhiteSpace(_search))
+        {
+            var matches = new List<CustomEmoji>();
+            foreach (var emoji in items)
             {
-                var label = e.Animated ? $":{e.Name}: (gif)" : $":{e.Name}:";
-                if (ImGui.Button(label, new(size * 3.2f, size)))
-                { EmojiInsert.InsertCustom(ref targetText, e); }
-                if (++col % 3 != 0) ImGui.SameLine();
+                if (emoji.Name.Contains(_search, StringComparison.OrdinalIgnoreCase))
+                {
+                    matches.Add(emoji);
+                }
+            }
+            items = matches;
+        }
+
+        if (items.Count == 0)
+        {
+            if (status.Loading)
+            {
+                ImGui.TextDisabled("Loading server emoji…");
+            }
+            else if (status.HasError)
+            {
+                DrawError(status.Error!);
+            }
+            else
+            {
+                ImGui.TextDisabled(string.IsNullOrWhiteSpace(_search) ? "No server emoji found." : "No matches.");
+            }
+            return;
+        }
+
+        ImGui.BeginChild("##emoji_custom_grid", new Vector2(0, 220f), false);
+        var avail = ImGui.GetContentRegionAvail().X;
+        var columns = Math.Max(1, (int)Math.Floor((avail + 6f) / (size + 6f)));
+        var column = 0;
+
+        foreach (var emoji in items)
+        {
+            if (column >= columns)
+            {
+                ImGui.NewLine();
+                column = 0;
+            }
+
+            var clicked = false;
+            var tooltip = emoji.Animated ? $":{emoji.Name}: (gif)" : $":{emoji.Name}:";
+            WebTextureCache.Get(emoji.ImageUrl, tex =>
+            {
+                ImGui.PushID(emoji.Id);
+                if (tex != null)
+                {
+                    var wrap = tex.GetWrapOrEmpty();
+                    if (ImGui.ImageButton(wrap.Handle, new Vector2(size, size)))
+                    {
+                        clicked = true;
+                    }
+                }
+                else
+                {
+                    if (ImGui.Button(tooltip, new Vector2(size * 3f, size)))
+                    {
+                        clicked = true;
+                    }
+                }
+                if (ImGui.IsItemHovered())
+                {
+                    ImGui.SetTooltip(tooltip);
+                }
+                ImGui.PopID();
+            });
+
+            if (clicked)
+            {
+                EmojiFormatter.InsertCustom(ref targetText, emoji);
+            }
+
+            column++;
+            if (column < columns)
+            {
+                ImGui.SameLine();
             }
         }
+
+        ImGui.EndChild();
+    }
+
+    private static void DrawError(string message)
+    {
+        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+        ImGui.TextWrapped(message);
+        ImGui.PopStyleColor();
     }
 }
