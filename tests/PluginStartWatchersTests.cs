@@ -8,6 +8,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Game.Gui.Toast;
 using Dalamud.Plugin.Services;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using DemiCatPlugin;
 using Moq;
 using Xunit;
@@ -24,7 +26,7 @@ public class PluginStartWatchersTests
     [MemberData(nameof(TransientPingResponses))]
     public async Task StartWatchersDoesNotClearTokenOnTransientFailures(HttpStatusCode? statusCode)
     {
-        var (plugin, tokenManager, toastMock) = CreatePlugin(statusCode);
+        var (plugin, tokenManager, toastMock, _, _) = CreatePlugin(statusCode);
         try
         {
             string? unlinkReason = null;
@@ -56,7 +58,7 @@ public class PluginStartWatchersTests
     [InlineData(HttpStatusCode.Forbidden)]
     public async Task StartWatchersClearsTokenOnAuthFailures(HttpStatusCode statusCode)
     {
-        var (plugin, tokenManager, toastMock) = CreatePlugin(statusCode);
+        var (plugin, tokenManager, toastMock, triggerLink, wasConfigOpened) = CreatePlugin(statusCode);
         try
         {
             string? unlinkReason = null;
@@ -71,6 +73,20 @@ public class PluginStartWatchersTests
                 .Where(i => i.Method.Name == nameof(IToastGui.ShowError))
                 .ToList();
             Assert.Empty(showErrorCalls);
+
+            var showQuestCalls = toastMock.Invocations
+                .Where(i => i.Method.Name == nameof(IToastGui.ShowQuest))
+                .ToList();
+            Assert.Single(showQuestCalls);
+
+            var questArgs = showQuestCalls[0].Arguments.FirstOrDefault();
+            var questMessage = Assert.IsType<SeString>(questArgs);
+            Assert.Contains("invalid", questMessage.TextValue, StringComparison.OrdinalIgnoreCase);
+
+            Assert.NotNull(triggerLink);
+            triggerLink!.Invoke();
+
+            Assert.True(wasConfigOpened());
         }
         finally
         {
@@ -78,7 +94,7 @@ public class PluginStartWatchersTests
         }
     }
 
-    private static (Plugin Plugin, TokenManager TokenManager, Mock<IToastGui> ToastMock) CreatePlugin(HttpStatusCode? statusCode)
+    private static (Plugin Plugin, TokenManager TokenManager, Mock<IToastGui> ToastMock, Action? TriggerLink, Func<bool> WasConfigOpened) CreatePlugin(HttpStatusCode? statusCode)
     {
         PingService.Instance = null;
 
@@ -91,6 +107,14 @@ public class PluginStartWatchersTests
         logMock.Setup(l => l.Info(It.IsAny<string>()));
 
         var toastMock = new Mock<IToastGui>();
+        var chatMock = new Mock<IChatGui>();
+        Action<uint, SeString>? linkHandler = null;
+        chatMock
+            .Setup(c => c.AddChatLinkHandler(It.IsAny<uint>(), It.IsAny<Action<uint, SeString>>()))
+            .Callback<uint, Action<uint, SeString>>((_, action) => linkHandler = action)
+            .Returns(() => new DalamudLinkPayload());
+        chatMock.Setup(c => c.RemoveChatLinkHandler(It.IsAny<uint>()));
+
         var frameworkMock = new Mock<IFramework>();
         frameworkMock
             .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
@@ -119,6 +143,13 @@ public class PluginStartWatchersTests
         SetPrivateField(plugin, "_tokenManager", tokenManager);
         SetPrivateField(plugin, "_httpClient", httpClient);
 
+        bool configOpened = false;
+        SetPrivateField(plugin, "_openConfigUi", (Action)(() => configOpened = true));
+
+        var handleUnlinked = typeof(Plugin)
+            .GetMethod("HandleTokenUnlinked", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        tokenManager.OnUnlinked += reason => handleUnlinked.Invoke(plugin, new object?[] { reason });
+
         typeof(PluginServices)
             .GetProperty("Framework", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(services, frameworkMock.Object);
@@ -128,8 +159,14 @@ public class PluginStartWatchersTests
         typeof(PluginServices)
             .GetProperty("ToastGui", BindingFlags.Instance | BindingFlags.NonPublic)!
             .SetValue(services, toastMock.Object);
+        typeof(PluginServices)
+            .GetProperty("ChatGui", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(services, chatMock.Object);
 
-        return (plugin, tokenManager, toastMock);
+        Action? triggerLink = () => linkHandler?.Invoke(0, new SeString());
+        Func<bool> wasConfigOpened = () => configOpened;
+
+        return (plugin, tokenManager, toastMock, triggerLink, wasConfigOpened);
     }
 
     private static void SetPrivateField(object instance, string fieldName, object value)

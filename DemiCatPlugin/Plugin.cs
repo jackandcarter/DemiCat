@@ -7,6 +7,9 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordHelper;
+using Dalamud.Game.Gui.Toast;
+using Dalamud.Game.Text.SeStringHandling;
+using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Plugin;
 using Dalamud.IoC;
 using Dalamud.Plugin.Services;
@@ -21,6 +24,8 @@ public class Plugin : IDalamudPlugin
 
     [PluginService] internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal ITextureProvider TextureProvider { get; private set; } = null!;
+
+    private const uint InvalidTokenLinkCommandId = 0x44434B49;
 
     private readonly PluginServices _services;
     private readonly UiRenderer _ui;
@@ -41,8 +46,8 @@ public class Plugin : IDalamudPlugin
     private readonly Action _openMainUi;
     private readonly Action _openConfigUi;
     private readonly TokenManager _tokenManager;
-    private readonly Action<string?> _unlinkedHandler;
     private bool _officerWatcherRunning;
+    private bool _invalidTokenToastShown;
 
     public Plugin()
     {
@@ -127,12 +132,11 @@ public class Plugin : IDalamudPlugin
         _openConfigUi = () => _settings.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
-        _unlinkedHandler = _ => StopWatchers();
-        _tokenManager.OnLinked += StartWatchers;
-        _tokenManager.OnUnlinked += _unlinkedHandler;
+        _tokenManager.OnLinked += HandleTokenLinked;
+        _tokenManager.OnUnlinked += HandleTokenUnlinked;
 
         if (_tokenManager.IsReady())
-            StartWatchers();
+            HandleTokenLinked();
 
         _services.Log.Info("DemiCat loaded.");
     }
@@ -147,8 +151,10 @@ public class Plugin : IDalamudPlugin
         _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
 
-        _tokenManager.OnLinked -= StartWatchers;
-        _tokenManager.OnUnlinked -= _unlinkedHandler;
+        _tokenManager.OnLinked -= HandleTokenLinked;
+        _tokenManager.OnUnlinked -= HandleTokenUnlinked;
+
+        try { _services.ChatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
 
         _channelSelection.ChannelChanged -= HandleChannelSelectionValidation;
 
@@ -251,6 +257,23 @@ public class Plugin : IDalamudPlugin
         _ = StartWatchersAsync();
     }
 
+    private void HandleTokenLinked()
+    {
+        _invalidTokenToastShown = false;
+        try { _services.ChatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
+        StartWatchers();
+    }
+
+    private void HandleTokenUnlinked(string? reason)
+    {
+        StopWatchers();
+
+        if (IsAuthenticationFailure(reason))
+        {
+            ShowInvalidTokenToast();
+        }
+    }
+
     private async Task StartWatchersAsync()
     {
         if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
@@ -317,8 +340,78 @@ public class Plugin : IDalamudPlugin
         }
         else
         {
-            _officerWatcherRunning = false;
+        _officerWatcherRunning = false;
+    }
+
+    private static bool IsAuthenticationFailure(string? reason)
+        => string.Equals(reason, "Invalid API key", StringComparison.Ordinal)
+            || string.Equals(reason, "Authentication failed", StringComparison.Ordinal);
+
+    private void ShowInvalidTokenToast()
+    {
+        if (_invalidTokenToastShown)
+            return;
+
+        var toastGui = _services.ToastGui;
+        var chatGui = _services.ChatGui;
+
+        if (toastGui == null || chatGui == null)
+            return;
+
+        if (_openConfigUi == null)
+            return;
+
+        _invalidTokenToastShown = true;
+
+        try { chatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
+
+        DalamudLinkPayload linkPayload;
+        try
+        {
+            linkPayload = chatGui.AddChatLinkHandler(
+                InvalidTokenLinkCommandId,
+                (_, _) =>
+                {
+                    try
+                    {
+                        var framework = _services.Framework;
+                        if (framework != null)
+                        {
+                            _ = framework.RunOnTick(() => _openConfigUi());
+                        }
+                        else
+                        {
+                            _openConfigUi();
+                        }
+                    }
+                    catch
+                    {
+                    }
+                });
         }
+        catch
+        {
+            return;
+        }
+
+        var message = new SeStringBuilder()
+            .AddText("DemiCat sync is disabled because the stored API key is invalid.")
+            .Add(new NewLinePayload())
+            .Add(linkPayload)
+            .AddUiForeground("Open settings", 45)
+            .Add(RawPayload.LinkTerminator)
+            .AddText(" to update your sync key.")
+            .Build();
+
+        var options = new QuestToastOptions
+        {
+            Position = QuestToastPosition.Centre,
+            DisplayCheckmark = true,
+            PlaySound = true
+        };
+
+        toastGui.ShowQuest(message, options);
+    }
 
         if (_config.Events)
         {

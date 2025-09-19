@@ -121,7 +121,10 @@ public class RequestWatcher : IDisposable
 
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
-                    PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
+                    if (_tokenManager.IsReady())
+                    {
+                        _tokenManager.Clear("Authentication failed");
+                    }
                     hadTransportError = true;
                 }
             }
@@ -138,9 +141,12 @@ public class RequestWatcher : IDisposable
             catch (HttpRequestException ex)
             {
                 hadTransportError = true;
-                if (ex.StatusCode == HttpStatusCode.Forbidden)
+                if (ex.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
                 {
-                    PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
+                    if (_tokenManager.IsReady())
+                    {
+                        _tokenManager.Clear("Authentication failed");
+                    }
                 }
                 LogConnectionException(ex, "connect");
             }
@@ -149,7 +155,10 @@ public class RequestWatcher : IDisposable
                 hadTransportError = true;
                 if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
                 {
-                    PluginServices.Instance?.ToastGui.ShowError("Request watcher auth failed");
+                    if (_tokenManager.IsReady())
+                    {
+                        _tokenManager.Clear("Authentication failed");
+                    }
                 }
                 LogConnectionException(ex, "connect");
             }
