@@ -48,6 +48,7 @@ public class Plugin : IDalamudPlugin
     private readonly TokenManager _tokenManager;
     private bool _officerWatcherRunning;
     private bool _invalidTokenToastShown;
+    private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
 
     public Plugin()
     {
@@ -537,13 +538,34 @@ public class Plugin : IDalamudPlugin
                     _presenceService?.Dispose();
                 }
                 _services.PluginInterface.SavePluginConfig(_config);
-                StopWatchers();
-                StartWatchers();
-                if (_config.Requests)
+
+                var restartRequestWatcher = _config.Requests;
+                _ = Task.Run(async () =>
                 {
-                    _services.Log.Info("Restarting request watcher");
-                    _requestWatcher.Start();
-                }
+                    await _watcherRestartLock.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        StopWatchers();
+                        StartWatchers();
+                        if (restartRequestWatcher)
+                        {
+                            _services.Log.Info("Restarting request watcher");
+                            _requestWatcher.Start();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _services.Log.Error(ex, "Error restarting watchers after refreshing roles.");
+                    }
+                    finally
+                    {
+                        _watcherRestartLock.Release();
+                        _ = _services.Framework.RunOnTick(() =>
+                        {
+                            _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+                        });
+                    }
+                });
             });
 
             await RoleCache.Refresh(_httpClient, _config);
