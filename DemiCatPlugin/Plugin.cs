@@ -340,7 +340,18 @@ public class Plugin : IDalamudPlugin
         }
         else
         {
-        _officerWatcherRunning = false;
+            _officerWatcherRunning = false;
+        }
+
+        if (_config.Events)
+        {
+            _services.Log.Info("Starting event watchers");
+            _ = _ui.StartNetworking();
+            _mainWindow.EventCreateWindow.StartNetworking();
+            _mainWindow.TemplatesWindow.StartNetworking();
+        }
+
+        _services.Log.Info("Watchers started");
     }
 
     private static bool IsAuthenticationFailure(string? reason)
@@ -411,17 +422,6 @@ public class Plugin : IDalamudPlugin
         };
 
         toastGui.ShowQuest(message, options);
-    }
-
-        if (_config.Events)
-        {
-            _services.Log.Info("Starting event watchers");
-            _ = _ui.StartNetworking();
-            _mainWindow.EventCreateWindow.StartNetworking();
-            _mainWindow.TemplatesWindow.StartNetworking();
-        }
-
-        _services.Log.Info("Watchers started");
     }
 
     private void HandleWatcherStartupFailure(string statusDetails)
