@@ -111,6 +111,7 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
                     channel_id=5,
                     kind=ChannelKind.CHAT,
                     name="five",
+                    webhook_url="https://example.com/hook",
                 )
             )
             await db.commit()
@@ -120,7 +121,7 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
         # Change only the FC chat selection to ensure the previous FC
         # channel rows are replaced cleanly while leaving other kinds intact.
         view2.event_channel_ids = [1]
-        view2.fc_chat_channel_ids = [4]
+        view2.fc_chat_channel_ids = [5]
         view2.officer_chat_channel_ids = [3]
         view2.officer_role_ids = [42]
         view2.mention_role_ids = [42]
@@ -134,19 +135,24 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
                     )
                 )
             ).scalars().all()
-            assert len(chans) == 4
+            assert len(chans) == 3
             fc_channels = [
                 chan.channel_id for chan in chans if chan.kind == ChannelKind.FC_CHAT
             ]
-            assert fc_channels == [4]
+            assert fc_channels == [5]
+            fc_entry = next(
+                chan
+                for chan in chans
+                if chan.channel_id == 5 and chan.kind == ChannelKind.FC_CHAT
+            )
+            assert fc_entry.webhook_url == "https://example.com/hook"
             channel_map = {
                 (chan.channel_id, chan.kind): chan.name for chan in chans
             }
             assert channel_map == {
                 (1, ChannelKind.EVENT): "one",
                 (3, ChannelKind.OFFICER_CHAT): "three",
-                (4, ChannelKind.FC_CHAT): "four",
-                (5, ChannelKind.CHAT): "five",
+                (5, ChannelKind.FC_CHAT): "five",
             }
 
     asyncio.run(_run())

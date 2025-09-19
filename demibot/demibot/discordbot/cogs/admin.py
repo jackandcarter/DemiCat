@@ -635,46 +635,45 @@ class ConfigWizard(discord.ui.View):
                         role.is_officer = False
                         role.is_chat = False
 
-                await db.execute(
-                    delete(GuildChannel).where(
-                        GuildChannel.guild_id == guild.id,
-                        GuildChannel.kind.in_(
-                            (
-                                ChannelKind.EVENT,
-                                ChannelKind.FC_CHAT,
-                                ChannelKind.OFFICER_CHAT,
-                            )
-                        ),
-                    )
-                )
-                await db.flush()
                 channel_name_lookup = {
                     ch.id: ch.name for ch in self.guild.text_channels
                 }
+                desired_channel_map: dict[int, ChannelKind] = {}
                 for cid in self.event_channel_ids:
-                    db.add(
-                        GuildChannel(
-                            guild_id=guild.id,
-                            channel_id=cid,
-                            kind=ChannelKind.EVENT,
-                            name=channel_name_lookup.get(cid),
-                        )
-                    )
+                    desired_channel_map[cid] = ChannelKind.EVENT
                 for cid in self.fc_chat_channel_ids:
-                    db.add(
-                        GuildChannel(
-                            guild_id=guild.id,
-                            channel_id=cid,
-                            kind=ChannelKind.FC_CHAT,
-                            name=channel_name_lookup.get(cid),
-                        )
-                    )
+                    desired_channel_map[cid] = ChannelKind.FC_CHAT
                 for cid in self.officer_chat_channel_ids:
+                    desired_channel_map[cid] = ChannelKind.OFFICER_CHAT
+
+                existing_channels_res = await db.execute(
+                    select(GuildChannel).where(GuildChannel.guild_id == guild.id)
+                )
+                existing_channels = existing_channels_res.scalars().all()
+                handled_channel_ids: set[int] = set()
+                replaceable_kinds = {
+                    ChannelKind.EVENT,
+                    ChannelKind.FC_CHAT,
+                    ChannelKind.OFFICER_CHAT,
+                }
+
+                for channel in existing_channels:
+                    desired_kind = desired_channel_map.get(channel.channel_id)
+                    if desired_kind is not None:
+                        channel.kind = desired_kind
+                        channel.name = channel_name_lookup.get(channel.channel_id)
+                        handled_channel_ids.add(channel.channel_id)
+                    elif channel.kind in replaceable_kinds:
+                        await db.delete(channel)
+
+                for cid, kind in desired_channel_map.items():
+                    if cid in handled_channel_ids:
+                        continue
                     db.add(
                         GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
-                            kind=ChannelKind.OFFICER_CHAT,
+                            kind=kind,
                             name=channel_name_lookup.get(cid),
                         )
                     )
