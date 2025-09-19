@@ -650,12 +650,8 @@ class ConfigWizard(discord.ui.View):
                     select(GuildChannel).where(GuildChannel.guild_id == guild.id)
                 )
                 existing_channels = existing_channels_res.scalars().all()
-                channel_webhook_lookup = {
-                    channel.channel_id: channel.webhook_url
-                    for channel in existing_channels
-                    if channel.webhook_url
-                }
-                handled_channel_ids: set[int] = set()
+                existing_channels_by_id: dict[int, GuildChannel] = {}
+                duplicate_channels: list[GuildChannel] = []
                 replaceable_kinds = {
                     ChannelKind.EVENT,
                     ChannelKind.FC_CHAT,
@@ -663,37 +659,53 @@ class ConfigWizard(discord.ui.View):
                 }
 
                 for channel in existing_channels:
+                    existing_entry = existing_channels_by_id.get(channel.channel_id)
+                    if existing_entry is None:
+                        existing_channels_by_id[channel.channel_id] = channel
+                        continue
+
                     desired_kind = desired_channel_map.get(channel.channel_id)
-                    if desired_kind is not None:
-                        channel.kind = desired_kind
-                        channel.name = channel_name_lookup.get(channel.channel_id)
-                        webhook_url = channel_webhook_lookup.get(channel.channel_id)
-                        if webhook_url is not None:
-                            channel.webhook_url = webhook_url
-                        handled_channel_ids.add(channel.channel_id)
-                    elif channel.kind in replaceable_kinds:
-                        await db.delete(channel)
+                    keep = existing_entry
+                    drop = channel
+
+                    if keep.webhook_url is None and channel.webhook_url:
+                        keep, drop = channel, existing_entry
+
+                    if (
+                        desired_kind is not None
+                        and keep.kind != desired_kind
+                        and channel.kind == desired_kind
+                    ):
+                        keep, drop = channel, keep
+
+                    if drop.webhook_url and not keep.webhook_url:
+                        keep.webhook_url = drop.webhook_url
+
+                    duplicate_channels.append(drop)
+                    existing_channels_by_id[channel.channel_id] = keep
+
+                for channel in duplicate_channels:
+                    await db.delete(channel)
 
                 for cid, kind in desired_channel_map.items():
-                    if cid in handled_channel_ids:
-                        continue
-                    existing_channel = await db.scalar(
-                        select(GuildChannel).where(
-                            GuildChannel.guild_id == guild.id,
-                            GuildChannel.channel_id == cid,
-                        )
-                    )
+                    existing_channel = existing_channels_by_id.get(cid)
                     if existing_channel is None:
                         existing_channel = GuildChannel(
                             guild_id=guild.id,
                             channel_id=cid,
+                            kind=kind,
                         )
+                        existing_channels_by_id[cid] = existing_channel
                         db.add(existing_channel)
                     existing_channel.kind = kind
                     existing_channel.name = channel_name_lookup.get(cid)
-                    webhook_url = channel_webhook_lookup.get(cid)
-                    if webhook_url is not None:
-                        existing_channel.webhook_url = webhook_url
+
+                for channel in list(existing_channels_by_id.values()):
+                    if (
+                        channel.channel_id not in desired_channel_map
+                        and channel.kind in replaceable_kinds
+                    ):
+                        await db.delete(channel)
                 await db.commit()
         except Exception as exc:
             logging.exception("Failed to save settings")
