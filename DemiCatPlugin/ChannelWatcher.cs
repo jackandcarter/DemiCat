@@ -104,9 +104,11 @@ public class ChannelWatcher : IDisposable
                     }
                     if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden)
                     {
-                        PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
-                        PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
-                        _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
+                        if (_tokenManager.IsReady())
+                        {
+                            PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
+                            _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
+                        }
                     }
                     await DelayWithBackoff(baseDelay, token);
                     _retryAttempt = 0;
@@ -163,7 +165,10 @@ public class ChannelWatcher : IDisposable
 
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
-                    PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
+                    if (_tokenManager.IsReady())
+                    {
+                        _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
+                    }
                     retryStatusCode = (int)WebSocketCloseStatus.PolicyViolation;
                     retryStatusDetail = WebSocketCloseStatus.PolicyViolation.ToString();
                     hadTransportError = true;
@@ -191,7 +196,10 @@ public class ChannelWatcher : IDisposable
                 hadTransportError = true;
                 if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
                 {
-                    PluginServices.Instance?.ToastGui.ShowError("Channel watcher auth failed");
+                    if (_tokenManager.IsReady())
+                    {
+                        _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
+                    }
                 }
                 retryStatusCode = (int)ex.WebSocketErrorCode;
                 retryStatusDetail = ex.WebSocketErrorCode.ToString();

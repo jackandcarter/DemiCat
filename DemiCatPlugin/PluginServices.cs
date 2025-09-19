@@ -34,6 +34,9 @@ internal class PluginServices
     [PluginService]
     internal IToastGui ToastGui { get; private set; } = null!;
 
+    [PluginService]
+    internal IChatGui ChatGui { get; private set; } = null!;
+
     public PluginServices()
     {
         Instance = this;

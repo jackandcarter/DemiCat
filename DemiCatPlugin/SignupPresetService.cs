@@ -50,7 +50,10 @@ internal static class SignupPresetService
                 PluginServices.Instance!.Log.Warning($"Failed to refresh signup presets. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
                 if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    PluginServices.Instance?.ToastGui.ShowError("Signup presets auth failed");
+                    if (TokenManager.Instance?.IsReady() == true)
+                    {
+                        TokenManager.Instance.Clear("Invalid API key");
+                    }
                 }
             }
         }
@@ -80,7 +83,10 @@ internal static class SignupPresetService
                 PluginServices.Instance!.Log.Warning($"Failed to create signup preset. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
                 if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    PluginServices.Instance?.ToastGui.ShowError("Signup presets auth failed");
+                    if (TokenManager.Instance?.IsReady() == true)
+                    {
+                        TokenManager.Instance.Clear("Invalid API key");
+                    }
                 }
             }
         }
@@ -109,7 +115,10 @@ internal static class SignupPresetService
                 PluginServices.Instance!.Log.Warning($"Failed to delete signup preset. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
                 if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    PluginServices.Instance?.ToastGui.ShowError("Signup presets auth failed");
+                    if (TokenManager.Instance?.IsReady() == true)
+                    {
+                        TokenManager.Instance.Clear("Invalid API key");
+                    }
                 }
             }
         }
