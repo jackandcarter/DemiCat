@@ -41,8 +41,8 @@ class DummyRole:
 
 
 class DummyGuild:
-    def __init__(self) -> None:
-        self.id = 1
+    def __init__(self, guild_id: int = 1) -> None:
+        self.id = guild_id
         self.name = "Test Guild"
         self.text_channels = [
             DummyChannel(1, "one"),
@@ -154,5 +154,73 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
                 (3, ChannelKind.OFFICER_CHAT): "three",
                 (5, ChannelKind.FC_CHAT): "five",
             }
+
+    asyncio.run(_run())
+
+
+def test_second_wizard_run_preserves_existing_webhook() -> None:
+    async def _run():
+        db_path = Path("test_rerun_wizard.db")
+        await init_db(f"sqlite+aiosqlite:///{db_path}")
+
+        guild = DummyGuild(2)
+        guild.text_channels = [
+            DummyChannel(101, "one"),
+            DummyChannel(202, "two"),
+            DummyChannel(303, "three"),
+            DummyChannel(404, "four"),
+            DummyChannel(505, "five"),
+        ]
+
+        view1 = ConfigWizard(guild, "title", "final", "done")
+        view1.event_channel_ids = [101]
+        view1.fc_chat_channel_ids = [202]
+        view1.officer_chat_channel_ids = [303]
+        view1.officer_role_ids = [84]
+        view1.mention_role_ids = [84]
+        await view1.on_finish(DummyInteraction())
+
+        webhook_url = "https://example.com/original"
+        guild_db_id = None
+        async with get_session() as db:
+            fc_row = await db.scalar(
+                select(GuildChannel).where(
+                    GuildChannel.channel_id == 202,
+                    GuildChannel.kind == ChannelKind.FC_CHAT,
+                )
+            )
+            assert fc_row is not None
+            fc_row.webhook_url = webhook_url
+            guild_db_id = fc_row.guild_id
+            await db.commit()
+
+        assert guild_db_id is not None
+
+        view2 = ConfigWizard(guild, "title", "final", "done")
+        view2.event_channel_ids = [101]
+        view2.fc_chat_channel_ids = [202]
+        view2.officer_chat_channel_ids = [303]
+        view2.officer_role_ids = [84]
+        view2.mention_role_ids = [84]
+        await view2.on_finish(DummyInteraction())
+
+        async with get_session() as db:
+            rows = (
+                await db.execute(
+                    select(GuildChannel)
+                    .where(GuildChannel.guild_id == guild_db_id)
+                    .order_by(GuildChannel.channel_id, GuildChannel.kind)
+                )
+            ).scalars().all()
+
+            fc_rows = [
+                row
+                for row in rows
+                if row.channel_id == 202 and row.kind == ChannelKind.FC_CHAT
+            ]
+            assert len(fc_rows) == 1
+            assert fc_rows[0].webhook_url == webhook_url
+            channel_ids = [row.channel_id for row in rows]
+            assert len(channel_ids) == len(set(channel_ids))
 
     asyncio.run(_run())
