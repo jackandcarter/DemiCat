@@ -83,6 +83,119 @@ public class ChatWindowWebSocketTests
     }
 
     [Fact]
+    public async Task OfficerChatWebSocket_UsesOfficerMetadata()
+    {
+        using var server = new MockWsServer(async (ws, _, srv) =>
+        {
+            while (ws.State == WebSocketState.Open)
+            {
+                var msg = await srv.Receive(ws);
+                if (msg.Contains("\"op\":\"sub\""))
+                {
+                    var ack = JsonSerializer.Serialize(new { op = "ack", channel = "42", guildId = "", kind = "OFFICER_CHAT" });
+                    await srv.Send(ws, ack);
+                    var batch = JsonSerializer.Serialize(new
+                    {
+                        op = "batch",
+                        channel = "42",
+                        guildId = "",
+                        kind = "OFFICER_CHAT",
+                        messages = new[]
+                        {
+                            new
+                            {
+                                cursor = 1,
+                                op = "mc",
+                                d = new
+                                {
+                                    id = "m1",
+                                    channelId = "42",
+                                    content = "hi",
+                                    author = new { id = "u1", name = "Tester" },
+                                    timestamp = DateTime.UtcNow
+                                }
+                            }
+                        }
+                    });
+                    await srv.Send(ws, batch);
+                }
+                else if (msg.Contains("\"op\":\"ack\""))
+                {
+                    var ack = JsonSerializer.Serialize(new { op = "ack", channel = "42", guildId = "", kind = "OFFICER_CHAT" });
+                    await srv.Send(ws, ack);
+                    var live = JsonSerializer.Serialize(new
+                    {
+                        op = "batch",
+                        channel = "42",
+                        guildId = "",
+                        kind = "OFFICER_CHAT",
+                        messages = new[]
+                        {
+                            new
+                            {
+                                cursor = 2,
+                                op = "mc",
+                                d = new
+                                {
+                                    id = "m2",
+                                    channelId = "42",
+                                    content = "live",
+                                    author = new { id = "u1", name = "Tester" },
+                                    timestamp = DateTime.UtcNow
+                                }
+                            }
+                        }
+                    });
+                    await srv.Send(ws, live);
+                }
+            }
+        });
+
+        _ = SetupServices();
+        var config = new Config
+        {
+            ApiBaseUrl = server.HttpBase,
+            Officer = true,
+            Roles = new List<string> { "officer" },
+            OfficerChannelId = "42"
+        };
+        var selection = new ChannelSelectionService(config);
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
+
+        var ackField = typeof(ChatBridge).GetField("_ackFrameCount", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var messageCount = 0;
+        bridge.MessageReceived += _ => Interlocked.Increment(ref messageCount);
+
+        bridge.Start();
+        bridge.Subscribe("42", config.GuildId, ChannelKind.OfficerChat);
+
+        await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"sub\"")), TimeSpan.FromSeconds(5));
+        var subFrame = server.Received.First(m => m.Contains("\"op\":\"sub\""));
+        using (var doc = JsonDocument.Parse(subFrame))
+        {
+            var channels = doc.RootElement.GetProperty("channels");
+            Assert.True(channels.GetArrayLength() > 0);
+            var channel = channels[0];
+            Assert.Equal("officer_chat", channel.GetProperty("kind").GetString());
+        }
+
+        await WaitUntil(() => (int)ackField.GetValue(bridge)! > 0, TimeSpan.FromSeconds(5));
+        await WaitUntil(() => Volatile.Read(ref messageCount) > 0, TimeSpan.FromSeconds(5));
+
+        bridge.Ack("42", config.GuildId, ChannelKind.OfficerChat);
+
+        await WaitUntil(() => server.Received.Exists(m => m.Contains("\"op\":\"ack\"")), TimeSpan.FromSeconds(5));
+        await WaitUntil(() => (int)ackField.GetValue(bridge)! > 1, TimeSpan.FromSeconds(5));
+        await WaitUntil(() => Volatile.Read(ref messageCount) > 1, TimeSpan.FromSeconds(5));
+
+        bridge.Stop();
+
+        Assert.Equal(2, (int)ackField.GetValue(bridge)!);
+        Assert.Equal(2, Volatile.Read(ref messageCount));
+    }
+
+    [Fact]
     public async Task WebSocket_ReconnectPersistsCursor()
     {
         int firstSince = -1;

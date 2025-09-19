@@ -69,6 +69,28 @@ public class OfficerChatWindowTests
         Assert.Equal("/api/officer-messages", handler.Requests[0].AbsolutePath);
     }
 
+    [Fact]
+    public void BuildWebSocketUri_UsesChatEndpoint()
+    {
+        SetupServices();
+        var config = new Config
+        {
+            Officer = true,
+            Roles = new[] { "officer" },
+            ApiBaseUrl = "https://example.com/base",
+            OfficerChannelId = "42"
+        };
+        using var client = new HttpClient(new EmojiStubHandler());
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, client, tm);
+        var window = new OfficerChatWindow(config, client, null, tm, channelService);
+
+        var method = typeof(OfficerChatWindow).GetMethod("BuildWebSocketUri", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var uri = (Uri)method.Invoke(window, null)!;
+
+        Assert.Equal("wss://example.com/base/ws/chat", uri.ToString());
+    }
+
     private static List<DiscordMessageDto> GetMessages(ChatWindow window)
     {
         var field = typeof(ChatWindow).GetField("_messages", BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -132,6 +154,18 @@ public class OfficerChatWindowTests
                 Content = new StringContent(json, Encoding.UTF8, "application/json")
             };
             _responses.Enqueue(msg);
+        }
+    }
+
+    private class EmojiStubHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("[]", Encoding.UTF8, "application/json")
+            };
+            return Task.FromResult(response);
         }
     }
 

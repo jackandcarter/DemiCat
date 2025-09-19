@@ -50,6 +50,26 @@ public class OfficerChatWindow : ChatWindow
         };
     }
 
+#if TEST
+    internal OfficerChatWindow(
+        Config config,
+        HttpClient httpClient,
+        DiscordPresenceService? presence,
+        TokenManager tokenManager,
+        ChannelService channelService)
+        : this(
+            config,
+            httpClient,
+            presence,
+            tokenManager,
+            channelService,
+            new ChannelSelectionService(config),
+            null!,
+            new EmojiManager(httpClient, tokenManager, config))
+    {
+    }
+#endif
+
     public override void StartNetworking()
     {
         _bridge.Start();
@@ -338,17 +358,7 @@ public class OfficerChatWindow : ChatWindow
 
     protected override Uri BuildWebSocketUri()
     {
-        var baseUri = _config.ApiBaseUrl.TrimEnd('/') + "/ws/officer-messages";
-        var builder = new UriBuilder(baseUri);
-        if (builder.Scheme == "https")
-        {
-            builder.Scheme = "wss";
-        }
-        else if (builder.Scheme == "http")
-        {
-            builder.Scheme = "ws";
-        }
-        return builder.Uri;
+        return base.BuildWebSocketUri();
     }
 }
 
