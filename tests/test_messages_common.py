@@ -153,6 +153,94 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_save_message_resolves_channel_via_guild_lookup(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=2, discord_guild_id=2, name="Guild"))
+            db.add(User(id=2, discord_user_id=20, global_name="Bob"))
+            db.add(
+                Membership(
+                    guild_id=2,
+                    user_id=2,
+                    nickname="BobNick",
+                    avatar_url="http://example.com/bob.png",
+                )
+            )
+            db.add(GuildChannel(guild_id=2, channel_id=321, kind=ChannelKind.FC_CHAT))
+            await db.commit()
+            guild = await db.get(Guild, 2)
+            user = await db.get(User, 2)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=["chat"])
+
+            class DummyWebhook:
+                async def send(self, *args, **kwargs):
+                    return types.SimpleNamespace(id=555, attachments=[])
+
+            class DummyChannel:
+                def __init__(self) -> None:
+                    self.created: list[str] = []
+
+                async def create_webhook(self, name: str):
+                    self.created.append(name)
+                    return types.SimpleNamespace(url="https://example.com/webhook", send=DummyWebhook().send)
+
+            dummy_channel = DummyChannel()
+
+            class DummyGuild:
+                def __init__(self, channel):
+                    self._channel = channel
+
+                def get_channel(self, cid: int):
+                    return self._channel if cid == 321 else None
+
+                def get_thread(self, cid: int):
+                    return None
+
+            class DummyClient:
+                def __init__(self, guild_obj):
+                    self._guild = guild_obj
+                    self.guilds = [guild_obj]
+
+                def get_channel(self, cid: int):
+                    return None
+
+                def get_guild(self, gid: int):
+                    return self._guild if gid == 2 else None
+
+                async def fetch_channel(self, cid: int):
+                    raise AssertionError("fetch_channel should not be called")
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient(DummyGuild(dummy_channel)))
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            class DummyWebhookCls:
+                @staticmethod
+                def from_url(url: str, client=None):
+                    return DummyWebhook()
+
+            monkeypatch.setattr(mc.discord, "Webhook", DummyWebhookCls)
+
+            body = mc.PostBody(channel_id="321", content="hello guild")
+            result = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+
+            assert result["ok"] is True
+            assert dummy_channel.created == ["DemiCat Relay"]
+
+            stored = await db.execute(select(Message))
+            row = stored.scalar_one()
+            assert row.content == "hello guild"
+
+    asyncio.run(_run())
+
+
 def test_ws_handle_send_creates_webhook(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
