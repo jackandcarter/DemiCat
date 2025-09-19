@@ -8,6 +8,7 @@ import logging
 import asyncio
 
 import discord
+from discord import ClientException
 from fastapi import HTTPException, UploadFile
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import select
@@ -46,11 +47,66 @@ MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
 
+async def _resolve_discord_channel(
+    channel_id: int,
+    *,
+    guild_discord_id: int | None = None,
+) -> discord.abc.Messageable | discord.Thread | None:
+    """Attempt to resolve a Discord channel or thread by id."""
+
+    if not discord_client:
+        return None
+
+    channel = discord_client.get_channel(channel_id)
+    if channel is not None:
+        return channel
+
+    if guild_discord_id is not None:
+        guild_obj = discord_client.get_guild(guild_discord_id)
+        if guild_obj is not None:
+            channel = guild_obj.get_channel(channel_id)
+            if channel is not None:
+                return channel
+            thread = guild_obj.get_thread(channel_id)
+            if thread is not None:
+                return thread
+
+    try:
+        return await discord_client.fetch_channel(channel_id)
+    except discord.HTTPException as exc:  # pragma: no cover - network errors
+        logging.warning(
+            "fetch_channel(%s) failed: %s %s",
+            channel_id,
+            exc.status,
+            exc.text,
+        )
+    except ClientException as exc:  # pragma: no cover - defensive
+        logging.warning(
+            "fetch_channel(%s) failed: %s",
+            channel_id,
+            exc,
+        )
+    except Exception:  # pragma: no cover - network errors
+        logging.exception("fetch_channel(%s) unexpected error", channel_id)
+
+    # Scan other guilds as a last resort in case the mapping is stale.
+    for guild_obj in getattr(discord_client, "guilds", []):  # pragma: no cover - defensive
+        thread = getattr(guild_obj, "get_thread", lambda _: None)(channel_id)
+        if thread is not None:
+            return thread
+        channel = getattr(guild_obj, "get_channel", lambda _: None)(channel_id)
+        if channel is not None:
+            return channel
+
+    return None
+
+
 async def create_webhook_for_channel(
     *,
     channel: discord.abc.Messageable | None,
     channel_id: int,
     guild_id: int,
+    guild_discord_id: int | None = None,
     db: AsyncSession,
 ) -> tuple[discord.Webhook | None, str | None, list[str]]:
     """Create a webhook for the given channel and persist its URL.
@@ -61,12 +117,49 @@ async def create_webhook_for_channel(
     """
 
     errors: list[str] = []
-    if channel is None:
+    resolved_channel = channel
+    if resolved_channel is None and discord_client:
+        candidate: discord.abc.Messageable | discord.Thread | None
+        candidate = discord_client.get_channel(channel_id)
+        if candidate is None and guild_discord_id is not None:
+            guild_obj = discord_client.get_guild(guild_discord_id)
+            if guild_obj is not None:
+                candidate = guild_obj.get_channel(channel_id)
+                if candidate is None:
+                    candidate = guild_obj.get_thread(channel_id)
+        if candidate is None:
+            try:
+                candidate = await discord_client.fetch_channel(channel_id)
+            except discord.HTTPException as exc:  # pragma: no cover - network errors
+                logging.warning(
+                    "fetch_channel(%s) failed during webhook creation: %s %s",
+                    channel_id,
+                    exc.status,
+                    exc.text,
+                )
+            except ClientException as exc:  # pragma: no cover - defensive
+                logging.warning(
+                    "fetch_channel(%s) failed during webhook creation: %s",
+                    channel_id,
+                    exc,
+                )
+            except Exception:  # pragma: no cover - network errors
+                logging.exception(
+                    "fetch_channel(%s) unexpected error during webhook creation",
+                    channel_id,
+                )
+        if isinstance(candidate, discord.Thread):
+            candidate = getattr(candidate, "parent", None)
+        if candidate is not None and not isinstance(candidate, discord.abc.Messageable):
+            candidate = None
+        resolved_channel = candidate
+
+    if resolved_channel is None:
         errors.append("Webhook creation failed: channel not available")
         return None, None, errors
 
     try:
-        created = await channel.create_webhook(name="DemiCat Relay")
+        created = await resolved_channel.create_webhook(name="DemiCat Relay")
     except discord.Forbidden as exc:
         logging.warning(
             "Webhook creation forbidden",
@@ -218,6 +311,7 @@ async def _send_via_webhook(
     channel: discord.abc.Messageable | None,
     channel_id: int,
     guild_id: int,
+    guild_discord_id: int | None = None,
     content: str,
     username: str,
     avatar: str | None,
@@ -267,6 +361,7 @@ async def _send_via_webhook(
             channel=channel,
             channel_id=channel_id,
             guild_id=guild_id,
+            guild_discord_id=guild_discord_id,
             db=db,
         )
         errors.extend(creation_errors)
@@ -329,6 +424,7 @@ async def _send_via_webhook(
             channel=channel,
             channel_id=channel_id,
             guild_id=guild_id,
+            guild_discord_id=guild_discord_id,
             db=db,
         )
         errors.extend(retry_errors)
@@ -632,6 +728,7 @@ async def save_message(
     channel = None
     thread_obj: discord.Thread | None = None
     base_channel: discord.abc.Messageable | None = None
+    guild_discord_id = getattr(ctx.guild, "discord_guild_id", None)
     membership = await db.scalar(
         select(Membership).where(
             Membership.guild_id == ctx.guild.id,
@@ -642,22 +739,15 @@ async def save_message(
     avatar = membership.avatar_url if membership else None
     error_details: list[str] = []
     if discord_client:
-        channel = discord_client.get_channel(cid)
-        if channel is None:
-            try:
-                channel = await discord_client.fetch_channel(cid)
-            except TypeError as e:
-                logging.exception("fetch_channel(%s) type error: %s", cid, e)
-            except discord.HTTPException as e:
-                logging.exception(
-                    "fetch_channel(%s) failed: %s %s", cid, e.status, e.text
-                )
+        channel = await _resolve_discord_channel(
+            cid, guild_discord_id=guild_discord_id
+        )
     if channel is not None:
         logging.info(
             "Resolved channel %s as %s in guild %s",
             cid,
             channel.__class__.__name__,
-            getattr(getattr(channel, "guild", None), "id", "unknown"),
+            getattr(getattr(channel, "guild", None), "id", guild_discord_id or "unknown"),
         )
         if isinstance(channel, discord.Thread):
             thread_obj = channel
@@ -696,6 +786,7 @@ async def save_message(
         channel=base_channel,
         channel_id=getattr(base_channel, "id", cid),
         guild_id=ctx.guild.id,
+        guild_discord_id=guild_discord_id,
         content=body.content,
         username=username,
         avatar=avatar,
