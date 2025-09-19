@@ -650,6 +650,11 @@ class ConfigWizard(discord.ui.View):
                     select(GuildChannel).where(GuildChannel.guild_id == guild.id)
                 )
                 existing_channels = existing_channels_res.scalars().all()
+                channel_webhook_lookup = {
+                    channel.channel_id: channel.webhook_url
+                    for channel in existing_channels
+                    if channel.webhook_url
+                }
                 handled_channel_ids: set[int] = set()
                 replaceable_kinds = {
                     ChannelKind.EVENT,
@@ -662,6 +667,9 @@ class ConfigWizard(discord.ui.View):
                     if desired_kind is not None:
                         channel.kind = desired_kind
                         channel.name = channel_name_lookup.get(channel.channel_id)
+                        webhook_url = channel_webhook_lookup.get(channel.channel_id)
+                        if webhook_url is not None:
+                            channel.webhook_url = webhook_url
                         handled_channel_ids.add(channel.channel_id)
                     elif channel.kind in replaceable_kinds:
                         await db.delete(channel)
@@ -669,14 +677,23 @@ class ConfigWizard(discord.ui.View):
                 for cid, kind in desired_channel_map.items():
                     if cid in handled_channel_ids:
                         continue
-                    db.add(
-                        GuildChannel(
-                            guild_id=guild.id,
-                            channel_id=cid,
-                            kind=kind,
-                            name=channel_name_lookup.get(cid),
+                    existing_channel = await db.scalar(
+                        select(GuildChannel).where(
+                            GuildChannel.guild_id == guild.id,
+                            GuildChannel.channel_id == cid,
                         )
                     )
+                    if existing_channel is None:
+                        existing_channel = GuildChannel(
+                            guild_id=guild.id,
+                            channel_id=cid,
+                        )
+                        db.add(existing_channel)
+                    existing_channel.kind = kind
+                    existing_channel.name = channel_name_lookup.get(cid)
+                    webhook_url = channel_webhook_lookup.get(cid)
+                    if webhook_url is not None:
+                        existing_channel.webhook_url = webhook_url
                 await db.commit()
         except Exception as exc:
             logging.exception("Failed to save settings")
