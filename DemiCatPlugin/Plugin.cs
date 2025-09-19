@@ -257,13 +257,33 @@ public class Plugin : IDalamudPlugin
             return;
 
         var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
-        var response = await pingService.PingAsync(CancellationToken.None);
-        if (response?.IsSuccessStatusCode != true)
+        HttpResponseMessage? response = null;
+        try
         {
-            var reason = response?.StatusCode == HttpStatusCode.Unauthorized || response?.StatusCode == HttpStatusCode.Forbidden
-                ? "Invalid API key"
-                : "Network error";
-            _tokenManager.Clear(reason);
+            response = await pingService.PingAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Warning(ex, "Failed to ping DemiCat backend while starting watchers");
+        }
+
+        if (response == null)
+        {
+            HandleWatcherStartupFailure(string.Empty);
+            return;
+        }
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            _services.Log.Warning($"Ping returned {(int)response.StatusCode} {response.StatusCode}; clearing token");
+            _tokenManager.Clear("Invalid API key");
+            return;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var statusText = $" ({(int)response.StatusCode} {response.StatusCode})";
+            HandleWatcherStartupFailure(statusText);
             return;
         }
 
@@ -309,6 +329,14 @@ public class Plugin : IDalamudPlugin
         }
 
         _services.Log.Info("Watchers started");
+    }
+
+    private void HandleWatcherStartupFailure(string statusDetails)
+    {
+        var suffix = string.IsNullOrEmpty(statusDetails) ? string.Empty : statusDetails;
+        var message = $"Unable to reach the DemiCat backend{suffix}. Watchers were not started.";
+        _services.Log.Warning(message);
+        PluginServices.Instance?.ToastGui.ShowError(message);
     }
 
     private void StopWatchers()
