@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ from demibot.db.session import get_session, init_db
 from demibot.http.api import create_app
 from demibot.http.deps import RequestContext, api_key_auth, get_db
 import demibot.http.routes._messages_common as mc
+import demibot.http.routes.officer_messages as officer_routes
 
 
 @pytest.mark.asyncio
@@ -44,6 +46,9 @@ async def test_officer_unresolved_returns_409(monkeypatch):
 
     class DummyClient:
         def get_channel(self, channel_id):
+            return None
+
+        def get_guild(self, guild_id):
             return None
 
         async def fetch_channel(self, channel_id):
@@ -87,3 +92,65 @@ async def test_officer_unresolved_returns_409(monkeypatch):
             "channelId": "555",
         }
     }
+
+
+@pytest.mark.asyncio
+async def test_officer_multipart_uses_officer_endpoint(monkeypatch):
+    app = create_app()
+
+    captured: dict[str, object] = {}
+
+    async def fake_save_message(body, ctx, db, *, channel_kind, files=None):  # type: ignore[override]
+        captured["body"] = body
+        captured["ctx"] = ctx
+        captured["channel_kind"] = channel_kind
+        captured["files"] = files
+        return {"ok": True, "id": "77"}
+
+    monkeypatch.setattr(officer_routes, "save_message", fake_save_message)
+
+    user_ctx = SimpleNamespace(id=1)
+    guild_ctx = SimpleNamespace(id=2)
+
+    async def override_auth():
+        return RequestContext(user=user_ctx, guild=guild_ctx, key=None, roles=["officer"])
+
+    async def override_db():
+        yield None
+
+    app.dependency_overrides[api_key_auth] = override_auth
+    app.dependency_overrides[get_db] = override_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        files = [("files", ("hi.txt", b"hello", "text/plain"))]
+        data = {
+            "content": "Hello",
+            "useCharacterName": "true",
+            "message_reference": json.dumps({"messageId": "5", "channelId": "555"}),
+        }
+        resp = await client.post(
+            "/api/channels/555/officer-messages",
+            data=data,
+            files=files,
+        )
+
+    app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True, "id": "77"}
+
+    body = captured["body"]
+    assert isinstance(body, mc.PostBody)
+    assert body.channel_id == "555"
+    assert body.use_character_name is True
+    assert body.message_reference is not None
+    assert body.message_reference.channel_id == "555"
+    assert body.message_reference.message_id == "5"
+
+    assert captured["channel_kind"] == ChannelKind.OFFICER_CHAT
+
+    files = captured["files"]
+    assert files is not None and len(files) == 1
+    upload = files[0]
+    assert getattr(upload, "filename", None) == "hi.txt"
