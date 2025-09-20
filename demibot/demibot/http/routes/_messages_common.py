@@ -160,14 +160,13 @@ async def create_webhook_for_channel(
 
     try:
         created = await resolved_channel.create_webhook(name="DemiCat Relay")
-    except discord.Forbidden as exc:
+    except discord.Forbidden:
         logging.warning(
             "Webhook creation forbidden",
             extra={"guild_id": guild_id, "channel_id": channel_id},
         )
-        raise HTTPException(
-            status_code=403, detail="Manage Webhooks required"
-        ) from exc
+        errors.append("Webhook creation failed: Manage Webhooks required")
+        return None, None, errors
     except Exception as exc:  # pragma: no cover - network errors
         if isinstance(exc, discord.HTTPException):
             logging.exception(
@@ -444,14 +443,13 @@ async def _send_via_webhook(
                 view=view,
                 thread=thread,
             )
-        except discord.Forbidden as exc2:
+        except discord.Forbidden:
             logging.warning(
                 "Webhook creation forbidden during retry",
                 extra={"guild_id": guild_id, "channel_id": channel_id},
             )
-            raise HTTPException(
-                status_code=403, detail="Manage Webhooks required"
-            ) from exc2
+            errors.append("Webhook retry failed: Manage Webhooks required")
+            return None, None, errors, webhook_url
         except Exception as exc2:  # pragma: no cover - network errors
             if isinstance(exc2, discord.HTTPException):
                 logging.exception(
