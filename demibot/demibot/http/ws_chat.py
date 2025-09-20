@@ -420,15 +420,6 @@ class ChatConnectionManager:
         if not nonce:
             return False
 
-        cache = self._channel_nonce_cache.setdefault(channel, {})
-        if nonce in cache:
-            logger.info(
-                "chat.ws drop message channel=%s reason=nonce_duplicate nonce=%s",
-                channel,
-                nonce,
-            )
-            return True
-
         message_id: str | None = None
         if isinstance(data, Mapping):
             for key in ("id", "messageId", "discordMessageId"):
@@ -437,9 +428,36 @@ class ChatConnectionManager:
                     message_id = str(value)
                     break
 
-        cache[nonce] = message_id or ""
+        op: str | None = None
+        op_val = payload.get("op") if isinstance(payload, Mapping) else None
+        if isinstance(op_val, str) and op_val:
+            op = op_val
+        elif isinstance(data, Mapping):
+            nested_op = data.get("op")
+            if isinstance(nested_op, str) and nested_op:
+                op = nested_op
+
+        key_components: list[str] = [nonce]
+        if message_id:
+            key_components.append(f"id:{message_id}")
+        if op:
+            key_components.append(f"op:{op}")
+        cache_key = "|".join(key_components)
+
+        cache = self._channel_nonce_cache.setdefault(channel, {})
+        if cache_key in cache:
+            logger.info(
+                "chat.ws drop message channel=%s reason=nonce_duplicate nonce=%s op=%s message_id=%s",
+                channel,
+                nonce,
+                op,
+                message_id,
+            )
+            return True
+
+        cache[cache_key] = message_id or ""
         order = self._channel_nonce_order.setdefault(channel, deque())
-        order.append(nonce)
+        order.append(cache_key)
         while len(order) > NONCE_CACHE_LIMIT:
             oldest = order.popleft()
             cache.pop(oldest, None)
