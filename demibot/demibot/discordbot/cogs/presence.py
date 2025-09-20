@@ -19,21 +19,55 @@ class PresenceTracker(commands.Cog):
         self.bot = bot
 
     def _status(self, member: discord.Member) -> str:
-        status = str(member.status)
-        if status in ("offline", "invisible"):
+        status = str(member.status).lower()
+        if status in {"offline", "invisible"}:
             return "offline"
+        if status == "idle":
+            return "idle"
+        if status in {"dnd", "do_not_disturb"}:
+            return "dnd"
         return "online"
+
+    def _status_text(self, member: discord.Member) -> str | None:
+        activities = getattr(member, "activities", None)
+        if not activities:
+            return None
+        for activity in activities:
+            if isinstance(activity, discord.CustomActivity):
+                emoji = getattr(activity, "emoji", None)
+                parts: list[str] = []
+                if emoji is not None:
+                    name = getattr(emoji, "name", None)
+                    if name:
+                        parts.append(str(name))
+                text = getattr(activity, "name", None)
+                if text:
+                    parts.append(text)
+                state = getattr(activity, "state", None)
+                if state and state != text:
+                    parts.append(state)
+                if parts:
+                    return " ".join(p for p in parts if p)
+                return None
+        return None
 
     async def _update(self, member: discord.Member) -> dict[str, str | None]:
         role_ids = [r.id for r in member.roles if r.name != "@everyone"]
+        role_details = [
+            {"id": str(r.id), "name": r.name}
+            for r in member.roles
+            if r.name != "@everyone"
+        ]
         display_name = member.display_name or member.name
         avatar_url = str(member.display_avatar.url)
+        status_text = self._status_text(member)
         data = StorePresence(
             id=member.id,
             name=display_name,
             status=self._status(member),
             avatar_url=avatar_url,
             roles=role_ids,
+            status_text=status_text,
         )
         set_presence(member.guild.id, data)
         async with get_session() as db:
@@ -100,10 +134,12 @@ class PresenceTracker(commands.Cog):
                         guild_id=guild_row.id,
                         user_id=member.id,
                         status=data.status,
+                        status_text=data.status_text,
                     )
                 )
             else:
                 row.status = data.status
+                row.status_text = data.status_text
                 row.updated_at = datetime.utcnow()
             await db.commit()
         return {
@@ -112,6 +148,8 @@ class PresenceTracker(commands.Cog):
             "status": data.status,
             "avatar_url": data.avatar_url,
             "roles": [str(r) for r in role_ids],
+            "status_text": data.status_text,
+            "role_details": role_details,
         }
 
     @commands.Cog.listener()

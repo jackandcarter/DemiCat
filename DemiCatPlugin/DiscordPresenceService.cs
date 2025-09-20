@@ -371,6 +371,10 @@ public class DiscordPresenceService : IDisposable
                         dto.AvatarTexture = existing.AvatarTexture;
                         if (dto.Roles.Count == 0)
                             dto.Roles = existing.Roles;
+                        if (dto.RoleDetails.Count == 0 && existing.RoleDetails.Count > 0)
+                            dto.RoleDetails = existing.RoleDetails;
+                        if (string.IsNullOrWhiteSpace(dto.StatusText) && !string.IsNullOrWhiteSpace(existing.StatusText))
+                            dto.StatusText = existing.StatusText;
                         _presences[idx] = dto;
                     }
                     else

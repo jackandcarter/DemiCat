@@ -332,6 +332,7 @@ class Presence(Base):
     guild_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     status: Mapped[str] = mapped_column(String(16))
+    status_text: Mapped[Optional[str]] = mapped_column(String(128), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
