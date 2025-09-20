@@ -5,10 +5,18 @@ from datetime import datetime
 
 import discord
 from discord.ext import commands
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.exc import IntegrityError
 
-from ...db.models import Guild, Membership, Presence as DbPresence, User
+from ...db.models import (
+    Guild,
+    GuildConfig,
+    Membership,
+    MembershipRole,
+    Presence as DbPresence,
+    Role,
+    User,
+)
 from ...db.session import get_session
 from ...http.ws import manager
 from ..presence_store import Presence as StorePresence, set_presence
@@ -52,11 +60,11 @@ class PresenceTracker(commands.Cog):
         return None
 
     async def _update(self, member: discord.Member) -> dict[str, str | None]:
-        role_ids = [r.id for r in member.roles if r.name != "@everyone"]
+        member_roles = [r for r in member.roles if r.name != "@everyone"]
+        role_ids = [r.id for r in member_roles]
         role_details = [
             {"id": str(r.id), "name": r.name}
-            for r in member.roles
-            if r.name != "@everyone"
+            for r in member_roles
         ]
         display_name = member.display_name or member.name
         avatar_url = str(member.display_avatar.url)
@@ -121,6 +129,53 @@ class PresenceTracker(commands.Cog):
                 db.add(mem)
             mem.nickname = display_name
             mem.avatar_url = avatar_url
+
+            cfg_res = await db.execute(
+                select(GuildConfig).where(GuildConfig.guild_id == guild_row.id)
+            )
+            cfg = cfg_res.scalar_one_or_none()
+            officer_role_ids = (
+                {int(rid) for rid in cfg.officer_role_ids.split(",") if rid}
+                if cfg and cfg.officer_role_ids
+                else set()
+            )
+            chat_role_ids = (
+                {int(rid) for rid in cfg.mention_role_ids.split(",") if rid}
+                if cfg and cfg.mention_role_ids
+                else set()
+            )
+
+            role_res = await db.execute(select(Role).where(Role.guild_id == guild_row.id))
+            role_map = {role.discord_role_id: role for role in role_res.scalars()}
+
+            for role in member_roles:
+                is_officer = role.id in officer_role_ids
+                is_chat = role.id in chat_role_ids
+                mapped = role_map.get(role.id)
+                if mapped is None:
+                    mapped = Role(
+                        guild_id=guild_row.id,
+                        discord_role_id=role.id,
+                        name=role.name,
+                        is_officer=is_officer,
+                        is_chat=is_chat,
+                    )
+                    db.add(mapped)
+                    await db.flush()
+                    role_map[role.id] = mapped
+                else:
+                    mapped.name = role.name
+                    mapped.is_officer = is_officer
+                    mapped.is_chat = is_chat
+
+            await db.execute(
+                delete(MembershipRole).where(MembershipRole.membership_id == mem.id)
+            )
+
+            for role in member_roles:
+                mapped = role_map.get(role.id)
+                if mapped is not None:
+                    db.add(MembershipRole(membership_id=mem.id, role_id=mapped.id))
 
             stmt = select(DbPresence).where(
                 DbPresence.guild_id == guild_row.id,
