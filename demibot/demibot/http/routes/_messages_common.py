@@ -6,6 +6,7 @@ import io
 import types
 import logging
 import asyncio
+from typing import Sequence
 
 import discord
 from discord import ClientException
@@ -26,6 +27,7 @@ from ..schemas import (
     MessageReferenceDto,
 )
 from ..discord_helpers import serialize_message
+from ...bridge import BridgeUpload, build_bridge_message
 
 from ..ws import manager
 from ..chat_events import emit_event
@@ -45,6 +47,26 @@ _channel_webhooks: dict[int, str] = {}
 
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
+
+
+def _make_discord_files(
+    files: Sequence[discord.File | BridgeUpload] | None,
+) -> list[discord.File] | None:
+    """Materialise the provided file payloads into Discord file objects."""
+
+    if not files:
+        return None
+    prepared: list[discord.File] = []
+    for item in files:
+        if isinstance(item, BridgeUpload):
+            prepared.append(item.to_discord_file())
+            continue
+        try:
+            item.reset()
+        except Exception:
+            pass
+        prepared.append(item)
+    return prepared
 
 
 def _channel_supports_webhooks(channel: object | None) -> bool:
@@ -352,9 +374,9 @@ async def _send_via_webhook(
     content: str,
     username: str,
     avatar: str | None,
-    files: list[discord.File] | None,
+    files: Sequence[discord.File | BridgeUpload] | None,
     channel_kind: ChannelKind | None = None,
-    embed: discord.Embed | None = None,
+    embeds: Sequence[discord.Embed] | None = None,
     view: discord.ui.View | None = None,
     db: AsyncSession,
     thread: discord.abc.Snowflake | None = None,
@@ -365,7 +387,7 @@ async def _send_via_webhook(
     provided, the message will be sent to that thread using the parent
     channel's webhook.
 
-    ``embed`` and ``view`` are optional and allow rich messages to be sent via
+    ``embeds`` and ``view`` are optional and allow rich messages to be sent via
     the webhook.  Returns the Discord message id, attachments, any error
     messages, and the webhook URL used when successful.
     """
@@ -414,10 +436,10 @@ async def _send_via_webhook(
             content,
             username=username,
             avatar_url=avatar,
-            files=files,
+            files=_make_discord_files(files),
             wait=True,
             allowed_mentions=ALLOWED_MENTIONS,
-            embeds=[embed] if embed else None,
+            embeds=list(embeds) if embeds else None,
             view=view,
             thread=thread,
         )
@@ -433,10 +455,10 @@ async def _send_via_webhook(
                     content,
                     username=username,
                     avatar_url=avatar,
-                    files=files,
+                    files=_make_discord_files(files),
                     wait=True,
                     allowed_mentions=ALLOWED_MENTIONS,
-                    embeds=[embed] if embed else None,
+                    embeds=list(embeds) if embeds else None,
                     view=view,
                     thread=thread,
                 )
@@ -474,10 +496,10 @@ async def _send_via_webhook(
                 content,
                 username=username,
                 avatar_url=avatar,
-                files=files,
+                files=_make_discord_files(files),
                 wait=True,
                 allowed_mentions=ALLOWED_MENTIONS,
-                embeds=[embed] if embed else None,
+                embeds=list(embeds) if embeds else None,
                 view=view,
                 thread=thread,
             )
@@ -755,10 +777,6 @@ async def save_message(
     is_officer = gc_kind == ChannelKind.OFFICER_CHAT
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
-    if len(body.content) > 2000:
-        raise HTTPException(
-            status_code=400, detail="Message too long (max 2000 characters).",
-        )
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
     channel = None
@@ -807,16 +825,24 @@ async def save_message(
             forum_cls = getattr(discord, "ForumChannel", None)
             if forum_cls is not None and isinstance(base_channel, forum_cls):
                 raise HTTPException(status_code=400, detail="unsupported channel type")
-    discord_files = None
+    uploads_data: list[tuple[str, bytes, str | None]] = []
     if files:
         if len(files) > MAX_ATTACHMENTS:
             raise HTTPException(status_code=400, detail="Too many attachments")
-        discord_files = []
         for f in files:
             data = await f.read()
             if len(data) > MAX_ATTACHMENT_SIZE:
                 raise HTTPException(status_code=400, detail=f"{f.filename} too large")
-            discord_files.append(discord.File(io.BytesIO(data), filename=f.filename))
+            uploads_data.append((f.filename or "file", data, getattr(f, "content_type", None)))
+
+    bridge_content, embeds, uploads, nonce = build_bridge_message(
+        content=body.content,
+        user=ctx.user,
+        membership=membership,
+        channel_kind=gc_kind or channel_kind,
+        use_character_name=bool(body.use_character_name),
+        attachments=uploads_data,
+    )
 
     username_base = nickname or (
         ctx.user.global_name or ("Officer" if is_officer else "Player")
@@ -831,11 +857,12 @@ async def save_message(
         channel_id=getattr(base_channel, "id", cid),
         guild_id=ctx.guild.id,
         guild_discord_id=guild_discord_id,
-        content=body.content,
+        content=bridge_content,
         username=username,
         avatar=avatar,
-        files=discord_files,
+        files=uploads,
         channel_kind=channel_kind,
+        embeds=embeds,
         db=db,
         thread=thread_obj,
     )
@@ -845,15 +872,12 @@ async def save_message(
         target_channel = thread_obj or base_channel
         log_extra = {"guild_id": ctx.guild.id, "channel_id": cid}
         if target_channel and isinstance(target_channel, discord.abc.Messageable):
-            for f in discord_files or []:
-                try:
-                    f.reset()
-                except Exception:
-                    pass
             try:
+                fallback_files = _make_discord_files(uploads)
                 sent = await target_channel.send(
-                    body.content,
-                    files=discord_files,
+                    bridge_content,
+                    files=fallback_files,
+                    embeds=list(embeds) if embeds else None,
                     allowed_mentions=ALLOWED_MENTIONS,
                 )
                 discord_msg_id = getattr(sent, "id", None)
@@ -934,15 +958,14 @@ async def save_message(
         mapping.discord_message_id = discord_msg_id
         mapping.webhook_url = webhook_url
     else:
-        db.add(
-            PostedMessage(
-                guild_id=ctx.guild.id,
-                channel_id=cid,
-                local_message_id=discord_msg_id,
-                discord_message_id=discord_msg_id,
-                webhook_url=webhook_url,
-            )
+        mapping = PostedMessage(
+            guild_id=ctx.guild.id,
+            channel_id=cid,
+            local_message_id=discord_msg_id,
+            discord_message_id=discord_msg_id,
+            webhook_url=webhook_url,
         )
+        db.add(mapping)
     display_name_base = nickname or (
         ctx.user.global_name or ("Officer" if is_officer else "Player")
     )
@@ -965,7 +988,7 @@ async def save_message(
             name=display_name,
             display_avatar=None,
         ),
-        content=body.content,
+        content=bridge_content,
         attachments=[
             types.SimpleNamespace(
                 url=a.url, filename=a.filename, content_type=a.contentType
@@ -973,7 +996,7 @@ async def save_message(
             for a in (attachments or [])
         ],
         mentions=[],
-        embeds=[],
+        embeds=list(embeds),
         reference=types.SimpleNamespace(
             message_id=int(body.message_reference.message_id),
             channel_id=int(body.message_reference.channel_id),
@@ -990,8 +1013,11 @@ async def save_message(
     dto.author = author
     dto.author_name = author.name
     dto.author_avatar_url = author.avatar_url
-    dto.use_character_name = body.use_character_name
+    dto.use_character_name = bool(body.use_character_name)
     fragments["author_json"] = author.model_dump_json(by_alias=True, exclude_none=True)
+    if mapping:
+        mapping.embed_json = fragments["embeds_json"]
+        mapping.nonce = nonce
 
     msg = Message(
         discord_message_id=discord_msg_id,
@@ -1002,7 +1028,7 @@ async def save_message(
         author_avatar_url=author.avatar_url,
         content_raw=body.content,
         content_display=body.content,
-        content=body.content,
+        content=bridge_content,
         author_json=fragments["author_json"],
         attachments_json=fragments["attachments_json"],
         mentions_json=fragments["mentions_json"],
@@ -1041,10 +1067,6 @@ async def edit_message(
 ) -> dict:
     if is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403)
-    if len(content) > 2000:
-        raise HTTPException(
-            status_code=400, detail="Message too long (max 2000 characters)."
-        )
     msg = await db.get(Message, int(message_id))
     try:
         cid = int(channel_id)
@@ -1054,9 +1076,22 @@ async def edit_message(
         raise HTTPException(status_code=404)
     if msg.author_id != ctx.user.id:
         raise HTTPException(status_code=403)
-    msg.content_raw = msg.content_display = msg.content = content
-    msg.edited_timestamp = datetime.utcnow()
-    await db.commit()
+    membership = await db.scalar(
+        select(Membership).where(
+            Membership.guild_id == ctx.guild.id,
+            Membership.user_id == ctx.user.id,
+        )
+    )
+    author_model: MessageAuthor | None = None
+    if msg.author_json:
+        try:
+            author_model = MessageAuthor(**json.loads(msg.author_json))
+        except Exception:
+            author_model = None
+    use_character_name_flag = bool(getattr(author_model, "use_character_name", False))
+    channel_kind_value = (
+        ChannelKind.OFFICER_CHAT if is_officer else ChannelKind.FC_CHAT
+    )
 
     mapping = await db.scalar(
         select(PostedMessage).where(
@@ -1064,6 +1099,50 @@ async def edit_message(
             PostedMessage.discord_message_id == int(message_id),
         )
     )
+    existing_nonce = getattr(mapping, "nonce", None) if mapping else None
+
+    bridge_content, embeds, _, nonce = build_bridge_message(
+        content=content,
+        user=ctx.user,
+        membership=membership,
+        channel_kind=channel_kind_value,
+        use_character_name=use_character_name_flag,
+        attachments=None,
+        nonce=existing_nonce,
+    )
+
+    now = datetime.utcnow()
+    msg.content_raw = content
+    msg.content_display = content
+    msg.content = bridge_content
+    msg.edited_timestamp = now
+
+    dummy_embed = types.SimpleNamespace(
+        id=int(message_id),
+        channel=types.SimpleNamespace(id=cid),
+        author=types.SimpleNamespace(
+            id=ctx.user.id,
+            display_name=msg.author_name,
+            name=msg.author_name,
+            display_avatar=None,
+        ),
+        content=bridge_content,
+        attachments=[],
+        mentions=[],
+        embeds=list(embeds),
+        reference=None,
+        components=[],
+        reactions=[],
+        created_at=msg.created_at,
+        edited_at=now,
+    )
+
+    _, embed_fragments = serialize_message(dummy_embed)
+    msg.embeds_json = embed_fragments["embeds_json"]
+    if mapping:
+        mapping.embed_json = embed_fragments["embeds_json"]
+        mapping.nonce = nonce
+    await db.commit()
 
     if discord_client:
         webhook_done = False
@@ -1076,7 +1155,8 @@ async def edit_message(
                 )
                 await webhook.edit_message(
                     int(message_id),
-                    content=content,
+                    content=bridge_content,
+                    embeds=list(embeds) if embeds else None,
                     allowed_mentions=ALLOWED_MENTIONS,
                 )
                 webhook_done = True
@@ -1092,7 +1172,10 @@ async def edit_message(
             if channel and isinstance(channel, discord.abc.Messageable):
                 try:
                     discord_msg = await channel.fetch_message(int(message_id))
-                    await discord_msg.edit(content=content)
+                    await discord_msg.edit(
+                        content=bridge_content,
+                        embeds=list(embeds) if embeds else None,
+                    )
                 except Exception:
                     pass
     attachments = None
@@ -1155,7 +1238,7 @@ async def edit_message(
         author_name=msg.author_name,
         author_avatar_url=msg.author_avatar_url,
         timestamp=msg.created_at,
-        content=content,
+        content=bridge_content,
         attachments=attachments,
         mentions=mentions,
         author=author,

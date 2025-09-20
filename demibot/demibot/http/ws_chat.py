@@ -2,29 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import io
 import json
 import logging
 import random
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Deque, Dict, List, Set
+from typing import Deque, Dict, List, Mapping, Set
 from types import SimpleNamespace
 
 import discord
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from ..db.models import GuildChannel, Guild, ChannelKind
+from ..db.models import GuildChannel, Guild, ChannelKind, Membership
 from ..db.session import get_session
 from .chat_events import emit_event
 from .deps import RequestContext, api_key_auth
 from .discord_client import discord_client
 from .discord_helpers import serialize_message
-from .schemas import EmbedDto, EmbedButtonDto
-from .validation import validate_embed_payload
 from .routes._messages_common import create_webhook_for_channel, _channel_webhooks
+from ..bridge import (
+    BridgeUpload,
+    build_bridge_message,
+    extract_bridge_nonce_from_payload,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +47,8 @@ MAX_SEND_ATTEMPTS = 5
 HISTORY_LIMIT = 200
 HISTORY_CHANNEL_CAP = 500
 HISTORY_TTL_SECONDS = 10 * 60  # 10 minutes
+
+NONCE_CACHE_LIMIT = 256
 
 
 def _ws_request(ws: WebSocket):
@@ -85,7 +89,9 @@ class PendingWebhookMessage:
     content: str
     username: str
     avatar_url: str | None
-    attachments: List[tuple[str, bytes]]
+    uploads: List[BridgeUpload]
+    embeds: List[discord.Embed]
+    nonce: str
     payload: dict
     attempts: int = 0
 
@@ -100,6 +106,8 @@ class ChatConnectionManager:
         self._channel_history: Dict[str, Deque[dict]] = {}
         self._channel_last_touch: Dict[str, float] = {}
         self._channel_subscribers: Dict[str, int] = {}
+        self._channel_nonce_cache: Dict[str, Dict[str, str]] = {}
+        self._channel_nonce_order: Dict[str, Deque[str]] = {}
         self._webhook_queues: Dict[int, List[PendingWebhookMessage]] = {}
         self._webhook_tasks: Dict[int, asyncio.Task] = {}
         self._send_count = 0
@@ -190,6 +198,8 @@ class ChatConnectionManager:
         self._channel_meta.pop(channel, None)
         self._channel_cursors.pop(channel, None)
         self._channel_last_touch.pop(channel, None)
+        self._channel_nonce_cache.pop(channel, None)
+        self._channel_nonce_order.pop(channel, None)
 
     def _drop_channel_history(self, channel: str) -> None:
         self._channel_history.pop(channel, None)
@@ -393,7 +403,52 @@ class ChatConnectionManager:
             return
         info.cursors[channel] = cursor
 
+    def _should_drop_due_to_nonce(self, channel: str, payload: Mapping[str, object]) -> bool:
+        data = payload.get("d") if isinstance(payload.get("d"), Mapping) else None
+        if data is None:
+            data = payload if isinstance(payload, Mapping) else None
+        if data is None:
+            return False
+
+        nonce: str | None = None
+        raw_nonce = data.get("nonce") if isinstance(data, Mapping) else None
+        if isinstance(raw_nonce, str) and raw_nonce:
+            nonce = raw_nonce
+        elif isinstance(data, Mapping):
+            nonce = extract_bridge_nonce_from_payload(data)
+
+        if not nonce:
+            return False
+
+        cache = self._channel_nonce_cache.setdefault(channel, {})
+        if nonce in cache:
+            logger.info(
+                "chat.ws drop message channel=%s reason=nonce_duplicate nonce=%s",
+                channel,
+                nonce,
+            )
+            return True
+
+        message_id: str | None = None
+        if isinstance(data, Mapping):
+            for key in ("id", "messageId", "discordMessageId"):
+                value = data.get(key)
+                if value is not None:
+                    message_id = str(value)
+                    break
+
+        cache[nonce] = message_id or ""
+        order = self._channel_nonce_order.setdefault(channel, deque())
+        order.append(nonce)
+        while len(order) > NONCE_CACHE_LIMIT:
+            oldest = order.popleft()
+            cache.pop(oldest, None)
+
+        return False
+
     async def send(self, channel: str, payload: dict) -> None:
+        if self._should_drop_due_to_nonce(channel, payload):
+            return
         cursor = self._channel_cursors.get(channel, 0) + 1
         self._channel_cursors[channel] = cursor
         payload = {"cursor": cursor, **payload}
@@ -643,17 +698,14 @@ class ChatConnectionManager:
 
     async def _send_webhook(self, msg: PendingWebhookMessage) -> tuple[bool, float]:
         webhook = discord.Webhook.from_url(msg.webhook_url, client=discord_client)
-        files = [
-            discord.File(io.BytesIO(data), filename=name)
-            for name, data in msg.attachments
-        ]
+        files = [upload.to_discord_file() for upload in msg.uploads]
         start = time.perf_counter()
         channel_str = str(msg.channel_id)
         meta = await self._ensure_channel_meta(channel_str)
         guild_id = meta.guild_id_value() if meta is not None else None
         kind = meta.kind if meta is not None else None
         total_bytes = len(msg.content.encode("utf-8"))
-        total_bytes += sum(len(data) for _, data in msg.attachments)
+        total_bytes += sum(len(upload.data) for upload in msg.uploads)
         logger.info(
             "chat.http send guild=%s kind=%s channel=%s bytes=%s",
             guild_id,
@@ -667,6 +719,7 @@ class ChatConnectionManager:
                 username=msg.username,
                 avatar_url=msg.avatar_url,
                 files=files or None,
+                embeds=list(msg.embeds) if msg.embeds else None,
                 wait=True,
             )
         except discord.HTTPException as e:
@@ -794,16 +847,20 @@ class ChatConnectionManager:
         payload = data.get("d") or data.get("payload") or {}
         content = payload.get("content", "")
         attachments = payload.get("attachments") or []
-        embeds_payload = payload.get("embeds") or []
-        buttons_payload = payload.get("buttons") or []
         avatar_url = payload.get("avatar_url")
+        use_character_name_flag = bool(
+            payload.get("useCharacterName") or payload.get("use_character_name")
+        )
         async with get_session() as db:
-            webhook_url = await db.scalar(
-                select(GuildChannel.webhook_url).where(
+            result = await db.execute(
+                select(GuildChannel.webhook_url, GuildChannel.kind).where(
                     GuildChannel.guild_id == info.ctx.guild.id,
                     GuildChannel.channel_id == channel_id,
                 )
             )
+            row = result.one_or_none()
+            webhook_url = row[0] if row else None
+            channel_kind_value = row[1] if row else None
             if not webhook_url:
                 if not discord_client:
                     logger.warning(
@@ -844,6 +901,13 @@ class ChatConnectionManager:
                     return
                 webhook_url = created_url
                 await db.commit()
+            membership = await db.scalar(
+                select(Membership).where(
+                    Membership.guild_id == info.ctx.guild.id,
+                    Membership.user_id == info.ctx.user.id,
+                )
+            )
+        channel_kind_value = channel_kind_value or ChannelKind.FC_CHAT
         if not webhook_url:
             logger.warning("chat.ws missing webhook channel=%s", channel_id)
             return
@@ -851,7 +915,7 @@ class ChatConnectionManager:
         if len(attachments) > MAX_ATTACHMENTS:
             logger.warning("chat.ws too many attachments channel=%s", channel_id)
             return
-        file_data: List[tuple[str, bytes]] = []
+        file_data: List[tuple[str, bytes, str | None]] = []
         for a in attachments:
             b64 = a.get("data") or a.get("content")
             if not b64:
@@ -863,29 +927,34 @@ class ChatConnectionManager:
             if len(file_bytes) > MAX_ATTACHMENT_SIZE:
                 logger.warning("chat.ws attachment too large channel=%s", channel_id)
                 return
-            file_data.append((a.get("filename", "file"), file_bytes))
+            content_type = a.get("contentType") or a.get("content_type")
+            file_data.append((a.get("filename", "file"), file_bytes, content_type))
+        bridge_content, embed_objects, uploads, nonce = build_bridge_message(
+            content=content,
+            user=info.ctx.user,
+            membership=membership,
+            channel_kind=channel_kind_value,
+            use_character_name=use_character_name_flag,
+            attachments=file_data,
+        )
 
-        try:
-            for e in embeds_payload:
-                dto = EmbedDto(**e)
-                btns = [EmbedButtonDto(**b) for b in buttons_payload]
-                validate_embed_payload(dto, btns)
-        except Exception:
-            logger.warning("chat.ws invalid embed payload channel=%s", channel_id)
-            return
         username = (
             f"{info.ctx.user.character_name} (DemiCat)"
             if info.ctx.user.character_name
             else "DemiCat"
         )
+        payload_with_nonce = dict(payload)
+        payload_with_nonce.setdefault("nonce", nonce)
         msg = PendingWebhookMessage(
             channel_id=channel_id,
             webhook_url=webhook_url,
-            content=content,
+            content=bridge_content,
             username=username,
             avatar_url=avatar_url,
-            attachments=file_data,
-            payload=payload,
+            uploads=uploads,
+            embeds=embed_objects,
+            nonce=nonce,
+            payload=payload_with_nonce,
         )
         await self._queue_webhook(msg)
 
