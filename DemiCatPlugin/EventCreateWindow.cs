@@ -209,7 +209,17 @@ public class EventCreateWindow
                         {
                             var selectedRoleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
                             var previewLabel = selectedRoleNames.Count > 0 ? string.Join(", ", selectedRoleNames) : "Select roles";
-                            ImGui.SetNextItemWidth(-1f);
+                            var maxTextWidth = ImGui.CalcTextSize(previewLabel).X;
+                            maxTextWidth = Math.Max(maxTextWidth, ImGui.CalcTextSize("Select roles").X);
+                            foreach (var role in _roles)
+                            {
+                                maxTextWidth = Math.Max(maxTextWidth, ImGui.CalcTextSize(role.Name).X);
+                            }
+
+                            var arrowPadding = style.FramePadding.X * 2f + style.ItemInnerSpacing.X + ImGui.GetFrameHeight();
+                            var comboWidth = Math.Min(maxTextWidth + arrowPadding, ImGui.GetContentRegionAvail().X);
+                            comboWidth = Math.Max(comboWidth, 1f);
+                            ImGui.SetNextItemWidth(comboWidth);
                             if (ImGui.BeginCombo("##MentionRoles", previewLabel))
                             {
                                 foreach (var role in _roles)
