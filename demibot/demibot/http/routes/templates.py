@@ -52,6 +52,19 @@ def _dump_payload(payload: TemplatePayload) -> str:
     return json.dumps(payload.model_dump(mode="json", by_alias=True, exclude_none=True))
 
 
+def _validate_template_time(payload: TemplatePayload) -> None:
+    if payload.time is None:
+        return
+    try:
+        CreateEventBody.model_validate(
+            payload.model_dump(mode="json", by_alias=True, exclude_none=True)
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="Invalid time format") from exc
+
+
 def _template_to_dto(t: EventTemplate) -> TemplateDto:
     payload = TemplatePayload.model_validate(json.loads(t.payload_json))
     return TemplateDto(
@@ -83,6 +96,7 @@ async def create_template(
             "request": body.model_dump(mode="json", exclude_none=True),
         },
     )
+    _validate_template_time(body.payload)
     embed = EmbedDto(
         id="0",
         title=body.payload.title,
@@ -206,6 +220,7 @@ async def update_template(
     if body.description is not None:
         tmpl.description = body.description
     if body.payload is not None:
+        _validate_template_time(body.payload)
         embed = EmbedDto(
             id="0",
             title=body.payload.title,
