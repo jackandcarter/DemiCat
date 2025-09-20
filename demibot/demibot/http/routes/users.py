@@ -17,6 +17,19 @@ from ...db.models import (
 from ...discordbot.presence_store import get_presences
 from ..discord_client import discord_client
 
+
+def _normalize_status(value: str | None) -> str:
+    if not value:
+        return "offline"
+    lowered = value.lower()
+    if lowered in {"offline", "invisible"}:
+        return "offline"
+    if lowered == "idle":
+        return "idle"
+    if lowered in {"dnd", "do_not_disturb"}:
+        return "dnd"
+    return "online"
+
 router = APIRouter(prefix="/api")
 
 
@@ -26,7 +39,14 @@ async def get_users(
     db: AsyncSession = Depends(get_db),
 ):
     stmt = (
-        select(User, Membership.nickname, DbPresence.status, Role.discord_role_id)
+        select(
+            User,
+            Membership.nickname,
+            DbPresence.status,
+            DbPresence.status_text,
+            Role.discord_role_id,
+            Role.name,
+        )
         .join(Membership, Membership.user_id == User.id)
         .join(
             DbPresence,
@@ -46,26 +66,46 @@ async def get_users(
     )
     result = await db.execute(stmt)
     rows = result.all()
-    cache = {p.id: p.status for p in get_presences(ctx.guild.id)}
+    cache = {p.id: p for p in get_presences(ctx.guild.id)}
 
     user_map: dict[int, dict[str, object]] = {}
-    for u, n, s, rid in rows:
+    for u, n, s, st, rid, role_name in rows:
         entry = user_map.setdefault(
             u.discord_user_id,
-            {"user": u, "nickname": n, "status": s, "roles": set()},
+            {
+                "user": u,
+                "nickname": n,
+                "status": s,
+                "status_text": st,
+                "roles": {},
+            },
         )
         if entry["status"] is None and s is not None:
             entry["status"] = s
+        if entry["status_text"] is None and st is not None:
+            entry["status_text"] = st
         if entry["nickname"] is None and n is not None:
             entry["nickname"] = n
         if rid is not None:
-            entry["roles"].add(rid)
+            roles_dict = entry["roles"]  # type: ignore[assignment]
+            if role_name is not None:
+                roles_dict[rid] = role_name
+            else:
+                roles_dict.setdefault(rid, None)
 
     avatars: dict[int, str] = {}
     usernames: dict[int, str] = {}
     missing_ids: set[int] = set()
+    role_names: dict[int, str] = {}
+    guild = None
     if discord_client:
         guild = discord_client.get_guild(ctx.guild.discord_guild_id)
+        if guild:
+            role_names = {
+                r.id: r.name
+                for r in guild.roles
+                if r.name != "@everyone"
+            }
         for data in user_map.values():
             u = data["user"]  # type: ignore[assignment]
             avatar: str | None = None
@@ -115,28 +155,46 @@ async def get_users(
                 if user_obj.id not in usernames:
                     usernames[user_obj.id] = user_obj.name
 
-    users: list[dict[str, str | list[str] | None]] = []
+    users: list[dict[str, object | None]] = []
     for data in user_map.values():
         u = data["user"]  # type: ignore[assignment]
-        s = data["status"]
-        roles = [str(r) for r in sorted(data["roles"])]
-        # Default to the cached presence if the database value is missing.
-        status = s or cache.get(u.discord_user_id)
-        # Anything that is not explicitly offline counts as online.
-        status = "offline" if status in (None, "offline") else "online"
+        presence = cache.get(u.discord_user_id)
+        status = data.get("status") if isinstance(data.get("status"), str) else None
+        status_text = data.get("status_text") if isinstance(data.get("status_text"), str) else None
+        if presence:
+            if status is None and presence.status:
+                status = presence.status
+            if status_text is None and presence.status_text:
+                status_text = presence.status_text
+        status = _normalize_status(status)
+        role_map: dict[int, str | None] = dict(data["roles"])  # type: ignore[arg-type]
+        if presence:
+            for rid in presence.roles:
+                if rid not in role_map:
+                    role_map[rid] = role_names.get(rid)
         name = (
             data.get("nickname")
             or u.global_name
             or usernames.get(u.discord_user_id)
             or str(u.discord_user_id)
         )
+        role_details = [
+            {
+                "id": str(rid),
+                "name": role_map[rid] or role_names.get(rid) or str(rid),
+            }
+            for rid in role_map
+        ]
+        role_ids = [str(rid) for rid in role_map]
         users.append(
             {
                 "id": str(u.discord_user_id),
                 "name": name,
                 "status": status,
                 "avatar_url": avatars.get(u.discord_user_id),
-                "roles": roles,
+                "roles": role_ids,
+                "status_text": status_text,
+                "role_details": role_details,
             }
         )
     return users

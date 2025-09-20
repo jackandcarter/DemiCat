@@ -67,6 +67,7 @@ def test_list_presences_returns_data():
                 status="online",
                 avatar_url="https://example.com/a.png",
                 roles=[100],
+                status_text="Working",
             ),
         )
         set_presence(
@@ -77,16 +78,22 @@ def test_list_presences_returns_data():
                 status="offline",
                 avatar_url="https://example.com/b.png",
                 roles=[],
+                status_text=None,
             ),
         )
         ctx = StubContext(1)
         res = await list_presences(ctx=ctx)
-        assert {
-            (p["id"], p["status"], p["avatar_url"], tuple(p["roles"])) for p in res
-        } == {
-            ("10", "online", "https://example.com/a.png", ("100",)),
-            ("20", "offline", "https://example.com/b.png", ()),
-        }
+        data = {p["id"]: p for p in res}
+        assert data["10"]["status"] == "online"
+        assert data["10"]["status_text"] == "Working"
+        assert data["10"]["roles"] == ["100"]
+        assert data["10"]["role_details"] == [
+            {"id": "100", "name": "100"}
+        ]
+        assert data["20"]["status"] == "offline"
+        assert data["20"]["status_text"] is None
+        assert data["20"]["roles"] == []
+        assert data["20"]["role_details"] == []
 
     asyncio.run(_run())
 
@@ -105,7 +112,10 @@ def test_list_presences_reads_from_db():
             await db.commit()
         ctx = StubContext(1)
         res = await list_presences(ctx=ctx)
-        assert {
-            (p["id"], p["status"], p["avatar_url"], tuple(p["roles"])) for p in res
-        } == {("10", "online", None, ()), ("20", "offline", None, ())}
+        data = {p["id"]: p for p in res}
+        assert data["10"]["status"] == "online"
+        assert data["10"]["status_text"] is None
+        assert data["10"]["roles"] == []
+        assert data["20"]["status"] == "offline"
+        assert data["20"]["status_text"] is None
     asyncio.run(_run())

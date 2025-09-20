@@ -115,7 +115,7 @@ public class MainWindow : IDisposable
         var buttonSize = ImGui.GetFrameHeight();
         var cursor = ImGui.GetCursorPos();
         ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - buttonSize - padding.X, cursor.Y));
-        if (ImGui.Button("\u2699"))
+        if (ImGui.Button("\u2699\uFE0F##dc_settings", new Vector2(buttonSize, buttonSize)))
         {
             _settings.IsOpen = true;
         }

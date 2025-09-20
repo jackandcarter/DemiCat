@@ -589,7 +589,14 @@ public class ChatWindow : IDisposable
         if (ImGui.SmallButton("Link")) WrapSelection("[", "](url)");
 
         var inputBuf = MakeUtf8Buffer(_input, 2048);
-        ImGui.PushItemWidth(ImGui.GetContentRegionAvail().X - 72f);
+        var style = ImGui.GetStyle();
+        var availableWidth = ImGui.GetContentRegionAvail().X;
+        var framePadding = style.FramePadding.X * 2f;
+        var emojiButtonWidth = ImGui.CalcTextSize("😊").X + framePadding;
+        var sendButtonWidth = ImGui.CalcTextSize("Send").X + framePadding;
+        var spacing = style.ItemSpacing.X * 2f;
+        var inputWidth = Math.Max(120f, availableWidth - emojiButtonWidth - sendButtonWidth - spacing);
+        ImGui.PushItemWidth(inputWidth);
         var send = ImGui.InputText(
             "##chatInput",
             inputBuf,

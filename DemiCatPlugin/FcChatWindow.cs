@@ -11,7 +11,7 @@ namespace DemiCatPlugin;
 public class FcChatWindow : ChatWindow
 {
     private readonly PresenceSidebar? _presenceSidebar;
-    private float _presenceWidth = 150f;
+    private float _presenceWidth = 200f;
 
     public FcChatWindow(
         Config config,

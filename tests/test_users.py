@@ -69,13 +69,27 @@ def test_get_users_includes_status_from_cache():
             db.add(Membership(id=2, guild_id=1, user_id=2))
             db.add(MembershipRole(membership_id=1, role_id=1))
             await db.commit()
-            set_presence(1, StorePresence(id=10, name='Alice', status='online'))
+            set_presence(
+                1,
+                StorePresence(
+                    id=10,
+                    name='Alice',
+                    status='online',
+                    status_text='Working',
+                    roles=[100],
+                ),
+            )
             set_presence(1, StorePresence(id=20, name='Bob', status='offline'))
             ctx = StubContext(1)
             res = await get_users(ctx=ctx, db=db)
-            assert {
-                (u['id'], u['status'], tuple(u['roles'])) for u in res
-            } == {('10', 'online', ('100',)), ('20', 'offline', ())}
+            data = {u['id']: u for u in res}
+            assert data['10']['status'] == 'online'
+            assert data['10']['status_text'] == 'Working'
+            assert tuple(data['10']['roles']) == ('100',)
+            assert data['10']['role_details'] == [{'id': '100', 'name': 'Officer'}]
+            assert data['20']['status'] == 'offline'
+            assert data['20']['status_text'] is None
+            assert tuple(data['20']['roles']) == ()
     asyncio.run(_run())
 
 
@@ -93,14 +107,15 @@ def test_get_users_reads_presence_from_db():
             db.add(User(id=4, discord_user_id=40, global_name='Bob'))
             db.add(Membership(guild_id=1, user_id=3))
             db.add(Membership(guild_id=1, user_id=4))
-            db.add(DbPresence(guild_id=1, user_id=30, status='online'))
-            db.add(DbPresence(guild_id=1, user_id=40, status='offline'))
+            db.add(DbPresence(guild_id=1, user_id=30, status='idle', status_text='Away'))
+            db.add(DbPresence(guild_id=1, user_id=40, status='dnd'))
             await db.commit()
             ctx = StubContext(1)
             res = await get_users(ctx=ctx, db=db)
-            assert {
-                (u['id'], u['status'], tuple(u['roles'])) for u in res
-            } == {('30', 'online', ()), ('40', 'offline', ())}
+            data = {u['id']: u for u in res}
+            assert data['30']['status'] == 'idle'
+            assert data['30']['status_text'] == 'Away'
+            assert data['40']['status'] == 'dnd'
     asyncio.run(_run())
 
 
