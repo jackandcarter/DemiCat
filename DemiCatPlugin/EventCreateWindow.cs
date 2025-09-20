@@ -158,10 +158,31 @@ public class EventCreateWindow
         ImGui.InputText("URL", ref _url, 260);
         ImGui.InputText("Image URL", ref _imageUrl, 260);
         ImGui.InputText("Thumbnail URL", ref _thumbnailUrl, 260);
+
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Embed Banner Color:");
+        ImGui.SameLine();
+
         var colorVec = ColorUtils.ImGuiToVector(_color);
-        if (ImGui.ColorEdit3("Color", ref colorVec))
+        var colorDisplaySize = new Vector2(ImGui.GetFrameHeight() * 2.5f, ImGui.GetFrameHeight());
+        if (ImGui.ColorButton("##embedColorButton", new Vector4(colorVec, 1f), ImGuiColorEditFlags.None, colorDisplaySize))
         {
-            _color = ColorUtils.VectorToImGui(colorVec);
+            ImGui.OpenPopup("embedColorPicker");
+        }
+
+        if (ImGui.BeginPopup("embedColorPicker"))
+        {
+            var pickerColor = colorVec;
+            if (ImGui.ColorPicker3("##embedColorPicker", ref pickerColor, ImGuiColorEditFlags.NoSidePreview | ImGuiColorEditFlags.NoSmallPreview))
+            {
+                _color = ColorUtils.VectorToImGui(pickerColor);
+            }
+            if (ImGui.Button("Clear"))
+            {
+                _color = 0;
+                ImGui.CloseCurrentPopup();
+            }
+            ImGui.EndPopup();
         }
 
         if (!_rolesLoaded)
