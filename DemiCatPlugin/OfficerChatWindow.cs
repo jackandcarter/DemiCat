@@ -20,6 +20,8 @@ public class OfficerChatWindow : ChatWindow
 {
     private DateTime _lastRolesRefresh = DateTime.MinValue;
     private bool _subscribed;
+    private readonly PresenceSidebar? _presenceSidebar;
+    private float _presenceWidth = 200f;
 
     public OfficerChatWindow(
         Config config,
@@ -41,6 +43,11 @@ public class OfficerChatWindow : ChatWindow
             avatarCache,
             emojiManager)
     {
+        if (presence != null)
+        {
+            _presenceSidebar = new PresenceSidebar(presence) { TextureLoader = LoadTexture };
+        }
+
         _bridge.StatusChanged += s =>
         {
             if (s.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
@@ -117,10 +124,24 @@ public class OfficerChatWindow : ChatWindow
             Subscribe();
         }
 
+        var showPresence = _presenceSidebar != null && _tokenManager.IsReady();
+        if (showPresence)
+        {
+            _ = RoleCache.EnsureLoaded(_httpClient, _config);
+            _presenceSidebar!.Draw(ref _presenceWidth);
+            ImGui.SameLine();
+            ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), false);
+        }
+
         base.Draw();
 
         // Reserved padded area beneath the standard chat input for upcoming officer tools.
         ImGui.Dummy(new Vector2(0, ImGui.GetFrameHeightWithSpacing()));
+
+        if (showPresence)
+        {
+            ImGui.EndChild();
+        }
     }
 
     protected override string MessagesPath => "/api/officer-messages";
