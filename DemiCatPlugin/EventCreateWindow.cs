@@ -193,15 +193,27 @@ public class EventCreateWindow
         {
             if (_roles.Count > 0)
             {
-                ImGui.Text("Mention Roles");
-                foreach (var role in _roles)
+                var selectedRoleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
+                var previewLabel = selectedRoleNames.Count > 0 ? string.Join(", ", selectedRoleNames) : "Select roles";
+                if (ImGui.BeginCombo("Mention Roles", previewLabel))
                 {
-                    var roleId = role.Id;
-                    var sel = _mentions.Contains(roleId);
-                    if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
+                    foreach (var role in _roles)
                     {
-                        if (sel) _mentions.Add(roleId); else _mentions.Remove(roleId);
+                        var roleId = role.Id;
+                        var selected = _mentions.Contains(roleId);
+                        if (ImGui.Selectable($"{role.Name}##role{role.Id}", selected, ImGuiSelectableFlags.DontClosePopups))
+                        {
+                            if (selected)
+                            {
+                                _mentions.Remove(roleId);
+                            }
+                            else
+                            {
+                                _mentions.Add(roleId);
+                            }
+                        }
                     }
+                    ImGui.EndCombo();
                 }
             }
             else
