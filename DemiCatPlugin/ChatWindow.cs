@@ -1026,7 +1026,7 @@ public class ChatWindow : IDisposable
         if (!string.IsNullOrEmpty(_replyToId))
         {
             var reference = new MessageBuilder()
-                .WithMessageReference(_replyToId)
+                .WithMessageReference(_replyToId, channelId)
                 .BuildMessageReference();
             if (reference != null)
             {
