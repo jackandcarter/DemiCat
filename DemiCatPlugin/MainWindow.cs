@@ -19,6 +19,7 @@ public class MainWindow : IDisposable
     private readonly RequestBoardWindow _requestBoard;
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
+    private bool _templatesTabActive;
     private readonly HttpClient _httpClient;
     private readonly Func<Task<bool>> _refreshRoles;
     private bool _checkingOfficer;
@@ -155,16 +156,30 @@ public class MainWindow : IDisposable
 
             if (!linked)
             {
+                _templatesTabActive = false;
                 ImGui.BeginDisabled();
                 ImGui.TabItemButton("Templates");
                 ImGui.EndDisabled();
                 if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
                     ImGui.SetTooltip("Link DemiCat to use templates.");
             }
-            else if (ImGui.BeginTabItem("Templates"))
+            else
             {
-                _templates.Draw();
-                ImGui.EndTabItem();
+                var templatesOpen = ImGui.BeginTabItem("Templates");
+                if (templatesOpen)
+                {
+                    if (!_templatesTabActive)
+                    {
+                        _templates.OnTabActivated();
+                    }
+                    _templatesTabActive = true;
+                    _templates.Draw();
+                    ImGui.EndTabItem();
+                }
+                else
+                {
+                    _templatesTabActive = false;
+                }
             }
 
             if (!linked)
