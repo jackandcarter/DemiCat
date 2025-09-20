@@ -50,7 +50,7 @@ public class FcChatWindow : ChatWindow
 
     public override void Draw()
     {
-        if (!_config.SyncedChat)
+        if (!_config.SyncedChat || !_config.EnableFcChat)
         {
             ImGui.TextUnformatted("Feature disabled");
             return;
