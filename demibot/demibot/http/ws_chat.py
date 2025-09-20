@@ -861,7 +861,31 @@ class ChatConnectionManager:
         info = self.connections.get(websocket)
         if info is None:
             return
-        channel_id = int(data.get("ch") or 0)
+        def _parse_channel_id(raw: object) -> int | None:
+            if raw is None:
+                return None
+            if isinstance(raw, str):
+                raw = raw.strip()
+                if not raw:
+                    return None
+            try:
+                value = int(raw)
+            except (TypeError, ValueError):
+                return None
+            if value <= 0:
+                return None
+            return value
+
+        channel_id = _parse_channel_id(data.get("ch"))
+        if channel_id is None:
+            channel_id = _parse_channel_id(data.get("channel"))
+        if channel_id is None:
+            logger.warning(
+                "chat.ws send drop reason=invalid_channel ch=%s channel=%s",
+                data.get("ch"),
+                data.get("channel"),
+            )
+            return
         payload = data.get("d") or data.get("payload") or {}
         content = payload.get("content", "")
         attachments = payload.get("attachments") or []

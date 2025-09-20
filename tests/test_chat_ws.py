@@ -167,6 +167,88 @@ def test_chat_ws_frames_include_metadata(monkeypatch):
     _run(scenario())
 
 
+def test_chat_ws_send_uses_channel_field(monkeypatch):
+    async def scenario():
+        ws_chat._channel_webhooks.clear()
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(
+                id=7, discord_user_id=77, character_name="Tester"
+            ),
+            guild=types.SimpleNamespace(id=3, discord_guild_id=333),
+            key=None,
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+
+        class FakeSession:
+            def __init__(self):
+                self.execute_calls = 0
+
+            async def execute(self, *args, **kwargs):
+                self.execute_calls += 1
+                return types.SimpleNamespace(
+                    one_or_none=lambda: (
+                        "https://example.invalid/webhook",
+                        ws_chat.ChannelKind.CHAT,
+                    )
+                )
+
+            async def scalar(self, *args, **kwargs):
+                return None
+
+            async def commit(self):  # pragma: no cover - no commit path exercised
+                pass
+
+        fake_session = FakeSession()
+
+        @asynccontextmanager
+        async def fake_get_session():
+            yield fake_session
+
+        def fake_build_bridge_message(
+            *,
+            content,
+            user,
+            membership,
+            channel_kind,
+            use_character_name=False,
+            attachments=None,
+            nonce=None,
+        ):
+            return content, [], [], nonce or "nonce"
+
+        queued: list[ws_chat.PendingWebhookMessage] = []
+
+        async def fake_queue_webhook(self, msg):
+            queued.append(msg)
+
+        monkeypatch.setattr(ws_chat, "get_session", fake_get_session)
+        monkeypatch.setattr(ws_chat, "build_bridge_message", fake_build_bridge_message)
+        monkeypatch.setattr(
+            manager,
+            "_queue_webhook",
+            types.MethodType(fake_queue_webhook, manager),
+        )
+
+        await manager._handle_send(
+            ws,
+            {
+                "channel": "12345",
+                "payload": {"content": "hello"},
+            },
+        )
+
+        assert fake_session.execute_calls == 1
+        assert queued, "expected webhook message to be queued"
+        message = queued[0]
+        assert message.channel_id == 12345
+        assert ws_chat._channel_webhooks[12345] == "https://example.invalid/webhook"
+
+    _run(scenario())
+
+
 def test_chat_ws_mixed_channel_batch_rejected(monkeypatch):
     async def scenario():
         manager = ws_chat.ChatConnectionManager()
