@@ -194,6 +194,7 @@ public class ChatWindow : IDisposable
     {
         _bridge.Stop();
         _presence?.Stop();
+        _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
     }
 
     // ---- UTF-8 helpers for ImGui byte-buffer overloads ----
