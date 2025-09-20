@@ -10,17 +10,32 @@ public static class MentionResolver
 
     private static string Normalize(string name) => name.Trim().ToLowerInvariant();
 
-    public static string Resolve(
+    public sealed class MentionResolution
+    {
+        public MentionResolution(string content, List<DiscordMentionDto> mentions)
+        {
+            Content = content;
+            Mentions = mentions;
+        }
+
+        public string Content { get; }
+        public List<DiscordMentionDto> Mentions { get; }
+    }
+
+    public static MentionResolution ResolveDetailed(
         string content,
         IEnumerable<PresenceDto> presences,
         IEnumerable<RoleDto> roles,
         IEnumerable<string>? allowedRoleIds = null)
     {
-        var lookup = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var lookup = new Dictionary<string, (string Replacement, DiscordMentionDto? Mention)>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var u in presences)
         {
-            lookup[Normalize(u.Name)] = $"<@{u.Id}>";
+            if (string.IsNullOrWhiteSpace(u.Name) || string.IsNullOrWhiteSpace(u.Id))
+                continue;
+            var mention = new DiscordMentionDto { Id = u.Id, Name = u.Name, Type = "user" };
+            lookup[Normalize(u.Name)] = ($"<@{u.Id}>", mention);
         }
 
         HashSet<string>? allowed = null;
@@ -29,15 +44,31 @@ public static class MentionResolver
 
         foreach (var r in roles)
         {
-            if (allowed == null || allowed.Contains(r.Id))
-                lookup[Normalize(r.Name)] = $"<@&{r.Id}>";
+            if (string.IsNullOrWhiteSpace(r.Name) || string.IsNullOrWhiteSpace(r.Id))
+                continue;
+            if (allowed != null && !allowed.Contains(r.Id))
+                continue;
+            var mention = new DiscordMentionDto { Id = r.Id, Name = r.Name, Type = "role" };
+            lookup[Normalize(r.Name)] = ($"<@&{r.Id}>", mention);
         }
 
         // Discord special mentions
-        lookup[Normalize("everyone")] = "<@everyone>";
-        lookup[Normalize("here")] = "<@here>";
+        lookup[Normalize("everyone")] = ("<@everyone>", new DiscordMentionDto
+        {
+            Id = "everyone",
+            Name = "everyone",
+            Type = "keyword"
+        });
+        lookup[Normalize("here")] = ("<@here>", new DiscordMentionDto
+        {
+            Id = "here",
+            Name = "here",
+            Type = "keyword"
+        });
 
         var sb = new StringBuilder(content.Length);
+        var mentions = new List<DiscordMentionDto>();
+        var seen = new HashSet<string>();
 
         for (var i = 0; i < content.Length;)
         {
@@ -57,8 +88,13 @@ public static class MentionResolver
 
                 if (lookup.TryGetValue(key, out var replacement))
                 {
-                    sb.Append(replacement);
+                    sb.Append(replacement.Replacement);
                     sb.Append(suffix);
+
+                    if (replacement.Mention != null && seen.Add(replacement.Mention.Id))
+                    {
+                        mentions.Add(replacement.Mention);
+                    }
                 }
                 else
                 {
@@ -75,6 +111,15 @@ public static class MentionResolver
             }
         }
 
-        return sb.ToString();
+        return new MentionResolution(sb.ToString(), mentions);
+    }
+
+    public static string Resolve(
+        string content,
+        IEnumerable<PresenceDto> presences,
+        IEnumerable<RoleDto> roles,
+        IEnumerable<string>? allowedRoleIds = null)
+    {
+        return ResolveDetailed(content, presences, roles, allowedRoleIds).Content;
     }
 }

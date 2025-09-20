@@ -66,6 +66,9 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, TypingUser> _typingUsers = new();
     private int _selectionStart;
     private int _selectionEnd;
+    private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
+    private string _previewKey = string.Empty;
+    private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKind => _channelKind;
@@ -273,6 +276,7 @@ public class ChatWindow : IDisposable
         {
             _config.UseCharacterName = _useCharacterName;
             SaveConfig();
+            InvalidatePreview();
         }
 
         // Calculate available space and reserve room for the input section so it remains visible
@@ -535,6 +539,7 @@ public class ChatWindow : IDisposable
                         {
                             using var stream = File.OpenRead(file);
                             _attachments.Add(file);
+                            InvalidatePreview();
                         }
                         catch (Exception)
                         {
@@ -563,6 +568,7 @@ public class ChatWindow : IDisposable
             if (ImGui.SmallButton($"X##{att}"))
             {
                 _attachments.Remove(att);
+                InvalidatePreview();
             }
         }
 
@@ -620,12 +626,45 @@ public class ChatWindow : IDisposable
             _ = SendMessage();
         }
 
-        if (!string.IsNullOrEmpty(_input))
+        if (!string.IsNullOrEmpty(_input) || _attachments.Count > 0)
         {
-            ImGui.BeginChild("##inputPreview", new Vector2(0, ImGui.GetTextLineHeight() * 5), true);
-            var preview = new DiscordMessageDto { Content = _input };
-            FormatContent(preview);
+            UpdatePreviewMessage();
+
+            ImGui.BeginChild("##inputPreview", new Vector2(0, ImGui.GetTextLineHeight() * 6), true);
+            if (!string.IsNullOrEmpty(_previewMessage.DisplayContent))
+            {
+                ImGui.TextWrapped(_previewMessage.DisplayContent);
+            }
+            else if (!string.IsNullOrEmpty(_previewMessage.Content))
+            {
+                ImGui.TextWrapped(ChatWindow.ReplaceMentionTokens(_previewMessage.Content, _previewMessage.Mentions));
+            }
+
+            foreach (var embed in _previewMessage.Embeds)
+            {
+                EmbedPreviewRenderer.Draw(embed, LoadTexture, _emojiManager);
+            }
+
+            foreach (var att in _previewMessage.Attachments)
+            {
+                RenderAttachmentPreview(att);
+            }
+
             ImGui.EndChild();
+
+            foreach (var warning in _previewMessage.Warnings)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.85f, 0.3f, 1f));
+                ImGui.TextWrapped(warning);
+                ImGui.PopStyleColor();
+            }
+
+            foreach (var error in _previewMessage.Errors)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+                ImGui.TextWrapped(error);
+                ImGui.PopStyleColor();
+            }
         }
 
         if (!string.IsNullOrEmpty(_lastError))
@@ -812,6 +851,133 @@ public class ChatWindow : IDisposable
         _selectionStart = _selectionEnd = cursor;
     }
 
+    private void InvalidatePreview()
+    {
+        _previewKey = string.Empty;
+        _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
+    }
+
+    private void UpdatePreviewMessage()
+    {
+        if (string.IsNullOrEmpty(_input) && _attachments.Count == 0)
+        {
+            _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
+            _previewKey = string.Empty;
+            CleanupAttachmentPreviews(Array.Empty<string>());
+            return;
+        }
+
+        var keyBuilder = new StringBuilder();
+        keyBuilder.Append(_input);
+        keyBuilder.Append('|');
+        keyBuilder.Append(_useCharacterName ? '1' : '0');
+        foreach (var att in _attachments)
+        {
+            keyBuilder.Append('|');
+            keyBuilder.Append(att);
+        }
+        var key = keyBuilder.ToString();
+        if (key == _previewKey)
+            return;
+
+        var options = BuildFormatterOptions();
+        _previewMessage = BridgeMessageFormatter.Format(_input, _attachments, options);
+        _previewKey = key;
+        CleanupAttachmentPreviews(_previewMessage.Attachments.Select(a => a.Path));
+    }
+
+    private BridgeMessageFormatter.BridgeFormattedMessage GetFormattedMessage()
+    {
+        UpdatePreviewMessage();
+        return _previewMessage;
+    }
+
+    private BridgeMessageFormatter.BridgeFormatterOptions BuildFormatterOptions()
+    {
+        var presences = _presence?.Presences ?? Array.Empty<PresenceDto>();
+        var player = PluginServices.Instance?.ClientState?.LocalPlayer;
+        var characterName = player?.Name.TextValue ?? player?.Name.ToString();
+        var worldName = player?.HomeWorld?.GameData?.Name?.ToString();
+
+        return new BridgeMessageFormatter.BridgeFormatterOptions
+        {
+            UseCharacterName = _useCharacterName,
+            ChannelKind = _channelKind,
+            Presences = presences,
+            Roles = RoleCache.Roles,
+            AllowedRoleIds = _config.MentionRoleIds,
+            AuthorName = _useCharacterName ? characterName : characterName ?? "You",
+            CharacterName = characterName,
+            WorldName = worldName,
+            Timestamp = DateTimeOffset.UtcNow
+        };
+    }
+
+    private void RenderAttachmentPreview(BridgeMessageFormatter.BridgeFormattedAttachment attachment)
+    {
+        var icon = attachment.IsImage ? "🖼️" : "📎";
+        ImGui.TextUnformatted($"{icon} {attachment.FileName}");
+        if (!attachment.IsImage)
+            return;
+
+        EnsureAttachmentPreview(attachment.Path);
+        if (_attachmentPreviewTextures.TryGetValue(attachment.Path, out var texture) && texture != null)
+        {
+            var wrap = texture.GetWrapOrEmpty();
+            if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+            {
+                var maxWidth = Math.Max(1f, ImGui.GetContentRegionAvail().X);
+                var scale = Math.Min(1f, maxWidth / wrap.Width);
+                var size = new Vector2(wrap.Width * scale, wrap.Height * scale);
+                ImGui.Image(wrap.Handle, size);
+            }
+        }
+    }
+
+    private void EnsureAttachmentPreview(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return;
+        if (_attachmentPreviewTextures.ContainsKey(path))
+            return;
+        if (PluginServices.Instance?.TextureProvider == null || PluginServices.Instance?.Framework == null)
+            return;
+
+        _attachmentPreviewTextures[path] = null;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var bytes = File.ReadAllBytes(path);
+                using var stream = new MemoryStream(bytes);
+                var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+                var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
+                    RawImageSpecification.Rgba32(image.Width, image.Height),
+                    image.Data);
+                var texture = new ForwardingSharedImmediateTexture(wrap);
+                PluginServices.Instance!.Framework.RunOnTick(() => _attachmentPreviewTextures[path] = texture);
+            }
+            catch
+            {
+                PluginServices.Instance?.Framework.RunOnTick(() => _attachmentPreviewTextures.Remove(path));
+            }
+        });
+    }
+
+    private void CleanupAttachmentPreviews(IEnumerable<string> activePaths)
+    {
+        var active = new HashSet<string>(activePaths ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        foreach (var kvp in _attachmentPreviewTextures.ToList())
+        {
+            if (!active.Contains(kvp.Key))
+            {
+                if (kvp.Value?.GetWrapOrEmpty() is IDisposable wrap)
+                    wrap.Dispose();
+                _attachmentPreviewTextures.Remove(kvp.Key);
+            }
+        }
+    }
+
     protected virtual async Task SendMessage()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
@@ -826,41 +992,22 @@ public class ChatWindow : IDisposable
             return;
         }
 
-        if (_input.Length > 2000)
+        var formatted = GetFormattedMessage();
+        if (formatted.Errors.Count > 0)
         {
-            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Message exceeds 2000 characters");
+            var message = formatted.Errors[0];
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                _statusMessage = message;
+                _lastError = message;
+            });
             return;
         }
 
-        const int maxAttachments = 10;
-        const long maxAttachmentSize = 25 * 1024 * 1024; // 25MB
-        if (_attachments.Count > maxAttachments)
-        {
-            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = $"Too many attachments (max {maxAttachments})");
-            return;
-        }
-        foreach (var att in _attachments)
-        {
-            try
-            {
-                var size = new FileInfo(att).Length;
-                if (size > maxAttachmentSize)
-                {
-                    _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = $"Attachment {Path.GetFileName(att)} too large (max 25MB)");
-                    return;
-                }
-            }
-            catch
-            {
-                // ignore file errors
-            }
-        }
-
-        string logContent = _input;
+        string logContent = formatted.Content;
         try
         {
-            var presences = _presence?.Presences ?? new List<PresenceDto>();
-            var content = MentionResolver.Resolve(_input, presences, RoleCache.Roles, _config.MentionRoleIds);
+            var content = formatted.Content;
             logContent = content;
 
             HttpRequestMessage request;
@@ -902,14 +1049,15 @@ public class ChatWindow : IDisposable
                     // ignore parse errors
                 }
 
-                var text = _input;
+                var text = formatted.DisplayContent;
                 var optimistic = new DiscordMessageDto
                 {
                     Id = id ?? Guid.NewGuid().ToString(),
                     ChannelId = channelId,
                     Content = text,
                     Author = new DiscordUserDto { Name = "You" },
-                    Timestamp = DateTime.UtcNow
+                    Timestamp = DateTime.UtcNow,
+                    Embeds = formatted.Embeds.Select(e => e).ToList()
                 };
 
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
@@ -920,6 +1068,8 @@ public class ChatWindow : IDisposable
                     _lastError = string.Empty;
                     _replyToId = null;
                     _attachments.Clear();
+                    InvalidatePreview();
+                    CleanupAttachmentPreviews(Array.Empty<string>());
                 });
             }
             else
@@ -1330,6 +1480,14 @@ public class ChatWindow : IDisposable
         {
             e.Texture = null;
         }
+        foreach (var tex in _attachmentPreviewTextures.Values)
+        {
+            if (tex?.GetWrapOrEmpty() is IDisposable wrap)
+                wrap.Dispose();
+        }
+        _attachmentPreviewTextures.Clear();
+        _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
+        _previewKey = string.Empty;
         EmbedRenderer.ClearCache();
     }
 
