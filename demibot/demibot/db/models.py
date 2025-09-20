@@ -274,6 +274,12 @@ class PostedMessage(Base):
             "discord_message_id",
             name="uq_posted_messages_discord",
         ),
+        UniqueConstraint(
+            "guild_id",
+            "channel_id",
+            "nonce",
+            name="uq_posted_messages_guild_channel_nonce",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
@@ -282,6 +288,8 @@ class PostedMessage(Base):
     local_message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
     discord_message_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), index=True)
     webhook_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    embed_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    nonce: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Embed(Base):

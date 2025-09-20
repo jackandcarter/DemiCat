@@ -1140,14 +1140,32 @@ def test_message_too_long(monkeypatch):
             guild = await db.get(Guild, 42)
             user = await db.get(User, 42)
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def dummy_broadcast(*args, **kwargs):
+                return None
+
+            async def fake_webhook(**kwargs):
+                return 777, None, [], "https://webhook.example"
+
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+            monkeypatch.setattr(mc, "_send_via_webhook", fake_webhook)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+            monkeypatch.setattr(mc, "discord_client", None)
+
             body = mc.PostBody(channel_id="123", content="x" * 2001)
-            with pytest.raises(HTTPException) as exc:
-                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
-            assert exc.value.status_code == 400
-            assert (
-                exc.value.detail
-                == "Message too long (max 2000 characters)."
-            )
+            result = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+            assert result["ok"] is True
+
+            msg = await db.get(Message, 777)
+            assert msg is not None
+            assert len(msg.content) == 2000
+            assert msg.embeds_json is not None
+            embeds = json.loads(msg.embeds_json)
+            assert embeds and len(embeds[0]["description"]) == 2001
+
+            payload = captured_events[-1]
+            assert payload["op"] == "mc"
+            assert len(payload["d"]["content"]) == 2000
 
     asyncio.run(_run())
 
@@ -1994,7 +2012,14 @@ def test_posted_message_mapping_and_webhook_usage(monkeypatch):
             delete_calls: list[int] = []
 
             class DummyWebhook:
-                async def edit_message(self, message_id: int, *, content: str, allowed_mentions):
+                async def edit_message(
+                    self,
+                    message_id: int,
+                    *,
+                    content: str,
+                    embeds=None,
+                    allowed_mentions=None,
+                ):
                     edit_calls.append((message_id, content))
 
                 async def delete_message(self, message_id: int):
@@ -2033,6 +2058,101 @@ def test_posted_message_mapping_and_webhook_usage(monkeypatch):
                 select(PostedMessage).where(PostedMessage.discord_message_id == msg_id)
             )
             assert remaining is None
+
+    asyncio.run(_run())
+
+
+def test_bridge_nonce_persisted_and_reused(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+
+            guild = Guild(id=7, discord_guild_id=7, name="Guild")
+            user = User(id=70, discord_user_id=700, global_name="User")
+            membership = Membership(
+                id=700,
+                guild_id=7,
+                user_id=70,
+                nickname="BridgeUser",
+                avatar_url="https://example.com/avatar.png",
+            )
+            channel = GuildChannel(
+                guild_id=7,
+                channel_id=555,
+                kind=ChannelKind.FC_CHAT,
+            )
+            db.add_all([guild, user, membership, channel])
+            await db.commit()
+
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def dummy_broadcast(*args, **kwargs):
+                return None
+
+            webhook_calls: list[dict] = []
+
+            async def fake_webhook(**kwargs):
+                webhook_calls.append(kwargs)
+                return 888, None, [], "https://webhook.example"
+
+            monkeypatch.setattr(mc, "discord_client", None)
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+            monkeypatch.setattr(mc, "_send_via_webhook", fake_webhook)
+
+            body = mc.PostBody(channel_id="555", content="Bridge Hello")
+            result = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+            assert result["ok"] is True
+
+            assert webhook_calls
+            sent_embeds = webhook_calls[0]["embeds"]
+            assert sent_embeds and sent_embeds[0].footer.text
+
+            message_id = int(result["id"])
+            mapping = await db.scalar(
+                select(PostedMessage).where(PostedMessage.discord_message_id == message_id)
+            )
+            assert mapping is not None
+            assert mapping.nonce
+            assert mapping.embed_json
+
+            embed_list = json.loads(mapping.embed_json)
+            assert embed_list
+            assert embed_list[0]["footerText"].endswith(mapping.nonce)
+
+            msg_row = await db.get(Message, message_id)
+            assert msg_row is not None
+            assert msg_row.embeds_json == mapping.embed_json
+
+            first_nonce = mapping.nonce
+            first_embed_json = mapping.embed_json
+
+            edit_response = await mc.edit_message(
+                "555",
+                str(message_id),
+                "Updated Bridge",
+                ctx,
+                db,
+                is_officer=False,
+            )
+            assert edit_response["ok"] is True
+
+            await db.refresh(mapping)
+            assert mapping.nonce == first_nonce
+            assert mapping.embed_json != first_embed_json
+
+            updated_embeds = json.loads(mapping.embed_json)
+            assert updated_embeds[0]["description"] == "Updated Bridge"
+            assert updated_embeds[0]["footerText"].endswith(first_nonce)
+
+            assert captured_events[-1]["op"] == "mu"
+            assert captured_events[-1]["d"]["embeds"][0]["footerText"].endswith(first_nonce)
 
     asyncio.run(_run())
 
