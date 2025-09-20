@@ -267,12 +267,33 @@ public class Plugin : IDalamudPlugin
 
     private void HandleTokenUnlinked(string? reason)
     {
-        StopWatchers();
-
-        if (IsAuthenticationFailure(reason))
+        void Execute()
         {
-            ShowInvalidTokenToast();
+            StopWatchers();
+
+            if (IsAuthenticationFailure(reason))
+            {
+                ShowInvalidTokenToast();
+            }
         }
+
+        var framework = PluginServices.Instance?.Framework ?? _services.Framework;
+
+        if (framework != null)
+        {
+            try
+            {
+                framework.RunOnTick(Execute);
+                return;
+            }
+            catch (Exception ex)
+            {
+                var log = PluginServices.Instance?.Log ?? _services.Log;
+                log?.Warning(ex, "Failed to marshal token unlink handling to framework thread");
+            }
+        }
+
+        Execute();
     }
 
     private async Task StartWatchersAsync()
