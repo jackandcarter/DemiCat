@@ -15,8 +15,11 @@ public static class EmbedPreviewRenderer
 
     public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null)
     {
-        var stripeWidth = 4f;
-        var indent = stripeWidth + 4f;
+        const float stripeWidth = 4f;
+        const float contentPadding = 8f;
+        const float verticalPadding = 4f;
+
+        var indent = contentPadding + (dto.Color.HasValue ? stripeWidth : 0f);
         var avail = ImGui.GetContentRegionAvail().X;
         if (avail <= 0)
         {
@@ -24,67 +27,58 @@ public static class EmbedPreviewRenderer
         }
 
         ImGui.BeginChild($"embedprev{dto.Id}", new Vector2(avail, 0), true);
-        ImGui.SetCursorPosX(ImGui.GetCursorPosX() + indent);
+
+        ImGui.Indent(indent);
+        ImGui.Dummy(new Vector2(0f, verticalPadding));
+
+        var hasContent = false;
+        void BeginSection()
+        {
+            if (hasContent)
+            {
+                ImGui.Spacing();
+            }
+            else
+            {
+                hasContent = true;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(dto.ProviderName))
+        {
+            BeginSection();
+            ImGui.TextUnformatted(dto.ProviderName);
+        }
+
+        if (dto.Authors != null && dto.Authors.Count > 0)
+        {
+            var names = dto.Authors
+                .Where(a => !string.IsNullOrWhiteSpace(a.Name))
+                .Select(a => a.Name!)
+                .ToList();
+
+            if (names.Count > 0)
+            {
+                BeginSection();
+                ImGui.TextUnformatted(string.Join(", ", names));
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.AuthorName))
+        {
+            BeginSection();
+            ImGui.TextUnformatted(dto.AuthorName);
+        }
 
         if (!string.IsNullOrEmpty(dto.Title))
         {
+            BeginSection();
             ImGui.TextUnformatted(dto.Title);
         }
 
         if (!string.IsNullOrEmpty(dto.Description))
         {
+            BeginSection();
             ImGui.TextWrapped(dto.Description);
-        }
-
-        if (dto.Fields != null && dto.Fields.Count > 0)
-        {
-            var fields = dto.Fields;
-            var index = 0;
-            while (index < fields.Count)
-            {
-                if (fields[index].Inline == true)
-                {
-                    var group = new List<EmbedFieldDto>();
-                    while (index < fields.Count && fields[index].Inline == true)
-                    {
-                        group.Add(fields[index]);
-                        index++;
-                    }
-                    var cols = Math.Min(3, group.Count);
-                    if (ImGui.BeginTable($"ifields{dto.Id}{index}", cols, ImGuiTableFlags.Borders))
-                    {
-                        for (var i = 0; i < group.Count; i++)
-                        {
-                            if (i % cols == 0)
-                            {
-                                ImGui.TableNextRow();
-                            }
-                            ImGui.TableSetColumnIndex(i % cols);
-                            var f = group[i];
-                            ImGui.TextUnformatted(f.Name);
-                            ImGui.TextWrapped(f.Value);
-                        }
-                        ImGui.EndTable();
-                    }
-                }
-                else
-                {
-                    var f = fields[index];
-                    index++;
-                    ImGui.TextUnformatted(f.Name);
-                    ImGui.TextWrapped(f.Value);
-                }
-            }
-        }
-
-        if (!string.IsNullOrEmpty(dto.ImageUrl))
-        {
-            var tex = GetTexture(dto.ImageUrl!, loadTexture);
-            if (tex != null)
-            {
-                var wrap = tex.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
-            }
         }
 
         if (!string.IsNullOrEmpty(dto.ThumbnailUrl))
@@ -92,28 +86,49 @@ public static class EmbedPreviewRenderer
             var tex = GetTexture(dto.ThumbnailUrl!, loadTexture);
             if (tex != null)
             {
+                BeginSection();
                 var wrap = tex.GetWrapOrEmpty();
                 ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
             }
         }
 
-        if (!string.IsNullOrEmpty(dto.FooterText) || dto.Timestamp.HasValue)
+        if (dto.Fields != null && dto.Fields.Count > 0)
         {
-            var text = dto.FooterText ?? string.Empty;
-            if (dto.Timestamp.HasValue)
-            {
-                if (text.Length > 0)
-                {
-                    text += " • ";
-                }
-                text += dto.Timestamp.Value.LocalDateTime.ToString();
-            }
-            ImGui.Separator();
-            ImGui.TextUnformatted(text);
+            BeginSection();
+            DrawFields(dto);
         }
 
-        if (dto.Buttons != null)
+        if (!string.IsNullOrEmpty(dto.ImageUrl))
         {
+            var tex = GetTexture(dto.ImageUrl!, loadTexture);
+            if (tex != null)
+            {
+                BeginSection();
+                var wrap = tex.GetWrapOrEmpty();
+                ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+            }
+        }
+
+        var footerText = dto.FooterText ?? string.Empty;
+        if (dto.Timestamp.HasValue)
+        {
+            if (footerText.Length > 0)
+            {
+                footerText += " • ";
+            }
+
+            footerText += dto.Timestamp.Value.LocalDateTime.ToString();
+        }
+
+        if (!string.IsNullOrEmpty(footerText))
+        {
+            BeginSection();
+            ImGui.TextUnformatted(footerText);
+        }
+
+        if (dto.Buttons != null && dto.Buttons.Count > 0)
+        {
+            BeginSection();
             foreach (var group in dto.Buttons
                          .GroupBy(b => b.RowIndex ?? 0)
                          .OrderBy(g => g.Key))
@@ -165,6 +180,9 @@ public static class EmbedPreviewRenderer
             }
         }
 
+        ImGui.Dummy(new Vector2(0f, verticalPadding));
+        ImGui.Unindent(indent);
+
         ImGui.EndChild();
         if (dto.Color.HasValue)
         {
@@ -172,6 +190,62 @@ public static class EmbedPreviewRenderer
             var max = ImGui.GetItemRectMax();
             var color = ColorUtils.RgbToImGui(dto.Color.Value);
             ImGui.GetWindowDrawList().AddRectFilled(min, new Vector2(min.X + stripeWidth, max.Y), color);
+        }
+    }
+
+    private static void DrawFields(EmbedDto dto)
+    {
+        var fields = dto.Fields!;
+        var index = 0;
+        while (index < fields.Count)
+        {
+            if (fields[index].Inline == true)
+            {
+                var group = new List<EmbedFieldDto>();
+                while (index < fields.Count && fields[index].Inline == true)
+                {
+                    group.Add(fields[index]);
+                    index++;
+                }
+
+                var cols = Math.Min(3, group.Count);
+                if (ImGui.BeginTable($"ifields{dto.Id}{index}", cols, ImGuiTableFlags.Borders))
+                {
+                    for (var i = 0; i < group.Count; i++)
+                    {
+                        if (i % cols == 0)
+                        {
+                            ImGui.TableNextRow();
+                        }
+
+                        ImGui.TableSetColumnIndex(i % cols);
+                        var f = group[i];
+                        if (!string.IsNullOrEmpty(f.Name))
+                        {
+                            ImGui.TextUnformatted(f.Name);
+                        }
+                        if (!string.IsNullOrEmpty(f.Value))
+                        {
+                            ImGui.TextWrapped(f.Value);
+                        }
+                    }
+
+                    ImGui.EndTable();
+                }
+            }
+            else
+            {
+                var f = fields[index];
+                index++;
+                if (!string.IsNullOrEmpty(f.Name))
+                {
+                    ImGui.TextUnformatted(f.Name);
+                }
+                if (!string.IsNullOrEmpty(f.Value))
+                {
+                    ImGui.TextWrapped(f.Value);
+                }
+            }
         }
     }
 
