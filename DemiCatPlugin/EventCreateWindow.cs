@@ -296,6 +296,8 @@ public class EventCreateWindow
             ImGui.EndPopup();
         }
 
+        ImGui.Separator();
+
         for (var i = 0; i < _buttons.Count; i++)
         {
             var button = _buttons[i];
