@@ -593,32 +593,36 @@ async def fetch_messages(
         cid = int(channel_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid channel id")
+
+    before_int = int(before) if before is not None else None
+    after_int = int(after) if after is not None else None
     stmt = select(Message).where(
         Message.channel_id == cid,
         Message.is_officer.is_(is_officer),
     )
-    if before is not None:
-        stmt = stmt.where(Message.discord_message_id < int(before))
-    if after is not None:
-        stmt = stmt.where(Message.discord_message_id > int(after))
+    if before_int is not None:
+        stmt = stmt.where(Message.discord_message_id < before_int)
+    if after_int is not None:
+        stmt = stmt.where(Message.discord_message_id > after_int)
     stmt = stmt.order_by(Message.created_at.desc())
     if limit is not None:
         stmt = stmt.limit(limit)
     result = await db.execute(stmt)
     rows = list(result.scalars())
 
-    shortfall = 0
-    if limit is not None:
-        shortfall = limit - len(rows)
-    elif not rows:
-        shortfall = 50
+    shortfall = max(0, (limit or 100) - len(rows))
 
-    if shortfall > 0 and discord_client and before is None and after is None:
+    if shortfall > 0 and discord_client:
         channel = discord_client.get_channel(cid)
         if channel and isinstance(channel, discord.abc.Messageable):
             fetched: list[discord.Message] = []
             try:
-                async for msg in channel.history(limit=shortfall):
+                history_kwargs: dict[str, object] = {"limit": shortfall}
+                if before_int is not None:
+                    history_kwargs["before"] = discord.Object(id=before_int)
+                if after_int is not None:
+                    history_kwargs["after"] = discord.Object(id=after_int)
+                async for msg in channel.history(**history_kwargs):
                     fetched.append(msg)
             except Exception:
                 fetched = []
