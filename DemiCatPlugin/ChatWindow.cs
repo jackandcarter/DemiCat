@@ -897,7 +897,16 @@ public class ChatWindow : IDisposable
         var presences = _presence?.Presences ?? Array.Empty<PresenceDto>();
         var player = PluginServices.Instance?.ClientState?.LocalPlayer;
         var characterName = player?.Name.TextValue ?? player?.Name.ToString();
-        var worldName = player != null ? player.HomeWorld.ValueNullable?.Name?.ToString() : null;
+        string? worldName = null;
+
+        if (player != null)
+        {
+            var homeWorld = player.HomeWorld.ValueNullable;
+            if (homeWorld.HasValue)
+            {
+                worldName = homeWorld.Value.Name.ToString();
+            }
+        }
 
         return new BridgeMessageFormatter.BridgeFormatterOptions
         {
