@@ -21,6 +21,15 @@ public class PresenceSidebar : IDisposable
     private static readonly Vector4 OfflineColor = new(0.5f, 0.5f, 0.5f, 1f);
     private static readonly Vector4 StatusTextColor = new(0.75f, 0.75f, 0.75f, 1f);
     private static readonly ImGuiMouseCursor ResizeEwCursor = ResolveResizeEwCursor();
+    private static readonly HashSet<string> SyntheticRoleIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "premium_subscriber"
+    };
+
+    private static readonly HashSet<string> SyntheticRoleNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Server Booster"
+    };
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
 
@@ -56,13 +65,22 @@ public class PresenceSidebar : IDisposable
 
         var roleGroups = new Dictionary<string, RoleGroup>(StringComparer.Ordinal);
         var orderedRoleIds = new List<string>();
-        foreach (var role in RoleCache.Roles)
+        var orderedRoleIndices = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (var index = 0; index < RoleCache.Roles.Count; index++)
         {
-            if (!roleGroups.ContainsKey(role.Id))
+            var role = RoleCache.Roles[index];
+            if (string.IsNullOrEmpty(role.Id) || roleGroups.ContainsKey(role.Id))
             {
-                roleGroups[role.Id] = new RoleGroup(role.Id, role.Name);
-                orderedRoleIds.Add(role.Id);
+                if (!string.IsNullOrEmpty(role.Id) && !orderedRoleIndices.ContainsKey(role.Id))
+                {
+                    orderedRoleIndices[role.Id] = index;
+                }
+                continue;
             }
+
+            roleGroups[role.Id] = new RoleGroup(role.Id, role.Name);
+            orderedRoleIds.Add(role.Id);
+            orderedRoleIndices[role.Id] = index;
         }
 
         foreach (var presence in presences)
@@ -86,23 +104,12 @@ public class PresenceSidebar : IDisposable
         var noRole = new List<PresenceDto>();
         foreach (var presence in online)
         {
-            var mapped = false;
-            foreach (var roleId in presence.Roles)
+            var primaryRoleId = GetPrimaryRoleId(presence, roleGroups, orderedRoleIndices);
+            if (!string.IsNullOrEmpty(primaryRoleId) && roleGroups.TryGetValue(primaryRoleId, out var group))
             {
-                if (string.IsNullOrEmpty(roleId))
-                    continue;
-                if (!roleGroups.TryGetValue(roleId, out var group))
-                {
-                    var display = presence.RoleDetails
-                        .FirstOrDefault(r => string.Equals(r.Id, roleId, StringComparison.Ordinal))?.Name
-                        ?? roleId;
-                    group = new RoleGroup(roleId, display);
-                    roleGroups[roleId] = group;
-                }
                 group.Members.Add(presence);
-                mapped = true;
             }
-            if (!mapped)
+            else
             {
                 noRole.Add(presence);
             }
@@ -207,6 +214,107 @@ public class PresenceSidebar : IDisposable
     public void Dispose()
     {
         // No resources to dispose; the underlying service is disposed separately.
+    }
+
+    private static string? GetPrimaryRoleId(
+        PresenceDto presence,
+        Dictionary<string, RoleGroup> roleGroups,
+        Dictionary<string, int> orderedRoleIndices)
+    {
+        string? bestRoleId = null;
+        var bestOrderIndex = int.MaxValue;
+        var bestName = string.Empty;
+        var bestPresenceIndex = int.MaxValue;
+
+        for (var i = 0; i < presence.Roles.Count; i++)
+        {
+            var roleId = presence.Roles[i];
+            if (string.IsNullOrEmpty(roleId))
+            {
+                continue;
+            }
+
+            if (!roleGroups.TryGetValue(roleId, out var group))
+            {
+                var display = presence.RoleDetails
+                    .FirstOrDefault(r => string.Equals(r.Id, roleId, StringComparison.Ordinal))?.Name
+                    ?? roleId;
+                group = new RoleGroup(roleId, display);
+                roleGroups[roleId] = group;
+            }
+            else if (string.IsNullOrEmpty(group.Name))
+            {
+                var detailName = presence.RoleDetails
+                    .FirstOrDefault(r => string.Equals(r.Id, roleId, StringComparison.Ordinal))?.Name;
+                if (!string.IsNullOrEmpty(detailName))
+                {
+                    group.Name = detailName;
+                }
+            }
+
+            if (ShouldSkipRoleForPrimary(roleId, group, orderedRoleIndices))
+            {
+                continue;
+            }
+
+            var orderIndex = orderedRoleIndices.TryGetValue(roleId, out var index) ? index : int.MaxValue;
+            var groupName = group.Name;
+
+            var isBetter = false;
+            if (bestRoleId == null)
+            {
+                isBetter = true;
+            }
+            else if (orderIndex < bestOrderIndex)
+            {
+                isBetter = true;
+            }
+            else if (orderIndex == bestOrderIndex)
+            {
+                if (orderIndex != int.MaxValue)
+                {
+                    isBetter = string.Compare(groupName, bestName, StringComparison.OrdinalIgnoreCase) < 0;
+                }
+                else if (i < bestPresenceIndex)
+                {
+                    isBetter = true;
+                }
+                else if (i == bestPresenceIndex)
+                {
+                    isBetter = string.Compare(groupName, bestName, StringComparison.OrdinalIgnoreCase) < 0;
+                }
+            }
+
+            if (!isBetter)
+            {
+                continue;
+            }
+
+            bestRoleId = roleId;
+            bestOrderIndex = orderIndex;
+            bestName = groupName;
+            bestPresenceIndex = i;
+        }
+
+        return bestRoleId;
+    }
+
+    private static bool ShouldSkipRoleForPrimary(
+        string roleId,
+        RoleGroup group,
+        Dictionary<string, int> orderedRoleIndices)
+    {
+        if (orderedRoleIndices.ContainsKey(roleId))
+        {
+            return false;
+        }
+
+        if (SyntheticRoleIds.Contains(roleId))
+        {
+            return true;
+        }
+
+        return SyntheticRoleNames.Contains(group.Name);
     }
 
     private void DrawRoleGroup(RoleGroup group)
