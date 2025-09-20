@@ -10,6 +10,8 @@ from typing import Sequence
 
 import discord
 from discord import ClientException
+from discord.http import handle_message_parameters
+from discord.utils import MISSING
 from fastapi import HTTPException, UploadFile
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import select
@@ -922,23 +924,110 @@ async def save_message(
                     )
                     error_details.append(f"Direct send failed: {e}")
         else:
-            if is_officer:
-                logging.warning(
-                    "Officer channel unresolved", extra=log_extra
-                )
-                raise HTTPException(
-                    status_code=409,
-                    detail={
-                        "code": "OFFICER_CHANNEL_UNRESOLVED",
-                        "message": "Officer channel could not be resolved",
-                        "channelId": str(cid),
-                    },
-                )
-            logging.warning("Failed to resolve channel", extra=log_extra)
-            detail: dict[str, object] = {"message": "channel not found"}
-            if error_details:
-                detail["discord"] = error_details
-            raise HTTPException(status_code=404, detail=detail)
+            http_client = None
+            if not target_channel and discord_client:
+                http_client = getattr(discord_client, "http", None)
+
+            if not target_channel and http_client is not None:
+                fallback_files = _make_discord_files(uploads)
+                embed_payload = list(embeds) if embeds else None
+
+                def _raise_http_fallback_failure() -> None:
+                    detail = {"message": "Failed to relay message to Discord"}
+                    if error_details:
+                        detail["discord"] = error_details
+                    raise HTTPException(status_code=502, detail=detail)
+
+                try:
+                    with handle_message_parameters(
+                        bridge_content,
+                        files=fallback_files if fallback_files else MISSING,
+                        embeds=embed_payload if embed_payload is not None else MISSING,
+                        allowed_mentions=ALLOWED_MENTIONS,
+                    ) as params:
+                        sent_payload = await http_client.send_message(
+                            cid,
+                            params=params,
+                        )
+                except discord.HTTPException as e:
+                    logging.error(
+                        "http.send_message failed for channel %s: %s %s",
+                        cid,
+                        e.status,
+                        e.text,
+                        extra=log_extra,
+                    )
+                    error_details.append(
+                        f"HTTP send failed: {e.status} {e.text or _discord_error(e)}"
+                    )
+                    _raise_http_fallback_failure()
+                except Exception as exc:
+                    logging.exception(
+                        "http.send_message failed for channel %s",
+                        cid,
+                        extra=log_extra,
+                    )
+                    error_details.append(f"HTTP send failed: {exc}")
+                    _raise_http_fallback_failure()
+                else:
+                    if not isinstance(sent_payload, dict) or sent_payload.get("id") is None:
+                        logging.warning(
+                            "http.send_message returned no id for channel %s",
+                            cid,
+                            extra=log_extra,
+                        )
+                        error_details.append(
+                            f"HTTP send returned no id for channel {cid}"
+                        )
+                        _raise_http_fallback_failure()
+                    message_id = sent_payload.get("id")
+                    try:
+                        discord_msg_id = int(message_id) if message_id is not None else None
+                    except (TypeError, ValueError):
+                        logging.warning(
+                            "http.send_message returned invalid id for channel %s: %r",
+                            cid,
+                            message_id,
+                            extra=log_extra,
+                        )
+                        error_details.append(
+                            f"HTTP send returned invalid id {message_id!r}"
+                        )
+                        _raise_http_fallback_failure()
+                    if discord_msg_id is None:
+                        _raise_http_fallback_failure()
+                    attachments_data = sent_payload.get("attachments")
+                    if isinstance(attachments_data, list) and attachments_data:
+                        attachments = [
+                            AttachmentDto(
+                                url=a.get("url"),
+                                filename=a.get("filename"),
+                                contentType=a.get("content_type"),
+                            )
+                            for a in attachments_data
+                            if isinstance(a, dict)
+                        ]
+                    if webhook_url is None:
+                        webhook_url = _channel_webhooks.get(cid)
+
+            if discord_msg_id is None:
+                if is_officer:
+                    logging.warning(
+                        "Officer channel unresolved", extra=log_extra
+                    )
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "code": "OFFICER_CHANNEL_UNRESOLVED",
+                            "message": "Officer channel could not be resolved",
+                            "channelId": str(cid),
+                        },
+                    )
+                logging.warning("Failed to resolve channel", extra=log_extra)
+                detail: dict[str, object] = {"message": "channel not found"}
+                if error_details:
+                    detail["discord"] = error_details
+                raise HTTPException(status_code=404, detail=detail)
 
     if discord_msg_id is None:
         logging.warning(
