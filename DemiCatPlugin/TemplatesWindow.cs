@@ -108,6 +108,15 @@ public class TemplatesWindow
         _bridge?.Stop();
     }
 
+    public void OnTabActivated()
+    {
+        _templatesLoaded = false;
+        if (!_templatesLoading)
+        {
+            _templatesReloadPending = false;
+        }
+    }
+
     public void Draw()
     {
         if (!_config.Templates)
