@@ -158,6 +158,135 @@ public class DiscordPresenceServiceTests
     }
 
     [Fact]
+    public async Task Refresh_InvalidApiUrl_SetsStatusMessage()
+    {
+        var config = new Config { ApiBaseUrl = string.Empty };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+
+        var previousServices = PluginServices.Instance;
+        var previousToken = TokenManager.Instance;
+
+        try
+        {
+            var services = new PluginServices();
+            var framework = new ImmediateFramework();
+            var log = new RecordingLog();
+            ConfigurePluginServices(services, framework, log);
+
+            _ = new TokenManager();
+
+            var service = new DiscordPresenceService(config, httpClient);
+
+            await service.Refresh().ConfigureAwait(false);
+
+            Assert.Equal("Invalid API URL", service.StatusMessage);
+        }
+        finally
+        {
+            SetPluginServicesInstance(previousServices);
+            SetTokenManagerInstance(previousToken);
+        }
+    }
+
+    [Fact]
+    public async Task Refresh_MissingToken_SetsApiKeyStatus()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+
+        var previousServices = PluginServices.Instance;
+        var previousToken = TokenManager.Instance;
+
+        try
+        {
+            var services = new PluginServices();
+            var framework = new ImmediateFramework();
+            var log = new RecordingLog();
+            ConfigurePluginServices(services, framework, log);
+
+            SetTokenManagerInstance(null);
+
+            var service = new DiscordPresenceService(config, httpClient);
+
+            await service.Refresh().ConfigureAwait(false);
+
+            Assert.Equal("API key not configured", service.StatusMessage);
+        }
+        finally
+        {
+            SetPluginServicesInstance(previousServices);
+            SetTokenManagerInstance(previousToken);
+        }
+    }
+
+    [Fact]
+    public async Task RunWebSocket_MissingToken_SetsApiKeyStatus()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+
+        var previousServices = PluginServices.Instance;
+        var previousToken = TokenManager.Instance;
+        DiscordPresenceService? service = null;
+
+        try
+        {
+            var services = new PluginServices();
+            var framework = new ImmediateFramework();
+            var log = new RecordingLog();
+            ConfigurePluginServices(services, framework, log);
+
+            SetTokenManagerInstance(null);
+
+            service = new DiscordPresenceService(config, httpClient);
+
+            service.Reset();
+
+            await WaitForStatusAsync(service, "API key not configured").ConfigureAwait(false);
+        }
+        finally
+        {
+            service?.Stop();
+            SetPluginServicesInstance(previousServices);
+            SetTokenManagerInstance(previousToken);
+        }
+    }
+
+    [Fact]
+    public async Task RunWebSocket_DisabledConfig_SetsPluginDisabledStatus()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test", Enabled = false };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+
+        var previousServices = PluginServices.Instance;
+        var previousToken = TokenManager.Instance;
+        DiscordPresenceService? service = null;
+
+        try
+        {
+            var services = new PluginServices();
+            var framework = new ImmediateFramework();
+            var log = new RecordingLog();
+            ConfigurePluginServices(services, framework, log);
+
+            var tokenManager = new TokenManager();
+            _ = tokenManager;
+
+            service = new DiscordPresenceService(config, httpClient);
+
+            service.Reset();
+
+            await WaitForStatusAsync(service, "Plugin disabled").ConfigureAwait(false);
+        }
+        finally
+        {
+            service?.Stop();
+            SetPluginServicesInstance(previousServices);
+            SetTokenManagerInstance(previousToken);
+        }
+    }
+
+    [Fact]
     public async Task ResetStress_DoesNotOverlapConnections()
     {
         var config = new Config { ApiBaseUrl = "http://unit-test" };
@@ -213,5 +342,39 @@ public class DiscordPresenceServiceTests
             var instanceProp = typeof(TokenManager).GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!;
             instanceProp.GetSetMethod(true)!.Invoke(null, new object?[] { previousToken });
         }
+    }
+
+    private static void ConfigurePluginServices(PluginServices services, IFramework framework, IPluginLog log)
+    {
+        typeof(PluginServices).GetProperty("Framework", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, framework);
+        typeof(PluginServices).GetProperty("Log", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, log);
+    }
+
+    private static void SetPluginServicesInstance(PluginServices? instance)
+    {
+        var property = typeof(PluginServices).GetProperty("Instance", BindingFlags.Static | BindingFlags.NonPublic);
+        property?.GetSetMethod(true)!.Invoke(null, new object?[] { instance });
+    }
+
+    private static void SetTokenManagerInstance(TokenManager? instance)
+    {
+        var property = typeof(TokenManager).GetProperty("Instance", BindingFlags.Static | BindingFlags.Public);
+        property?.GetSetMethod(true)!.Invoke(null, new object?[] { instance });
+    }
+
+    private static async Task WaitForStatusAsync(DiscordPresenceService service, string expected, TimeSpan? timeout = null)
+    {
+        var deadline = DateTime.UtcNow + (timeout ?? TimeSpan.FromSeconds(1));
+        while (DateTime.UtcNow < deadline)
+        {
+            if (service.StatusMessage == expected)
+            {
+                return;
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(10)).ConfigureAwait(false);
+        }
+
+        Assert.Equal(expected, service.StatusMessage);
     }
 }
