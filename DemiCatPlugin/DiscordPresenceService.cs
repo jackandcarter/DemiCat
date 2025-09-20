@@ -32,6 +32,9 @@ public class DiscordPresenceService : IDisposable
     private string? _lastErrorSignature;
     private DateTime _lastErrorLog;
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
+    private const string InvalidApiStatus = "Invalid API URL";
+    private const string ApiKeyMissingStatus = "API key not configured";
+    private const string PluginDisabledStatus = "Plugin disabled";
 
     public IReadOnlyList<PresenceDto> Presences => _presences;
     public string StatusMessage => _statusMessage;
@@ -137,10 +140,17 @@ public class DiscordPresenceService : IDisposable
 
     public async Task Refresh()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true)
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
-            PluginServices.Instance!.Log.Warning("Cannot refresh presences: API base URL is not configured or token missing.");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Invalid API URL");
+            PluginServices.Instance!.Log.Warning("Cannot refresh presences: API base URL is not configured.");
+            UpdateStatusMessage(InvalidApiStatus);
+            return;
+        }
+
+        if (TokenManager.Instance?.IsReady() != true)
+        {
+            PluginServices.Instance!.Log.Warning("Cannot refresh presences: API key is not configured.");
+            UpdateStatusMessage(ApiKeyMissingStatus);
             return;
         }
 
@@ -172,10 +182,25 @@ public class DiscordPresenceService : IDisposable
     {
         while (!token.IsCancellationRequested)
         {
-            if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true || !_config.Enabled)
+            if (!ApiHelpers.ValidateApiBaseUrl(_config))
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = "Invalid API URL");
+                UpdateStatusMessage(InvalidApiStatus);
+                await DelayWithBackoff(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
+                _retryAttempt = 0;
+                continue;
+            }
+
+            if (TokenManager.Instance?.IsReady() != true)
+            {
+                UpdateStatusMessage(ApiKeyMissingStatus);
+                await DelayWithBackoff(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
+                _retryAttempt = 0;
+                continue;
+            }
+
+            if (!_config.Enabled)
+            {
+                UpdateStatusMessage(PluginDisabledStatus);
                 await DelayWithBackoff(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
                 _retryAttempt = 0;
                 continue;
@@ -233,7 +258,7 @@ public class DiscordPresenceService : IDisposable
                 hadTransportError = false;
                 _loaded = false;
                 await Refresh().ConfigureAwait(false);
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
+                UpdateStatusMessage(string.Empty);
 
                 await ReceiveLoopAsync(socket, token).ConfigureAwait(false);
             }
@@ -296,15 +321,13 @@ public class DiscordPresenceService : IDisposable
             {
                 _retryAttempt++;
                 var delay = GetRetryDelay(_retryAttempt);
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = $"Reconnecting in {delay.TotalSeconds:0.#}s...");
+                UpdateStatusMessage($"Reconnecting in {delay.TotalSeconds:0.#}s...");
                 await DelayWithBackoff(delay, token).ConfigureAwait(false);
             }
             else
             {
                 _retryAttempt = 0;
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                    _statusMessage = "Reconnecting...");
+                UpdateStatusMessage("Reconnecting...");
                 await DelayWithBackoff(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
             }
         }
@@ -389,9 +412,11 @@ public class DiscordPresenceService : IDisposable
     private void HandleConnectionException(Exception ex)
     {
         LogConnectionException(ex, "connect");
-        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            _statusMessage = $"Connection failed: {ex.Message}");
+        UpdateStatusMessage($"Connection failed: {ex.Message}");
     }
+
+    private void UpdateStatusMessage(string message)
+        => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = message);
 
     private async Task DelayWithBackoff(TimeSpan delay, CancellationToken token)
     {
