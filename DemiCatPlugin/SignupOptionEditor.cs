@@ -84,7 +84,10 @@ public class SignupOptionEditor
                 {
                     if (bs == ButtonStyle.Link) continue;
                     var sel = bs == _working.Style;
+                    var color = EmbedPreviewRenderer.GetStyleColor(bs);
+                    ImGui.PushStyleColor(ImGuiCol.Text, color);
                     if (ImGui.Selectable(bs.ToString(), sel)) _working.Style = bs;
+                    ImGui.PopStyleColor();
                     if (sel) ImGui.SetItemDefaultFocus();
                 }
                 ImGui.EndCombo();
