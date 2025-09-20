@@ -700,6 +700,66 @@ def test_thread_uses_parent_webhook(monkeypatch):
     asyncio.run(_run())
 
 
+def test_thread_with_forum_parent(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=16, discord_guild_id=16, name="Guild"))
+            db.add(User(id=16, discord_user_id=160, global_name="Alice"))
+            db.add(GuildChannel(guild_id=16, channel_id=654, kind=ChannelKind.FC_CHAT))
+            await db.commit()
+            guild = await db.get(Guild, 16)
+            user = await db.get(User, 16)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            captured: dict[str, object] = {}
+
+            class DummyWebhook:
+                url = "http://example.com"
+
+                async def send(self, *args, **kwargs):
+                    captured["thread"] = kwargs.get("thread")
+                    return types.SimpleNamespace(id=1, attachments=[])
+
+            class DummyForum:
+                id = 321
+
+                async def create_webhook(self, name: str):
+                    captured["created_on_forum"] = True
+                    return DummyWebhook()
+
+            class DummyThread:
+                id = 654
+                parent = DummyForum()
+
+            monkeypatch.setattr(mc.discord, "Thread", DummyThread)
+            monkeypatch.setattr(mc.discord, "ForumChannel", DummyForum)
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return DummyThread()
+
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channel_id="654", content="hello")
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+            assert res["ok"] is True
+            assert isinstance(captured.get("thread"), DummyThread)
+            assert captured.get("created_on_forum") is True
+
+    asyncio.run(_run())
+
+
 def test_archived_thread_rejected(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")

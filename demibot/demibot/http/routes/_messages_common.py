@@ -47,6 +47,30 @@ MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
 
+def _channel_supports_webhooks(channel: object | None) -> bool:
+    """Return ``True`` when the channel can host a webhook."""
+
+    if channel is None:
+        return False
+
+    thread_cls = getattr(discord, "Thread", None)
+    if thread_cls is not None and isinstance(channel, thread_cls):
+        return False
+
+    messageable_cls = getattr(discord.abc, "Messageable", None)
+    if messageable_cls is not None and isinstance(channel, messageable_cls):
+        return True
+
+    forum_cls = getattr(discord, "ForumChannel", None)
+    if forum_cls is not None and isinstance(channel, forum_cls):
+        return True
+
+    if hasattr(channel, "create_webhook"):
+        return True
+
+    return False
+
+
 async def _resolve_discord_channel(
     channel_id: int,
     *,
@@ -62,7 +86,8 @@ async def _resolve_discord_channel(
         return channel
 
     if guild_discord_id is not None:
-        guild_obj = discord_client.get_guild(guild_discord_id)
+        get_guild = getattr(discord_client, "get_guild", None)
+        guild_obj = get_guild(guild_discord_id) if get_guild is not None else None
         if guild_obj is not None:
             channel = guild_obj.get_channel(channel_id)
             if channel is not None:
@@ -118,11 +143,21 @@ async def create_webhook_for_channel(
 
     errors: list[str] = []
     resolved_channel = channel
+    unsupported_channel = False
+
+    if isinstance(resolved_channel, discord.Thread):
+        resolved_channel = getattr(resolved_channel, "parent", None)
+
+    if resolved_channel is not None and not _channel_supports_webhooks(resolved_channel):
+        unsupported_channel = True
+        resolved_channel = None
+
     if resolved_channel is None and discord_client:
         candidate: discord.abc.Messageable | discord.Thread | None
         candidate = discord_client.get_channel(channel_id)
         if candidate is None and guild_discord_id is not None:
-            guild_obj = discord_client.get_guild(guild_discord_id)
+            get_guild = getattr(discord_client, "get_guild", None)
+            guild_obj = get_guild(guild_discord_id) if get_guild is not None else None
             if guild_obj is not None:
                 candidate = guild_obj.get_channel(channel_id)
                 if candidate is None:
@@ -150,11 +185,14 @@ async def create_webhook_for_channel(
                 )
         if isinstance(candidate, discord.Thread):
             candidate = getattr(candidate, "parent", None)
-        if candidate is not None and not isinstance(candidate, discord.abc.Messageable):
+        if candidate is not None and not _channel_supports_webhooks(candidate):
+            unsupported_channel = True
             candidate = None
         resolved_channel = candidate
 
     if resolved_channel is None:
+        if unsupported_channel:
+            return None, None, errors
         errors.append("Webhook creation failed: channel not available")
         return None, None, errors
 
@@ -759,8 +797,16 @@ async def save_message(
 
         if isinstance(base_channel, discord.CategoryChannel):
             raise HTTPException(status_code=400, detail="cannot post to a category")
-        if not isinstance(base_channel, discord.TextChannel):
-            raise HTTPException(status_code=400, detail="unsupported channel type")
+        if isinstance(channel, discord.Thread):
+            if not _channel_supports_webhooks(base_channel):
+                raise HTTPException(status_code=400, detail="unsupported channel type")
+        else:
+            messageable_cls = getattr(discord.abc, "Messageable", None)
+            if messageable_cls is not None and not isinstance(base_channel, messageable_cls):
+                raise HTTPException(status_code=400, detail="unsupported channel type")
+            forum_cls = getattr(discord, "ForumChannel", None)
+            if forum_cls is not None and isinstance(base_channel, forum_cls):
+                raise HTTPException(status_code=400, detail="unsupported channel type")
     discord_files = None
     if files:
         if len(files) > MAX_ATTACHMENTS:
