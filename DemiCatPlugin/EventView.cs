@@ -148,133 +148,276 @@ public class EventView : IDisposable
             ImGui.Spacing();
         }
 
+        DrawEmbed(dto);
+
+        DrawButtons();
+
+        ImGui.Separator();
+    }
+
+    private void DrawEmbed(EmbedDto dto)
+    {
+        const float stripeWidth = 4f;
+        const float contentPadding = 8f;
+        const float verticalPadding = 4f;
+
+        var indent = contentPadding + (dto.Color.HasValue ? stripeWidth : 0f);
+        var availWidth = ImGui.GetContentRegionAvail().X;
+        if (availWidth <= 0)
+        {
+            availWidth = 400f;
+        }
+
+        ImGui.BeginChild($"eventEmbed{dto.Id}", new Vector2(availWidth, 0), false);
+
+        ImGui.Indent(indent);
+        ImGui.Dummy(new Vector2(0f, verticalPadding));
+        DrawEmbedSections(dto);
+        ImGui.Dummy(new Vector2(0f, verticalPadding));
+        ImGui.Unindent(indent);
+
+        ImGui.EndChild();
+
         if (dto.Color.HasValue)
         {
+            var min = ImGui.GetItemRectMin();
+            var max = ImGui.GetItemRectMax();
             var color = ColorUtils.RgbToImGui(dto.Color.Value);
-            var dl = ImGui.GetWindowDrawList();
-            var p = ImGui.GetCursorScreenPos();
-            var end = new Vector2(p.X + 4, p.Y + ImGui.GetTextLineHeightWithSpacing() * 3);
-            dl.AddRectFilled(p, end, color);
-            ImGui.Dummy(new Vector2(4, 0));
-            ImGui.SameLine();
+            ImGui.GetWindowDrawList().AddRectFilled(min, new Vector2(min.X + stripeWidth, max.Y), color);
+        }
+    }
+
+    private void DrawEmbedSections(EmbedDto dto)
+    {
+        var hasContent = false;
+
+        void BeginSection()
+        {
+            if (hasContent)
+            {
+                ImGui.Spacing();
+            }
+            else
+            {
+                hasContent = true;
+            }
         }
 
         if (!string.IsNullOrEmpty(dto.ProviderName))
         {
+            BeginSection();
             ImGui.TextUnformatted(dto.ProviderName);
         }
 
         if (dto.Authors != null && dto.Authors.Count > 0)
         {
-            if (_authorIcon != null)
+            var names = dto.Authors
+                .Where(a => !string.IsNullOrWhiteSpace(a.Name))
+                .Select(a => a.Name!)
+                .ToList();
+
+            if (names.Count > 0 || _authorIcon != null)
             {
-                var wrap = _authorIcon.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, new Vector2(32, 32));
-                ImGui.SameLine();
+                BeginSection();
+                DrawAuthorSection(names);
             }
-            var names = string.Join(", ", dto.Authors.Where(a => !string.IsNullOrEmpty(a.Name)).Select(a => a.Name));
-            ImGui.TextUnformatted(names);
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.AuthorName))
+        {
+            BeginSection();
+            ImGui.TextUnformatted(dto.AuthorName);
         }
 
         if (!string.IsNullOrEmpty(dto.Title))
         {
-            if (!string.IsNullOrEmpty(dto.Url))
-            {
-                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.6f, 1f, 1f));
-                ImGui.TextUnformatted(dto.Title);
-                ImGui.PopStyleColor();
-                if (ImGui.IsItemClicked())
-                {
-                    try { Process.Start(new ProcessStartInfo(dto.Url) { UseShellExecute = true }); } catch { }
-                }
-            }
-            else
-            {
-                ImGui.TextUnformatted(dto.Title);
-            }
-        }
-        if (dto.Timestamp.HasValue)
-        {
-            if (!string.IsNullOrEmpty(dto.Title))
-            {
-                ImGui.SameLine();
-            }
-            ImGui.TextUnformatted($"- {dto.Timestamp.Value.LocalDateTime}");
+            BeginSection();
+            DrawTitleSection(dto);
         }
 
         if (!string.IsNullOrEmpty(dto.Description))
         {
+            BeginSection();
             ImGui.TextWrapped(dto.Description);
-        }
-
-        if (dto.Fields != null && dto.Fields.Count > 0)
-        {
-            var fields = dto.Fields;
-            var index = 0;
-            while (index < fields.Count)
-            {
-                if (fields[index].Inline == true)
-                {
-                    var group = new List<EmbedFieldDto>();
-                    while (index < fields.Count && fields[index].Inline == true)
-                    {
-                        group.Add(fields[index]);
-                        index++;
-                    }
-                    var cols = Math.Min(3, group.Count);
-                    if (ImGui.BeginTable($"ifields{dto.Id}{index}", cols, ImGuiTableFlags.Borders))
-                    {
-                        for (var i = 0; i < group.Count; i++)
-                        {
-                            if (i % cols == 0)
-                            {
-                                ImGui.TableNextRow();
-                            }
-                            ImGui.TableSetColumnIndex(i % cols);
-                            var f = group[i];
-                            ImGui.TextUnformatted(f.Name);
-                            ImGui.TextWrapped(f.Value);
-                        }
-                        ImGui.EndTable();
-                    }
-                }
-                else
-                {
-                    var f = fields[index];
-                    index++;
-                    ImGui.TextUnformatted(f.Name);
-                    ImGui.TextWrapped(f.Value);
-                }
-            }
-        }
-
-        if (_image != null)
-        {
-            var wrap = _image.GetWrapOrEmpty();
-            var size = new Vector2(wrap.Width, wrap.Height);
-            ImGui.Image(wrap.Handle, size);
         }
 
         if (_thumbnail != null)
         {
-            var wrap = _thumbnail.GetWrapOrEmpty();
-            ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+            BeginSection();
+            DrawThumbnailSection();
         }
 
-        if (!string.IsNullOrEmpty(dto.FooterText))
+        if (dto.Fields != null && dto.Fields.Count > 0)
         {
-            if (_footerIcon != null)
+            BeginSection();
+            DrawFields(dto);
+        }
+
+        if (_image != null)
+        {
+            BeginSection();
+            DrawImageSection();
+        }
+
+        if (_footerIcon != null || !string.IsNullOrEmpty(dto.FooterText) || dto.Timestamp.HasValue)
+        {
+            BeginSection();
+            DrawFooterSection(dto);
+        }
+    }
+
+    private void DrawAuthorSection(IReadOnlyList<string> names)
+    {
+        if (_authorIcon != null)
+        {
+            var wrap = _authorIcon.GetWrapOrEmpty();
+            ImGui.Image(wrap.Handle, new Vector2(32, 32));
+            if (names.Count > 0)
             {
-                var wrap = _footerIcon.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, new Vector2(16, 16));
                 ImGui.SameLine();
             }
-            ImGui.TextUnformatted(dto.FooterText);
         }
 
-        DrawButtons();
+        if (names.Count > 0)
+        {
+            ImGui.TextUnformatted(string.Join(", ", names));
+        }
+    }
 
-        ImGui.Separator();
+    private void DrawTitleSection(EmbedDto dto)
+    {
+        if (string.IsNullOrEmpty(dto.Title))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrEmpty(dto.Url))
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.6f, 1f, 1f));
+            ImGui.TextUnformatted(dto.Title);
+            ImGui.PopStyleColor();
+            if (ImGui.IsItemClicked())
+            {
+                try
+                {
+                    Process.Start(new ProcessStartInfo(dto.Url) { UseShellExecute = true });
+                }
+                catch
+                {
+                    // ignored
+                }
+            }
+        }
+        else
+        {
+            ImGui.TextUnformatted(dto.Title);
+        }
+    }
+
+    private static void DrawFields(EmbedDto dto)
+    {
+        var fields = dto.Fields!;
+        var index = 0;
+        while (index < fields.Count)
+        {
+            if (fields[index].Inline == true)
+            {
+                var group = new List<EmbedFieldDto>();
+                while (index < fields.Count && fields[index].Inline == true)
+                {
+                    group.Add(fields[index]);
+                    index++;
+                }
+
+                var cols = Math.Min(3, group.Count);
+                if (ImGui.BeginTable($"ifields{dto.Id}{index}", cols, ImGuiTableFlags.Borders))
+                {
+                    for (var i = 0; i < group.Count; i++)
+                    {
+                        if (i % cols == 0)
+                        {
+                            ImGui.TableNextRow();
+                        }
+
+                        ImGui.TableSetColumnIndex(i % cols);
+                        var f = group[i];
+                        if (!string.IsNullOrEmpty(f.Name))
+                        {
+                            ImGui.TextUnformatted(f.Name);
+                        }
+                        if (!string.IsNullOrEmpty(f.Value))
+                        {
+                            ImGui.TextWrapped(f.Value);
+                        }
+                    }
+
+                    ImGui.EndTable();
+                }
+            }
+            else
+            {
+                var f = fields[index];
+                index++;
+                if (!string.IsNullOrEmpty(f.Name))
+                {
+                    ImGui.TextUnformatted(f.Name);
+                }
+                if (!string.IsNullOrEmpty(f.Value))
+                {
+                    ImGui.TextWrapped(f.Value);
+                }
+            }
+        }
+    }
+
+    private void DrawThumbnailSection()
+    {
+        if (_thumbnail == null)
+        {
+            return;
+        }
+
+        var wrap = _thumbnail.GetWrapOrEmpty();
+        ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+    }
+
+    private void DrawImageSection()
+    {
+        if (_image == null)
+        {
+            return;
+        }
+
+        var wrap = _image.GetWrapOrEmpty();
+        ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+    }
+
+    private void DrawFooterSection(EmbedDto dto)
+    {
+        var footerText = dto.FooterText ?? string.Empty;
+        if (dto.Timestamp.HasValue)
+        {
+            if (footerText.Length > 0)
+            {
+                footerText += " • ";
+            }
+
+            footerText += dto.Timestamp.Value.LocalDateTime.ToString();
+        }
+
+        if (_footerIcon != null)
+        {
+            var wrap = _footerIcon.GetWrapOrEmpty();
+            ImGui.Image(wrap.Handle, new Vector2(16, 16));
+            if (!string.IsNullOrEmpty(footerText))
+            {
+                ImGui.SameLine();
+            }
+        }
+
+        if (!string.IsNullOrEmpty(footerText))
+        {
+            ImGui.TextUnformatted(footerText);
+        }
     }
 
     public void DrawButtons()
