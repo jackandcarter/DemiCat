@@ -258,25 +258,6 @@ public class EventCreateWindow
             DrawFormRow("Image URL", () => ImGui.InputText("##ImageUrl", ref _imageUrl, 260));
             DrawFormRow("Thumbnail URL", () => ImGui.InputText("##ThumbnailUrl", ref _thumbnailUrl, 260));
 
-            DrawFormRow(
-                "Preset Name",
-                () =>
-                {
-                    var avail = ImGui.GetContentRegionAvail().X;
-                    var buttonLabel = "Save Preset";
-                    var buttonWidth = ImGui.CalcTextSize(buttonLabel).X + style.FramePadding.X * 2f;
-                    var spacing = style.ItemSpacing.X;
-                    var inputWidth = Math.Max(1f, avail - buttonWidth - spacing);
-                    ImGui.SetNextItemWidth(inputWidth);
-                    ImGui.InputText("##PresetName", ref _presetName, 64);
-                    ImGui.SameLine();
-                    if (ImGui.Button(buttonLabel))
-                    {
-                        SavePreset();
-                    }
-                },
-                setFullWidth: false);
-
             ImGui.EndTable();
         }
 
@@ -373,9 +354,18 @@ public class EventCreateWindow
                 ImGui.EndCombo();
             }
         }
-        ImGui.InputText("Preset Name", ref _presetName, 64);
+        ImGui.AlignTextToFramePadding();
+        ImGui.TextUnformatted("Preset Name");
         ImGui.SameLine();
-        if (ImGui.Button("Save Preset"))
+        var availWidth = ImGui.GetContentRegionAvail().X;
+        const string presetButtonLabel = "Save Preset";
+        var presetButtonWidth = ImGui.CalcTextSize(presetButtonLabel).X + style.FramePadding.X * 2f;
+        var presetSpacing = style.ItemSpacing.X;
+        var presetInputWidth = Math.Max(1f, availWidth - presetButtonWidth - presetSpacing);
+        ImGui.SetNextItemWidth(presetInputWidth);
+        ImGui.InputText("##PresetName", ref _presetName, 31);
+        ImGui.SameLine();
+        if (ImGui.Button(presetButtonLabel))
         {
             SavePreset();
         }
@@ -916,6 +906,7 @@ public class EventCreateWindow
 
     private void SavePreset()
     {
+        if (_presetName.Length > 30) _presetName = _presetName[..30];
         if (string.IsNullOrWhiteSpace(_presetName)) return;
         var preset = new SignupPreset
         {
