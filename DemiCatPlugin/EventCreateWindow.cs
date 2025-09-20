@@ -134,30 +134,141 @@ public class EventCreateWindow
             ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
         }
 
-        ImGui.InputText("Title", ref _title, 256);
-        ImGui.InputText("Time", ref _time, 64);
-        var repeatPreview = _repeat.ToString();
-        if (ImGui.BeginCombo("Repeat", repeatPreview))
+        var style = ImGui.GetStyle();
+        var labelColumnWidth = ImGui.CalcTextSize("Thumbnail URL").X + style.ItemInnerSpacing.X * 2f;
+        if (!_rolesLoaded)
         {
-            foreach (RepeatOption opt in Enum.GetValues<RepeatOption>())
+            _ = LoadRoles();
+        }
+
+        if (ImGui.BeginTable("eventCreateForm", 2, ImGuiTableFlags.SizingStretchSame))
+        {
+            ImGui.TableSetupColumn("Label", ImGuiTableColumnFlags.WidthFixed, labelColumnWidth);
+            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+
+            void DrawFormRow(string label, Action drawControl, bool alignLabel = true, bool setFullWidth = true)
             {
-                var sel = opt == _repeat;
-                if (ImGui.Selectable(opt.ToString(), sel)) _repeat = opt;
-                if (sel) ImGui.SetItemDefaultFocus();
+                ImGui.TableNextRow();
+                ImGui.TableNextColumn();
+                if (alignLabel)
+                {
+                    ImGui.AlignTextToFramePadding();
+                }
+                ImGui.TextUnformatted(label);
+                ImGui.TableNextColumn();
+                if (setFullWidth)
+                {
+                    ImGui.SetNextItemWidth(-1f);
+                }
+                drawControl();
             }
-            ImGui.EndCombo();
+
+            DrawFormRow("Title", () => ImGui.InputText("##Title", ref _title, 256));
+            DrawFormRow("Time", () => ImGui.InputText("##Time", ref _time, 64));
+            DrawFormRow(
+                "Description",
+                () =>
+                {
+                    var avail = ImGui.GetContentRegionAvail();
+                    var descHeight = ImGui.GetTextLineHeight() * 6f;
+                    ImGui.InputTextMultiline("##Description", ref _description, 4096, new Vector2(avail.X, descHeight));
+                },
+                alignLabel: false,
+                setFullWidth: false);
+
+            DrawFormRow("Repeat", () =>
+            {
+                var repeatPreview = _repeat.ToString();
+                if (ImGui.BeginCombo("##Repeat", repeatPreview))
+                {
+                    foreach (RepeatOption opt in Enum.GetValues<RepeatOption>())
+                    {
+                        var sel = opt == _repeat;
+                        if (ImGui.Selectable(opt.ToString(), sel)) _repeat = opt;
+                        if (sel) ImGui.SetItemDefaultFocus();
+                    }
+                    ImGui.EndCombo();
+                }
+            });
+
+            if (_repeat != RepeatOption.None &&
+                DateTime.TryParse(_time, null, DateTimeStyles.AdjustToUniversal, out var baseTime))
+            {
+                var next = _repeat == RepeatOption.Daily ? baseTime.AddDays(1) : baseTime.AddDays(7);
+                var nextStr = next.ToUniversalTime().ToString("O");
+                DrawFormRow(string.Empty, () => ImGui.TextUnformatted($"Next: {nextStr}"), alignLabel: false, setFullWidth: false);
+            }
+
+            DrawFormRow(
+                "Mention Roles",
+                () =>
+                {
+                    if (_rolesLoaded)
+                    {
+                        if (_roles.Count > 0)
+                        {
+                            var selectedRoleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
+                            var previewLabel = selectedRoleNames.Count > 0 ? string.Join(", ", selectedRoleNames) : "Select roles";
+                            ImGui.SetNextItemWidth(-1f);
+                            if (ImGui.BeginCombo("##MentionRoles", previewLabel))
+                            {
+                                foreach (var role in _roles)
+                                {
+                                    var roleId = role.Id;
+                                    var selected = _mentions.Contains(roleId);
+                                    if (ImGui.Selectable($"{role.Name}##role{role.Id}", selected, ImGuiSelectableFlags.DontClosePopups))
+                                    {
+                                        if (selected)
+                                        {
+                                            _mentions.Remove(roleId);
+                                        }
+                                        else
+                                        {
+                                            _mentions.Add(roleId);
+                                        }
+                                    }
+                                }
+                                ImGui.EndCombo();
+                            }
+                        }
+                        else
+                        {
+                            var msg = RoleCache.LastErrorMessage ?? "No roles available";
+                            ImGui.TextUnformatted(msg);
+                        }
+                    }
+                    else
+                    {
+                        ImGui.TextUnformatted("Loading roles...");
+                    }
+                },
+                setFullWidth: false);
+
+            DrawFormRow("URL", () => ImGui.InputText("##Url", ref _url, 260));
+            DrawFormRow("Image URL", () => ImGui.InputText("##ImageUrl", ref _imageUrl, 260));
+            DrawFormRow("Thumbnail URL", () => ImGui.InputText("##ThumbnailUrl", ref _thumbnailUrl, 260));
+
+            DrawFormRow(
+                "Preset Name",
+                () =>
+                {
+                    var avail = ImGui.GetContentRegionAvail().X;
+                    var buttonLabel = "Save Preset";
+                    var buttonWidth = ImGui.CalcTextSize(buttonLabel).X + style.FramePadding.X * 2f;
+                    var spacing = style.ItemSpacing.X;
+                    var inputWidth = Math.Max(1f, avail - buttonWidth - spacing);
+                    ImGui.SetNextItemWidth(inputWidth);
+                    ImGui.InputText("##PresetName", ref _presetName, 64);
+                    ImGui.SameLine();
+                    if (ImGui.Button(buttonLabel))
+                    {
+                        SavePreset();
+                    }
+                },
+                setFullWidth: false);
+
+            ImGui.EndTable();
         }
-        if (_repeat != RepeatOption.None &&
-            DateTime.TryParse(_time, null, DateTimeStyles.AdjustToUniversal, out var baseTime))
-        {
-            var next = _repeat == RepeatOption.Daily ? baseTime.AddDays(1) : baseTime.AddDays(7);
-            var nextStr = next.ToUniversalTime().ToString("O");
-            ImGui.TextUnformatted($"Next: {nextStr}");
-        }
-        ImGui.InputTextMultiline("Description", ref _description, 4096, new Vector2(400, 100));
-        ImGui.InputText("URL", ref _url, 260);
-        ImGui.InputText("Image URL", ref _imageUrl, 260);
-        ImGui.InputText("Thumbnail URL", ref _thumbnailUrl, 260);
 
         ImGui.AlignTextToFramePadding();
         ImGui.TextUnformatted("Embed Banner Color:");
@@ -185,43 +296,6 @@ public class EventCreateWindow
             ImGui.EndPopup();
         }
 
-        if (!_rolesLoaded)
-        {
-            _ = LoadRoles();
-        }
-        if (_rolesLoaded)
-        {
-            if (_roles.Count > 0)
-            {
-                var selectedRoleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
-                var previewLabel = selectedRoleNames.Count > 0 ? string.Join(", ", selectedRoleNames) : "Select roles";
-                if (ImGui.BeginCombo("Mention Roles", previewLabel))
-                {
-                    foreach (var role in _roles)
-                    {
-                        var roleId = role.Id;
-                        var selected = _mentions.Contains(roleId);
-                        if (ImGui.Selectable($"{role.Name}##role{role.Id}", selected, ImGuiSelectableFlags.DontClosePopups))
-                        {
-                            if (selected)
-                            {
-                                _mentions.Remove(roleId);
-                            }
-                            else
-                            {
-                                _mentions.Add(roleId);
-                            }
-                        }
-                    }
-                    ImGui.EndCombo();
-                }
-            }
-            else
-            {
-                var msg = RoleCache.LastErrorMessage ?? "No roles available";
-                ImGui.TextUnformatted(msg);
-            }
-        }
         for (var i = 0; i < _buttons.Count; i++)
         {
             var button = _buttons[i];
