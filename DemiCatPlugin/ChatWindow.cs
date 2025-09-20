@@ -742,7 +742,7 @@ public class ChatWindow : IDisposable
         ImGui.PopTextWrapPos();
     }
 
-    internal static string ReplaceMentionTokens(string text, List<DiscordMentionDto>? mentions)
+    internal static string ReplaceMentionTokens(string text, IReadOnlyList<DiscordMentionDto>? mentions)
     {
         if (mentions == null)
             return text;
@@ -897,7 +897,7 @@ public class ChatWindow : IDisposable
         var presences = _presence?.Presences ?? Array.Empty<PresenceDto>();
         var player = PluginServices.Instance?.ClientState?.LocalPlayer;
         var characterName = player?.Name.TextValue ?? player?.Name.ToString();
-        var worldName = player?.HomeWorld?.GameData?.Name?.ToString();
+        var worldName = player != null ? player.HomeWorld.GameData?.Name?.ToString() : null;
 
         return new BridgeMessageFormatter.BridgeFormatterOptions
         {

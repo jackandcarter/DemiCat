@@ -568,6 +568,7 @@ public class TemplatesWindow
             fields,
             buttons,
             mentionIds,
+            null,
             embedId ?? "template-preview");
     }
 
