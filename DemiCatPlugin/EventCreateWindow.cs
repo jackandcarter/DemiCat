@@ -50,7 +50,8 @@ public class EventCreateWindow
     private string _channelErrorMessage = string.Empty;
     private int _selectedIndex;
     private readonly ChannelSelectionService _channelSelection;
-    private EmbedDto? _preview;
+    private EventPreviewFormatter.Result? _preview;
+    private EventView? _previewView;
     private bool _confirmCreate;
 
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -281,9 +282,26 @@ public class EventCreateWindow
             }
             ImGui.TreePop();
         }
-        _preview = BuildPreview();
+        var previewResult = BuildPreview();
+        _preview = previewResult;
+        if (_previewView == null)
+        {
+            _previewView = new EventView(
+                previewResult.Embed,
+                _config,
+                _httpClient,
+                () => Task.CompletedTask,
+                _emojiManager,
+                previewResult.Content,
+                previewResult.Warnings);
+        }
+        else
+        {
+            _previewView.Update(previewResult.Embed, previewResult.Content, previewResult.Warnings);
+        }
+
         ImGui.Separator();
-        EmbedPreviewRenderer.Draw(_preview, (_, __) => { }, _emojiManager);
+        _previewView!.Draw();
 
         if (!_schedulesLoaded)
         {
@@ -494,8 +512,9 @@ public class EventCreateWindow
         }
         try
         {
-            var dto = BuildPreview();
-            var buttons = dto.Buttons ?? new List<EmbedButtonDto>();
+            var preview = BuildPreview();
+            var dto = preview.Embed;
+            var buttons = preview.Buttons.ToList();
             var payload = new
             {
                 channelId = ChannelId,
@@ -558,8 +577,9 @@ public class EventCreateWindow
         }
         try
         {
-            var dto = BuildPreview();
-            var buttons = dto.Buttons ?? new List<EmbedButtonDto>();
+            var preview = BuildPreview();
+            var dto = preview.Embed;
+            var buttons = preview.Buttons.ToList();
             var body = new
             {
                 channelId,
@@ -571,7 +591,7 @@ public class EventCreateWindow
                 thumbnailUrl = dto.ThumbnailUrl,
                 color = dto.Color,
                 fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
-                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, emoji = b.Emoji, style = b.Style.HasValue ? (int)b.Style : (int?)null, maxSignups = b.MaxSignups, width = b.Width }).ToList(),
+                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, emoji = b.Emoji, style = b.Style.HasValue ? (int)b.Style : (int?)null, maxSignups = b.MaxSignups, width = b.Width, rowIndex = b.RowIndex }).ToList(),
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null,
                 repeat = _repeat == RepeatOption.None ? null : _repeat.ToString().ToLowerInvariant()
             };
@@ -644,38 +664,54 @@ public class EventCreateWindow
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
-    private EmbedDto BuildPreview()
+    private EventPreviewFormatter.Result BuildPreview()
     {
-        var dto = new EmbedDto
+        var fields = _fields
+            .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
+            .Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline })
+            .ToList();
+
+        var buttons = _buttons
+            .Where(b => b.Include)
+            .Select((b, i) => new EmbedButtonDto
+            {
+                Label = b.Label,
+                CustomId = $"rsvp:{b.Tag}",
+                Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
+                Style = b.Style,
+                MaxSignups = b.MaxSignups,
+                Width = Math.Min(b.Width ?? ButtonSizeHelper.ComputeWidth(b.Label), ButtonSizeHelper.Max),
+                RowIndex = i / 5
+            })
+            .ToList();
+
+        var mentionIds = new List<ulong>();
+        foreach (var mention in _mentions)
         {
-            Title = _title,
-            Description = _description,
-            Url = string.IsNullOrWhiteSpace(_url) ? null : _url,
-            ImageUrl = string.IsNullOrWhiteSpace(_imageUrl) ? null : _imageUrl,
-            ThumbnailUrl = string.IsNullOrWhiteSpace(_thumbnailUrl) ? null : _thumbnailUrl,
-            Color = _color > 0 ? (uint?)ColorUtils.ImGuiToRgb(_color) : null,
-            Timestamp = DateTime.TryParse(_time, null, DateTimeStyles.AdjustToUniversal, out var ts) ? ts : (DateTimeOffset?)null,
-            Fields = _fields
-                .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
-                .Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline })
-                .ToList(),
-            Buttons = _buttons
-                .Where(b => b.Include)
-                .Select((b, i) => new EmbedButtonDto
-                {
-                    Label = b.Label,
-                    CustomId = $"rsvp:{b.Tag}",
-                    Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
-                    Style = b.Style,
-                    MaxSignups = b.MaxSignups,
-                    Width = Math.Min(b.Width ?? ButtonSizeHelper.ComputeWidth(b.Label), ButtonSizeHelper.Max),
-                    RowIndex = i / 5
-                })
-                .ToList()
-        };
-        if (dto.Fields != null && dto.Fields.Count == 0) dto.Fields = null;
-        if (dto.Buttons != null && dto.Buttons.Count == 0) dto.Buttons = null;
-        return dto;
+            if (ulong.TryParse(mention, out var parsed))
+            {
+                mentionIds.Add(parsed);
+            }
+        }
+
+        DateTimeOffset? timestamp = null;
+        if (DateTimeOffset.TryParse(_time, null, DateTimeStyles.AdjustToUniversal, out var parsedTs))
+        {
+            timestamp = parsedTs;
+        }
+
+        return EventPreviewFormatter.Build(
+            _title,
+            _description,
+            timestamp,
+            string.IsNullOrWhiteSpace(_url) ? null : _url,
+            string.IsNullOrWhiteSpace(_imageUrl) ? null : _imageUrl,
+            string.IsNullOrWhiteSpace(_thumbnailUrl) ? null : _thumbnailUrl,
+            _color > 0 ? (uint?)ColorUtils.ImGuiToRgb(_color) : null,
+            fields,
+            buttons,
+            mentionIds,
+            embedId: "event-create-preview");
     }
 
     public Task RefreshChannels()

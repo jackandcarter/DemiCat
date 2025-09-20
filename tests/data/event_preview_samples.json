@@ -1,0 +1,214 @@
+{
+  "event_fc": {
+    "content": "<@&12345>",
+    "embed": {
+      "image": {
+        "url": "https://example.com/image.png"
+      },
+      "thumbnail": {
+        "url": "https://example.com/thumb.png"
+      },
+      "fields": [
+        {
+          "inline": false,
+          "name": "When",
+          "value": "Tonight 8pm"
+        },
+        {
+          "inline": true,
+          "name": "Where",
+          "value": "Discord"
+        }
+      ],
+      "flags": 0,
+      "color": 1193046,
+      "timestamp": "2024-04-01T20:00:00+00:00",
+      "type": "rich",
+      "description": "Clear the raid together.",
+      "url": "https://example.com/event",
+      "title": "Raid Night"
+    },
+    "buttons": [
+      {
+        "label": "Sign Up",
+        "customId": "rsvp:yes",
+        "style": 1,
+        "width": 80,
+        "rowIndex": 0
+      },
+      {
+        "label": "Info",
+        "url": "https://example.com/info",
+        "style": 5,
+        "width": 56,
+        "rowIndex": 0
+      }
+    ]
+  },
+  "event_officer": {
+    "content": "<@&12345> <@&67890>",
+    "embed": {
+      "image": {
+        "url": "https://example.com/image.png"
+      },
+      "thumbnail": {
+        "url": "https://example.com/thumb.png"
+      },
+      "fields": [
+        {
+          "inline": false,
+          "name": "When",
+          "value": "Tonight 8pm"
+        },
+        {
+          "inline": true,
+          "name": "Where",
+          "value": "Discord"
+        }
+      ],
+      "flags": 0,
+      "color": 1193046,
+      "timestamp": "2024-04-01T20:00:00+00:00",
+      "type": "rich",
+      "description": "Clear the raid together.",
+      "url": "https://example.com/event",
+      "title": "Raid Night"
+    },
+    "buttons": [
+      {
+        "label": "Sign Up",
+        "customId": "rsvp:yes",
+        "style": 1,
+        "width": 80,
+        "rowIndex": 0
+      },
+      {
+        "label": "Info",
+        "url": "https://example.com/info",
+        "style": 5,
+        "width": 56,
+        "rowIndex": 0
+      }
+    ]
+  },
+  "template_fc": {
+    "content": "<@&12345>",
+    "embed": {
+      "image": {
+        "url": "https://example.com/template-image.png"
+      },
+      "thumbnail": {
+        "url": "https://example.com/template-thumb.png"
+      },
+      "fields": [
+        {
+          "inline": false,
+          "name": "Agenda",
+          "value": "Discuss plan"
+        },
+        {
+          "inline": true,
+          "name": "Duration",
+          "value": "60 min"
+        }
+      ],
+      "flags": 0,
+      "color": 11163084,
+      "timestamp": "2024-04-01T20:00:00+00:00",
+      "type": "rich",
+      "description": "Discuss strategy.",
+      "url": "https://example.com/template",
+      "title": "Static Meeting"
+    },
+    "buttons": [
+      {
+        "label": "DPS Signup",
+        "customId": "rsvp:dps",
+        "style": 1,
+        "width": 112,
+        "rowIndex": 0
+      },
+      {
+        "label": "Healer Signup",
+        "customId": "rsvp:heals",
+        "style": 3,
+        "width": 128,
+        "rowIndex": 0
+      },
+      {
+        "label": "Tank Signup",
+        "customId": "rsvp:tanks",
+        "style": 2,
+        "width": 104,
+        "rowIndex": 1
+      },
+      {
+        "label": "Guide",
+        "url": "https://example.com/guide",
+        "style": 5,
+        "width": 64,
+        "rowIndex": 1
+      }
+    ]
+  },
+  "template_officer": {
+    "content": "<@&12345> <@&67890>",
+    "embed": {
+      "image": {
+        "url": "https://example.com/template-image.png"
+      },
+      "thumbnail": {
+        "url": "https://example.com/template-thumb.png"
+      },
+      "fields": [
+        {
+          "inline": false,
+          "name": "Agenda",
+          "value": "Discuss plan"
+        },
+        {
+          "inline": true,
+          "name": "Duration",
+          "value": "60 min"
+        }
+      ],
+      "flags": 0,
+      "color": 11163084,
+      "timestamp": "2024-04-01T20:00:00+00:00",
+      "type": "rich",
+      "description": "Discuss strategy.",
+      "url": "https://example.com/template",
+      "title": "Static Meeting"
+    },
+    "buttons": [
+      {
+        "label": "DPS Signup",
+        "customId": "rsvp:dps",
+        "style": 1,
+        "width": 112,
+        "rowIndex": 0
+      },
+      {
+        "label": "Healer Signup",
+        "customId": "rsvp:heals",
+        "style": 3,
+        "width": 128,
+        "rowIndex": 0
+      },
+      {
+        "label": "Tank Signup",
+        "customId": "rsvp:tanks",
+        "style": 2,
+        "width": 104,
+        "rowIndex": 1
+      },
+      {
+        "label": "Guide",
+        "url": "https://example.com/guide",
+        "style": 5,
+        "width": 64,
+        "rowIndex": 1
+      }
+    ]
+  }
+}

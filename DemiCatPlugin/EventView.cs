@@ -4,6 +4,7 @@ using System.Net.Http;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.IO;
 using DiscordHelper;
@@ -29,21 +30,26 @@ public class EventView : IDisposable
     private ISharedImmediateTexture? _image;
     private ISharedImmediateTexture? _footerIcon;
     private string? _lastResult;
+    private string? _content;
+    private readonly List<string> _warnings = new();
+    private static readonly Regex RoleMentionRegex = new("<@&(\\d+)>", RegexOptions.Compiled);
 
-    public EventView(EmbedDto dto, Config config, HttpClient httpClient, Func<Task> refresh, EmojiManager emojiManager)
+    public EventView(EmbedDto dto, Config config, HttpClient httpClient, Func<Task> refresh, EmojiManager emojiManager, string? content = null, IEnumerable<string>? warnings = null)
     {
         _config = config;
         _httpClient = httpClient;
         _refresh = refresh;
         _emojiManager = emojiManager;
         _dto = dto;
+        _content = content;
+        SetWarnings(warnings);
         LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t);
         LoadTexture(dto.FooterIconUrl, t => _footerIcon = t);
         LoadTexture(dto.ThumbnailUrl, t => _thumbnail = t);
         LoadTexture(dto.ImageUrl, t => _image = t);
     }
 
-    public void Update(EmbedDto dto)
+    public void Update(EmbedDto dto, string? content = null, IEnumerable<string>? warnings = null)
     {
         if (_dto.AuthorIconUrl != dto.AuthorIconUrl)
         {
@@ -62,6 +68,57 @@ public class EventView : IDisposable
             LoadTexture(dto.ImageUrl, t => _image = t);
         }
         _dto = dto;
+        _content = content;
+        SetWarnings(warnings);
+    }
+
+    private void SetWarnings(IEnumerable<string>? warnings)
+    {
+        _warnings.Clear();
+        if (warnings == null)
+        {
+            return;
+        }
+
+        foreach (var warning in warnings)
+        {
+            if (!string.IsNullOrWhiteSpace(warning) && !_warnings.Contains(warning))
+            {
+                _warnings.Add(warning);
+            }
+        }
+    }
+
+    private string? BuildDisplayContent()
+    {
+        var raw = _content;
+        if (string.IsNullOrWhiteSpace(raw) && _dto.Mentions != null && _dto.Mentions.Count > 0)
+        {
+            raw = string.Join(" ", _dto.Mentions.Select(id => $"<@&{id}>"));
+        }
+
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        string ReplaceMention(Match match)
+        {
+            var id = match.Groups[1].Value;
+            foreach (var role in RoleCache.Roles)
+            {
+                if (role.Id == id && !string.IsNullOrWhiteSpace(role.Name))
+                {
+                    return $"@{role.Name}";
+                }
+            }
+
+            return $"@{id}";
+        }
+
+        var replaced = RoleMentionRegex.Replace(raw, ReplaceMention);
+        replaced = replaced.Replace("<@everyone>", "@everyone").Replace("<@here>", "@here");
+        return replaced;
     }
 
     public string ChannelId => _dto.ChannelId?.ToString() ?? string.Empty;
@@ -73,6 +130,23 @@ public class EventView : IDisposable
     public void Draw()
     {
         var dto = _dto;
+
+        if (_warnings.Count > 0)
+        {
+            var warnColor = new Vector4(1f, 0.75f, 0f, 1f);
+            foreach (var warning in _warnings)
+            {
+                ImGui.TextColored(warnColor, $"⚠ {warning}");
+            }
+            ImGui.Separator();
+        }
+
+        var mentionText = BuildDisplayContent();
+        if (!string.IsNullOrWhiteSpace(mentionText))
+        {
+            ImGui.TextWrapped(mentionText);
+            ImGui.Spacing();
+        }
 
         if (dto.Color.HasValue)
         {
@@ -196,11 +270,6 @@ public class EventView : IDisposable
                 ImGui.SameLine();
             }
             ImGui.TextUnformatted(dto.FooterText);
-        }
-
-        if (dto.Mentions != null && dto.Mentions.Count > 0)
-        {
-            ImGui.Text($"Mentions: {string.Join(", ", dto.Mentions)}");
         }
 
         DrawButtons();

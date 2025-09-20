@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, NamedTuple
 
 import re
 import discord
@@ -99,6 +99,42 @@ class CreateEventBody(BaseModel):
         return dt
 
 
+class FormattedEvent(NamedTuple):
+    embed: discord.Embed
+    content: str | None
+    buttons: List[EmbedButtonDto]
+
+
+def format_event_embed(
+    body: "CreateEventBody",
+    *,
+    timestamp: datetime,
+    mention_ids: List[int],
+) -> FormattedEvent:
+    buttons: List[EmbedButtonDto] = list(body.buttons or [])
+    if not buttons:
+        for tag in body.attendance or ["yes", "maybe", "no"]:
+            buttons.append(
+                EmbedButtonDto(label=tag.capitalize(), custom_id=f"rsvp:{tag}")
+            )
+
+    embed = discord.Embed(title=body.title, description=body.description)
+    embed.timestamp = timestamp
+    if body.color is not None:
+        embed.colour = body.color
+    if body.url:
+        embed.url = body.url
+    for field in body.fields or []:
+        embed.add_field(name=field.name, value=field.value, inline=field.inline)
+    if body.thumbnail_url:
+        embed.set_thumbnail(url=body.thumbnail_url)
+    if body.image_url:
+        embed.set_image(url=body.image_url)
+
+    content = " ".join(f"<@&{m}>" for m in mention_ids) or None
+    return FormattedEvent(embed=embed, content=content, buttons=buttons)
+
+
 @router.post("/events")
 async def create_event(
     body: CreateEventBody,
@@ -116,12 +152,6 @@ async def create_event(
             "request": body.model_dump(mode="json", exclude={"mentions"}),
         },
     )
-    buttons = body.buttons or []
-    if not buttons:
-        for tag in body.attendance or ["yes", "maybe", "no"]:
-            buttons.append(
-                EmbedButtonDto(label=tag.capitalize(), custom_id=f"rsvp:{tag}")
-            )
     if body.time:
         ts = body.time
     else:
@@ -136,6 +166,9 @@ async def create_event(
             int(r) for r in (cfg.mention_role_ids or "").split(",") if r
         } if cfg else set()
         mention_ids = [m for m in mention_ids if m in allowed]
+
+    formatted = format_event_embed(body, timestamp=ts, mention_ids=mention_ids)
+    buttons = formatted.buttons
 
     dto = EmbedDto(
         id=eid,
@@ -206,18 +239,7 @@ async def create_event(
         if base_channel is not None and not isinstance(base_channel, discord.TextChannel):
             raise HTTPException(status_code=400, detail="unsupported channel type")
         if isinstance(base_channel, discord.abc.Messageable):
-            emb = discord.Embed(title=body.title, description=body.description)
-            emb.timestamp = ts
-            if body.color is not None:
-                emb.colour = body.color
-            if body.url:
-                emb.url = body.url
-            for f in body.fields or []:
-                emb.add_field(name=f.name, value=f.value, inline=f.inline)
-            if body.thumbnail_url:
-                emb.set_thumbnail(url=body.thumbnail_url)
-            if body.image_url:
-                emb.set_image(url=body.image_url)
+            emb = formatted.embed
 
             view: discord.ui.View | None = None
             if buttons:
@@ -279,7 +301,7 @@ async def create_event(
                                     row=row_index,
                                 )
                             )
-            content = " ".join(f"<@&{m}>" for m in mention_ids) or None
+            content = formatted.content
             try:
                 logger.debug(
                     "Sending event to Discord",
