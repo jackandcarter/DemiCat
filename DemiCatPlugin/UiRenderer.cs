@@ -648,11 +648,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 ids.Add(dto.Id);
                 if (_embeds.TryGetValue(dto.Id, out var view))
                 {
-                    view.Update(dto);
+                    view.Update(dto, BuildMentionContent(dto));
                 }
                 else
                 {
-                    _embeds[dto.Id] = new EventView(dto, _config, _httpClient, RefreshEmbeds, _emojiManager);
+                    _embeds[dto.Id] = new EventView(dto, _config, _httpClient, RefreshEmbeds, _emojiManager, BuildMentionContent(dto));
                 }
             }
 
@@ -662,6 +662,16 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _embeds.Remove(key);
             }
         }
+    }
+
+    private static string? BuildMentionContent(EmbedDto dto)
+    {
+        if (dto.Mentions == null || dto.Mentions.Count == 0)
+        {
+            return null;
+        }
+
+        return string.Join(" ", dto.Mentions.Select(id => $"<@&{id}>"));
     }
 
     public async Task RefreshEmbeds()

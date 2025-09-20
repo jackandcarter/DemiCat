@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
+using System.Globalization;
 using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 using DemiCat.UI;
@@ -259,6 +260,13 @@ public class TemplatesWindow
 
         if (_showPreview && _previewEvent != null)
         {
+            if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)
+            {
+                var tmpl = _templates[_selectedIndex].Template;
+                var embedId = $"template-preview-{_templates[_selectedIndex].Id}";
+                var preview = BuildPreview(tmpl, embedId);
+                _previewEvent.Update(preview.Embed, preview.Content, preview.Warnings);
+            }
             if (ImGui.Begin("Template Preview", ref _showPreview))
             {
                 _previewEvent.Draw();
@@ -324,7 +332,20 @@ public class TemplatesWindow
     internal void OpenPreview(Template tmpl)
     {
         _previewEvent?.Dispose();
-        _previewEvent = new EventView(ToEmbedDto(tmpl), _config, _httpClient, () => Task.CompletedTask, _emojiManager);
+        var embedId = "template-preview";
+        if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)
+        {
+            embedId = $"template-preview-{_templates[_selectedIndex].Id}";
+        }
+        var preview = BuildPreview(tmpl, embedId);
+        _previewEvent = new EventView(
+            preview.Embed,
+            _config,
+            _httpClient,
+            () => Task.CompletedTask,
+            _emojiManager,
+            preview.Content,
+            preview.Warnings);
         _showPreview = true;
     }
 
@@ -494,13 +515,18 @@ public class TemplatesWindow
             .ToList();
     }
 
-    internal EmbedDto ToEmbedDto(Template tmpl)
+    internal EventPreviewFormatter.Result BuildPreview(Template tmpl, string? embedId = null)
     {
-        DateTimeOffset? ts = null;
-        if (!string.IsNullOrWhiteSpace(tmpl.Time) && DateTimeOffset.TryParse(tmpl.Time, out var parsed))
+        DateTimeOffset? timestamp = null;
+        if (!string.IsNullOrWhiteSpace(tmpl.Time) && DateTimeOffset.TryParse(tmpl.Time, null, DateTimeStyles.AdjustToUniversal, out var parsed))
         {
-            ts = parsed;
+            timestamp = parsed;
         }
+
+        var fields = tmpl.Fields?
+            .Where(f => !string.IsNullOrWhiteSpace(f.Name) && !string.IsNullOrWhiteSpace(f.Value))
+            .Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline })
+            .ToList();
 
         var buttons = BuildButtonsPayload(tmpl)
             .Select(b => new EmbedButtonDto
@@ -508,27 +534,44 @@ public class TemplatesWindow
                 Label = b.label,
                 CustomId = b.customId,
                 Style = (ButtonStyle)b.style,
-                Emoji = b.emoji,
+                Emoji = string.IsNullOrWhiteSpace(b.emoji) ? null : b.emoji,
                 MaxSignups = b.maxSignups,
                 Width = b.width,
                 RowIndex = b.rowIndex
             })
             .ToList();
 
-        return new EmbedDto
+        var mentionIds = new List<ulong>();
+        if (_mentions.Count > 0)
         {
-            Title = tmpl.Title,
-            Description = tmpl.Description,
-            Url = string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
-            Timestamp = ts,
-            ImageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
-            ThumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
-            Color = tmpl.Color != 0 ? (uint?)tmpl.Color : null,
-            Fields = tmpl.Fields?.Select(f => new EmbedFieldDto { Name = f.Name, Value = f.Value, Inline = f.Inline }).ToList(),
-            Buttons = buttons.Count > 0 ? buttons : null,
-            Mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
-        };
+            foreach (var mention in _mentions)
+            {
+                if (ulong.TryParse(mention, out var parsedMention))
+                {
+                    mentionIds.Add(parsedMention);
+                }
+            }
+        }
+        else if (tmpl.Mentions != null)
+        {
+            mentionIds.AddRange(tmpl.Mentions);
+        }
+
+        return EventPreviewFormatter.Build(
+            tmpl.Title,
+            tmpl.Description,
+            timestamp,
+            string.IsNullOrWhiteSpace(tmpl.Url) ? null : tmpl.Url,
+            string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
+            string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
+            tmpl.Color != 0 ? (uint?)tmpl.Color : null,
+            fields,
+            buttons,
+            mentionIds,
+            embedId ?? "template-preview");
     }
+
+    internal EmbedDto ToEmbedDto(Template tmpl) => BuildPreview(tmpl).Embed;
 
     private async Task PostTemplate(Template tmpl)
     {

@@ -17,4 +17,9 @@
   <ItemGroup>
     <ProjectReference Include="../DemiCatPlugin/DemiCatPlugin.csproj" AdditionalProperties="DefineConstants=$(DefineConstants);TEST" />
   </ItemGroup>
+  <ItemGroup>
+    <None Include="data/event_preview_samples.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>
