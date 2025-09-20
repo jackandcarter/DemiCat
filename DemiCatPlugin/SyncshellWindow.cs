@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
@@ -612,7 +613,11 @@ public class SyncshellWindow : IDisposable
                 {
                     _installations.Clear();
                     foreach (var inst in wrapper.Installations)
+                    {
+                        if (inst == null || string.IsNullOrEmpty(inst.AssetId))
+                            continue;
                         _installations[inst.AssetId] = inst;
+                    }
                 }
             }
             else
@@ -758,7 +763,11 @@ public class SyncshellWindow : IDisposable
 
             _installations.Clear();
             foreach (var inst in list)
+            {
+                if (inst == null || string.IsNullOrEmpty(inst.AssetId))
+                    continue;
                 _installations[inst.AssetId] = inst;
+            }
             SaveInstalledCache();
         }
         catch
@@ -882,14 +891,122 @@ public class SyncshellWindow : IDisposable
         public List<Asset> Assets { get; set; } = new();
     }
 
+    [JsonConverter(typeof(InstallationConverter))]
     private class Installation
     {
-        [JsonPropertyName("asset_id")]
+        [JsonPropertyName("assetId")]
         public string AssetId { get; set; } = string.Empty;
         [JsonPropertyName("status")]
         public string Status { get; set; } = string.Empty;
-        [JsonPropertyName("updated_at")]
+        [JsonPropertyName("updatedAt")]
         public DateTimeOffset UpdatedAt { get; set; }
+    }
+
+    private sealed class InstallationConverter : JsonConverter<Installation>
+    {
+        public override Installation? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+        {
+            if (reader.TokenType == JsonTokenType.Null)
+                return null;
+
+            if (reader.TokenType != JsonTokenType.StartObject)
+                throw new JsonException();
+
+            var installation = new Installation();
+
+            while (reader.Read())
+            {
+                if (reader.TokenType == JsonTokenType.EndObject)
+                    return installation;
+
+                if (reader.TokenType != JsonTokenType.PropertyName)
+                    throw new JsonException();
+
+                var propertyName = reader.GetString();
+                if (!reader.Read())
+                    throw new JsonException();
+
+                if (PropertyMatches(propertyName, "assetId"))
+                {
+                    installation.AssetId = ReadStringValue(ref reader);
+                    continue;
+                }
+
+                if (PropertyMatches(propertyName, "status"))
+                {
+                    installation.Status = ReadStringValue(ref reader);
+                    continue;
+                }
+
+                if (PropertyMatches(propertyName, "updatedAt"))
+                {
+                    installation.UpdatedAt = ReadDateTimeOffset(ref reader);
+                    continue;
+                }
+
+                reader.Skip();
+            }
+
+            throw new JsonException("Invalid installation payload.");
+        }
+
+        public override void Write(Utf8JsonWriter writer, Installation value, JsonSerializerOptions options)
+        {
+            writer.WriteStartObject();
+            writer.WriteString("assetId", value.AssetId ?? string.Empty);
+            writer.WriteString("status", value.Status ?? string.Empty);
+            writer.WriteString("updatedAt", value.UpdatedAt);
+            writer.WriteEndObject();
+        }
+
+        private static bool PropertyMatches(string? propertyName, string expected)
+        {
+            if (string.IsNullOrEmpty(propertyName))
+                return false;
+
+            var normalized = propertyName.Replace("_", string.Empty);
+            return string.Equals(normalized, expected, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string ReadStringValue(ref Utf8JsonReader reader)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+                return reader.GetString() ?? string.Empty;
+
+            if (reader.TokenType == JsonTokenType.Null)
+                return string.Empty;
+
+            reader.Skip();
+            return string.Empty;
+        }
+
+        private static DateTimeOffset ReadDateTimeOffset(ref Utf8JsonReader reader)
+        {
+            if (reader.TokenType == JsonTokenType.String)
+            {
+                if (reader.TryGetDateTimeOffset(out var dto))
+                    return dto;
+
+                var raw = reader.GetString();
+                if (!string.IsNullOrEmpty(raw) && DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+                    return parsed;
+            }
+            else if (reader.TokenType == JsonTokenType.Number)
+            {
+                if (reader.TryGetInt64(out var seconds))
+                    return DateTimeOffset.FromUnixTimeSeconds(seconds);
+            }
+            else if (reader.TokenType == JsonTokenType.Null)
+            {
+                return default;
+            }
+            else
+            {
+                reader.Skip();
+            }
+
+            return default;
+        }
     }
 
     private class InstallationsCache
