@@ -500,7 +500,8 @@ public class TemplatesWindow
         int style,
         string? emoji,
         int? maxSignups,
-        int? width);
+        int? width,
+        string? url);
 
     internal List<ButtonPayload> BuildButtonsPayload(Template tmpl)
     {
@@ -519,7 +520,8 @@ public class TemplatesWindow
                     (int)(b?.Style ?? x.Data.Style),
                     EmojiFormatter.Normalize(_emojiManager, b?.Emoji ?? x.Data.Emoji),
                     b?.MaxSignups ?? x.Data.MaxSignups,
-                    Math.Min(b?.Width ?? x.Data.Width ?? ButtonSizeHelper.ComputeWidth(label), ButtonSizeHelper.Max));
+                    Math.Min(b?.Width ?? x.Data.Width ?? ButtonSizeHelper.ComputeWidth(label), ButtonSizeHelper.Max),
+                    string.IsNullOrWhiteSpace(b?.Url) ? null : b?.Url);
             })
             .ToList();
     }
@@ -542,6 +544,7 @@ public class TemplatesWindow
             {
                 Label = b.label,
                 CustomId = b.customId,
+                Url = string.IsNullOrWhiteSpace(b.url) ? null : b.url,
                 Style = (ButtonStyle)b.style,
                 Emoji = string.IsNullOrWhiteSpace(b.emoji) ? null : b.emoji,
                 MaxSignups = b.maxSignups,
@@ -597,11 +600,24 @@ public class TemplatesWindow
         try
         {
             var buttonsFlat = BuildButtonsPayload(tmpl);
+            var buttonsBody = buttonsFlat.Count > 0
+                ? buttonsFlat.Select(b => new
+                {
+                    b.label,
+                    b.customId,
+                    b.rowIndex,
+                    b.style,
+                    b.emoji,
+                    b.maxSignups,
+                    b.width,
+                    b.url
+                }).ToList()
+                : null;
             var body = new
             {
                 channelId,
                 time = string.IsNullOrWhiteSpace(tmpl.Time) ? null : tmpl.Time,
-                buttons = buttonsFlat.Count > 0 ? buttonsFlat : null,
+                buttons = buttonsBody,
                 mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
             };
             var id = _templates[_selectedIndex].Id;
@@ -758,6 +774,7 @@ public class TemplatesWindow
                 Label = b.Label,
                 Emoji = b.Emoji ?? string.Empty,
                 Style = b.Style ?? ButtonStyle.Secondary,
+                Url = b.Url,
                 MaxSignups = b.MaxSignups,
                 Width = b.Width
             }).ToList() ?? new List<Template.TemplateButton>(),

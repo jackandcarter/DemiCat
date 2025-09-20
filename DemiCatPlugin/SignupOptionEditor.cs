@@ -31,6 +31,7 @@ public class SignupOptionEditor
             Label = button.Label,
             Emoji = button.Emoji,
             Style = button.Style,
+            Url = button.Url,
             MaxSignups = button.MaxSignups,
             Width = button.Width
         };
@@ -103,6 +104,7 @@ public class SignupOptionEditor
                     Label = _working.Label,
                     Emoji = _working.Emoji,
                     Style = _working.Style,
+                    Url = _working.Url,
                     MaxSignups = _working.MaxSignups,
                     Width = _working.Width ?? ButtonSizeHelper.ComputeWidth(_working.Label)
                 });

@@ -60,6 +60,29 @@ public class TemplateButtonRoundTripTests
         Assert.Null(btn.emoji);
         Assert.Null(btn.maxSignups);
         Assert.Equal(ButtonSizeHelper.ComputeWidth("Join"), btn.width);
+        Assert.Null(btn.url);
+    }
+
+    [Fact]
+    public void BuildButtonsPayload_PreservesTemplateButtonUrl()
+    {
+        var rows = new ButtonRows(new()
+        {
+            new() { new ButtonData { Tag = "link", Label = "Guide" } }
+        });
+        var window = CreateWindow(rows);
+
+        var tmpl = new Template
+        {
+            Buttons = new List<Template.TemplateButton>
+            {
+                new Template.TemplateButton { Tag = "link", Label = "Guide", Url = "https://example.com", Style = ButtonStyle.Link }
+            }
+        };
+
+        var payload = window.BuildButtonsPayload(tmpl);
+        var btn = Assert.Single(payload);
+        Assert.Equal("https://example.com", btn.url);
     }
 
     [Fact]

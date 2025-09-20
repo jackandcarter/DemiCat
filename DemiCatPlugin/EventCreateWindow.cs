@@ -601,6 +601,7 @@ public class EventCreateWindow
                     Label = b.Label,
                     Emoji = EmojiFormatter.Normalize(_emojiManager, b.Emoji) ?? string.Empty,
                     Style = b.Style,
+                    Url = b.Url,
                     MaxSignups = b.MaxSignups,
                     Width = b.Width
                 });
@@ -635,7 +636,7 @@ public class EventCreateWindow
                 thumbnailUrl = dto.ThumbnailUrl,
                 color = dto.Color,
                 fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
-                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, style = b.Style.HasValue ? (int?)b.Style : null, emoji = b.Emoji, maxSignups = b.MaxSignups, width = b.Width, rowIndex = b.RowIndex }).ToList(),
+                buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, style = b.Style.HasValue ? (int?)b.Style : null, emoji = b.Emoji, maxSignups = b.MaxSignups, width = b.Width, rowIndex = b.RowIndex }).ToList(),
                 mentions = _mentions.Count > 0 ? _mentions.ToList() : null
             };
             var body = new
@@ -755,18 +756,19 @@ public class EventCreateWindow
         _buttons.Clear();
         foreach (var b in preset.Buttons)
         {
-                _buttons.Add(new Template.TemplateButton
-                {
-                    Tag = b.Tag,
-                    Include = b.Include,
-                    Label = b.Label,
-                    Emoji = EmojiFormatter.Normalize(_emojiManager, b.Emoji) ?? string.Empty,
-                    Style = b.Style,
-                    MaxSignups = b.MaxSignups,
-                    Width = b.Width
-                });
-            }
+            _buttons.Add(new Template.TemplateButton
+            {
+                Tag = b.Tag,
+                Include = b.Include,
+                Label = b.Label,
+                Emoji = EmojiFormatter.Normalize(_emojiManager, b.Emoji) ?? string.Empty,
+                Style = b.Style,
+                Url = b.Url,
+                MaxSignups = b.MaxSignups,
+                Width = b.Width
+            });
         }
+    }
 
     private void SaveConfig()
     {
@@ -786,6 +788,7 @@ public class EventCreateWindow
             {
                 Label = b.Label,
                 CustomId = $"rsvp:{b.Tag}",
+                Url = string.IsNullOrWhiteSpace(b.Url) ? null : b.Url,
                 Emoji = string.IsNullOrWhiteSpace(b.Emoji) ? null : b.Emoji,
                 Style = b.Style,
                 MaxSignups = b.MaxSignups,
@@ -918,6 +921,7 @@ public class EventCreateWindow
                 Label = b.Label,
                 Emoji = EmojiFormatter.Normalize(_emojiManager, b.Emoji) ?? string.Empty,
                 Style = b.Style,
+                Url = b.Url,
                 MaxSignups = b.MaxSignups,
                 Width = b.Width
             }).ToList()
