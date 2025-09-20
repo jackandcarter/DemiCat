@@ -427,13 +427,21 @@ def test_fetch_messages_backfills_from_discord(monkeypatch):
             class DummyChannel:
                 def __init__(self, messages):
                     self.messages = messages
-                    self.calls: list[int | None] = []
+                    self.calls: list[tuple[int | None, int | None, int | None]] = []
 
-                def history(self, limit=None):
-                    self.calls.append(limit)
+                def history(self, limit=None, before=None, after=None):
+                    before_id = getattr(before, "id", before)
+                    after_id = getattr(after, "id", after)
+                    self.calls.append((limit, before_id, after_id))
+
+                    filtered = self.messages
+                    if before_id is not None:
+                        filtered = [m for m in filtered if m.id < before_id]
+                    if after_id is not None:
+                        filtered = [m for m in filtered if m.id > after_id]
 
                     async def gen():
-                        for m in self.messages[: limit or len(self.messages)]:
+                        for m in filtered[: limit or len(filtered)]:
                             yield m
 
                     return gen()
@@ -452,11 +460,133 @@ def test_fetch_messages_backfills_from_discord(monkeypatch):
             monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
 
             data = await mc.fetch_messages("123", ctx, db, is_officer=False, limit=5)
-            assert dummy_channel.calls == [5]
+            assert dummy_channel.calls == [(5, None, None)]
             assert [m["content"] for m in data] == ["first", "second"]
 
             rows = (await db.execute(select(Message))).scalars().all()
             assert len(rows) == 2
+
+    asyncio.run(_run())
+
+
+def test_fetch_messages_backfills_additional_page(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
+            db.add(User(id=1, discord_user_id=1, global_name="Bob"))
+            await db.commit()
+            guild = await db.get(Guild, 1)
+            user = await db.get(User, 1)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            def fake_serialize_message(message):
+                dto = types.SimpleNamespace(
+                    id=str(message.id),
+                    channel_id=str(message.channel.id),
+                    author_name="Bob",
+                    author_avatar_url=None,
+                    timestamp=message.created_at,
+                    content=message.content,
+                    attachments=None,
+                    mentions=None,
+                    author=None,
+                    embeds=None,
+                    reference=None,
+                    components=None,
+                    reactions=None,
+                    edited_timestamp=None,
+                )
+                fragments = {
+                    "attachments_json": None,
+                    "mentions_json": None,
+                    "author_json": "{}",
+                    "embeds_json": None,
+                    "reference_json": None,
+                    "components_json": None,
+                    "reactions_json": None,
+                }
+                return dto, fragments
+
+            monkeypatch.setattr(mc, "serialize_message", fake_serialize_message)
+
+            def make_message(msg_id: int, day: int) -> types.SimpleNamespace:
+                return types.SimpleNamespace(
+                    id=msg_id,
+                    channel=types.SimpleNamespace(id=123),
+                    author=types.SimpleNamespace(id=1, display_name="Bob"),
+                    created_at=datetime(2024, 1, day),
+                    content=f"msg-{msg_id}",
+                    attachments=[],
+                    mentions=[],
+                    role_mentions=[],
+                    channel_mentions=[],
+                    embeds=[],
+                    reference=None,
+                    components=[],
+                    reactions=[],
+                    edited_at=None,
+                )
+
+            msgs = [
+                make_message(40, 4),
+                make_message(39, 3),
+                make_message(38, 2),
+                make_message(37, 1),
+            ]
+
+            class DummyChannel:
+                def __init__(self, messages):
+                    self.messages = messages
+                    self.calls: list[tuple[int | None, int | None, int | None]] = []
+
+                def history(self, limit=None, before=None, after=None):
+                    before_id = getattr(before, "id", before)
+                    after_id = getattr(after, "id", after)
+                    self.calls.append((limit, before_id, after_id))
+
+                    filtered = self.messages
+                    if before_id is not None:
+                        filtered = [m for m in filtered if m.id < before_id]
+                    if after_id is not None:
+                        filtered = [m for m in filtered if m.id > after_id]
+
+                    async def gen():
+                        for m in filtered[: limit or len(filtered)]:
+                            yield m
+
+                    return gen()
+
+            dummy_channel = DummyChannel(msgs)
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return dummy_channel
+
+                async def fetch_channel(self, cid: int):
+                    return self.get_channel(cid)
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyChannel)
+
+            first_page = await mc.fetch_messages("123", ctx, db, is_officer=False, limit=2)
+            assert dummy_channel.calls[0] == (2, None, None)
+            assert [msg["id"] for msg in first_page] == ["39", "40"]
+
+            before_cursor = first_page[0]["id"]
+            second_page = await mc.fetch_messages(
+                "123", ctx, db, is_officer=False, limit=2, before=before_cursor
+            )
+
+            assert dummy_channel.calls[1] == (2, 39, None)
+            assert [msg["id"] for msg in second_page] == ["37", "38"]
+
+            rows = (await db.execute(select(Message))).scalars().all()
+            assert sorted(m.discord_message_id for m in rows) == [37, 38, 39, 40]
 
     asyncio.run(_run())
 
