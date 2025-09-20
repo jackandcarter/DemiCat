@@ -1369,7 +1369,8 @@ public class ChatWindow : IDisposable
             string? before = null;
             var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
             var hasCursor = _config.ChatCursors.TryGetValue(cursorKey, out var since);
-            var after = hasCursor ? since.ToString() : null;
+            var storedAfter = hasCursor ? since.ToString() : null;
+            var firstPage = true;
             while (all.Count < MaxMessages)
             {
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{channelId}?limit={PageSize}";
@@ -1377,6 +1378,7 @@ public class ChatWindow : IDisposable
                 {
                     url += $"&before={before}";
                 }
+                var after = !firstPage ? storedAfter : null;
                 if (after != null)
                 {
                     url += $"&after={after}";
@@ -1412,6 +1414,7 @@ public class ChatWindow : IDisposable
                 {
                     break;
                 }
+                firstPage = false;
                 before = msgs[0].Id;
             }
 

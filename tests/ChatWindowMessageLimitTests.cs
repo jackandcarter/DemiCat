@@ -46,7 +46,7 @@ public class ChatWindowMessageLimitTests
         Assert.Equal("130", msgs[^1].Id);
         Assert.Equal(130, config.ChatCursors[cursorKey]);
         Assert.Single(handler.Requests);
-        Assert.Contains("after=120", handler.Requests[0].Query);
+        Assert.DoesNotContain("after=", handler.Requests[0].Query);
     }
 
     [Fact]
@@ -67,6 +67,29 @@ public class ChatWindowMessageLimitTests
         Assert.Single(handler.Requests);
         Assert.DoesNotContain("after=", handler.Requests[0].Query);
         Assert.Equal(20, config.ChatCursors[cursorKey]);
+    }
+
+    [Fact]
+    public async Task RefreshMessages_ReappliesCursorWhenPaginating()
+    {
+        SetupServices();
+        var config = new Config { ApiBaseUrl = "http://localhost", ChatChannelId = "1" };
+        var handler = new SequenceHandler();
+        using var client = new HttpClient(handler);
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, client, tm);
+        var window = new ChatWindow(config, client, null, tm, channelService);
+        var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
+        config.ChatCursors[cursorKey] = 120;
+
+        handler.EnqueueResponse(SerializeMessages(71, 120));
+        handler.EnqueueResponse(SerializeMessages(21, 70));
+        await window.RefreshMessages();
+
+        Assert.Equal(2, handler.Requests.Count);
+        Assert.DoesNotContain("after=", handler.Requests[0].Query);
+        Assert.Contains("before=71", handler.Requests[1].Query);
+        Assert.Contains("after=120", handler.Requests[1].Query);
     }
 
     [Fact]
