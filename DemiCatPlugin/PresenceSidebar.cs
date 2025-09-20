@@ -20,6 +20,7 @@ public class PresenceSidebar : IDisposable
     private static readonly Vector4 DndColor = new(0.9f, 0.3f, 0.3f, 1f);
     private static readonly Vector4 OfflineColor = new(0.5f, 0.5f, 0.5f, 1f);
     private static readonly Vector4 StatusTextColor = new(0.75f, 0.75f, 0.75f, 1f);
+    private static readonly ImGuiMouseCursor ResizeEwCursor = ResolveResizeEwCursor();
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
 
@@ -162,7 +163,7 @@ public class PresenceSidebar : IDisposable
         }
         if (ImGui.IsItemHovered())
         {
-            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEW);
+            ImGui.SetMouseCursor(ResizeEwCursor);
         }
         width = Math.Clamp(width, 140f, 600f);
     }
@@ -218,6 +219,16 @@ public class PresenceSidebar : IDisposable
             DrawPresence(member);
         }
         ImGui.Spacing();
+    }
+
+    private static ImGuiMouseCursor ResolveResizeEwCursor()
+    {
+        if (Enum.TryParse("ResizeEW", ignoreCase: true, out ImGuiMouseCursor cursor))
+        {
+            return cursor;
+        }
+
+        return ImGuiMouseCursor.ResizeAll;
     }
 
     private static Vector4 GetStatusColor(string? status)
