@@ -1617,6 +1617,76 @@ def test_save_message_unresolved_channel_id(monkeypatch):
     asyncio.run(_run())
 
 
+def test_save_message_http_fallback_failure(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=11, discord_guild_id=11, name="Guild"))
+            db.add(User(id=11, discord_user_id=110, global_name="Alice"))
+            channel_id = 654
+            db.add(GuildChannel(guild_id=11, channel_id=channel_id, kind=ChannelKind.FC_CHAT))
+            await db.commit()
+            guild = await db.get(Guild, 11)
+            user = await db.get(User, 11)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            async def failing_webhook(*args, **kwargs):
+                return None, None, ["Webhook boom"], None
+
+            class DummyHttp:
+                def __init__(self) -> None:
+                    self.calls = 0
+
+                async def send_message(self, channel_id: int, *, params):
+                    self.calls += 1
+
+                    class DummyResponse:
+                        status = 403
+                        reason = "Forbidden"
+
+                    raise mc.discord.HTTPException(
+                        DummyResponse(), {"message": "Missing Access"}
+                    )
+
+            dummy_http = DummyHttp()
+
+            class DummyClient:
+                def __init__(self, http):
+                    self.http = http
+
+                def get_channel(self, cid: int):
+                    return None
+
+                async def fetch_channel(self, cid: int):
+                    return None
+
+            monkeypatch.setattr(mc, "_send_via_webhook", failing_webhook)
+            monkeypatch.setattr(mc, "discord_client", DummyClient(dummy_http))
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channel_id=str(channel_id), content="hi")
+
+            with pytest.raises(HTTPException) as ex:
+                await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+
+            assert dummy_http.calls == 1
+            assert ex.value.status_code == 502
+            detail = ex.value.detail
+            assert isinstance(detail, dict)
+            assert detail.get("message") == "Failed to relay message to Discord"
+            discord_errors = detail.get("discord") or []
+            assert any("Webhook boom" in err for err in discord_errors)
+            assert any("Missing Access" in err for err in discord_errors)
+
+    asyncio.run(_run())
+
+
 def test_save_message_unresolved_officer_channel(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
