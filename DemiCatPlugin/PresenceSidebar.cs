@@ -21,6 +21,21 @@ public class PresenceSidebar : IDisposable
     private static readonly Vector4 OfflineColor = new(0.5f, 0.5f, 0.5f, 1f);
     private static readonly Vector4 StatusTextColor = new(0.75f, 0.75f, 0.75f, 1f);
     private static readonly ImGuiMouseCursor ResizeEwCursor = ResolveResizeEwCursor();
+    private static readonly HashSet<string> SyntheticRoleIds = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "premium_subscriber"
+    };
+
+    private static readonly HashSet<string> SyntheticRoleNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Server Booster"
+    };
+
+    private static readonly HashSet<string> OfflineStatuses = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "offline",
+        "invisible",
+    };
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
 
@@ -47,95 +62,76 @@ public class PresenceSidebar : IDisposable
 
         var presences = _service.Presences;
         var online = presences
-            .Where(p => !string.Equals(p.Status, "offline", StringComparison.OrdinalIgnoreCase))
+            .Where(p => !IsOffline(p.Status))
             .ToList();
         var offline = presences
-            .Where(p => string.Equals(p.Status, "offline", StringComparison.OrdinalIgnoreCase))
+            .Where(p => IsOffline(p.Status))
             .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
-        var roleGroups = new Dictionary<string, RoleGroup>(StringComparer.Ordinal);
-        var orderedRoleIds = new List<string>();
+        var roleById = new Dictionary<string, RoleDto>(StringComparer.Ordinal);
         foreach (var role in RoleCache.Roles)
         {
-            if (!roleGroups.ContainsKey(role.Id))
-            {
-                roleGroups[role.Id] = new RoleGroup(role.Id, role.Name);
-                orderedRoleIds.Add(role.Id);
-            }
+            if (string.IsNullOrEmpty(role.Id))
+                continue;
+            roleById[role.Id] = role;
         }
 
-        foreach (var presence in presences)
+        var hoistedOrder = RoleCache.Roles
+            .Where(r => !string.IsNullOrEmpty(r.Id) && IsHoistedRole(r))
+            .OrderByDescending(r => r.Position)
+            .Select(r => r.Id)
+            .ToList();
+
+        var roleGroups = new Dictionary<string, RoleGroup>(StringComparer.Ordinal);
+        foreach (var roleId in hoistedOrder)
         {
-            foreach (var detail in presence.RoleDetails)
-            {
-                if (string.IsNullOrEmpty(detail.Id))
-                    continue;
-                if (!roleGroups.TryGetValue(detail.Id, out var group))
-                {
-                    group = new RoleGroup(detail.Id, detail.Name);
-                    roleGroups[detail.Id] = group;
-                }
-                else if (string.IsNullOrEmpty(group.Name) && !string.IsNullOrEmpty(detail.Name))
-                {
-                    group.Name = detail.Name;
-                }
-            }
+            if (!roleById.TryGetValue(roleId, out var role))
+                continue;
+
+            var label = string.IsNullOrEmpty(role.Name) ? roleId : role.Name;
+            roleGroups[roleId] = new RoleGroup(roleId, label);
         }
 
-        var noRole = new List<PresenceDto>();
+        var ungroupedOnline = new List<PresenceDto>();
         foreach (var presence in online)
         {
-            var mapped = false;
-            foreach (var roleId in presence.Roles)
+            var primaryRoleId = GetHighestHoistedRoleId(presence, roleById);
+            if (!string.IsNullOrEmpty(primaryRoleId) && roleGroups.TryGetValue(primaryRoleId, out var group))
             {
-                if (string.IsNullOrEmpty(roleId))
-                    continue;
-                if (!roleGroups.TryGetValue(roleId, out var group))
-                {
-                    var display = presence.RoleDetails
-                        .FirstOrDefault(r => string.Equals(r.Id, roleId, StringComparison.Ordinal))?.Name
-                        ?? roleId;
-                    group = new RoleGroup(roleId, display);
-                    roleGroups[roleId] = group;
-                }
                 group.Members.Add(presence);
-                mapped = true;
             }
-            if (!mapped)
+            else
             {
-                noRole.Add(presence);
+                ungroupedOnline.Add(presence);
             }
         }
 
         var anyOnline = false;
-        var orderedSet = new HashSet<string>(orderedRoleIds, StringComparer.Ordinal);
-        foreach (var roleId in orderedRoleIds)
+        foreach (var roleId in hoistedOrder)
         {
             if (!roleGroups.TryGetValue(roleId, out var group) || group.Members.Count == 0)
                 continue;
+
             anyOnline = true;
             DrawRoleGroup(group);
         }
 
-        var extraGroups = roleGroups.Values
-            .Where(g => !orderedSet.Contains(g.Id) && g.Members.Count > 0)
-            .OrderBy(g => g.Name, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        foreach (var group in extraGroups)
+        if (ungroupedOnline.Count > 0)
         {
             anyOnline = true;
-            DrawRoleGroup(group);
-        }
-
-        if (noRole.Count > 0)
-        {
-            anyOnline = true;
-            ImGui.TextUnformatted($"No Role - {noRole.Count}");
-            foreach (var presence in noRole.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+            ungroupedOnline.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparer.OrdinalIgnoreCase));
+            ImGui.TextUnformatted($"ONLINE — {ungroupedOnline.Count}");
+            foreach (var presence in ungroupedOnline)
             {
                 DrawPresence(presence);
             }
+            ImGui.Spacing();
+        }
+
+        if (!anyOnline)
+        {
+            ImGui.TextUnformatted("No one is online.");
             ImGui.Spacing();
         }
 
@@ -145,7 +141,7 @@ public class PresenceSidebar : IDisposable
             {
                 ImGui.Spacing();
             }
-            ImGui.TextUnformatted($"Offline - {offline.Count}");
+            ImGui.TextUnformatted($"OFFLINE — {offline.Count}");
             foreach (var presence in offline)
             {
                 DrawPresence(presence);
@@ -209,11 +205,74 @@ public class PresenceSidebar : IDisposable
         // No resources to dispose; the underlying service is disposed separately.
     }
 
+    private static bool IsOffline(string? status)
+    {
+        if (string.IsNullOrEmpty(status))
+        {
+            return true;
+        }
+
+        return OfflineStatuses.Contains(status);
+    }
+
+    private static string? GetHighestHoistedRoleId(
+        PresenceDto presence,
+        IReadOnlyDictionary<string, RoleDto> roleById)
+    {
+        string? bestRoleId = null;
+        RoleDto? bestRole = null;
+
+        foreach (var roleId in presence.Roles)
+        {
+            if (string.IsNullOrEmpty(roleId) || !roleById.TryGetValue(roleId, out var role))
+            {
+                continue;
+            }
+
+            if (!IsHoistedRole(role))
+            {
+                continue;
+            }
+
+            if (bestRole == null || role.Position > bestRole.Position ||
+                (role.Position == bestRole.Position && string.Compare(role.Name, bestRole.Name, StringComparison.OrdinalIgnoreCase) < 0))
+            {
+                bestRoleId = roleId;
+                bestRole = role;
+            }
+        }
+
+        return bestRoleId;
+    }
+
+    private static bool IsHoistedRole(RoleDto role)
+        => role.Hoist || IsBoosterRole(role);
+
+    private static bool IsBoosterRole(RoleDto role)
+    {
+        if (role.IsPremiumSubscriber)
+        {
+            return true;
+        }
+
+        if (role.Tags?.PremiumSubscriber == true)
+        {
+            return true;
+        }
+
+        if (!string.IsNullOrEmpty(role.Id) && SyntheticRoleIds.Contains(role.Id))
+        {
+            return true;
+        }
+
+        return SyntheticRoleNames.Contains(role.Name);
+    }
+
     private void DrawRoleGroup(RoleGroup group)
     {
         group.Members.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
         var label = string.IsNullOrEmpty(group.Name) ? group.Id : group.Name;
-        ImGui.TextUnformatted($"{label} - {group.Members.Count}");
+        ImGui.TextUnformatted($"{label} — {group.Members.Count}");
         foreach (var member in group.Members)
         {
             DrawPresence(member);
