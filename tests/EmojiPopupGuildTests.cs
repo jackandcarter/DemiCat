@@ -110,4 +110,32 @@ public class EmojiFormatterTests
 
         Assert.Equal(smile, normalized);
     }
+
+    [Fact]
+    public void NormalizeDiscordTokenWithoutLookupPreservesName()
+    {
+        SetupPluginServices();
+        using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, "[]"));
+        var config = new Config { ApiBaseUrl = "http://host", GuildId = "1" };
+        using var manager = new EmojiManager(client, new TokenManager(), config);
+
+        const string token = "<:foo:123>";
+        var normalized = EmojiFormatter.Normalize(manager, token);
+
+        Assert.Equal(token, normalized);
+    }
+
+    [Fact]
+    public void NormalizeAnimatedDiscordTokenWithoutLookupPreservesAnimation()
+    {
+        SetupPluginServices();
+        using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, "[]"));
+        var config = new Config { ApiBaseUrl = "http://host", GuildId = "1" };
+        using var manager = new EmojiManager(client, new TokenManager(), config);
+
+        const string token = "<a:bar:456>";
+        var normalized = EmojiFormatter.Normalize(manager, token);
+
+        Assert.Equal(token, normalized);
+    }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -10,8 +11,9 @@ using DiscordHelper;
 using Dalamud.Game.Gui.Toast;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
-using Dalamud.Plugin;
+using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.IoC;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
@@ -49,6 +51,7 @@ public class Plugin : IDalamudPlugin
     private bool _officerWatcherRunning;
     private bool _invalidTokenToastShown;
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
+    private readonly IFontHandle? _emojiFontHandle;
 
     public Plugin()
     {
@@ -79,6 +82,8 @@ public class Plugin : IDalamudPlugin
 
         _channelSelection = new ChannelSelectionService(_config);
         _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
+        _emojiFontHandle = InitializeEmojiFont();
+        _emojiManager.EmojiFontHandle = _emojiFontHandle;
         _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
 
@@ -121,9 +126,6 @@ public class Plugin : IDalamudPlugin
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
-        // Note: API 13 removed UiBuilder.BuildFonts/RebuildFonts and the old ImGuiNET attach path.
-        // We intentionally skip emoji font merging since ImGui/Dalamud cannot render SMP color emoji anyway.
-
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
 
@@ -144,6 +146,9 @@ public class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        _emojiManager.EmojiFontHandle = null;
+        _emojiFontHandle?.Dispose();
+
         // Unsubscribe UI draw handlers
         _services.PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw -= _settings.Draw;
@@ -170,6 +175,69 @@ public class Plugin : IDalamudPlugin
         _avatarCache.Dispose();
         _emojiManager.Dispose();
         _httpClient.Dispose();
+    }
+
+    private IFontHandle? InitializeEmojiFont()
+    {
+        try
+        {
+            var directory = _services.PluginInterface.AssemblyLocation.Directory;
+            if (directory == null)
+            {
+                return null;
+            }
+
+            string? fontPath = null;
+            var basePath = directory.FullName;
+            var candidates = new[]
+            {
+                Path.Combine(basePath, "Emoji", "NotoColorEmoji.ttf"),
+                Path.Combine(basePath, "NotoColorEmoji.ttf"),
+            };
+
+            foreach (var candidate in candidates)
+            {
+                if (File.Exists(candidate))
+                {
+                    fontPath = candidate;
+                    break;
+                }
+            }
+
+            if (fontPath == null)
+            {
+                _services.Log.Info(
+                    "Emoji font not found at any known path ({Paths}). Unicode emoji will use fallback glyphs.",
+                    string.Join(", ", candidates)
+                );
+                return null;
+            }
+
+            var atlas = _services.PluginInterface.UiBuilder.FontAtlas;
+            var fontSize = _services.PluginInterface.UiBuilder.FontDefaultSizePx;
+
+            var handle = atlas.NewDelegateFontHandle(toolkit =>
+                toolkit.OnPreBuild(pre =>
+                {
+                    var baseFont = pre.AddDalamudDefaultFont(fontSize);
+                    var config = new SafeFontConfig
+                    {
+                        SizePx = fontSize,
+                        MergeFont = baseFont,
+                        PixelSnapH = true
+                    };
+                    pre.AddFontFromFile(fontPath, config);
+                    pre.Font = baseFont;
+                }));
+
+            _services.Log.Info("Loaded emoji font from {Path}.", fontPath);
+            return handle;
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Warning(ex, "Failed to load emoji font. Unicode emoji will use fallback glyphs.");
+            return null;
+        }
     }
 
     private async void HandleChannelSelectionValidation(string kind, string guildId, string oldId, string newId)

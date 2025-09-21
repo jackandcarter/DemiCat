@@ -110,6 +110,7 @@ public sealed class EmojiPicker
 
             var emoji = filtered[i];
             ImGui.PushID(i);
+            using var _ = _manager.PushEmojiFont();
             if (ImGui.Button(emoji.Emoji, new Vector2(size, size)))
             {
                 EmojiFormatter.InsertUnicode(ref targetText, emoji);

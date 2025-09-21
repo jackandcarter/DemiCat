@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Interface.ManagedFontAtlas;
 
 namespace DemiCatPlugin.Emoji;
 
@@ -69,6 +70,10 @@ public sealed class EmojiManager : IDisposable
             }
         }
     }
+
+    public IFontHandle? EmojiFontHandle { get; internal set; }
+
+    public IDisposable? PushEmojiFont() => EmojiFontHandle?.Push();
 
     public Task EnsureUnicodeAsync(CancellationToken ct = default) => StartUnicodeLoad(ct, false);
     public Task RefreshUnicodeAsync(CancellationToken ct = default) => StartUnicodeLoad(ct, true);
