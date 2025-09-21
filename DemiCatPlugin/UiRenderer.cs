@@ -101,6 +101,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public async Task StartNetworking()
     {
+        _networkingActive = false;
         StopPolling();
 
         if (_webSocket != null)
@@ -134,6 +135,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public void StopNetworking()
     {
+        _networkingActive = false;
         StopPolling();
         var socket = _webSocket;
         _webSocket = null;
@@ -177,7 +179,6 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
         _webSocketReconnectAttempt = 0;
         _nextWebSocketAttempt = DateTime.MaxValue;
-        _networkingActive = false;
     }
 
     private async Task PollLoop(CancellationToken token)
@@ -353,6 +354,22 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             TokenManager.Instance?.Clear("Invalid API key");
             return false;
         }
+        catch (OperationCanceledException ex) when (IsPollingShutdown(ex))
+        {
+            return false;
+        }
+        catch (ObjectDisposedException ex) when (IsPollingShutdown(ex))
+        {
+            return false;
+        }
+        catch (HttpRequestException ex) when (IsPollingShutdown(ex))
+        {
+            return false;
+        }
+        catch (Exception ex) when (IsPollingShutdown(ex))
+        {
+            return false;
+        }
         catch (Exception ex)
         {
             _failureCount++;
@@ -360,6 +377,31 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             PluginServices.Instance?.ToastGui.ShowError($"Sync failed ({_failureCount})");
             return false;
         }
+    }
+
+    private bool IsPollingShutdown(Exception? exception = null)
+    {
+        if (!_networkingActive)
+        {
+            return true;
+        }
+
+        var pollCts = _pollCts;
+        if (pollCts == null || pollCts.IsCancellationRequested)
+        {
+            return true;
+        }
+
+        if (exception is OperationCanceledException oce)
+        {
+            var token = oce.CancellationToken;
+            if (token.CanBeCanceled && token.IsCancellationRequested)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private async Task ConnectWebSocket()
@@ -1093,6 +1135,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public async ValueTask DisposeAsync()
     {
+        _networkingActive = false;
         StopPolling();
         if (_webSocket != null)
         {
