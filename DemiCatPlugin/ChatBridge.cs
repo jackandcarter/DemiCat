@@ -51,6 +51,8 @@ public class ChatBridge : IDisposable
     private static readonly TimeSpan SubscribeMismatchThrottle = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan BatchDropThrottle = TimeSpan.FromSeconds(30);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+    private const string ForbiddenMessage = "Forbidden – check API key/roles";
+    private bool _permissionWarningShown;
 
     public event Action<string>? MessageReceived;
     public event Action<DiscordUserDto>? TypingReceived;
@@ -117,6 +119,25 @@ public class ChatBridge : IDisposable
         _lastSubscribeMismatchLog = default;
         _lastBatchDropSignature = null;
         _lastBatchDropLog = default;
+    }
+
+    private void ShowPermissionWarning()
+    {
+        if (_permissionWarningShown)
+        {
+            return;
+        }
+
+        _permissionWarningShown = true;
+        _ = PluginServices.Instance?.Framework.RunOnTick(() =>
+        {
+            PluginServices.Instance?.ToastGui.ShowError(ForbiddenMessage);
+        });
+    }
+
+    private void ResetPermissionWarning()
+    {
+        _permissionWarningShown = false;
     }
 
     public bool IsReady() => _tokenValid && _ws?.State == WebSocketState.Open;
@@ -387,12 +408,31 @@ public class ChatBridge : IDisposable
                 continue;
             }
 
-            if (!await ValidateToken(token))
+            var tokenStatus = await ValidateToken(token);
+            if (tokenStatus != TokenValidationResult.Success)
             {
-                _tokenManager.Clear("Invalid API key");
-                ResetState();
-                Unlinked?.Invoke();
-                StatusChanged?.Invoke("Authentication failed");
+                if (tokenStatus == TokenValidationResult.Unauthorized)
+                {
+                    _tokenManager.Clear("Invalid API key");
+                    ResetState();
+                    Unlinked?.Invoke();
+                    _tokenValid = false;
+                    StatusChanged?.Invoke("Authentication failed");
+                }
+                else if (tokenStatus == TokenValidationResult.Forbidden)
+                {
+                    PluginServices.Instance?.Log.Warning("Chat bridge forbidden during token validation; check API key/roles.");
+                    ShowPermissionWarning();
+                    ResetState();
+                    Unlinked?.Invoke();
+                    _tokenValid = false;
+                    StatusChanged?.Invoke(ForbiddenMessage);
+                }
+                else
+                {
+                    StatusChanged?.Invoke("Authentication failed");
+                }
+
                 await DelayWithJitter(5, token);
                 continue;
             }
@@ -440,6 +480,7 @@ public class ChatBridge : IDisposable
                 failureStage = "receive";
                 Linked?.Invoke();
                 StatusChanged?.Invoke(string.Empty);
+                ResetPermissionWarning();
                 _connectCount++;
                 if (_connectCount > 1) _reconnectCount++;
                 PluginServices.Instance?.Log.Info($"chat.ws connect count={_connectCount} reconnects={_reconnectCount}");
@@ -506,7 +547,7 @@ public class ChatBridge : IDisposable
 
             if (forbidden)
             {
-                _tokenManager.Clear("Invalid API key");
+                ShowPermissionWarning();
                 ResetState();
                 Unlinked?.Invoke();
                 _tokenValid = false;
@@ -519,7 +560,7 @@ public class ChatBridge : IDisposable
             _reconnectAttempt++;
             var backoff = GetReconnectDelay(_reconnectAttempt);
             StatusChanged?.Invoke(forbidden
-                ? "Forbidden – check API key/roles"
+                ? ForbiddenMessage
                 : $"Reconnecting in {backoff.TotalSeconds:0.#}s...");
             await DelayWithBackoff(backoff, token);
         }
@@ -777,15 +818,44 @@ public class ChatBridge : IDisposable
         return SendRaw(json);
     }
 
-    private async Task<bool> ValidateToken(CancellationToken token)
+    private enum TokenValidationResult
+    {
+        Success,
+        Unauthorized,
+        Forbidden,
+        Error
+    }
+
+    private async Task<TokenValidationResult> ValidateToken(CancellationToken token)
     {
         var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
         var response = await pingService.PingAsync(token);
-        if (response?.StatusCode == HttpStatusCode.NotFound)
+        if (response == null)
+        {
+            return TokenValidationResult.Error;
+        }
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
         {
             PluginServices.Instance?.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
         }
-        return response?.IsSuccessStatusCode ?? false;
+
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            return TokenValidationResult.Unauthorized;
+        }
+
+        if (response.StatusCode == HttpStatusCode.Forbidden)
+        {
+            return TokenValidationResult.Forbidden;
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return TokenValidationResult.Error;
+        }
+
+        return TokenValidationResult.Success;
     }
 
     private async Task DelayWithJitter(int seconds, CancellationToken token)

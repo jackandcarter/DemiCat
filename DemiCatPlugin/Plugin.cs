@@ -548,11 +548,18 @@ public class Plugin : IDalamudPlugin
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             log.Info($"Requesting roles from {url}");
             var response = await _httpClient.SendAsync(request);
-            if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 log.Error($"Failed to fetch roles: {response.StatusCode}. Response Body: {responseBody}");
                 _tokenManager.Clear("Authentication failed");
+                return false;
+            }
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                log.Error($"Failed to fetch roles: {response.StatusCode}. Response Body: {responseBody}");
+                PluginServices.Instance?.ToastGui.ShowError("Forbidden – check API key/roles");
                 return false;
             }
             if (!response.IsSuccessStatusCode)
@@ -575,11 +582,18 @@ public class Plugin : IDalamudPlugin
             try
             {
                 var channelResponse = await _httpClient.SendAsync(channelRequest);
-                if (channelResponse.StatusCode == HttpStatusCode.Unauthorized || channelResponse.StatusCode == HttpStatusCode.Forbidden)
+                if (channelResponse.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     var responseBody = await channelResponse.Content.ReadAsStringAsync();
                     log.Error($"Failed to fetch channels: {channelResponse.StatusCode}. Response Body: {responseBody}");
                     _tokenManager.Clear("Authentication failed");
+                    return false;
+                }
+                if (channelResponse.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    var responseBody = await channelResponse.Content.ReadAsStringAsync();
+                    log.Error($"Failed to fetch channels: {channelResponse.StatusCode}. Response Body: {responseBody}");
+                    PluginServices.Instance?.ToastGui.ShowError("Forbidden – check API key/roles");
                     return false;
                 }
 

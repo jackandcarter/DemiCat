@@ -29,6 +29,8 @@ public class ChannelWatcher : IDisposable
     private string? _lastErrorSignature;
     private DateTime _lastErrorLog;
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
+    private const string ForbiddenMessage = "Forbidden – check API key/roles";
+    private bool _permissionWarningShown;
 
     internal static ChannelWatcher? Instance { get; private set; }
 
@@ -104,13 +106,17 @@ public class ChannelWatcher : IDisposable
                     {
                         PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
                     }
-                    if (status == HttpStatusCode.Unauthorized || status == HttpStatusCode.Forbidden)
+                    if (status == HttpStatusCode.Unauthorized)
                     {
                         if (_tokenManager.IsReady())
                         {
                             PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
                             _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
                         }
+                    }
+                    else if (status == HttpStatusCode.Forbidden)
+                    {
+                        ShowPermissionWarning();
                     }
                     await DelayWithBackoff(baseDelay, token);
                     _retryAttempt = 0;
@@ -147,6 +153,7 @@ public class ChannelWatcher : IDisposable
                 PluginServices.Instance!.Log.Information("Channel watcher connected to {Uri}", uri);
                 _retryAttempt = 0;
                 hadTransportError = false;
+                ResetPermissionWarning();
 
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -167,10 +174,7 @@ public class ChannelWatcher : IDisposable
 
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
-                    if (_tokenManager.IsReady())
-                    {
-                        _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
-                    }
+                    ShowPermissionWarning();
                     retryStatusCode = (int)WebSocketCloseStatus.PolicyViolation;
                     retryStatusDetail = WebSocketCloseStatus.PolicyViolation.ToString();
                     hadTransportError = true;
@@ -191,6 +195,10 @@ public class ChannelWatcher : IDisposable
                 hadTransportError = true;
                 retryStatusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : null;
                 retryStatusDetail = ex.StatusCode?.ToString() ?? ex.Message;
+                if (ex.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionWarning();
+                }
                 LogConnectionException(ex, "connect");
             }
             catch (WebSocketException ex)
@@ -198,10 +206,7 @@ public class ChannelWatcher : IDisposable
                 hadTransportError = true;
                 if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
                 {
-                    if (_tokenManager.IsReady())
-                    {
-                        _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
-                    }
+                    ShowPermissionWarning();
                 }
                 retryStatusCode = (int)ex.WebSocketErrorCode;
                 retryStatusDetail = ex.WebSocketErrorCode.ToString();
@@ -266,6 +271,25 @@ public class ChannelWatcher : IDisposable
                 await DelayWithBackoff(baseDelay, token);
             }
         }
+    }
+
+    private void ShowPermissionWarning()
+    {
+        if (_permissionWarningShown)
+        {
+            return;
+        }
+
+        _permissionWarningShown = true;
+        _ = PluginServices.Instance?.Framework.RunOnTick(() =>
+        {
+            PluginServices.Instance?.ToastGui.ShowError(ForbiddenMessage);
+        });
+    }
+
+    private void ResetPermissionWarning()
+    {
+        _permissionWarningShown = false;
     }
 
     private async Task DelayWithBackoff(TimeSpan delay, CancellationToken token)

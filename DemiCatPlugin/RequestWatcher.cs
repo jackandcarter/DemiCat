@@ -21,6 +21,8 @@ public class RequestWatcher : IDisposable
     private string? _lastErrorSignature;
     private DateTime _lastErrorLog;
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
+    private const string ForbiddenMessage = "Forbidden – check API key/roles";
+    private bool _permissionWarningShown;
 
     public RequestWatcher(Config config, HttpClient httpClient, TokenManager tokenManager)
     {
@@ -76,6 +78,10 @@ public class RequestWatcher : IDisposable
                     {
                         PluginServices.Instance!.Log.Error("Backend ping endpoints missing. Please update or restart the backend.");
                     }
+                    if (pingResponse?.StatusCode == HttpStatusCode.Forbidden)
+                    {
+                        ShowPermissionWarning();
+                    }
                     await DelayWithBackoff(baseDelay, token);
                     _retryAttempt = 0;
                     continue;
@@ -111,6 +117,7 @@ public class RequestWatcher : IDisposable
                 await _ws.ConnectAsync(uri!, token);
                 _retryAttempt = 0;
                 hadTransportError = false;
+                ResetPermissionWarning();
 
                 var buffer = new byte[1024];
                 while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
@@ -123,10 +130,7 @@ public class RequestWatcher : IDisposable
 
                 if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
-                    if (_tokenManager.IsReady())
-                    {
-                        _tokenManager.Clear("Authentication failed");
-                    }
+                    ShowPermissionWarning();
                     hadTransportError = true;
                 }
             }
@@ -143,12 +147,16 @@ public class RequestWatcher : IDisposable
             catch (HttpRequestException ex)
             {
                 hadTransportError = true;
-                if (ex.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.Unauthorized)
+                if (ex.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     if (_tokenManager.IsReady())
                     {
                         _tokenManager.Clear("Authentication failed");
                     }
+                }
+                else if (ex.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionWarning();
                 }
                 LogConnectionException(ex, "connect");
             }
@@ -157,10 +165,7 @@ public class RequestWatcher : IDisposable
                 hadTransportError = true;
                 if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
                 {
-                    if (_tokenManager.IsReady())
-                    {
-                        _tokenManager.Clear("Authentication failed");
-                    }
+                    ShowPermissionWarning();
                 }
                 LogConnectionException(ex, "connect");
             }
@@ -200,6 +205,25 @@ public class RequestWatcher : IDisposable
                 await DelayWithBackoff(baseDelay, token);
             }
         }
+    }
+
+    private void ShowPermissionWarning()
+    {
+        if (_permissionWarningShown)
+        {
+            return;
+        }
+
+        _permissionWarningShown = true;
+        _ = PluginServices.Instance?.Framework.RunOnTick(() =>
+        {
+            PluginServices.Instance?.ToastGui.ShowError(ForbiddenMessage);
+        });
+    }
+
+    private void ResetPermissionWarning()
+    {
+        _permissionWarningShown = false;
     }
 
     private void HandleMessage(string json)
