@@ -1,9 +1,10 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
-using System.Numerics;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -167,37 +168,125 @@ public class PresenceSidebar : IDisposable
     private void DrawPresence(PresenceDto p)
     {
         ImGui.PushID(p.Id);
+        ImGui.BeginGroup();
+
+        const float rowHeight = 40f;
+        var avatarSize = new Vector2(36f, 36f);
         var color = GetStatusColor(p.Status);
-        ImGui.AlignTextToFramePadding();
-        ImGui.PushStyleColor(ImGuiCol.Text, color);
-        ImGui.TextUnformatted("●");
-        ImGui.PopStyleColor();
-        ImGui.SameLine(0f, 6f);
+        var drawList = ImGui.GetWindowDrawList();
+
+        var groupStartY = ImGui.GetCursorPosY();
+        var avatarOffsetY = MathF.Max(0f, (rowHeight - avatarSize.Y) * 0.5f);
+        ImGui.SetCursorPosY(groupStartY + avatarOffsetY);
 
         if (TextureLoader != null && !string.IsNullOrEmpty(p.AvatarUrl) && p.AvatarTexture == null)
         {
             TextureLoader(p.AvatarUrl, t => p.AvatarTexture = t);
         }
+
+        var avatarPos = ImGui.GetCursorScreenPos();
         if (p.AvatarTexture != null)
         {
             var wrap = p.AvatarTexture.GetWrapOrEmpty();
-            ImGui.Image(wrap.Handle, new Vector2(24, 24));
+            ImGui.Image(wrap.Handle, avatarSize);
         }
         else
         {
-            ImGui.Dummy(new Vector2(24, 24));
+            ImGui.Dummy(avatarSize);
         }
-        ImGui.SameLine(0f, 6f);
-        ImGui.AlignTextToFramePadding();
+
+        var indicatorRadius = 5f;
+        var indicatorCenter = avatarPos + avatarSize - new Vector2(indicatorRadius + 2f, indicatorRadius + 2f);
+        var windowBgColor = ImGui.ColorConvertFloat4ToU32(ImGui.GetStyle().Colors[(int)ImGuiCol.WindowBg]);
+        var borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.75f));
+        drawList.AddCircleFilled(indicatorCenter, indicatorRadius + 2.5f, windowBgColor, 16);
+        drawList.AddCircleFilled(indicatorCenter, indicatorRadius + 1.5f, borderColor, 16);
+        drawList.AddCircleFilled(indicatorCenter, indicatorRadius, ImGui.ColorConvertFloat4ToU32(color), 16);
+
+        ImGui.SetCursorPosY(groupStartY);
+        ImGui.SameLine(0f, 8f);
+        ImGui.BeginGroup();
+
+        var nameColor = color;
+        nameColor.W = 1f;
+        ImGui.PushStyleColor(ImGuiCol.Text, nameColor);
         ImGui.TextUnformatted(p.Name);
-        if (!string.IsNullOrWhiteSpace(p.StatusText))
+        ImGui.PopStyleColor();
+
+        var statusText = p.StatusText;
+        if (!string.IsNullOrWhiteSpace(statusText))
         {
-            ImGui.SameLine(0f, 4f);
             ImGui.PushStyleColor(ImGuiCol.Text, StatusTextColor);
-            ImGui.TextUnformatted($"— {p.StatusText}");
+            var availableWidth = MathF.Max(0f, ImGui.GetContentRegionAvail().X);
+            if (availableWidth > 0f)
+            {
+                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + availableWidth);
+            }
+            ImGui.TextUnformatted(statusText);
+            if (availableWidth > 0f)
+            {
+                ImGui.PopTextWrapPos();
+            }
             ImGui.PopStyleColor();
         }
+
+        if (p.RoleDetails.Count > 0)
+        {
+            var firstBadge = true;
+            for (var i = 0; i < p.RoleDetails.Count; i++)
+            {
+                var role = p.RoleDetails[i];
+                if (role == null || string.IsNullOrWhiteSpace(role.Name))
+                {
+                    continue;
+                }
+
+                if (firstBadge)
+                {
+                    ImGui.Spacing();
+                    firstBadge = false;
+                }
+                else
+                {
+                    ImGui.SameLine(0f, 4f);
+                }
+
+                ImGui.PushID(i);
+                DrawRoleBadge(drawList, role.Name);
+                ImGui.PopID();
+            }
+        }
+
+        ImGui.EndGroup();
+
+        var usedHeight = ImGui.GetCursorPosY() - groupStartY;
+        if (usedHeight < rowHeight)
+        {
+            ImGui.Dummy(new Vector2(0f, rowHeight - usedHeight));
+        }
+
+        ImGui.EndGroup();
         ImGui.PopID();
+    }
+
+    private static void DrawRoleBadge(ImDrawListPtr drawList, string text)
+    {
+        var style = ImGui.GetStyle();
+        var padding = new Vector2(MathF.Max(4f, style.FramePadding.X), MathF.Max(2f, style.FramePadding.Y * 0.75f));
+        var textSize = ImGui.CalcTextSize(text);
+        var totalSize = textSize + padding * 2f;
+        var cursor = ImGui.GetCursorScreenPos();
+        var rounding = MathF.Max(4f, style.FrameRounding);
+
+        var bgColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.4f, 0.4f, 0.4f, 0.35f));
+        var outlineColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.18f));
+        var textColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.95f, 0.95f, 0.95f, 1f));
+
+        drawList.AddRectFilled(cursor, cursor + totalSize, bgColor, rounding);
+        drawList.AddRect(cursor, cursor + totalSize, outlineColor, rounding);
+
+        ImGui.InvisibleButton("##badge", totalSize);
+        drawList.AddText(cursor + padding, textColor, text);
     }
 
     public void Dispose()
