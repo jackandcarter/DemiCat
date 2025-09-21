@@ -410,7 +410,7 @@ public class ChatWindow : IDisposable
 
                         if (!handled)
                         {
-                            using var _ = _emojiManager.PushEmojiFont();
+                            using var emojiFont = _emojiManager.PushEmojiFont();
                             if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
                             {
                                 _ = React(msg.Id, reaction.Emoji, reaction.Me);
@@ -430,7 +430,7 @@ public class ChatWindow : IDisposable
                     ImGui.TextUnformatted("Pick an emoji:");
                     foreach (var emoji in DefaultReactions)
                     {
-                        using var _ = _emojiManager.PushEmojiFont();
+                        using var emojiFont = _emojiManager.PushEmojiFont();
                         if (ImGui.Button($"{emoji}##pick{msg.Id}{emoji}"))
                         {
                             _ = React(msg.Id, emoji, false);
