@@ -410,6 +410,7 @@ public class ChatWindow : IDisposable
 
                         if (!handled)
                         {
+                            using var _ = _emojiManager.PushEmojiFont();
                             if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
                             {
                                 _ = React(msg.Id, reaction.Emoji, reaction.Me);
@@ -429,6 +430,7 @@ public class ChatWindow : IDisposable
                     ImGui.TextUnformatted("Pick an emoji:");
                     foreach (var emoji in DefaultReactions)
                     {
+                        using var _ = _emojiManager.PushEmojiFont();
                         if (ImGui.Button($"{emoji}##pick{msg.Id}{emoji}"))
                         {
                             _ = React(msg.Id, emoji, false);
@@ -590,7 +592,11 @@ public class ChatWindow : IDisposable
         var style = ImGui.GetStyle();
         var availableWidth = ImGui.GetContentRegionAvail().X;
         var framePadding = style.FramePadding.X * 2f;
-        var emojiButtonWidth = ImGui.CalcTextSize("😊").X + framePadding;
+        var emojiButtonWidth = 0f;
+        using (var _ = _emojiManager.PushEmojiFont())
+        {
+            emojiButtonWidth = ImGui.CalcTextSize("😊").X + framePadding;
+        }
         var sendButtonWidth = ImGui.CalcTextSize("Send").X + framePadding;
         var spacing = style.ItemSpacing.X * 2f;
         var inputWidth = Math.Max(120f, availableWidth - emojiButtonWidth - sendButtonWidth - spacing);
@@ -605,7 +611,10 @@ public class ChatWindow : IDisposable
         _input = ImGuiTextUtil.ReadUtf8Buffer(inputBuf);
 
         ImGui.SameLine();
-        if (ImGui.Button("😊")) ImGui.OpenPopup("##dc_emoji_picker");
+        using (var _ = _emojiManager.PushEmojiFont())
+        {
+            if (ImGui.Button("😊")) ImGui.OpenPopup("##dc_emoji_picker");
+        }
         if (ImGui.BeginPopup("##dc_emoji_picker"))
         {
             _emojiPicker.Draw(ref _input);

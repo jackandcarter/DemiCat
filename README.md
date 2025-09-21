@@ -137,7 +137,7 @@ dotnet build
 The build output `DemiCatPlugin.dll` can be found under `bin/Debug/net9.0/`. Copy it into your Dalamud plugins folder and enable it.
 
 #### Emoji Font
-Download the [Noto Color Emoji](https://github.com/googlefonts/noto-emoji/releases) font and save it as `DemiCatPlugin/NotoColorEmoji.ttf` before building. The file is ignored by git but will be copied into the build output and loaded at runtime if present. Without it, the plugin will fall back to monochrome emoji glyphs.
+Download the [Noto Color Emoji](https://github.com/googlefonts/noto-emoji/releases) font and save it as `DemiCatPlugin/NotoColorEmoji.ttf` before building. The plugin merges this font into Dalamud's atlas at startup so Unicode reactions and emoji pickers render correctly. If the file is missing, DemiCat falls back to Dalamud's default glyphs and emoji will display as placeholder squares.
 
 WebSocket communication now streams data in 1 KB chunks and continues reading until the end of each message, allowing the plugin to handle payloads larger than the previous 16-byte limit.
 

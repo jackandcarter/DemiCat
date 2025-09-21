@@ -15,6 +15,7 @@ public static class EmojiRenderer
 
         if (!EmojiFormatter.TryParseCustomToken(value, out var id))
         {
+            using var font = manager.PushEmojiFont();
             ImGui.TextUnformatted(value);
             return;
         }
