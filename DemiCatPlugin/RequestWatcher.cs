@@ -29,6 +29,8 @@ public class RequestWatcher : IDisposable
         _tokenManager = tokenManager;
     }
 
+    internal bool IsRunning => _cts != null;
+
     public void Start()
     {
         if (!_config.Requests)

@@ -607,9 +607,16 @@ public class Plugin : IDalamudPlugin
 
             _ = _services.Framework.RunOnTick(() =>
             {
+                var hadOfficerRole = _config.Roles.Contains("officer");
+                var officerWatcherWasRunning = _officerWatcherRunning;
+                var channelWatcherWasRunning = _channelWatcher.IsRunning;
+                var requestWatcherWasRunning = _requestWatcher.IsRunning;
+                var chatWasActive = _config.SyncedChat && _config.EnableFcChat;
+
                 dto.Roles.RemoveAll(r => r == "chat");
                 _config.Roles = dto.Roles;
-                _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+                var hasOfficerRole = _config.Roles.Contains("officer");
+                _mainWindow.HasOfficerRole = hasOfficerRole;
 
                 if (!hasChat)
                 {
@@ -622,30 +629,83 @@ public class Plugin : IDalamudPlugin
                 }
 
                 _chatWindow.ChannelsLoaded = false;
-                if (!_config.EnableFcChat)
-                {
-                    _chatWindow.StopNetworking();
-                    _presenceService?.Dispose();
-                }
-                _services.PluginInterface.SavePluginConfig(_config);
+                _officerChatWindow.ChannelsLoaded = false;
 
-                var restartRequestWatcher = _config.Requests;
+                var chatIsActive = _config.SyncedChat && _config.EnableFcChat;
+                var shouldRunChannelWatcher = _config.Events || _config.SyncedChat || hasOfficerRole;
+                var shouldRunRequestWatcher = _config.Requests;
+
+                var stopChat = chatWasActive && !chatIsActive;
+                var startChat = !chatWasActive && chatIsActive;
+                var stopOfficer = officerWatcherWasRunning && !hasOfficerRole;
+                var startOfficer = !officerWatcherWasRunning && hasOfficerRole;
+                var stopChannelWatcher = channelWatcherWasRunning && !shouldRunChannelWatcher;
+                var startChannelWatcher = !channelWatcherWasRunning && shouldRunChannelWatcher;
+                var stopRequestWatcher = requestWatcherWasRunning && !shouldRunRequestWatcher;
+                var startRequestWatcher = !requestWatcherWasRunning && shouldRunRequestWatcher;
+
+                _services.PluginInterface.SavePluginConfig(_config);
+                MembershipCache.Reset();
+
                 _ = Task.Run(async () =>
                 {
                     await _watcherRestartLock.WaitAsync().ConfigureAwait(false);
                     try
                     {
-                        StopWatchers();
-                        StartWatchers();
-                        if (restartRequestWatcher)
+                        if (stopRequestWatcher)
                         {
-                            _services.Log.Info("Restarting request watcher");
+                            _services.Log.Info("Stopping request watcher");
+                            _requestWatcher.Stop();
+                        }
+
+                        if (stopChannelWatcher)
+                        {
+                            _services.Log.Info("Stopping channel watcher");
+                            _channelWatcher.Stop();
+                        }
+
+                        if (stopOfficer)
+                        {
+                            _services.Log.Info("Stopping officer chat window networking");
+                            _officerChatWindow.StopNetworking();
+                            _officerWatcherRunning = false;
+                        }
+
+                        if (stopChat)
+                        {
+                            _services.Log.Info("Stopping chat window networking");
+                            _chatWindow.StopNetworking();
+                            _presenceService?.Dispose();
+                        }
+
+                        if (startChannelWatcher)
+                        {
+                            _services.Log.Info("Starting channel watcher");
+                            await _channelWatcher.Start().ConfigureAwait(false);
+                        }
+
+                        if (startRequestWatcher)
+                        {
+                            _services.Log.Info("Starting request watcher");
                             _requestWatcher.Start();
+                        }
+
+                        if (startChat)
+                        {
+                            _services.Log.Info("Starting chat window networking");
+                            _chatWindow.StartNetworking();
+                        }
+
+                        if (startOfficer)
+                        {
+                            _services.Log.Info("Starting officer chat window networking");
+                            _officerChatWindow.StartNetworking();
+                            _officerWatcherRunning = true;
                         }
                     }
                     catch (Exception ex)
                     {
-                        _services.Log.Error(ex, "Error restarting watchers after refreshing roles.");
+                        _services.Log.Error(ex, "Error updating watchers after refreshing roles.");
                     }
                     finally
                     {
