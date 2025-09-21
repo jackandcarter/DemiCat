@@ -25,6 +25,7 @@ from .base import Base
 
 _engine: AsyncEngine | None = None
 _Session: async_sessionmaker[AsyncSession] | None = None
+_engine_url: str | None = None
 _init_lock = asyncio.Lock()
 _DEBUG_SQL = os.getenv("DEMIBOT_DEBUG_SQLALCHEMY", "").lower() in {"1", "true", "yes"}
 
@@ -53,13 +54,17 @@ def _sync_url(url: str) -> str:
 async def init_db(url: str) -> AsyncEngine:
     """Create the database engine and run migrations for the given URL."""
 
-    global _engine, _Session
-    if _engine is not None:
-        return _engine
+    global _engine, _Session, _engine_url
 
     async with _init_lock:
-        if _engine is not None:
+        if _engine is not None and _engine_url == url:
             return _engine
+
+        if _engine is not None:
+            await _engine.dispose()
+            _engine = None
+            _Session = None
+            _engine_url = None
 
         sa_url = make_url(url)
         sync_url = _sync_url(url)
@@ -74,6 +79,7 @@ async def init_db(url: str) -> AsyncEngine:
             _Session = async_sessionmaker(_engine, expire_on_commit=False)
             async with _engine.begin() as conn:
                 await conn.run_sync(Base.metadata.create_all)
+            _engine_url = url
             return _engine
 
         # Run migrations using Alembic so the schema matches the latest models.
@@ -96,6 +102,7 @@ async def init_db(url: str) -> AsyncEngine:
 
         _engine = create_async_engine(url, echo=_DEBUG_SQL, future=True)
         _Session = async_sessionmaker(_engine, expire_on_commit=False)
+        _engine_url = url
         return _engine
 
 

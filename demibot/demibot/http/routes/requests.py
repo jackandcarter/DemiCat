@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..deps import RequestContext, api_key_auth, get_db
+from ._messages_common import _role_set
 from ..ws import manager
 from ..discord_client import discord_client
 from ...db.models import Request as DbRequest, RequestStatus, RequestType, Urgency, User
@@ -381,7 +382,7 @@ async def confirm_request(
     req = await db.get(DbRequest, request_id)
     if not req or req.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404)
-    if req.user_id != ctx.user.id and "officer" not in ctx.roles:
+    if req.user_id != ctx.user.id and "officer" not in _role_set(ctx):
         raise HTTPException(status_code=403)
     req = await _update_status(
         db,
@@ -406,7 +407,7 @@ async def cancel_request(
     req = await db.get(DbRequest, request_id)
     if not req or req.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404)
-    if req.user_id != ctx.user.id and "officer" not in ctx.roles:
+    if req.user_id != ctx.user.id and "officer" not in _role_set(ctx):
         raise HTTPException(status_code=403)
     if req.status in (RequestStatus.COMPLETED, RequestStatus.CANCELLED):
         raise HTTPException(status_code=409)

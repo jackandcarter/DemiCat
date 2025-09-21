@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
+from ._messages_common import _role_set
 from ...db.models import Embed, GuildChannel, ChannelKind
 
 router = APIRouter(prefix="/api")
@@ -25,7 +26,8 @@ async def get_embeds(
         stmt = stmt.where(Embed.channel_id == channel_id)
     if source is not None:
         stmt = stmt.where(Embed.source == source)
-    if "officer" not in ctx.roles:
+    roles = _role_set(ctx)
+    if "officer" not in roles:
         stmt = stmt.join(
             GuildChannel, GuildChannel.channel_id == Embed.channel_id
         ).where(GuildChannel.kind != ChannelKind.OFFICER_CHAT)
