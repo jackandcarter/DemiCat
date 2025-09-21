@@ -9,7 +9,7 @@ namespace DemiCatPlugin;
 public class Config : IPluginConfiguration
 {
     // Required by Dalamud
-    public int Version { get; set; } = 5;
+    public int Version { get; set; } = 6;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -26,11 +26,11 @@ public class Config : IPluginConfiguration
     public string OfficerChannelId { get; set; } = string.Empty;
     public bool EnableFcChat { get; set; } = true;
     public bool EnableFcChatUserSet { get; set; } = false;
-    public float FcChatTransparency { get; set; } = 1f;
-    public float OfficerChatTransparency { get; set; } = 1f;
+    public float FcChatOpacity { get; set; } = 1f;
+    public float OfficerChatOpacity { get; set; } = 1f;
     public bool ChatFadeOutEnabled { get; set; } = false;
-    public int ChatFadeOutDelaySeconds { get; set; } = 15;
-    public float ChatFadeOutAlpha { get; set; } = 0.3f;
+    public int ChatFadeOutDelaySeconds { get; set; } = 10;
+    public float ChatFadeOutMinimumAlpha { get; set; } = 0.3f;
 
     [JsonPropertyName("syncedChat")]
     public bool SyncedChat { get; set; } = true;
@@ -185,6 +185,35 @@ public class Config : IPluginConfiguration
             }
 
             Version = 5;
+            ExtensionData = null;
+        }
+        if (Version < 6)
+        {
+            if (ExtensionData != null)
+            {
+                if (ExtensionData.TryGetValue("FcChatTransparency", out var fcOpacityElement) && fcOpacityElement.ValueKind == JsonValueKind.Number && fcOpacityElement.TryGetDouble(out var fcOpacity))
+                {
+                    FcChatOpacity = (float)Math.Clamp(fcOpacity, 0d, 1d);
+                }
+                if (ExtensionData.TryGetValue("OfficerChatTransparency", out var officerOpacityElement) && officerOpacityElement.ValueKind == JsonValueKind.Number && officerOpacityElement.TryGetDouble(out var officerOpacity))
+                {
+                    OfficerChatOpacity = (float)Math.Clamp(officerOpacity, 0d, 1d);
+                }
+                if (ExtensionData.TryGetValue("ChatFadeOutAlpha", out var fadeAlphaElement) && fadeAlphaElement.ValueKind == JsonValueKind.Number && fadeAlphaElement.TryGetDouble(out var fadeAlpha))
+                {
+                    ChatFadeOutMinimumAlpha = (float)Math.Clamp(fadeAlpha, 0d, 1d);
+                }
+            }
+
+            FcChatOpacity = Math.Clamp(FcChatOpacity, 0f, 1f);
+            OfficerChatOpacity = Math.Clamp(OfficerChatOpacity, 0f, 1f);
+            ChatFadeOutMinimumAlpha = Math.Clamp(ChatFadeOutMinimumAlpha, 0f, 1f);
+            if (ChatFadeOutDelaySeconds <= 0)
+            {
+                ChatFadeOutDelaySeconds = 10;
+            }
+
+            Version = 6;
             ExtensionData = null;
         }
     }
