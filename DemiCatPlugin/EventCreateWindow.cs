@@ -526,9 +526,14 @@ public class EventCreateWindow
         }
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/repeat");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/repeat";
+            var tokenManager = TokenManager.Instance!;
+            var response = await ApiHelpers.SendWithRetries(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                ApiHelpers.AddAuthHeader(request, tokenManager);
+                return request;
+            }, _httpClient);
             if (response?.IsSuccessStatusCode == true)
             {
                 var stream = await response.Content.ReadAsStreamAsync();
@@ -566,9 +571,14 @@ public class EventCreateWindow
         if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Delete, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/{id}/repeat");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/{id}/repeat";
+            var tokenManager = TokenManager.Instance!;
+            var response = await ApiHelpers.SendWithRetries(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
+                ApiHelpers.AddAuthHeader(request, tokenManager);
+                return request;
+            }, _httpClient);
             if (response?.IsSuccessStatusCode == true)
             {
                 _schedulesLoaded = false;
@@ -675,10 +685,18 @@ public class EventCreateWindow
                 description = _description,
                 payload
             };
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates");
-            request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates";
+            var json = JsonSerializer.Serialize(body, JsonOpts);
+            var tokenManager = TokenManager.Instance!;
+            var response = await ApiHelpers.SendWithRetries(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+                ApiHelpers.AddAuthHeader(request, tokenManager);
+                return request;
+            }, _httpClient);
             if (response?.IsSuccessStatusCode == true)
             {
                 _lastResult = "Template saved";
@@ -736,11 +754,18 @@ public class EventCreateWindow
                 repeat = _repeat == RepeatOption.None ? null : _repeat.ToString().ToLowerInvariant()
             };
 
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events");
-            request.Content = new StringContent(JsonSerializer.Serialize(body, JsonOpts), Encoding.UTF8, "application/json");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-
-            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events";
+            var json = JsonSerializer.Serialize(body, JsonOpts);
+            var tokenManager = TokenManager.Instance!;
+            var response = await ApiHelpers.SendWithRetries(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+                ApiHelpers.AddAuthHeader(request, tokenManager);
+                return request;
+            }, _httpClient);
             if (response?.IsSuccessStatusCode == true)
             {
                 _lastResult = "Event posted";

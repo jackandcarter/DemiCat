@@ -42,45 +42,56 @@ internal static class ApiHelpers
         }
     }
 
-    internal static async Task<HttpResponseMessage?> SendWithRetries(HttpRequestMessage request, HttpClient httpClient)
+    internal static async Task<HttpResponseMessage?> SendWithRetries(Func<HttpRequestMessage> requestFactory, HttpClient httpClient)
     {
         const int maxAttempts = 3;
         const double baseDelaySeconds = 0.5;
 
         for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
+            HttpRequestMessage? request = null;
+            var methodName = "UNKNOWN";
+            var requestUri = "(null)";
             try
             {
-                PluginServices.Instance!.Log.Debug($"HTTP {request.Method} {request.RequestUri} attempt {attempt}/{maxAttempts}");
+                request = requestFactory() ?? throw new InvalidOperationException("Request factory returned null.");
+                methodName = request.Method.Method;
+                requestUri = request.RequestUri?.ToString() ?? "(null)";
+
+                PluginServices.Instance!.Log.Debug($"HTTP {methodName} {requestUri} attempt {attempt}/{maxAttempts}");
                 var response = await httpClient.SendAsync(request);
-                PluginServices.Instance!.Log.Debug($"HTTP {request.Method} {request.RequestUri} responded {(int)response.StatusCode}");
+                PluginServices.Instance!.Log.Debug($"HTTP {methodName} {requestUri} responded {(int)response.StatusCode}");
 
                 if (response.IsSuccessStatusCode)
                 {
                     // Successful communications are logged at info so they are visible in Dalamud's log file.
-                    PluginServices.Instance!.Log.Information($"HTTP {request.Method} {request.RequestUri} succeeded");
+                    PluginServices.Instance!.Log.Information($"HTTP {methodName} {requestUri} succeeded");
                 }
                 else
                 {
                     // If the server returns an error status code, capture the body so the reason is clear to the user.
                     var body = await response.Content.ReadAsStringAsync();
-                    PluginServices.Instance!.Log.Warning($"HTTP {request.Method} {request.RequestUri} failed with {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}");
+                    PluginServices.Instance!.Log.Warning($"HTTP {methodName} {requestUri} failed with {(int)response.StatusCode} {response.ReasonPhrase}. Body: {body}");
                 }
 
                 return response;
             }
             catch (Exception ex)
             {
-                PluginServices.Instance!.Log.Warning(ex, $"Attempt {attempt}/{maxAttempts} failed for {request.Method} {request.RequestUri}");
+                PluginServices.Instance!.Log.Warning(ex, $"Attempt {attempt}/{maxAttempts} failed for {methodName} {requestUri}");
                 if (attempt == maxAttempts)
                 {
-                    PluginServices.Instance!.Log.Error($"HTTP {request.Method} {request.RequestUri} failed after {maxAttempts} attempts");
+                    PluginServices.Instance!.Log.Error($"HTTP {methodName} {requestUri} failed after {maxAttempts} attempts");
                     return null;
                 }
 
                 var delay = TimeSpan.FromSeconds(baseDelaySeconds * Math.Pow(2, attempt - 1));
                 PluginServices.Instance!.Log.Debug($"Retrying in {delay.TotalSeconds:0.##}s");
                 await Task.Delay(delay);
+            }
+            finally
+            {
+                request?.Dispose();
             }
         }
 

@@ -627,12 +627,18 @@ public class TemplatesWindow
                 mentions = _mentions.Count > 0 ? _mentions.ToList() : null
             };
             var id = _templates[_selectedIndex].Id;
-            var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}/post");
-            var content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
-            request.Content = content;
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}/post";
+            var json = JsonSerializer.Serialize(body);
+            var tokenManager = TokenManager.Instance!;
+            var response = await ApiHelpers.SendWithRetries(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
+                var content = new StringContent(json, Encoding.UTF8, "application/json");
+                content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+                request.Content = content;
+                ApiHelpers.AddAuthHeader(request, tokenManager);
+                return request;
+            }, _httpClient);
             if (response?.IsSuccessStatusCode == true)
             {
                 _lastResult = "Template posted";
@@ -703,9 +709,14 @@ public class TemplatesWindow
         }
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates";
+            var tokenManager = TokenManager.Instance!;
+            var response = await ApiHelpers.SendWithRetries(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
+                ApiHelpers.AddAuthHeader(request, tokenManager);
+                return request;
+            }, _httpClient);
             if (response == null || !response.IsSuccessStatusCode)
             {
                 var bodyText = response != null ? await response.Content.ReadAsStringAsync() : string.Empty;
@@ -797,9 +808,14 @@ public class TemplatesWindow
         }
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Delete, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await ApiHelpers.SendWithRetries(request, _httpClient);
+            var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}";
+            var tokenManager = TokenManager.Instance!;
+            var response = await ApiHelpers.SendWithRetries(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
+                ApiHelpers.AddAuthHeader(request, tokenManager);
+                return request;
+            }, _httpClient);
             if (response?.IsSuccessStatusCode == true)
             {
                 _lastResult = "Template deleted";
