@@ -11,6 +11,8 @@ using Xunit;
 public class EventPreviewFormatterTests
 {
     private static readonly DateTimeOffset Timestamp = new(2024, 4, 1, 20, 0, 0, TimeSpan.Zero);
+    private const string FcCreatorLabel = "Event created by Example Member";
+    private const string OfficerCreatorLabel = "Event created by Officer Example";
 
     private static JsonElement GetExpected(string key)
     {
@@ -33,6 +35,7 @@ public class EventPreviewFormatterTests
             BuildEventFields(),
             BuildEventButtons(),
             new[] { 12345UL },
+            creatorLabel: FcCreatorLabel,
             embedId: "event-create-preview");
 
         AssertPreviewMatches(GetExpected("event_fc"), result);
@@ -52,6 +55,7 @@ public class EventPreviewFormatterTests
             BuildEventFields(),
             BuildEventButtons(),
             new[] { 12345UL, 67890UL },
+            creatorLabel: OfficerCreatorLabel,
             embedId: "event-create-preview");
 
         AssertPreviewMatches(GetExpected("event_officer"), result);
@@ -71,6 +75,7 @@ public class EventPreviewFormatterTests
             BuildTemplateFields(),
             BuildTemplateButtons(),
             new[] { 12345UL },
+            creatorLabel: FcCreatorLabel,
             embedId: "template-preview");
 
         AssertPreviewMatches(GetExpected("template_fc"), result);
@@ -90,6 +95,7 @@ public class EventPreviewFormatterTests
             BuildTemplateFields(),
             BuildTemplateButtons(),
             new[] { 12345UL, 67890UL },
+            creatorLabel: OfficerCreatorLabel,
             embedId: "template-preview");
 
         AssertPreviewMatches(GetExpected("template_officer"), result);
@@ -135,6 +141,7 @@ public class EventPreviewFormatterTests
             Enumerable.Empty<EmbedFieldDto>(),
             Enumerable.Empty<EmbedButtonDto>(),
             Enumerable.Empty<ulong>(),
+            creatorLabel: FcCreatorLabel,
             embedId: "no-buttons-preview");
 
         Assert.Collection(
@@ -198,6 +205,11 @@ public class EventPreviewFormatterTests
         if (!string.IsNullOrWhiteSpace(embed.ImageUrl))
         {
             obj["image"] = new Dictionary<string, object?> { ["url"] = embed.ImageUrl };
+        }
+
+        if (!string.IsNullOrWhiteSpace(embed.FooterText))
+        {
+            obj["footer"] = new Dictionary<string, object?> { ["text"] = embed.FooterText };
         }
 
         var json = JsonSerializer.Serialize(obj);

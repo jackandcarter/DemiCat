@@ -464,6 +464,7 @@ public class Plugin : IDalamudPlugin
         _officerWatcherRunning = false;
         _ui.StopNetworking();
         _mainWindow.TemplatesWindow.StopNetworking();
+        MembershipCache.Reset();
         _services.Log.Info("Watchers stopped");
     }
 

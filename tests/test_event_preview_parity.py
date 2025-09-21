@@ -34,11 +34,14 @@ async def _run_test() -> None:
 
     embed = {"title": "Sample", "description": "Desc"}
     body = CreateEventBody(channelId="123", title="Sample", description="Desc", embeds=[embed])
-    ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
+    ctx = SimpleNamespace(guild=SimpleNamespace(id=1), user=SimpleNamespace(id=1, global_name=None), roles=[])
     async with get_session() as db:
         await create_event(body=body, ctx=ctx, db=db)
         events = await list_events(ctx=ctx, db=db)
-        assert events[0]["embeds"][0] == embed
+        stored = events[0]["embeds"][0]
+        assert stored["title"] == embed["title"]
+        assert stored["description"] == embed["description"]
+        assert stored["footer"]["text"] == "Event created by Player"
 
 
 def test_preview_matches_server():

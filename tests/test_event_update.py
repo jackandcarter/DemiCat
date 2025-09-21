@@ -40,7 +40,7 @@ async def _run_test() -> None:
         db.add(GuildChannel(guild_id=1, channel_id=123, kind=ChannelKind.EVENT))
         await db.commit()
 
-    ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
+    ctx = SimpleNamespace(guild=SimpleNamespace(id=1), user=SimpleNamespace(id=1, global_name="Updater"), roles=[])
     body = CreateEventBody(
         channelId="123",
         title="First",
@@ -77,6 +77,7 @@ async def _run_test() -> None:
         row = await db.get(Embed, int(eid))
         payload = json.loads(row.payload_json)
         assert payload["title"] == "Second"
+        assert payload["footerText"] == "Event created by Updater"
         res = await db.execute(select(Embed))
         embeds = res.scalars().all()
         assert len(embeds) == 1

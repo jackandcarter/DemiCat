@@ -32,7 +32,7 @@ ext_pkg.commands = commands_pkg
 sys.modules.setdefault('discord.ext', ext_pkg)
 sys.modules.setdefault('discord.ext.commands', commands_pkg)
 
-from demibot.http.routes.users import get_users
+from demibot.http.routes.users import get_users, get_my_profile
 import demibot.http.routes.users as users_route
 from demibot.discordbot.presence_store import set_presence, Presence as StorePresence
 from demibot.db.models import (
@@ -50,7 +50,7 @@ class StubContext:
     def __init__(self, guild_id: int):
         self.guild = types.SimpleNamespace(id=guild_id, discord_guild_id=guild_id)
         self.roles = []
-
+        
 
 def test_get_users_includes_status_from_cache():
     async def _run():
@@ -210,5 +210,26 @@ def test_get_users_fetches_multiple_users_once():
             assert names['90'] == 'Name90'
             assert set(client.fetched) == {80, 90}
             users_route.discord_client = None
+
+    asyncio.run(_run())
+
+
+def test_get_my_profile_returns_creator_label():
+    async def _run():
+        await init_db('sqlite+aiosqlite://')
+        async with get_session() as db:
+            await db.execute(delete(MembershipRole))
+            await db.execute(delete(Role))
+            await db.execute(delete(Membership))
+            await db.execute(delete(User))
+            await db.commit()
+            db.add(User(id=10, discord_user_id=100, global_name='ProfileUser'))
+            db.add(Membership(id=10, guild_id=1, user_id=10, nickname='ProfileNick'))
+            await db.commit()
+            ctx = StubContext(1)
+            ctx.user = types.SimpleNamespace(id=10, global_name='ProfileUser')
+            res = await get_my_profile(ctx=ctx, db=db)
+            assert res['displayName'] == 'ProfileNick'
+            assert res['creatorLabel'] == 'Event created by ProfileNick'
 
     asyncio.run(_run())

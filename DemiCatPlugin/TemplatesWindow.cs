@@ -99,6 +99,7 @@ public class TemplatesWindow
 
     public void StartNetworking()
     {
+        _ = MembershipCache.EnsureLoaded(_httpClient, _config);
         _bridge?.Start();
         _templatesLoaded = false;
     }
@@ -569,6 +570,8 @@ public class TemplatesWindow
             mentionIds.AddRange(tmpl.Mentions);
         }
 
+        var creatorLabel = MembershipCache.GetCreatorLabel();
+
         return EventPreviewFormatter.Build(
             tmpl.Title,
             tmpl.Description,
@@ -581,7 +584,8 @@ public class TemplatesWindow
             buttons,
             mentionIds,
             null,
-            embedId ?? "template-preview");
+            creatorLabel: creatorLabel,
+            embedId: embedId ?? "template-preview");
     }
 
     internal EmbedDto ToEmbedDto(Template tmpl) => BuildPreview(tmpl).Embed;

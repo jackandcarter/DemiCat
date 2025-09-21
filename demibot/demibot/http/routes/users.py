@@ -7,6 +7,7 @@ from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
+from ._user_display import compute_creator_base_name, build_creator_label
 from ...db.models import (
     Membership,
     MembershipRole,
@@ -198,3 +199,28 @@ async def get_users(
             }
         )
     return users
+
+
+@router.get("/users/me/profile")
+async def get_my_profile(
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, object | None]:
+    guild_id = getattr(getattr(ctx, "guild", None), "id", None)
+    user_id = getattr(getattr(ctx, "user", None), "id", None)
+    nickname = None
+    if guild_id is not None and user_id is not None:
+        nickname = await db.scalar(
+            select(Membership.nickname).where(
+                Membership.guild_id == guild_id,
+                Membership.user_id == user_id,
+            )
+        )
+    base_name = compute_creator_base_name(ctx, nickname)
+    creator_label = build_creator_label(base_name)
+    return {
+        "displayName": base_name,
+        "creatorLabel": creator_label,
+        "nickname": nickname,
+        "globalName": ctx.user.global_name,
+    }
