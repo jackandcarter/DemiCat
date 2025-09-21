@@ -30,6 +30,7 @@ public class SettingsWindow : IDisposable
     private readonly Dictionary<string, bool> _categoryToggles = new();
     private bool _settingsLoaded;
     private bool _isLinked;
+    private static readonly int[] FadeDurations = { 5, 10, 15, 20, 30 };
 
     public bool IsOpen;
 
@@ -67,150 +68,23 @@ public class SettingsWindow : IDisposable
                     _ = Task.Run(LoadSettings);
                 }
 
-                DrawConnectionIndicator(_isLinked);
-                ImGui.Spacing();
-
-                var linked = _isLinked;
-                if (!linked)
+                if (ImGui.BeginTabBar("SettingsTabs"))
                 {
-                    ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
-                    ImGui.Separator();
-                }
-
-                if (ImGui.InputText("API Base URL", ref _apiBaseUrl, 256))
-                {
-                    _config.ApiBaseUrl = _apiBaseUrl;
-                    SaveConfig();
-                }
-
-                // Allow room for longer server-generated API keys
-                ImGui.InputText("API Key", ref _apiKey, 256);
-                ImGui.SameLine();
-                ImGui.TextDisabled("\u03C0");
-                var io = ImGui.GetIO();
-                if (ImGui.IsItemClicked() && io.KeyCtrl && io.KeyShift)
-                {
-                    _devWindow.IsOpen = true;
-                }
-
-                var enableFc = _config.EnableFcChat;
-                if (!linked)
-                    ImGui.BeginDisabled();
-                if (ImGui.Checkbox("Enable FC Chat", ref enableFc))
-                {
-                    _config.EnableFcChat = enableFc;
-                    _config.EnableFcChatUserSet = true;
-                    SaveConfig();
-                    if (ChatWindow != null)
+                    if (ImGui.BeginTabItem("General"))
                     {
-                        ChatWindow.ChannelsLoaded = false;
-                        if (enableFc)
-                        {
-                            ChatWindow.StartNetworking();
-                        }
-                        else
-                        {
-                            ChatWindow.StopNetworking();
-                            ChatWindow.Presence?.Dispose();
-                        }
-                    }
-                }
-                if (!linked)
-                {
-                    ImGui.EndDisabled();
-                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                        ImGui.SetTooltip("Link DemiCat to enable chat and presence.");
-                }
-
-                var syncEnabled = _config.FCSyncShell;
-                if (!linked)
-                    ImGui.BeginDisabled();
-                if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
-                {
-                    _config.FCSyncShell = syncEnabled;
-                    SaveConfig();
-                    _ = Task.Run(PushSettings);
-                }
-                if (!linked)
-                {
-                    ImGui.EndDisabled();
-                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                        ImGui.SetTooltip("Link DemiCat to enable Syncshell.");
-                }
-
-                var paused = !_config.Enabled;
-                if (ImGui.Checkbox("Pause", ref paused))
-                {
-                    _config.Enabled = !paused;
-                    SaveConfig();
-                }
-
-                foreach (var kvp in _categoryToggles.ToList())
-                {
-                    var enabled = kvp.Value;
-                    if (ImGui.Checkbox($"{kvp.Key}##cat", ref enabled))
-                    {
-                        _categoryToggles[kvp.Key] = enabled;
-                        _ = Task.Run(PushSettings);
+                        DrawGeneralTab();
+                        ImGui.EndTabItem();
                     }
 
-                    ImGui.SameLine();
-                    var autoApply = _config.AutoApply.TryGetValue(kvp.Key, out var ap) && ap;
-                    if (ImGui.Checkbox($"Auto-apply##{kvp.Key}", ref autoApply))
+                    if (ImGui.BeginTabItem("Appearance"))
                     {
-                        _config.AutoApply[kvp.Key] = autoApply;
-                        SaveConfig();
-                        _ = Task.Run(PushSettings);
-                    }
-                }
-
-                if (ImGui.Button("Clear my cached data"))
-                {
-                    ClearCachedData();
-                }
-
-                ImGui.SameLine();
-                if (ImGui.Button("Forget me"))
-                {
-                    _ = Task.Run(ForgetMe);
-                }
-
-                ImGui.BeginDisabled(_syncInProgress);
-                if (ImGui.Button("Sync"))
-                {
-                    _syncInProgress = true;
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            await Sync();
-                        }
-                        catch (Exception ex)
-                        {
-                            _log.Error(ex, "Unexpected error during sync");
-                        }
-                    });
-                }
-                ImGui.EndDisabled();
-
-                if (!string.IsNullOrEmpty(_syncStatus))
-                {
-                    Vector4 color;
-                    if (_syncStatus == "API key validated")
-                    {
-                        color = new Vector4(0, 1, 0, 1);
-                    }
-                    else if (_syncStatus == "Authentication failed" || _syncStatus == "Network error")
-                    {
-                        color = new Vector4(1, 0, 0, 1);
-                    }
-                    else
-                    {
-                        color = new Vector4(1, 1, 1, 1);
+                        DrawAppearanceTab();
+                        ImGui.EndTabItem();
                     }
 
-                    ImGui.TextColored(color, _syncStatus);
+                    ImGui.EndTabBar();
                 }
+
                 ImGui.End();
             }
             else
@@ -220,6 +94,255 @@ public class SettingsWindow : IDisposable
         }
 
         _devWindow.Draw();
+    }
+
+    private void DrawGeneralTab()
+    {
+        DrawConnectionIndicator(_isLinked);
+        ImGui.Spacing();
+
+        var linked = _isLinked;
+        if (!linked)
+        {
+            ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
+            ImGui.Separator();
+        }
+
+        if (ImGui.InputText("API Base URL", ref _apiBaseUrl, 256))
+        {
+            _config.ApiBaseUrl = _apiBaseUrl;
+            SaveConfig();
+        }
+
+        // Allow room for longer server-generated API keys
+        ImGui.InputText("API Key", ref _apiKey, 256);
+        ImGui.SameLine();
+        ImGui.TextDisabled("\u03C0");
+        var io = ImGui.GetIO();
+        if (ImGui.IsItemClicked() && io.KeyCtrl && io.KeyShift)
+        {
+            _devWindow.IsOpen = true;
+        }
+
+        var enableFc = _config.EnableFcChat;
+        if (!linked)
+            ImGui.BeginDisabled();
+        if (ImGui.Checkbox("Enable FC Chat", ref enableFc))
+        {
+            _config.EnableFcChat = enableFc;
+            _config.EnableFcChatUserSet = true;
+            SaveConfig();
+            if (ChatWindow != null)
+            {
+                ChatWindow.ChannelsLoaded = false;
+                if (enableFc)
+                {
+                    ChatWindow.StartNetworking();
+                }
+                else
+                {
+                    ChatWindow.StopNetworking();
+                    ChatWindow.Presence?.Dispose();
+                }
+            }
+        }
+        if (!linked)
+        {
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Link DemiCat to enable chat and presence.");
+        }
+
+        var syncEnabled = _config.FCSyncShell;
+        if (!linked)
+            ImGui.BeginDisabled();
+        if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
+        {
+            _config.FCSyncShell = syncEnabled;
+            SaveConfig();
+            _ = Task.Run(PushSettings);
+        }
+        if (!linked)
+        {
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Link DemiCat to enable Syncshell.");
+        }
+
+        var paused = !_config.Enabled;
+        if (ImGui.Checkbox("Pause", ref paused))
+        {
+            _config.Enabled = !paused;
+            SaveConfig();
+        }
+
+        foreach (var kvp in _categoryToggles.ToList())
+        {
+            var enabled = kvp.Value;
+            if (ImGui.Checkbox($"{kvp.Key}##cat", ref enabled))
+            {
+                _categoryToggles[kvp.Key] = enabled;
+                _ = Task.Run(PushSettings);
+            }
+
+            ImGui.SameLine();
+            var autoApply = _config.AutoApply.TryGetValue(kvp.Key, out var ap) && ap;
+            if (ImGui.Checkbox($"Auto-apply##{kvp.Key}", ref autoApply))
+            {
+                _config.AutoApply[kvp.Key] = autoApply;
+                SaveConfig();
+                _ = Task.Run(PushSettings);
+            }
+        }
+
+        if (ImGui.Button("Clear my cached data"))
+        {
+            ClearCachedData();
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button("Forget me"))
+        {
+            _ = Task.Run(ForgetMe);
+        }
+
+        ImGui.BeginDisabled(_syncInProgress);
+        if (ImGui.Button("Sync"))
+        {
+            _syncInProgress = true;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Sync();
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Unexpected error during sync");
+                }
+            });
+        }
+        ImGui.EndDisabled();
+
+        if (!string.IsNullOrEmpty(_syncStatus))
+        {
+            Vector4 color;
+            if (_syncStatus == "API key validated")
+            {
+                color = new Vector4(0, 1, 0, 1);
+            }
+            else if (_syncStatus == "Authentication failed" || _syncStatus == "Network error")
+            {
+                color = new Vector4(1, 0, 0, 1);
+            }
+            else
+            {
+                color = new Vector4(1, 1, 1, 1);
+            }
+
+            ImGui.TextColored(color, _syncStatus);
+        }
+    }
+
+    private void DrawAppearanceTab()
+    {
+        var fadeOutEnabled = _config.ChatFadeOutEnabled;
+
+        ImGui.BeginDisabled(fadeOutEnabled);
+        var fcTransparency = _config.FcChatTransparency * 100f;
+        if (ImGui.SliderFloat("FC Chat Transparency", ref fcTransparency, 0f, 100f, "%.0f%%"))
+        {
+            _config.FcChatTransparency = Math.Clamp(fcTransparency / 100f, 0f, 1f);
+            SaveConfig();
+            MainWindow?.ResetFadeTimer();
+        }
+        ImGui.EndDisabled();
+        if (fadeOutEnabled && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Disable fade-out to adjust per-tab transparency.");
+
+        ImGui.BeginDisabled(fadeOutEnabled);
+        var officerTransparency = _config.OfficerChatTransparency * 100f;
+        if (ImGui.SliderFloat("Officer Tab Transparency", ref officerTransparency, 0f, 100f, "%.0f%%"))
+        {
+            _config.OfficerChatTransparency = Math.Clamp(officerTransparency / 100f, 0f, 1f);
+            SaveConfig();
+            MainWindow?.ResetFadeTimer();
+        }
+        ImGui.EndDisabled();
+        if (fadeOutEnabled && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Disable fade-out to adjust per-tab transparency.");
+
+        ImGui.Separator();
+
+        if (ImGui.Checkbox("Enable fade-out", ref fadeOutEnabled))
+        {
+            _config.ChatFadeOutEnabled = fadeOutEnabled;
+            SaveConfig();
+            MainWindow?.ResetFadeTimer();
+        }
+
+        ImGui.BeginDisabled(!fadeOutEnabled);
+        var fadeDurations = FadeDurations;
+        var currentIndex = Array.IndexOf(fadeDurations, _config.ChatFadeOutDelaySeconds);
+        if (currentIndex < 0)
+        {
+            currentIndex = 0;
+        }
+
+        var currentLabel = $"{fadeDurations[currentIndex]} seconds";
+        if (ImGui.BeginCombo("Fade-out delay", currentLabel))
+        {
+            for (var i = 0; i < fadeDurations.Length; i++)
+            {
+                var label = $"{fadeDurations[i]} seconds";
+                var selected = i == currentIndex;
+                if (ImGui.Selectable(label, selected))
+                {
+                    _config.ChatFadeOutDelaySeconds = fadeDurations[i];
+                    SaveConfig();
+                    MainWindow?.ResetFadeTimer();
+                    currentIndex = i;
+                }
+                if (selected)
+                    ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+
+        var fadeAlphaPercent = _config.ChatFadeOutAlpha * 100f;
+        if (ImGui.SliderFloat("Fade-out transparency", ref fadeAlphaPercent, 0f, 100f, "%.0f%%"))
+        {
+            _config.ChatFadeOutAlpha = Math.Clamp(fadeAlphaPercent / 100f, 0f, 1f);
+            SaveConfig();
+            MainWindow?.ResetFadeTimer();
+        }
+
+        ImGui.SameLine();
+        DrawFadePreview("##fadePreview", _config.ChatFadeOutAlpha);
+        ImGui.EndDisabled();
+    }
+
+    private static void DrawFadePreview(string id, float alpha)
+    {
+        var size = new Vector2(ImGui.GetFrameHeight() * 2f, ImGui.GetFrameHeight());
+        var cursor = ImGui.GetCursorScreenPos();
+        var max = cursor + size;
+        var drawList = ImGui.GetWindowDrawList();
+
+        var backgroundColor = ImGui.GetColorU32(new Vector4(0.2f, 0.2f, 0.2f, 1f));
+        drawList.AddRectFilled(cursor, max, backgroundColor);
+
+        var previewColor = ImGui.GetColorU32(new Vector4(1f, 1f, 1f, alpha));
+        drawList.AddRectFilled(cursor, max, previewColor);
+
+        var borderColor = ImGui.GetColorU32(new Vector4(1f, 1f, 1f, 1f));
+        drawList.AddRect(cursor, max, borderColor);
+
+        ImGui.InvisibleButton(id, size);
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip($"{Math.Clamp((int)Math.Round(alpha * 100f), 0, 100)}% opacity");
+        }
     }
 
     private void OnLinked() => _isLinked = true;
