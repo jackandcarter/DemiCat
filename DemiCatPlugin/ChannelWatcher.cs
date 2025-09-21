@@ -32,6 +32,8 @@ public class ChannelWatcher : IDisposable
 
     internal static ChannelWatcher? Instance { get; private set; }
 
+    internal bool IsRunning => _cts != null;
+
     public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, TemplatesWindow templatesWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager, HttpClient httpClient)
     {
         _config = config;
