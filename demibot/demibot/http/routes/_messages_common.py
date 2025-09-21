@@ -51,6 +51,44 @@ MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
 
+CHANNEL_NOT_CONFIGURED_DETAIL = (
+    "channel not configured for this tab; re-run wizard or pick a configured channel"
+)
+
+
+async def require_guild_channel(
+    ctx: RequestContext,
+    db: AsyncSession,
+    *,
+    channel_kind: ChannelKind,
+    channel_id: int | None = None,
+) -> GuildChannel:
+    """Return the configured guild channel for the given kind.
+
+    This helper enforces the same validation as :func:`save_message`, ensuring the
+    requested channel is configured for the active guild and that officer-only
+    channels remain restricted to members with the ``officer`` role.  The
+    resolved :class:`GuildChannel` row is returned so callers can reuse the
+    persisted metadata without re-querying the database.
+    """
+
+    stmt = select(GuildChannel).where(
+        GuildChannel.guild_id == ctx.guild.id,
+        GuildChannel.kind == channel_kind,
+    )
+    if channel_id is not None:
+        stmt = stmt.where(GuildChannel.channel_id == channel_id)
+    stmt = stmt.limit(1)
+    result = await db.execute(stmt)
+    guild_channel = result.scalar_one_or_none()
+    if guild_channel is None:
+        raise HTTPException(status_code=400, detail=CHANNEL_NOT_CONFIGURED_DETAIL)
+    if guild_channel.kind in {ChannelKind.OFFICER_CHAT, ChannelKind.OFFICER_VISIBLE}:
+        if "officer" not in ctx.roles:
+            raise HTTPException(status_code=403)
+    return guild_channel
+
+
 def _make_discord_files(
     files: Sequence[discord.File | BridgeUpload] | None,
 ) -> list[discord.File] | None:
@@ -768,21 +806,11 @@ async def save_message(
         cid = int(body.channel_id)
     except ValueError:
         raise HTTPException(status_code=400, detail="invalid channel id")
-    gc_kind = await db.scalar(
-        select(GuildChannel.kind).where(
-            GuildChannel.guild_id == ctx.guild.id,
-            GuildChannel.channel_id == cid,
-            GuildChannel.kind == channel_kind,
-        )
+    guild_channel = await require_guild_channel(
+        ctx, db, channel_kind=channel_kind, channel_id=cid
     )
-    if gc_kind is None:
-        raise HTTPException(
-            status_code=400,
-            detail="channel not configured for this tab; re-run wizard or pick a configured channel",
-        )
+    gc_kind = guild_channel.kind
     is_officer = gc_kind == ChannelKind.OFFICER_CHAT
-    if is_officer and "officer" not in ctx.roles:
-        raise HTTPException(status_code=403)
     discord_msg_id: int | None = None
     attachments: list[AttachmentDto] | None = None
     channel = None

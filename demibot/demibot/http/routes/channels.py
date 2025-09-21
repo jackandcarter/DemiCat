@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse as FastAPIJSONResponse
 import json
 import logging
@@ -9,10 +9,16 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
+from ..schemas import ChatMessage
 from ...db.models import GuildChannel, ChannelKind
 from ...channel_names import ensure_channel_name
 from ..discord_client import discord_client
 from ..ws import manager
+from ._messages_common import (
+    CHANNEL_NOT_CONFIGURED_DETAIL,
+    fetch_messages,
+    require_guild_channel,
+)
 
 router = APIRouter(prefix="/api")
 
@@ -221,6 +227,65 @@ async def get_channels(
         await db.commit()
         await manager.broadcast_text("update", ctx.guild.id, path="/ws/channels")
     return JSONResponse(content=by_kind, ensure_ascii=False)
+
+
+@router.get("/channels/history", response_model=list[ChatMessage])
+async def get_channel_history(
+    kind: str,
+    limit: int | None = None,
+    before: str | None = None,
+    after: str | None = None,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    channel_kind = _parse_channel_kind(kind)
+    if channel_kind is None:
+        raise HTTPException(status_code=400, detail="invalid channel kind")
+
+    candidate_kinds: list[ChannelKind]
+    if channel_kind == ChannelKind.OFFICER_CHAT:
+        candidate_kinds = [ChannelKind.OFFICER_CHAT]
+    elif channel_kind == ChannelKind.FC_CHAT:
+        candidate_kinds = [ChannelKind.FC_CHAT]
+    elif channel_kind == ChannelKind.CHAT:
+        candidate_kinds = [ChannelKind.CHAT, ChannelKind.FC_CHAT]
+    else:
+        raise HTTPException(status_code=400, detail="unsupported channel kind")
+
+    guild_channel: GuildChannel | None = None
+    resolved_kind: ChannelKind | None = None
+    last_error: HTTPException | None = None
+
+    for candidate in candidate_kinds:
+        try:
+            guild_channel = await require_guild_channel(
+                ctx, db, channel_kind=candidate
+            )
+        except HTTPException as exc:
+            if exc.status_code != 400:
+                raise
+            last_error = exc
+        else:
+            resolved_kind = candidate
+            break
+
+    if guild_channel is None or resolved_kind is None:
+        if last_error is not None:
+            raise last_error
+        raise HTTPException(
+            status_code=400, detail=CHANNEL_NOT_CONFIGURED_DETAIL
+        )
+
+    is_officer = resolved_kind == ChannelKind.OFFICER_CHAT
+    return await fetch_messages(
+        str(guild_channel.channel_id),
+        ctx,
+        db,
+        is_officer=is_officer,
+        limit=limit,
+        before=before,
+        after=after,
+    )
 
 
 @router.get("/channels/{channel_id}/validate")
