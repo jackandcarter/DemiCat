@@ -46,6 +46,8 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private DateTime _lastWebSocketErrorLog;
     private DateTime _nextWebSocketAttempt = DateTime.MinValue;
     private static readonly TimeSpan WebSocketErrorLogThrottle = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan WebSocketCloseTimeout = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan WebSocketCloseWaitTimeout = TimeSpan.FromSeconds(3);
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true
@@ -103,19 +105,17 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
         if (_webSocket != null)
         {
+            var socket = _webSocket;
+            _webSocket = null;
             try
             {
-                if (_webSocket.State == WebSocketState.Open)
-                {
-                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
-                }
+                await CloseClientWebSocketWithTimeoutAsync(socket, CancellationToken.None);
             }
             catch
             {
-                // ignored
+                socket.Abort();
             }
-            _webSocket.Dispose();
-            _webSocket = null;
+            socket.Dispose();
         }
 
         if (!TokenManager.Instance!.IsReady() || !_config.Enabled || !_config.Events)
@@ -135,18 +135,45 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     public void StopNetworking()
     {
         StopPolling();
-        if (_webSocket != null)
+        var socket = _webSocket;
+        _webSocket = null;
+        if (socket != null)
         {
             try
             {
-                if (_webSocket.State == WebSocketState.Open)
+                var closeTask = CloseClientWebSocketWithTimeoutAsync(socket, CancellationToken.None);
+                var completedTask = Task.WhenAny(closeTask, Task.Delay(WebSocketCloseWaitTimeout)).GetAwaiter().GetResult();
+                if (completedTask != closeTask)
                 {
-                    _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None).GetAwaiter().GetResult();
+                    socket.Abort();
+                }
+                else
+                {
+                    closeTask.GetAwaiter().GetResult();
                 }
             }
-            catch { }
-            _webSocket.Dispose();
-            _webSocket = null;
+            catch (OperationCanceledException)
+            {
+                socket.Abort();
+            }
+            catch (WebSocketException)
+            {
+                socket.Abort();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+            catch (Exception)
+            {
+                socket.Abort();
+            }
+            finally
+            {
+                socket.Dispose();
+            }
         }
         _webSocketReconnectAttempt = 0;
         _nextWebSocketAttempt = DateTime.MaxValue;
@@ -561,6 +588,50 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
         catch (WebSocketException)
         {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private static async Task CloseClientWebSocketWithTimeoutAsync(ClientWebSocket socket, CancellationToken cancellationToken)
+    {
+        if (socket == null)
+        {
+            return;
+        }
+
+        WebSocketState state;
+        try
+        {
+            state = socket.State;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        if (state != WebSocketState.Open && state != WebSocketState.CloseReceived && state != WebSocketState.CloseSent)
+        {
+            return;
+        }
+
+        using var timeoutCts = new CancellationTokenSource(WebSocketCloseTimeout);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+        try
+        {
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, linkedCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            socket.Abort();
+        }
+        catch (WebSocketException)
+        {
+            socket.Abort();
         }
         catch (ObjectDisposedException)
         {
@@ -1002,19 +1073,17 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         StopPolling();
         if (_webSocket != null)
         {
+            var socket = _webSocket;
+            _webSocket = null;
             try
             {
-                if (_webSocket.State == WebSocketState.Open)
-                {
-                    await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, CancellationToken.None);
-                }
+                await CloseClientWebSocketWithTimeoutAsync(socket, CancellationToken.None);
             }
             catch
             {
-                // ignored
+                socket.Abort();
             }
-            _webSocket.Dispose();
-            _webSocket = null;
+            socket.Dispose();
         }
 
         List<EventView> views;
