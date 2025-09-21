@@ -570,6 +570,7 @@ public class Plugin : IDalamudPlugin
             var channelRequest = new HttpRequestMessage(HttpMethod.Get, channelUrl);
             ApiHelpers.AddAuthHeader(channelRequest, _tokenManager);
             List<ChannelDto> chatChannels = new();
+            var channelsFetched = false;
 
             try
             {
@@ -585,11 +586,20 @@ public class Plugin : IDalamudPlugin
                 if (channelResponse.IsSuccessStatusCode)
                 {
                     var channelStream = await channelResponse.Content.ReadAsStreamAsync();
-                    var channelsDto = await JsonSerializer.DeserializeAsync<ChannelListDto>(channelStream) ?? new ChannelListDto();
-                    chatChannels = channelsDto.Chat;
-                    foreach (var channel in chatChannels)
+                    var channelsDto = await JsonSerializer.DeserializeAsync<ChannelListDto>(channelStream);
+                    if (channelsDto == null)
                     {
-                        channel.EnsureKind(ChannelKind.FcChat);
+                        log.Error("Failed to deserialize channels response.");
+                    }
+                    else
+                    {
+                        chatChannels = channelsDto.Chat ?? new List<ChannelDto>();
+                        foreach (var channel in chatChannels)
+                        {
+                            channel.EnsureKind(ChannelKind.FcChat);
+                        }
+
+                        channelsFetched = true;
                     }
                 }
                 else
@@ -618,25 +628,36 @@ public class Plugin : IDalamudPlugin
                 var hasOfficerRole = _config.Roles.Contains("officer");
                 _mainWindow.HasOfficerRole = hasOfficerRole;
 
-                if (!hasChat)
+                var stopChat = false;
+                var startChat = false;
+
+                if (channelsFetched)
                 {
-                    _config.EnableFcChat = false;
-                    _config.EnableFcChatUserSet = false;
+                    if (!hasChat)
+                    {
+                        _config.EnableFcChat = false;
+                        _config.EnableFcChatUserSet = false;
+                    }
+                    else if (!_config.EnableFcChatUserSet)
+                    {
+                        _config.EnableFcChat = true;
+                    }
+
+                    _chatWindow.ChannelsLoaded = false;
+                    _officerChatWindow.ChannelsLoaded = false;
+
+                    var chatIsActiveAfterUpdate = _config.SyncedChat && _config.EnableFcChat;
+                    stopChat = chatWasActive && !chatIsActiveAfterUpdate;
+                    startChat = !chatWasActive && chatIsActiveAfterUpdate;
                 }
-                else if (!_config.EnableFcChatUserSet)
+                else
                 {
-                    _config.EnableFcChat = true;
+                    log.Warning("Skipping FC chat updates because channels could not be fetched.");
                 }
 
-                _chatWindow.ChannelsLoaded = false;
-                _officerChatWindow.ChannelsLoaded = false;
-
-                var chatIsActive = _config.SyncedChat && _config.EnableFcChat;
                 var shouldRunChannelWatcher = _config.Events || _config.SyncedChat || hasOfficerRole;
                 var shouldRunRequestWatcher = _config.Requests;
 
-                var stopChat = chatWasActive && !chatIsActive;
-                var startChat = !chatWasActive && chatIsActive;
                 var stopOfficer = officerWatcherWasRunning && !hasOfficerRole;
                 var startOfficer = !officerWatcherWasRunning && hasOfficerRole;
                 var stopChannelWatcher = channelWatcherWasRunning && !shouldRunChannelWatcher;
