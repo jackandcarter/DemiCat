@@ -27,7 +27,11 @@ from demibot.http.deps import RequestContext
 
 def _make_ctx() -> RequestContext:
     guild = types.SimpleNamespace(id=1)
-    user = types.SimpleNamespace(character_name="Alice")
+    user = types.SimpleNamespace(
+        id=42,
+        character_name="Alice",
+        global_name="Alice",
+    )
     return RequestContext(user=user, guild=guild, key=None, roles=[])
 
 
@@ -46,9 +50,50 @@ def test_webhook_retry_success(monkeypatch):
 
         @asynccontextmanager
         async def fake_get_session():
+            channel_id = 123
+
+            class DummyResult:
+                def __init__(self, row, rows):
+                    self._row = row
+                    self._rows = rows
+
+                def one_or_none(self):
+                    return self._row
+
+                def all(self):
+                    return self._rows
+
             class DummyDB:
+                def __init__(self):
+                    self._calls = 0
+
+                async def execute(self, query):
+                    self._calls += 1
+                    if self._calls == 1:
+                        return DummyResult(
+                            (
+                                "http://example.com",
+                                ws_chat.ChannelKind.FC_CHAT,
+                            ),
+                            [],
+                        )
+                    return DummyResult(
+                        None,
+                        [
+                            (
+                                channel_id,
+                                ctx.guild.id,
+                                ws_chat.ChannelKind.CHAT,
+                                getattr(ctx.guild, "discord_guild_id", None),
+                            )
+                        ],
+                    )
+
                 async def scalar(self, query):
-                    return "http://example.com"
+                    return None
+
+                async def commit(self):
+                    return None
 
             yield DummyDB()
 
@@ -111,9 +156,50 @@ def test_webhook_retry_failure(monkeypatch):
 
         @asynccontextmanager
         async def fake_get_session():
+            channel_id = 123
+
+            class DummyResult:
+                def __init__(self, row, rows):
+                    self._row = row
+                    self._rows = rows
+
+                def one_or_none(self):
+                    return self._row
+
+                def all(self):
+                    return self._rows
+
             class DummyDB:
+                def __init__(self):
+                    self._calls = 0
+
+                async def execute(self, query):
+                    self._calls += 1
+                    if self._calls == 1:
+                        return DummyResult(
+                            (
+                                "http://example.com",
+                                ws_chat.ChannelKind.FC_CHAT,
+                            ),
+                            [],
+                        )
+                    return DummyResult(
+                        None,
+                        [
+                            (
+                                channel_id,
+                                ctx.guild.id,
+                                ws_chat.ChannelKind.CHAT,
+                                getattr(ctx.guild, "discord_guild_id", None),
+                            )
+                        ],
+                    )
+
                 async def scalar(self, query):
-                    return "http://example.com"
+                    return None
+
+                async def commit(self):
+                    return None
 
             yield DummyDB()
 
