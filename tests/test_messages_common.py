@@ -153,6 +153,83 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_fetch_messages_attachment_aliases():
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+
+            guild_id = 5
+            user_id = 6
+            channel_id = 7
+            message_id = 8
+
+            db.add(Guild(id=guild_id, discord_guild_id=500, name="Guild"))
+            db.add(User(id=user_id, discord_user_id=600, global_name="Tester"))
+            db.add(
+                GuildChannel(
+                    guild_id=guild_id,
+                    channel_id=channel_id,
+                    kind=ChannelKind.FC_CHAT,
+                )
+            )
+
+            attachments = [
+                {
+                    "url": "https://example.com/a.png",
+                    "filename": "a.png",
+                    "content_type": "image/png",
+                },
+                {
+                    "url": "https://example.com/b.jpg",
+                    "filename": "b.jpg",
+                    "contentType": "image/jpeg",
+                },
+            ]
+
+            db.add(
+                Message(
+                    discord_message_id=message_id,
+                    channel_id=channel_id,
+                    guild_id=guild_id,
+                    author_id=user_id,
+                    author_name="Tester",
+                    author_avatar_url="https://example.com/avatar.png",
+                    content_raw="Hi",
+                    content_display="Hi",
+                    content="Hi",
+                    attachments_json=json.dumps(attachments),
+                    author_json=None,
+                    embeds_json=None,
+                    mentions_json=None,
+                    reference_json=None,
+                    components_json=None,
+                    reactions_json=None,
+                    is_officer=False,
+                )
+            )
+            await db.commit()
+
+            guild = await db.get(Guild, guild_id)
+            user = await db.get(User, user_id)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=["chat"])
+
+            data = await mc.fetch_messages(str(channel_id), ctx, db, is_officer=False)
+
+            assert data and data[0]["id"] == str(message_id)
+            attachments_payload = data[0].get("attachments")
+            assert isinstance(attachments_payload, list) and len(attachments_payload) == 2
+            assert attachments_payload[0]["contentType"] == "image/png"
+            assert attachments_payload[1]["contentType"] == "image/jpeg"
+
+    asyncio.run(_run())
+
+
 def test_save_message_resolves_channel_via_guild_lookup(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
