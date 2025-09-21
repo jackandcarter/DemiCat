@@ -31,6 +31,7 @@ public class ChatWindow : IDisposable
     protected readonly List<ChannelDto> _channels = new();
     protected int _selectedIndex;
     protected bool _channelsLoaded;
+    protected bool _channelsLoading;
     protected bool _channelFetchFailed;
     protected string _channelErrorMessage = string.Empty;
     protected string _input = string.Empty;
@@ -229,7 +230,7 @@ public class ChatWindow : IDisposable
             return;
         }
 
-        if (!_channelsLoaded)
+        if (!_channelsLoaded && !_channelsLoading)
         {
             _ = FetchChannels();
         }
@@ -1522,9 +1523,15 @@ public class ChatWindow : IDisposable
 
     protected virtual async Task FetchChannels(bool refreshed = false)
     {
+        if (_channelsLoading && !refreshed)
+        {
+            return;
+        }
+
         if (!_tokenManager.IsReady())
         {
             _channelsLoaded = true;
+            _channelsLoading = false;
             return;
         }
 
@@ -1536,20 +1543,37 @@ public class ChatWindow : IDisposable
                 _channelFetchFailed = true;
                 _channelErrorMessage = "Invalid API URL";
                 _channelsLoaded = true;
+                _channelsLoading = false;
             });
             return;
         }
 
+        _channelsLoading = true;
+
         try
         {
             var channels = (await _channelService.FetchAsync(_channelKind, CancellationToken.None)).ToList();
-            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
+            {
+                if (refreshed)
+                {
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    {
+                        _channelFetchFailed = true;
+                        _channelErrorMessage = "Failed to load channels";
+                        _channelsLoaded = true;
+                        _channelsLoading = false;
+                    });
+                }
+                return;
+            }
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(channels);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
+                _channelsLoading = false;
             });
         }
         catch (HttpRequestException ex)
@@ -1564,6 +1588,7 @@ public class ChatWindow : IDisposable
                         ? "Forbidden – check API key/roles"
                         : "Failed to load channels";
                 _channelsLoaded = true;
+                _channelsLoading = false;
             });
         }
         catch (Exception ex)
@@ -1574,6 +1599,7 @@ public class ChatWindow : IDisposable
                 _channelFetchFailed = true;
                 _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
+                _channelsLoading = false;
             });
         }
     }
