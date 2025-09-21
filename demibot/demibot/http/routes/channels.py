@@ -18,6 +18,7 @@ from ._messages_common import (
     CHANNEL_NOT_CONFIGURED_DETAIL,
     fetch_messages,
     require_guild_channel,
+    _role_set,
 )
 
 router = APIRouter(prefix="/api")
@@ -314,7 +315,7 @@ async def validate_channel(
     if guild_channel.kind in {
         ChannelKind.OFFICER_CHAT,
         ChannelKind.OFFICER_VISIBLE,
-    } and "officer" not in ctx.roles:
+    } and "officer" not in _role_set(ctx):
         return JSONResponse({"ok": False, "reason": "FORBIDDEN"})
 
     name = guild_channel.name or str(channel_id)

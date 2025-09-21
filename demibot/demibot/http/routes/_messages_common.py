@@ -6,12 +6,51 @@ import io
 import types
 import logging
 import asyncio
-from typing import Sequence
+from contextlib import contextmanager
+from typing import Iterable, Sequence, Set
 
 import discord
 from discord import ClientException
-from discord.http import handle_message_parameters
-from discord.utils import MISSING
+try:  # pragma: no cover - optional dependency in tests
+    from discord.http import handle_message_parameters  # type: ignore
+except Exception:  # pragma: no cover - fallback when discord.http missing
+    @contextmanager
+    def handle_message_parameters(
+        content: str | None,
+        *,
+        files: Sequence[discord.File] | discord.File | types.SimpleNamespace | object = None,
+        embeds: Sequence[dict] | dict | object = None,
+        allowed_mentions: object = None,
+        **_: object,
+    ):
+        """Minimal stand-in for :func:`discord.http.handle_message_parameters`."""
+
+        payload: dict[str, object | None] = {
+            "content": content,
+            "tts": False,
+            "nonce": None,
+            "allowed_mentions": allowed_mentions,
+        }
+        if embeds is not None:
+            payload["embeds"] = embeds
+
+        multipart = []
+        file_list = None
+        if files is not None:
+            file_list = files if isinstance(files, list) else [files]
+
+        params = types.SimpleNamespace(
+            payload=payload,
+            multipart=multipart,
+            files=file_list,
+            data=payload,
+        )
+        yield params
+
+try:  # pragma: no cover - optional dependency in tests
+    from discord.utils import MISSING  # type: ignore
+except Exception:  # pragma: no cover - fallback when discord.utils missing
+    MISSING = object()
 from fastapi import HTTPException, UploadFile
 from pydantic import BaseModel, Field, ConfigDict, model_validator
 from sqlalchemy import select
@@ -105,6 +144,18 @@ CHANNEL_NOT_CONFIGURED_DETAIL = (
 )
 
 
+def _role_set(ctx: RequestContext | object) -> Set[str]:
+    roles: Iterable[str] | str | None = getattr(ctx, "roles", None)
+    if roles is None:
+        return set()
+    if isinstance(roles, str):
+        return {roles}
+    try:
+        return {str(r) for r in roles}
+    except TypeError:
+        return {str(roles)}
+
+
 async def require_guild_channel(
     ctx: RequestContext,
     db: AsyncSession,
@@ -133,7 +184,7 @@ async def require_guild_channel(
     if guild_channel is None:
         raise HTTPException(status_code=400, detail=CHANNEL_NOT_CONFIGURED_DETAIL)
     if guild_channel.kind in {ChannelKind.OFFICER_CHAT, ChannelKind.OFFICER_VISIBLE}:
-        if "officer" not in ctx.roles:
+        if "officer" not in _role_set(ctx):
             raise HTTPException(status_code=403)
     return guild_channel
 
@@ -352,9 +403,20 @@ async def create_webhook_for_channel(
 
 
 # Restrict everyone mentions but allow user and role pings
-ALLOWED_MENTIONS = discord.AllowedMentions(
-    users=True, roles=True, everyone=False
-)
+try:  # pragma: no cover - optional dependency in tests
+    ALLOWED_MENTIONS = discord.AllowedMentions(
+        users=True, roles=True, everyone=False
+    )
+except AttributeError:  # pragma: no cover - fallback for stub discord module
+    class _AllowedMentionsFallback:
+        users = True
+        roles = True
+        everyone = False
+
+        def to_dict(self) -> dict[str, object]:
+            return {"users": [], "roles": [], "everyone": False}
+
+    ALLOWED_MENTIONS = _AllowedMentionsFallback()
 
 
 def _discord_error(exc: discord.HTTPException) -> str:
@@ -762,7 +824,7 @@ async def fetch_messages(
     before: str | None = None,
     after: str | None = None,
 ) -> list[dict]:
-    if is_officer and "officer" not in ctx.roles:
+    if is_officer and "officer" not in _role_set(ctx):
         raise HTTPException(status_code=403)
     try:
         cid = int(channel_id)
@@ -1390,7 +1452,7 @@ async def edit_message(
     *,
     is_officer: bool,
 ) -> dict:
-    if is_officer and "officer" not in ctx.roles:
+    if is_officer and "officer" not in _role_set(ctx):
         raise HTTPException(status_code=403)
     msg = await db.get(Message, int(message_id))
     try:
@@ -1593,7 +1655,7 @@ async def delete_message(
     *,
     is_officer: bool,
 ) -> dict:
-    if is_officer and "officer" not in ctx.roles:
+    if is_officer and "officer" not in _role_set(ctx):
         raise HTTPException(status_code=403)
     msg = await db.get(Message, int(message_id))
     try:

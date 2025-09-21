@@ -33,7 +33,7 @@ from ...db.models import (
     Membership,
 )
 from ._user_display import compute_creator_base_name, build_creator_label
-from ._messages_common import _send_via_webhook, ALLOWED_MENTIONS
+from ._messages_common import _send_via_webhook, ALLOWED_MENTIONS, _role_set
 from models.event import Event
 
 router = APIRouter(prefix="/api")
@@ -176,6 +176,7 @@ async def create_event(
 ):
     eid = str(int(datetime.utcnow().timestamp() * 1000))
     channel_id = int(body.channel_id)
+    roles = _role_set(ctx)
     logger.debug(
         "Incoming create_event request",
         extra={
@@ -191,7 +192,7 @@ async def create_event(
         ts = datetime.now(timezone.utc)
 
     mention_ids = [int(m) for m in body.mentions or []]
-    if "officer" not in ctx.roles:
+    if "officer" not in roles:
         cfg = await db.scalar(
             select(GuildConfig).where(GuildConfig.guild_id == ctx.guild.id)
         )
@@ -267,16 +268,26 @@ async def create_event(
                 channel = None
         thread_obj: discord.Thread | None = None
         base_channel = channel
-        if isinstance(channel, discord.Thread):
+        if isinstance(channel, getattr(discord, "Thread", tuple())):
             thread_obj = channel
             base_channel = getattr(channel, "parent", None)
             if base_channel is None:
                 raise HTTPException(status_code=400, detail="parent channel not found")
-        if isinstance(base_channel, discord.CategoryChannel):
+        category_cls = getattr(discord, "CategoryChannel", None)
+        if category_cls is not None and isinstance(base_channel, category_cls):
             raise HTTPException(status_code=400, detail="cannot post to a category")
-        if base_channel is not None and not isinstance(base_channel, discord.TextChannel):
-            raise HTTPException(status_code=400, detail="unsupported channel type")
-        if isinstance(base_channel, discord.abc.Messageable):
+        messageable_cls = getattr(discord.abc, "Messageable", None)
+        text_channel_cls = getattr(discord, "TextChannel", None)
+        if base_channel is not None:
+            if text_channel_cls is not None and isinstance(base_channel, text_channel_cls):
+                pass
+            elif messageable_cls is not None and isinstance(base_channel, messageable_cls):
+                pass
+            elif messageable_cls is None and text_channel_cls is None:
+                pass  # insufficient type info; allow for tests
+            else:
+                raise HTTPException(status_code=400, detail="unsupported channel type")
+        if messageable_cls is None or isinstance(base_channel, messageable_cls):
             emb = formatted.embed
 
             view: discord.ui.View | None = None

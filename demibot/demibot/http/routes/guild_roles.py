@@ -5,6 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
+from ._messages_common import _role_set
 from ..discord_client import discord_client
 from ...db.models import GuildConfig, Role
 from ...discordbot.utils import is_premium_subscriber_role
@@ -18,7 +19,8 @@ async def get_guild_roles(
     db: AsyncSession = Depends(get_db),
 ):
     mention_ids: set[int] | None = None
-    if "officer" not in ctx.roles:
+    roles = _role_set(ctx)
+    if "officer" not in roles:
         cfg = await db.scalar(
             select(GuildConfig).where(GuildConfig.guild_id == ctx.guild.id)
         )

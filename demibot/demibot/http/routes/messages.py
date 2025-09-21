@@ -13,6 +13,7 @@ from ._messages_common import (
     save_message,
     edit_message as edit_message_common,
     delete_message as delete_message_common,
+    _role_set,
 )
 from ..discord_client import discord_client
 from ...db.models import Message, ChannelKind
@@ -85,7 +86,7 @@ async def add_reaction(
     row = await db.get(Message, int(message_id))
     if not row or row.channel_id != cid:
         raise HTTPException(status_code=404, detail="message not found")
-    if row.is_officer and "officer" not in ctx.roles:
+    if row.is_officer and "officer" not in _role_set(ctx):
         raise HTTPException(status_code=403, detail="forbidden")
     channel = discord_client.get_channel(cid)
     if not channel or not isinstance(channel, discord.abc.Messageable):
@@ -124,7 +125,7 @@ async def remove_reaction(
     row = await db.get(Message, int(message_id))
     if not row or row.channel_id != cid:
         raise HTTPException(status_code=404, detail="message not found")
-    if row.is_officer and "officer" not in ctx.roles:
+    if row.is_officer and "officer" not in _role_set(ctx):
         raise HTTPException(status_code=403, detail="forbidden")
     channel = discord_client.get_channel(cid)
     if not channel or not isinstance(channel, discord.abc.Messageable):

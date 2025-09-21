@@ -29,6 +29,13 @@ async def roles(
 ) -> RolesResponse:
     client_ip = request.client.host if request and request.client else "unknown"
     logging.info("/roles request from %s", client_ip)
-    response = RolesResponse(roles=ctx.roles)
+    roles = getattr(ctx, "roles", [])
+    if roles is None:
+        roles_list: list[str] = []
+    elif isinstance(roles, str):
+        roles_list = [roles]
+    else:
+        roles_list = list(roles)
+    response = RolesResponse(roles=roles_list)
     logging.info("/roles response status=200")
     return response
