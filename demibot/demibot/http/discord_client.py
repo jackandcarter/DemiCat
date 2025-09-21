@@ -44,12 +44,26 @@ def is_discord_client_ready(client: commands.Bot | None = None) -> bool:
 
     try:
         ready_attr = getattr(client, "is_ready", None)
-        if callable(ready_attr):
-            return bool(ready_attr())
-        if ready_attr is not None:
-            return bool(ready_attr)
+    except Exception:
+        ready_attr = None
+
+    if ready_attr is None:
+        return False
+
+    try:
+        ready_value = ready_attr() if callable(ready_attr) else ready_attr
     except Exception:
         return False
 
-    return False
+    if isinstance(ready_value, bool):
+        return ready_value
+
+    try:
+        is_set = getattr(ready_value, "is_set", None)
+        if callable(is_set):
+            return bool(is_set())
+    except Exception:
+        return False
+
+    return bool(ready_value)
 

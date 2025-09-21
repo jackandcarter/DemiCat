@@ -167,6 +167,45 @@ async def test_emojis_returns_list_when_ready(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_emojis_returns_list_when_ready_attribute(monkeypatch):
+    discord_emojis._emoji_cache.clear()
+
+    class AttributeClient:
+        def __init__(self, guild):
+            self._guild = guild
+            self.is_ready = True
+            self.is_closed = False
+
+        def get_guild(self, guild_id):
+            return self._guild
+
+    guild = DummyGuild(
+        [DummyEmoji(1, "sparkle", False), DummyEmoji(2, "dance", True)]
+    )
+    monkeypatch.setattr(
+        discord_emojis, "discord_client", AttributeClient(guild)
+    )
+
+    ctx = RequestContext(
+        user=SimpleNamespace(id=1),
+        guild=SimpleNamespace(id=2, discord_guild_id=200),
+        key=None,
+        roles=[],
+    )
+
+    data = await discord_emojis.list_emojis(ctx=ctx)
+
+    assert data == {
+        "ok": True,
+        "emojis": [
+            {"id": "1", "name": "sparkle", "animated": False},
+            {"id": "2", "name": "dance", "animated": True},
+        ],
+    }
+    assert discord_emojis._emoji_cache[ctx.guild.id] == data["emojis"]
+
+
+@pytest.mark.asyncio
 async def test_emojis_returns_empty_list_when_guild_has_no_custom(monkeypatch):
     discord_emojis._emoji_cache.clear()
 
