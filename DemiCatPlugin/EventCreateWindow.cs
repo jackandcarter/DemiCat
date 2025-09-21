@@ -26,6 +26,8 @@ public class EventCreateWindow
 
     private string _title = string.Empty;
     private string _description = string.Empty;
+    private int _descriptionSelectionStart;
+    private int _descriptionSelectionEnd;
     private string _time = DateTime.UtcNow.ToString("O");
     private string _imageUrl = string.Empty;
     private string _url = string.Empty;
@@ -170,9 +172,28 @@ public class EventCreateWindow
                 "Description",
                 () =>
                 {
+                    if (ImGui.SmallButton("B##descBold")) WrapDescription("**", "**");
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("I##descItalic")) WrapDescription("*", "*");
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("Code##descCode")) WrapDescription("`", "`");
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("Spoiler##descSpoiler")) WrapDescription("||", "||");
+                    ImGui.SameLine();
+                    if (ImGui.SmallButton("Link##descLink")) WrapDescription("[", "](url)");
+                    ImGui.Spacing();
+
                     var avail = ImGui.GetContentRegionAvail();
                     var descHeight = ImGui.GetTextLineHeight() * 6f;
-                    ImGui.InputTextMultiline("##Description", ref _description, 4096, new Vector2(avail.X, descHeight));
+                    var descBuf = ImGuiTextUtil.MakeUtf8Buffer(_description, 4096);
+                    ImGui.InputTextMultiline(
+                        "##Description",
+                        descBuf,
+                        new Vector2(avail.X, descHeight),
+                        ImGuiInputTextFlags.CallbackAlways,
+                        new ImGui.ImGuiInputTextCallbackDelegate(OnDescriptionEdited)
+                    );
+                    _description = ImGuiTextUtil.ReadUtf8Buffer(descBuf);
                 },
                 alignLabel: false,
                 setFullWidth: false);
@@ -571,7 +592,8 @@ public class EventCreateWindow
     public void LoadTemplate(Template template)
     {
         _title = template.Title;
-        _description = template.Description;
+        _description = template.Description ?? string.Empty;
+        _descriptionSelectionStart = _descriptionSelectionEnd = _description.Length;
         _time = string.IsNullOrEmpty(template.Time)
             ? DateTime.UtcNow.ToString("O")
             : template.Time;
@@ -776,6 +798,18 @@ public class EventCreateWindow
                 Width = b.Width
             });
         }
+    }
+
+    private void WrapDescription(string prefix, string suffix)
+    {
+        MarkdownSelectionHelper.WrapSelection(ref _description, prefix, suffix, ref _descriptionSelectionStart, ref _descriptionSelectionEnd);
+    }
+
+    private int OnDescriptionEdited(ref ImGuiInputTextCallbackData data)
+    {
+        _descriptionSelectionStart = data.SelectionStart;
+        _descriptionSelectionEnd = data.SelectionEnd;
+        return 0;
     }
 
     private void SaveConfig()

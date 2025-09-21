@@ -198,32 +198,6 @@ public class ChatWindow : IDisposable
         _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
     }
 
-    // ---- UTF-8 helpers for ImGui byte-buffer overloads ----
-    private static byte[] MakeUtf8Buffer(string? text, int capacity)
-    {
-        if (capacity < 1) capacity = 1;
-        var buf = new byte[capacity];
-        if (!string.IsNullOrEmpty(text))
-        {
-            var encoded = Encoding.UTF8.GetBytes(text);
-            var len = Math.Min(encoded.Length, capacity - 1); // leave room for NUL
-            Array.Copy(encoded, 0, buf, 0, len);
-            buf[len] = 0;
-        }
-        else
-        {
-            buf[0] = 0;
-        }
-        return buf;
-    }
-
-    private static string ReadUtf8Buffer(byte[] buf)
-    {
-        var len = Array.IndexOf(buf, (byte)0);
-        if (len < 0) len = buf.Length;
-        return Encoding.UTF8.GetString(buf, 0, len);
-    }
-
     private void HandleChannelSelectionChanged(string kind, string guildId, string oldId, string newId)
     {
         if (kind != _channelKind) return;
@@ -505,9 +479,9 @@ public class ChatWindow : IDisposable
 
         if (ImGui.BeginPopup("editMessage"))
         {
-            var editBuf = MakeUtf8Buffer(_editContent, 2048);
+            var editBuf = ImGuiTextUtil.MakeUtf8Buffer(_editContent, 2048);
             ImGui.InputTextMultiline("##editContent", editBuf, new Vector2(400, ImGui.GetTextLineHeight() * 5));
-            _editContent = ReadUtf8Buffer(editBuf);
+            _editContent = ImGuiTextUtil.ReadUtf8Buffer(editBuf);
 
             if (ImGui.Button("Save"))
             {
@@ -596,7 +570,7 @@ public class ChatWindow : IDisposable
         ImGui.SameLine();
         if (ImGui.SmallButton("Link")) WrapSelection("[", "](url)");
 
-        var inputBuf = MakeUtf8Buffer(_input, 2048);
+        var inputBuf = ImGuiTextUtil.MakeUtf8Buffer(_input, 2048);
         var style = ImGui.GetStyle();
         var availableWidth = ImGui.GetContentRegionAvail().X;
         var framePadding = style.FramePadding.X * 2f;
@@ -612,7 +586,7 @@ public class ChatWindow : IDisposable
             new ImGui.ImGuiInputTextCallbackDelegate(OnInputEdited)
         );
         ImGui.PopItemWidth();
-        _input = ReadUtf8Buffer(inputBuf);
+        _input = ImGuiTextUtil.ReadUtf8Buffer(inputBuf);
 
         ImGui.SameLine();
         if (ImGui.Button("😊")) ImGui.OpenPopup("##dc_emoji_picker");
@@ -857,26 +831,7 @@ public class ChatWindow : IDisposable
 
     private void WrapSelection(string prefix, string suffix)
     {
-        _input ??= string.Empty;
-        var len = _input.Length;
-        var s = Math.Clamp(_selectionStart, 0, len);
-        var e = Math.Clamp(_selectionEnd, 0, len);
-        var start = Math.Min(s, e);
-        var end = Math.Max(s, e);
-
-        if (start == end)
-        {
-            while (start > 0 && char.IsLetterOrDigit(_input[start - 1]))
-                start--;
-            while (end < len && char.IsLetterOrDigit(_input[end]))
-                end++;
-        }
-
-        var selected = _input.Substring(start, end - start);
-        _input = _input[..start] + prefix + selected + suffix + _input[end..];
-
-        var cursor = start + prefix.Length + selected.Length + suffix.Length;
-        _selectionStart = _selectionEnd = cursor;
+        MarkdownSelectionHelper.WrapSelection(ref _input, prefix, suffix, ref _selectionStart, ref _selectionEnd);
     }
 
     private void InvalidatePreview()
