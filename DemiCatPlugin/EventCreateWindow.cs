@@ -289,6 +289,8 @@ public class EventCreateWindow
         }
 
         ImGui.Separator();
+        ImGui.TextUnformatted("RSVP Buttons");
+        ImGui.Spacing();
 
         for (var i = 0; i < _buttons.Count; i++)
         {
