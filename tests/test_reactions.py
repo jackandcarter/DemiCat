@@ -38,10 +38,14 @@ if 'discord' not in sys.modules:
     class NotFound(Exception):
         pass
 
+    class ClientException(Exception):
+        pass
+
     abc_mod.Messageable = Messageable
     discord_mod.abc = abc_mod
     discord_mod.Forbidden = Forbidden
     discord_mod.NotFound = NotFound
+    discord_mod.ClientException = ClientException
     ext_mod = types.ModuleType('discord.ext')
     commands_mod = types.ModuleType('discord.ext.commands')
     discord_mod.ext = ext_mod
@@ -106,7 +110,7 @@ def test_add_reaction_success():
             await db.commit()
             guild = await db.get(Guild, 1)
             user = await db.get(User, 1)
-            ctx = RequestContext(user=user, guild=guild, key=object(), roles=["chat"])
+            ctx = RequestContext(user=user, guild=guild, key=object(), roles=[])
             dummy_msg = DummyMessage()
             dummy_channel = DummyChannel(msg=dummy_msg)
             messages.discord_client = types.SimpleNamespace(get_channel=lambda _: dummy_channel)
@@ -141,7 +145,7 @@ def test_add_reaction_not_found():
             await db.commit()
             guild = await db.get(Guild, 1)
             user = await db.get(User, 1)
-            ctx = RequestContext(user=user, guild=guild, key=object(), roles=["chat"])
+            ctx = RequestContext(user=user, guild=guild, key=object(), roles=[])
             dummy_channel = DummyChannel(raise_not_found=True)
             messages.discord_client = types.SimpleNamespace(get_channel=lambda _: dummy_channel)
             with pytest.raises(HTTPException) as exc:
@@ -175,8 +179,44 @@ def test_add_reaction_forbidden():
             await db.commit()
             guild = await db.get(Guild, 1)
             user = await db.get(User, 1)
-            ctx = RequestContext(user=user, guild=guild, key=object(), roles=["chat"])
+            ctx = RequestContext(user=user, guild=guild, key=object(), roles=[])
             dummy_msg = DummyMessage(raise_forbidden=True)
+            dummy_channel = DummyChannel(msg=dummy_msg)
+            messages.discord_client = types.SimpleNamespace(get_channel=lambda _: dummy_channel)
+            with pytest.raises(HTTPException) as exc:
+                await messages.add_reaction("1", "1", "😀", ctx, db)
+            assert exc.value.status_code == 403
+    asyncio.run(run())
+
+
+def test_add_reaction_officer_channel_requires_officer_role():
+    async def run():
+        db_path = Path('test_reactions_officer_forbidden.db')
+        if db_path.exists():
+            db_path.unlink()
+        session_module._engine = None
+        session_module._Session = None
+        await init_db(f"sqlite+aiosqlite:///{db_path}")
+        async with get_session() as db:
+            db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
+            db.add(User(id=1, discord_user_id=10, global_name="Alice"))
+            db.add(
+                Message(
+                    discord_message_id=1,
+                    channel_id=1,
+                    guild_id=1,
+                    author_id=1,
+                    author_name="Alice",
+                    content_raw="",
+                    content_display="",
+                    is_officer=True,
+                )
+            )
+            await db.commit()
+            guild = await db.get(Guild, 1)
+            user = await db.get(User, 1)
+            ctx = RequestContext(user=user, guild=guild, key=object(), roles=[])
+            dummy_msg = DummyMessage()
             dummy_channel = DummyChannel(msg=dummy_msg)
             messages.discord_client = types.SimpleNamespace(get_channel=lambda _: dummy_channel)
             with pytest.raises(HTTPException) as exc:
