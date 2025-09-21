@@ -624,7 +624,7 @@ public class TemplatesWindow
                 channelId,
                 time = string.IsNullOrWhiteSpace(tmpl.Time) ? null : tmpl.Time,
                 buttons = buttonsBody,
-                mentions = _mentions.Count > 0 ? _mentions.Select(ulong.Parse).ToList() : null
+                mentions = _mentions.Count > 0 ? _mentions.ToList() : null
             };
             var id = _templates[_selectedIndex].Id;
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}/post");
