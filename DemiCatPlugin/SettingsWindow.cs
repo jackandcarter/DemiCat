@@ -249,28 +249,28 @@ public class SettingsWindow : IDisposable
         var fadeOutEnabled = _config.ChatFadeOutEnabled;
 
         ImGui.BeginDisabled(fadeOutEnabled);
-        var fcTransparency = _config.FcChatTransparency * 100f;
-        if (ImGui.SliderFloat("FC Chat Transparency", ref fcTransparency, 0f, 100f, "%.0f%%"))
+        var fcOpacity = _config.FcChatOpacity * 100f;
+        if (ImGui.SliderFloat("FC Chat Opacity", ref fcOpacity, 0f, 100f, "%.0f%%"))
         {
-            _config.FcChatTransparency = Math.Clamp(fcTransparency / 100f, 0f, 1f);
+            _config.FcChatOpacity = Math.Clamp(fcOpacity / 100f, 0f, 1f);
             SaveConfig();
             MainWindow?.ResetFadeTimer();
         }
         ImGui.EndDisabled();
         if (fadeOutEnabled && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip("Disable fade-out to adjust per-tab transparency.");
+            ImGui.SetTooltip("Disable fade-out to adjust per-tab opacity.");
 
         ImGui.BeginDisabled(fadeOutEnabled);
-        var officerTransparency = _config.OfficerChatTransparency * 100f;
-        if (ImGui.SliderFloat("Officer Tab Transparency", ref officerTransparency, 0f, 100f, "%.0f%%"))
+        var officerOpacity = _config.OfficerChatOpacity * 100f;
+        if (ImGui.SliderFloat("Officer Tab Opacity", ref officerOpacity, 0f, 100f, "%.0f%%"))
         {
-            _config.OfficerChatTransparency = Math.Clamp(officerTransparency / 100f, 0f, 1f);
+            _config.OfficerChatOpacity = Math.Clamp(officerOpacity / 100f, 0f, 1f);
             SaveConfig();
             MainWindow?.ResetFadeTimer();
         }
         ImGui.EndDisabled();
         if (fadeOutEnabled && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            ImGui.SetTooltip("Disable fade-out to adjust per-tab transparency.");
+            ImGui.SetTooltip("Disable fade-out to adjust per-tab opacity.");
 
         ImGui.Separator();
 
@@ -309,16 +309,16 @@ public class SettingsWindow : IDisposable
             ImGui.EndCombo();
         }
 
-        var fadeAlphaPercent = _config.ChatFadeOutAlpha * 100f;
-        if (ImGui.SliderFloat("Fade-out transparency", ref fadeAlphaPercent, 0f, 100f, "%.0f%%"))
+        var fadeMinimumAlphaPercent = _config.ChatFadeOutMinimumAlpha * 100f;
+        if (ImGui.SliderFloat("Fade-out minimum opacity", ref fadeMinimumAlphaPercent, 0f, 100f, "%.0f%%"))
         {
-            _config.ChatFadeOutAlpha = Math.Clamp(fadeAlphaPercent / 100f, 0f, 1f);
+            _config.ChatFadeOutMinimumAlpha = Math.Clamp(fadeMinimumAlphaPercent / 100f, 0f, 1f);
             SaveConfig();
             MainWindow?.ResetFadeTimer();
         }
 
         ImGui.SameLine();
-        DrawFadePreview("##fadePreview", _config.ChatFadeOutAlpha);
+        DrawFadePreview("##fadePreview", _config.ChatFadeOutMinimumAlpha);
         ImGui.EndDisabled();
     }
 

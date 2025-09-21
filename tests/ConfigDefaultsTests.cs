@@ -25,4 +25,15 @@ public class ConfigDefaultsTests
         Assert.Throws<InvalidOperationException>(() => new SyncshellWindow(cfg, new HttpClient()));
         Assert.Null(SyncshellWindow.Instance);
     }
+
+    [Fact]
+    public void Appearance_DefaultValues()
+    {
+        var cfg = new Config();
+        Assert.Equal(1f, cfg.FcChatOpacity);
+        Assert.Equal(1f, cfg.OfficerChatOpacity);
+        Assert.False(cfg.ChatFadeOutEnabled);
+        Assert.Equal(10, cfg.ChatFadeOutDelaySeconds);
+        Assert.Equal(0.3f, cfg.ChatFadeOutMinimumAlpha);
+    }
 }
