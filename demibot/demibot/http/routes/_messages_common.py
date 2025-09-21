@@ -41,7 +41,7 @@ from ...db.models import (
     ChannelKind,
     PostedMessage,
 )
-from ..discord_client import discord_client
+from ..discord_client import discord_client, is_discord_client_ready
 
 
 # Cache webhook URLs per channel to avoid recreation
@@ -654,6 +654,17 @@ async def fetch_messages(
 
     if shortfall > 0 and discord_client:
         channel = discord_client.get_channel(cid)
+        if channel is None:
+            if not is_discord_client_ready(discord_client):
+                if not rows:
+                    raise HTTPException(
+                        status_code=503, detail="Discord client unavailable"
+                    )
+            else:
+                guild_discord_id = getattr(ctx.guild, "discord_guild_id", None)
+                channel = await _resolve_discord_channel(
+                    cid, guild_discord_id=guild_discord_id
+                )
         if channel and isinstance(channel, discord.abc.Messageable):
             fetched: list[discord.Message] = []
             try:
