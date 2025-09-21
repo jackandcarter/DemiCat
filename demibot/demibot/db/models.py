@@ -179,6 +179,9 @@ class Role(Base):
     guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
     discord_role_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), unique=True)
     name: Mapped[str] = mapped_column(String(255))
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    hoist: Mapped[bool] = mapped_column(Boolean, default=False)
+    premium_subscriber: Mapped[bool] = mapped_column(Boolean, default=False)
     is_officer: Mapped[bool] = mapped_column(Boolean, default=False)
     is_chat: Mapped[bool] = mapped_column(Boolean, default=False)
 
