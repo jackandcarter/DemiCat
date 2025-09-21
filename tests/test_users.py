@@ -93,6 +93,47 @@ def test_get_users_includes_status_from_cache():
     asyncio.run(_run())
 
 
+def test_get_users_uses_cached_avatars_without_discord():
+    async def _run():
+        await init_db('sqlite+aiosqlite://')
+        async with get_session() as db:
+            await db.execute(delete(MembershipRole))
+            await db.execute(delete(Role))
+            await db.execute(delete(DbPresence))
+            await db.execute(delete(Membership))
+            await db.execute(delete(User))
+            await db.commit()
+            db.add(User(id=11, discord_user_id=110, global_name='CacheUser'))
+            db.add(User(id=12, discord_user_id=120, global_name='PresenceUser'))
+            db.add(
+                Membership(
+                    id=11,
+                    guild_id=99,
+                    user_id=11,
+                    avatar_url='https://example.com/avatar.png',
+                )
+            )
+            db.add(Membership(id=12, guild_id=99, user_id=12))
+            await db.commit()
+            set_presence(
+                99,
+                StorePresence(
+                    id=120,
+                    name='PresenceUser',
+                    status='online',
+                    avatar_url='https://example.com/presence.png',
+                ),
+            )
+            users_route.discord_client = None
+            ctx = StubContext(99)
+            res = await get_users(ctx=ctx, db=db)
+            data = {u['id']: u for u in res}
+            assert data['110']['avatar_url'] == 'https://example.com/avatar.png'
+            assert data['120']['avatar_url'] == 'https://example.com/presence.png'
+
+    asyncio.run(_run())
+
+
 def test_get_users_reads_presence_from_db():
     async def _run():
         await init_db('sqlite+aiosqlite://')

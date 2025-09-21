@@ -47,6 +47,7 @@ async def get_users(
             DbPresence.status_text,
             Role.discord_role_id,
             Role.name,
+            Membership.avatar_url,
         )
         .join(Membership, Membership.user_id == User.id)
         .join(
@@ -70,7 +71,7 @@ async def get_users(
     cache = {p.id: p for p in get_presences(ctx.guild.id)}
 
     user_map: dict[int, dict[str, object]] = {}
-    for u, n, s, st, rid, role_name in rows:
+    for u, n, s, st, rid, role_name, avatar in rows:
         entry = user_map.setdefault(
             u.discord_user_id,
             {
@@ -79,6 +80,7 @@ async def get_users(
                 "status": s,
                 "status_text": st,
                 "roles": {},
+                "avatar": avatar,
             },
         )
         if entry["status"] is None and s is not None:
@@ -87,6 +89,8 @@ async def get_users(
             entry["status_text"] = st
         if entry["nickname"] is None and n is not None:
             entry["nickname"] = n
+        if entry["avatar"] is None and avatar is not None:
+            entry["avatar"] = avatar
         if rid is not None:
             roles_dict = entry["roles"]  # type: ignore[assignment]
             if role_name is not None:
@@ -94,7 +98,16 @@ async def get_users(
             else:
                 roles_dict.setdefault(rid, None)
 
+    for uid, data in user_map.items():
+        presence = cache.get(uid)
+        if presence and presence.avatar_url and not data.get("avatar"):
+            data["avatar"] = presence.avatar_url
+
     avatars: dict[int, str] = {}
+    for uid, data in user_map.items():
+        avatar_value = data.get("avatar")
+        if isinstance(avatar_value, str):
+            avatars[uid] = avatar_value
     usernames: dict[int, str] = {}
     missing_ids: set[int] = set()
     role_names: dict[int, str] = {}
@@ -109,8 +122,8 @@ async def get_users(
             }
         for data in user_map.values():
             u = data["user"]  # type: ignore[assignment]
-            avatar: str | None = None
-            username: str | None = None
+            avatar: str | None = avatars.get(u.discord_user_id)
+            username: str | None = usernames.get(u.discord_user_id)
 
             member = guild.get_member(u.discord_user_id) if guild else None
             if member:
