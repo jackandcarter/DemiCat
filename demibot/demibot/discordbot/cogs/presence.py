@@ -20,6 +20,7 @@ from ...db.models import (
 from ...db.session import get_session
 from ...http.ws import manager
 from ..presence_store import Presence as StorePresence, set_presence
+from ..utils import is_premium_subscriber_role
 
 
 class PresenceTracker(commands.Cog):
@@ -152,11 +153,15 @@ class PresenceTracker(commands.Cog):
                 is_officer = role.id in officer_role_ids
                 is_chat = role.id in chat_role_ids
                 mapped = role_map.get(role.id)
+                premium_subscriber = is_premium_subscriber_role(role)
                 if mapped is None:
                     mapped = Role(
                         guild_id=guild_row.id,
                         discord_role_id=role.id,
                         name=role.name,
+                        position=role.position,
+                        hoist=role.hoist,
+                        premium_subscriber=premium_subscriber,
                         is_officer=is_officer,
                         is_chat=is_chat,
                     )
@@ -167,6 +172,9 @@ class PresenceTracker(commands.Cog):
                     mapped.name = role.name
                     mapped.is_officer = is_officer
                     mapped.is_chat = is_chat
+                    mapped.position = role.position
+                    mapped.hoist = role.hoist
+                    mapped.premium_subscriber = premium_subscriber
 
             await db.execute(
                 delete(MembershipRole).where(MembershipRole.membership_id == mem.id)

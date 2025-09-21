@@ -24,6 +24,45 @@ _logger = logging.getLogger(__name__)
 _MISSING = object()
 
 
+def is_premium_subscriber_role(role: Any) -> bool:
+    """Return ``True`` when the provided role represents a boost role.
+
+    The helper defensively probes the :mod:`discord.py` role object for the
+    various attributes that different releases expose.  ``discord.Role``
+    exposes :meth:`is_premium_subscriber`, while older structures may only
+    expose a ``tags`` object with similar helpers.  Any unexpected errors are
+    treated as a negative result so callers can fail safely.
+    """
+
+    is_premium = getattr(role, "is_premium_subscriber", None)
+    if callable(is_premium):
+        try:
+            return bool(is_premium())
+        except Exception:
+            return False
+
+    tags = getattr(role, "tags", None)
+    if tags is not None:
+        tag_callable = getattr(tags, "is_premium_subscriber", None)
+        if callable(tag_callable):
+            try:
+                return bool(tag_callable())
+            except Exception:
+                return False
+        tag_value = getattr(tags, "premium_subscriber", None)
+        if tag_value is not None:
+            return bool(tag_value)
+        tag_value = getattr(tags, "_premium_subscriber", None)
+        if tag_value is not None:
+            return bool(tag_value)
+
+    fallback_value = getattr(role, "_premium_subscriber", None)
+    if fallback_value is not None:
+        return bool(fallback_value)
+
+    return False
+
+
 async def api_call_with_retries(
     func: Callable[..., Awaitable[T]],
     *args: Any,

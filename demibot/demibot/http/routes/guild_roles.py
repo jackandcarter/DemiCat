@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
 from ..discord_client import discord_client
-from ...db.models import Role, GuildConfig
+from ...db.models import GuildConfig, Role
+from ...discordbot.utils import is_premium_subscriber_role
 
 router = APIRouter(prefix="/api")
 
@@ -28,33 +29,55 @@ async def get_guild_roles(
         else:
             return []
 
-    stmt = select(Role.discord_role_id, Role.name).where(
-        Role.guild_id == ctx.guild.id
-    )
+    stmt = select(Role).where(Role.guild_id == ctx.guild.id)
     if mention_ids is not None:
         stmt = stmt.where(Role.discord_role_id.in_(mention_ids))
     result = await db.execute(stmt)
-    rows = result.all()
+    rows = result.scalars().all()
     if rows:
-        return [{"id": str(rid), "name": name} for rid, name in rows]
+        return [
+            {
+                "id": str(role.discord_role_id),
+                "name": role.name,
+                "position": role.position,
+                "hoist": role.hoist,
+                "tags": {
+                    "premium_subscriber": bool(role.premium_subscriber),
+                },
+            }
+            for role in rows
+        ]
 
     if discord_client:
         guild = discord_client.get_guild(ctx.guild.discord_guild_id)
         if guild is not None:
-            roles_out: list[dict[str, str]] = []
+            roles_out: list[dict[str, object]] = []
             existing = set()
             for r in guild.roles:
                 if r.name == "@everyone":
                     continue
                 if mention_ids is not None and r.id not in mention_ids:
                     continue
-                roles_out.append({"id": str(r.id), "name": r.name})
+                is_premium_subscriber = is_premium_subscriber_role(r)
+                role_data = {
+                    "id": str(r.id),
+                    "name": r.name,
+                    "position": r.position,
+                    "hoist": r.hoist,
+                    "tags": {
+                        "premium_subscriber": is_premium_subscriber,
+                    },
+                }
+                roles_out.append(role_data)
                 existing.add(r.id)
                 await db.merge(
                     Role(
                         guild_id=ctx.guild.id,
                         discord_role_id=r.id,
                         name=r.name,
+                        position=r.position,
+                        hoist=r.hoist,
+                        premium_subscriber=is_premium_subscriber,
                     )
                 )
             await db.commit()

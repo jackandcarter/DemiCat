@@ -5,7 +5,7 @@ import secrets
 import discord
 from discord import app_commands
 from discord.ext import commands
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, select
 
 from ...db.models import (
     Guild,
@@ -17,6 +17,7 @@ from ...db.models import (
     UserKey,
 )
 from ...db.session import get_session
+from ..utils import is_premium_subscriber_role
 from .setup_wizard import demi
 
 
@@ -71,8 +72,8 @@ async def key_command(interaction: discord.Interaction) -> None:
 
             # map existing roles for the guild
             role_res = await db.execute(select(Role).where(Role.guild_id == guild.id))
-            role_map: dict[int, tuple[int, bool]] = {
-                r.discord_role_id: (r.id, r.is_officer) for r in role_res.scalars()
+            role_map: dict[int, Role] = {
+                r.discord_role_id: r for r in role_res.scalars()
             }
 
             cfg_res = await db.execute(
@@ -87,35 +88,27 @@ async def key_command(interaction: discord.Interaction) -> None:
 
             for r in member_roles:
                 mapped = role_map.get(r.id)
-                if not mapped:
-                    is_officer = r.id in officer_role_ids
-                    new_role = Role(
+                is_officer = r.id in officer_role_ids
+                premium_subscriber = is_premium_subscriber_role(r)
+                if mapped is None:
+                    mapped = Role(
                         guild_id=guild.id,
                         discord_role_id=r.id,
                         name=r.name,
+                        position=r.position,
+                        hoist=r.hoist,
+                        premium_subscriber=premium_subscriber,
                         is_officer=is_officer,
                     )
-                    db.add(new_role)
+                    db.add(mapped)
                     await db.flush()
-                    role_map[r.id] = (new_role.id, is_officer)
+                    role_map[r.id] = mapped
                 else:
-                    role_id, is_officer = mapped
-                    if r.id in officer_role_ids and not is_officer:
-                        await db.execute(
-                            update(Role)
-                                .where(Role.id == role_id)
-                                .values(is_officer=True)
-                        )
-                        await db.flush()
-                        role_map[r.id] = (role_id, True)
-                    elif r.id not in officer_role_ids and is_officer:
-                        await db.execute(
-                            update(Role)
-                                .where(Role.id == role_id)
-                                .values(is_officer=False)
-                        )
-                        await db.flush()
-                        role_map[r.id] = (role_id, False)
+                    mapped.name = r.name
+                    mapped.is_officer = is_officer
+                    mapped.position = r.position
+                    mapped.hoist = r.hoist
+                    mapped.premium_subscriber = premium_subscriber
 
             await db.execute(
                 delete(MembershipRole).where(
@@ -124,8 +117,12 @@ async def key_command(interaction: discord.Interaction) -> None:
             )
 
             for r in member_roles:
-                role_id, _ = role_map[r.id]
-                db.add(MembershipRole(membership_id=membership.id, role_id=role_id))
+                mapped = role_map.get(r.id)
+                if mapped is None:
+                    continue
+                db.add(
+                    MembershipRole(membership_id=membership.id, role_id=mapped.id)
+                )
             await db.execute(
                 delete(UserKey).where(
                     UserKey.user_id == user.id,

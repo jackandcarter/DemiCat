@@ -25,6 +25,7 @@ from ...db.models import (
     ChannelKind,
 )
 from ...db import session as db_session
+from ..utils import is_premium_subscriber_role
 
 
 logger = logging.getLogger(__name__)
@@ -306,11 +307,10 @@ async def resync_members(interaction: discord.Interaction) -> None:
             )
             return
         stored_role_res = await db.execute(
-            select(Role.id, Role.discord_role_id).where(Role.guild_id == guild.id)
+            select(Role).where(Role.guild_id == guild.id)
         )
         role_map = {
-            discord_role_id: role_id
-            for role_id, discord_role_id in stored_role_res.all()
+            role.discord_role_id: role for role in stored_role_res.scalars()
         }
         result = await db.execute(
             select(UserKey, User)
@@ -339,19 +339,32 @@ async def resync_members(interaction: discord.Interaction) -> None:
                     )
                 )
                 for role in member_roles:
-                    if role.id not in role_map:
-                        db_role = Role(
+                    mapped = role_map.get(role.id)
+                    premium_subscriber = is_premium_subscriber_role(role)
+                    if mapped is None:
+                        mapped = Role(
                             guild_id=guild.id,
                             discord_role_id=role.id,
                             name=role.name,
+                            position=role.position,
+                            hoist=role.hoist,
+                            premium_subscriber=premium_subscriber,
                         )
-                        db.add(db_role)
+                        db.add(mapped)
                         await db.flush()
-                        role_map[role.id] = db_role.id
+                        role_map[role.id] = mapped
+                    else:
+                        mapped.name = role.name
+                        mapped.position = role.position
+                        mapped.hoist = role.hoist
+                        mapped.premium_subscriber = premium_subscriber
                 for role_id in member_role_ids:
+                    mapped = role_map.get(role_id)
+                    if mapped is None:
+                        continue
                     db.add(
                         MembershipRole(
-                            membership_id=membership.id, role_id=role_map[role_id]
+                            membership_id=membership.id, role_id=mapped.id
                         )
                     )
                 key.roles_cached = ",".join(str(rid) for rid in member_role_ids)
@@ -622,11 +635,21 @@ class ConfigWizard(discord.ui.View):
                             guild_id=guild.id,
                             name=role_name,
                             discord_role_id=rid,
+                            position=d_role.position if d_role else 0,
+                            hoist=d_role.hoist if d_role else False,
+                            premium_subscriber=
+                                is_premium_subscriber_role(d_role)
+                                if d_role
+                                else False,
                         )
                         db.add(role)
                         role_map[rid] = role
                     else:
                         role.name = role_name
+                    if d_role:
+                        role.position = d_role.position
+                        role.hoist = d_role.hoist
+                        role.premium_subscriber = is_premium_subscriber_role(d_role)
                     role.is_officer = rid in self.officer_role_ids
                     role.is_chat = rid in self.mention_role_ids
 
