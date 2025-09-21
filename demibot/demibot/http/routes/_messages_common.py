@@ -464,17 +464,32 @@ async def load_webhook_cache(db: AsyncSession) -> None:
     )
     rows = result.all()
     updated = False
+    thread_cls = getattr(discord, "Thread", None)
     for guild_id, channel_id in rows:
+        original_channel_id = channel_id
         channel = discord_client.get_channel(channel_id)
-        if not channel or not isinstance(channel, discord.abc.Messageable):
+        if not channel:
             continue
+
+        webhook_channel = channel
+        if thread_cls is not None and isinstance(channel, thread_cls):
+            if getattr(channel, "archived", False):
+                continue
+            parent = getattr(channel, "parent", None)
+            if not _channel_supports_webhooks(parent):
+                continue
+            webhook_channel = parent
+
+        if not _channel_supports_webhooks(webhook_channel):
+            continue
+
         try:
-            created = await channel.create_webhook(name="DemiCat Relay")
-            _channel_webhooks[channel_id] = created.url
+            created = await webhook_channel.create_webhook(name="DemiCat Relay")
+            _channel_webhooks[original_channel_id] = created.url
             gc = await db.scalar(
                 select(GuildChannel).where(
                     GuildChannel.guild_id == guild_id,
-                    GuildChannel.channel_id == channel_id,
+                    GuildChannel.channel_id == original_channel_id,
                 )
             )
             if gc:
@@ -482,7 +497,7 @@ async def load_webhook_cache(db: AsyncSession) -> None:
                 updated = True
         except Exception:
             logging.exception(
-                "Failed to create webhook for channel %s", channel_id
+                "Failed to create webhook for channel %s", original_channel_id
             )
     if updated:
         await db.commit()

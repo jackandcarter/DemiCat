@@ -2412,6 +2412,84 @@ def test_webhook_cache_persist_and_load(monkeypatch):
     asyncio.run(_run())
 
 
+def test_load_webhook_cache_handles_threads(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+
+            guild_id = 9
+            thread_id = 987
+            webhook_url = "http://example.com/thread"
+
+            db.add(Guild(id=guild_id, discord_guild_id=guild_id, name="Guild"))
+            db.add(
+                GuildChannel(
+                    guild_id=guild_id,
+                    channel_id=thread_id,
+                    kind=ChannelKind.FC_CHAT,
+                )
+            )
+            await db.commit()
+
+            class DummyMessageable:
+                pass
+
+            class DummyWebhook:
+                def __init__(self) -> None:
+                    self.url = webhook_url
+
+            class DummyParent(DummyMessageable):
+                def __init__(self) -> None:
+                    self.id = 654
+                    self.create_calls = 0
+
+                async def create_webhook(self, name: str):
+                    self.create_calls += 1
+                    return DummyWebhook()
+
+            parent_channel = DummyParent()
+
+            class DummyThread(DummyMessageable):
+                def __init__(self, parent) -> None:
+                    self.id = thread_id
+                    self.parent = parent
+                    self.archived = False
+
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyMessageable, raising=False)
+            monkeypatch.setattr(mc.discord, "Thread", DummyThread, raising=False)
+
+            thread_channel = DummyThread(parent_channel)
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    return thread_channel if cid == thread_id else None
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            await mc.load_webhook_cache(db)
+
+            assert mc._channel_webhooks[thread_id] == webhook_url
+
+            stored = await db.scalar(
+                select(GuildChannel.webhook_url).where(
+                    GuildChannel.guild_id == guild_id,
+                    GuildChannel.channel_id == thread_id,
+                )
+            )
+            assert stored == webhook_url
+
+            assert parent_channel.create_calls == 1
+
+    asyncio.run(_run())
+
+
 def test_posted_message_mapping_and_webhook_usage(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
