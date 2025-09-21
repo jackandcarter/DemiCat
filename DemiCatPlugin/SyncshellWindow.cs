@@ -411,7 +411,9 @@ public class SyncshellWindow : IDisposable
                 : $"{baseUrl}{asset.DownloadUrl}";
 
             var tmp = Path.GetTempFileName();
-            using var resp = await _httpClient.GetAsync(url);
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            using var resp = await _httpClient.SendAsync(req);
             resp.EnsureSuccessStatusCode();
             await using var fs = File.Create(tmp);
             await resp.Content.CopyToAsync(fs);
