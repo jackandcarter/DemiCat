@@ -26,6 +26,11 @@ public class Config : IPluginConfiguration
     public string OfficerChannelId { get; set; } = string.Empty;
     public bool EnableFcChat { get; set; } = true;
     public bool EnableFcChatUserSet { get; set; } = false;
+    public float FcChatTransparency { get; set; } = 1f;
+    public float OfficerChatTransparency { get; set; } = 1f;
+    public bool ChatFadeOutEnabled { get; set; } = false;
+    public int ChatFadeOutDelaySeconds { get; set; } = 15;
+    public float ChatFadeOutAlpha { get; set; } = 0.3f;
 
     [JsonPropertyName("syncedChat")]
     public bool SyncedChat { get; set; } = true;

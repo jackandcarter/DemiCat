@@ -295,6 +295,10 @@ public class MainWindow : IDisposable
         _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
     }
 
+    public void ResetFadeTimer()
+    {
+    }
+
     private void SaveConfig()
     {
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
