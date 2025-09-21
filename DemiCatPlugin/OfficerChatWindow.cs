@@ -265,9 +265,15 @@ public class OfficerChatWindow : ChatWindow
 
     protected override async Task FetchChannels(bool refreshed = false)
     {
+        if (_channelsLoading && !refreshed)
+        {
+            return;
+        }
+
         if (!_tokenManager.IsReady())
         {
             _channelsLoaded = true;
+            _channelsLoading = false;
             return;
         }
 
@@ -279,21 +285,37 @@ public class OfficerChatWindow : ChatWindow
                 _channelFetchFailed = true;
                 _channelErrorMessage = "Invalid API URL";
                 _channelsLoaded = true;
+                _channelsLoading = false;
             });
             return;
         }
+
+        _channelsLoading = true;
 
         try
         {
             var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(global::DemiCatPlugin.ChannelKind.OfficerChat, CancellationToken.None)).ToList());
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
+            {
+                if (refreshed)
+                {
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    {
+                        _channelFetchFailed = true;
+                        _channelErrorMessage = "Failed to load channels";
+                        _channelsLoaded = true;
+                        _channelsLoading = false;
+                    });
+                }
                 return;
+            }
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 SetChannels(channels);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
+                _channelsLoading = false;
             });
         }
         catch (HttpRequestException ex)
@@ -306,6 +328,7 @@ public class OfficerChatWindow : ChatWindow
                     ? "Forbidden – check API key/roles"
                     : "Failed to load channels";
                 _channelsLoaded = true;
+                _channelsLoading = false;
             });
         }
         catch (Exception ex)
@@ -316,6 +339,7 @@ public class OfficerChatWindow : ChatWindow
                 _channelFetchFailed = true;
                 _channelErrorMessage = "Failed to load channels";
                 _channelsLoaded = true;
+                _channelsLoading = false;
             });
         }
     }
