@@ -67,23 +67,31 @@ public class ChannelSelectionService
         guildId ??= string.Empty;
         var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
         var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
+        var key = ChannelKeyHelper.BuildSelectionKey(guildId, kind);
         var old = GetChannel(kind, guildId, out _);
         var scopedKey = normalizedKind == NormalizedEventKind ? BuildEventSelectionKey(normalizedGuild) : null;
 
         if (old == id)
         {
+            var hasStoredNormal = _config.ChannelSelections.TryGetValue(key, out var existingNormal) && existingNormal == id;
+
             if (scopedKey == null)
             {
-                return;
+                if (hasStoredNormal)
+                {
+                    return;
+                }
             }
-
-            if (_config.ChannelSelections.TryGetValue(scopedKey, out var existingScoped) && existingScoped == id)
+            else
             {
-                return;
+                var hasStoredScoped = _config.ChannelSelections.TryGetValue(scopedKey, out var existingScoped) && existingScoped == id;
+                if (hasStoredNormal && hasStoredScoped)
+                {
+                    return;
+                }
             }
         }
 
-        var key = ChannelKeyHelper.BuildSelectionKey(guildId, kind);
         if (string.IsNullOrEmpty(id))
         {
             _config.ChannelSelections.Remove(key);
