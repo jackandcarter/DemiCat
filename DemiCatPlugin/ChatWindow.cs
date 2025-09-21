@@ -831,7 +831,9 @@ public class ChatWindow : IDisposable
 
     private void WrapSelection(string prefix, string suffix)
     {
-        MarkdownSelectionHelper.WrapSelection(ref _input, prefix, suffix, ref _selectionStart, ref _selectionEnd);
+        var input = _input;
+        MarkdownSelectionHelper.WrapSelection(ref input, prefix, suffix, ref _selectionStart, ref _selectionEnd);
+        _input = input ?? string.Empty;
     }
 
     private void InvalidatePreview()

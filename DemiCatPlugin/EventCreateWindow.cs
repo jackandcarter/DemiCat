@@ -802,7 +802,9 @@ public class EventCreateWindow
 
     private void WrapDescription(string prefix, string suffix)
     {
-        MarkdownSelectionHelper.WrapSelection(ref _description, prefix, suffix, ref _descriptionSelectionStart, ref _descriptionSelectionEnd);
+        var description = _description;
+        MarkdownSelectionHelper.WrapSelection(ref description, prefix, suffix, ref _descriptionSelectionStart, ref _descriptionSelectionEnd);
+        _description = description ?? string.Empty;
     }
 
     private int OnDescriptionEdited(ref ImGuiInputTextCallbackData data)
