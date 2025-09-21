@@ -128,8 +128,12 @@ public class EventView : IDisposable
     public IReadOnlyList<EmbedButtonDto>? Buttons => _dto.Buttons;
 
     public void Draw()
+        => Draw(null);
+
+    public void Draw(float? availableHeight)
     {
         var dto = _dto;
+        var cursorStart = ImGui.GetCursorPosY();
 
         if (_warnings.Count > 0)
         {
@@ -148,14 +152,57 @@ public class EventView : IDisposable
             ImGui.Spacing();
         }
 
-        DrawEmbed(dto);
+        float? embedHeight = null;
+        if (availableHeight.HasValue)
+        {
+            var usedHeight = ImGui.GetCursorPosY() - cursorStart;
+            var footerReserve = EstimateFooterHeight();
+            var remaining = availableHeight.Value - usedHeight - footerReserve;
+            if (remaining > 0f)
+            {
+                embedHeight = remaining;
+            }
+        }
+
+        DrawEmbed(dto, embedHeight);
 
         DrawButtons();
 
         ImGui.Separator();
     }
 
-    private void DrawEmbed(EmbedDto dto)
+    private float EstimateFooterHeight()
+    {
+        var style = ImGui.GetStyle();
+        var reserve = style.ItemSpacing.Y;
+
+        if (Buttons != null && Buttons.Count > 0)
+        {
+            var rowCount = Buttons
+                .Where(b => b != null)
+                .Select(b => b!.RowIndex ?? 0)
+                .Distinct()
+                .Count();
+
+            if (rowCount > 0)
+            {
+                reserve += rowCount * ImGui.GetFrameHeightWithSpacing();
+            }
+        }
+        else if (IsApolloEvent(_dto))
+        {
+            reserve += 3 * ImGui.GetFrameHeightWithSpacing();
+        }
+
+        if (!string.IsNullOrEmpty(_lastResult))
+        {
+            reserve += ImGui.GetTextLineHeightWithSpacing();
+        }
+
+        return reserve;
+    }
+
+    private void DrawEmbed(EmbedDto dto, float? availableHeight)
     {
         const float stripeWidth = 4f;
         const float contentPadding = 8f;
@@ -168,7 +215,21 @@ public class EventView : IDisposable
             availWidth = 400f;
         }
 
-        ImGui.BeginChild($"eventEmbed{dto.Id}", new Vector2(availWidth, 0), false);
+        float childHeight;
+        if (availableHeight.HasValue)
+        {
+            childHeight = Math.Max(availableHeight.Value, 0f);
+            if (!float.IsFinite(childHeight))
+            {
+                childHeight = 0f;
+            }
+        }
+        else
+        {
+            childHeight = 0f;
+        }
+
+        ImGui.BeginChild($"eventEmbed{dto.Id}", new Vector2(availWidth, childHeight), false);
 
         ImGui.Indent(indent);
         ImGui.Dummy(new Vector2(0f, verticalPadding));
@@ -581,5 +642,24 @@ public class EventView : IDisposable
 
         (_footerIcon as IDisposable)?.Dispose();
         _footerIcon = null;
+    }
+}
+
+internal static class EventViewImGuiHelpers
+{
+    public static float BeginPreviewChild(string childId, bool border = false, float minHeight = 0f, ImGuiWindowFlags flags = ImGuiWindowFlags.None)
+    {
+        var avail = ImGui.GetContentRegionAvail();
+        var width = float.IsFinite(avail.X) ? Math.Max(avail.X, 0f) : 0f;
+        var height = float.IsFinite(avail.Y) ? Math.Max(avail.Y, 0f) : 0f;
+
+        if (minHeight > 0f)
+        {
+            height = Math.Max(height, minHeight);
+        }
+
+        var size = new Vector2(width, height);
+        ImGui.BeginChild(childId, size, border, flags);
+        return size.Y;
     }
 }

@@ -409,8 +409,13 @@ public class EventCreateWindow
             _previewView.Update(previewResult.Embed, previewResult.Content, previewResult.Warnings);
         }
 
-        ImGui.Separator();
-        _previewView!.Draw();
+        if (_previewView != null)
+        {
+            ImGui.Separator();
+            var previewHeight = EventViewImGuiHelpers.BeginPreviewChild("eventCreatePreview");
+            _previewView.Draw(previewHeight);
+            ImGui.EndChild();
+        }
 
         if (!_schedulesLoaded)
         {

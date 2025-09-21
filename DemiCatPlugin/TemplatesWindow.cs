@@ -278,7 +278,9 @@ public class TemplatesWindow
             }
             if (ImGui.Begin("Template Preview", ref _showPreview))
             {
-                _previewEvent.Draw();
+                var previewHeight = EventViewImGuiHelpers.BeginPreviewChild("templatePreviewContent");
+                _previewEvent.Draw(previewHeight);
+                ImGui.EndChild();
             }
             ImGui.End();
         }
