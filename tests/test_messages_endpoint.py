@@ -16,6 +16,7 @@ from demibot.db.models import (
     Guild,
     Membership,
     GuildChannel,
+    Message,
     User,
 )
 from demibot.db.session import get_session, init_db
@@ -128,6 +129,241 @@ async def test_channel_messages_multipart_accepts_message_reference(monkeypatch)
     assert files is not None and len(files) == 1
     upload = files[0]
     assert getattr(upload, "filename", None) == "hi.txt"
+
+
+@pytest.mark.asyncio
+async def test_channel_history_returns_messages():
+    await init_db("sqlite+aiosqlite://")
+    async with get_session() as db:
+        await db.execute(text("DELETE FROM messages"))
+        await db.execute(text("DELETE FROM guild_channels"))
+        await db.execute(text("DELETE FROM users"))
+        await db.execute(text("DELETE FROM guilds"))
+
+        guild_id = 100
+        user_id = 200
+        channel_id = 300
+        message_id = 400
+
+        db.add(Guild(id=guild_id, discord_guild_id=999, name="Guild"))
+        db.add(User(id=user_id, discord_user_id=555, global_name="Tester"))
+        db.add(
+            GuildChannel(
+                guild_id=guild_id,
+                channel_id=channel_id,
+                kind=ChannelKind.FC_CHAT,
+                name="FC Chat",
+            )
+        )
+        db.add(
+            Message(
+                discord_message_id=message_id,
+                channel_id=channel_id,
+                guild_id=guild_id,
+                author_id=user_id,
+                author_name="Tester",
+                author_avatar_url=None,
+                content_raw="Hello history",
+                content_display="Hello history",
+                content="Hello history",
+                attachments_json=None,
+                author_json=None,
+                embeds_json=None,
+                mentions_json=None,
+                reference_json=None,
+                components_json=None,
+                reactions_json=None,
+                is_officer=False,
+            )
+        )
+        await db.commit()
+
+    app = create_app()
+
+    user_ctx = SimpleNamespace(id=user_id, global_name="Tester", character_name=None)
+    guild_ctx = SimpleNamespace(id=guild_id, discord_guild_id=999)
+
+    async def override_auth():
+        return RequestContext(user=user_ctx, guild=guild_ctx, key=None, roles=["chat"])
+
+    async def override_db():
+        async with get_session() as session:
+            yield session
+
+    app.dependency_overrides[api_key_auth] = override_auth
+    app.dependency_overrides[get_db] = override_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/api/channels/history",
+            params={"kind": "fc_chat"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert data
+    first = data[0]
+    assert first["id"] == str(message_id)
+    assert first["content"] == "Hello history"
+    assert first["channelId"] == str(channel_id)
+
+
+@pytest.mark.asyncio
+async def test_channel_history_officer_requires_role():
+    await init_db("sqlite+aiosqlite://")
+    async with get_session() as db:
+        await db.execute(text("DELETE FROM messages"))
+        await db.execute(text("DELETE FROM guild_channels"))
+        await db.execute(text("DELETE FROM users"))
+        await db.execute(text("DELETE FROM guilds"))
+
+        guild_id = 101
+        user_id = 201
+        channel_id = 301
+        message_id = 401
+
+        db.add(Guild(id=guild_id, discord_guild_id=1001, name="Guild"))
+        db.add(User(id=user_id, discord_user_id=556, global_name="Officer"))
+        db.add(
+            GuildChannel(
+                guild_id=guild_id,
+                channel_id=channel_id,
+                kind=ChannelKind.OFFICER_CHAT,
+                name="Officer Chat",
+            )
+        )
+        db.add(
+            Message(
+                discord_message_id=message_id,
+                channel_id=channel_id,
+                guild_id=guild_id,
+                author_id=user_id,
+                author_name="Officer",
+                author_avatar_url=None,
+                content_raw="Secret",
+                content_display="Secret",
+                content="Secret",
+                attachments_json=None,
+                author_json=None,
+                embeds_json=None,
+                mentions_json=None,
+                reference_json=None,
+                components_json=None,
+                reactions_json=None,
+                is_officer=True,
+            )
+        )
+        await db.commit()
+
+    app = create_app()
+
+    user_ctx = SimpleNamespace(id=user_id, global_name="Officer", character_name=None)
+    guild_ctx = SimpleNamespace(id=guild_id, discord_guild_id=1001)
+
+    async def override_auth():
+        return RequestContext(user=user_ctx, guild=guild_ctx, key=None, roles=["chat"])
+
+    async def override_db():
+        async with get_session() as session:
+            yield session
+
+    app.dependency_overrides[api_key_auth] = override_auth
+    app.dependency_overrides[get_db] = override_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/api/channels/history",
+            params={"kind": "officer_chat"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert resp.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_channel_history_officer_allows_authorized_user():
+    await init_db("sqlite+aiosqlite://")
+    async with get_session() as db:
+        await db.execute(text("DELETE FROM messages"))
+        await db.execute(text("DELETE FROM guild_channels"))
+        await db.execute(text("DELETE FROM users"))
+        await db.execute(text("DELETE FROM guilds"))
+
+        guild_id = 102
+        user_id = 202
+        channel_id = 302
+        message_id = 402
+
+        db.add(Guild(id=guild_id, discord_guild_id=1002, name="Guild"))
+        db.add(User(id=user_id, discord_user_id=557, global_name="Officer"))
+        db.add(
+            GuildChannel(
+                guild_id=guild_id,
+                channel_id=channel_id,
+                kind=ChannelKind.OFFICER_CHAT,
+                name="Officer Chat",
+            )
+        )
+        db.add(
+            Message(
+                discord_message_id=message_id,
+                channel_id=channel_id,
+                guild_id=guild_id,
+                author_id=user_id,
+                author_name="Officer",
+                author_avatar_url=None,
+                content_raw="Secret",
+                content_display="Secret",
+                content="Secret",
+                attachments_json=None,
+                author_json=None,
+                embeds_json=None,
+                mentions_json=None,
+                reference_json=None,
+                components_json=None,
+                reactions_json=None,
+                is_officer=True,
+            )
+        )
+        await db.commit()
+
+    app = create_app()
+
+    user_ctx = SimpleNamespace(id=user_id, global_name="Officer", character_name=None)
+    guild_ctx = SimpleNamespace(id=guild_id, discord_guild_id=1002)
+
+    async def override_auth():
+        return RequestContext(user=user_ctx, guild=guild_ctx, key=None, roles=["officer"])
+
+    async def override_db():
+        async with get_session() as session:
+            yield session
+
+    app.dependency_overrides[api_key_auth] = override_auth
+    app.dependency_overrides[get_db] = override_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get(
+            "/api/channels/history",
+            params={"kind": "officer_chat"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert isinstance(data, list)
+    assert data
+    first = data[0]
+    assert first["id"] == str(message_id)
+    assert first["channelId"] == str(channel_id)
 
 
 @pytest.mark.asyncio
