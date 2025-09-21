@@ -55,6 +55,7 @@ public class ChatWindow : IDisposable
     private readonly ChannelSelectionService _channelSelection;
     private readonly AvatarCache? _avatarCache;
     private readonly string _channelKind;
+    private const string ChannelUnavailableMessage = "Selected channel is no longer available";
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true
@@ -684,17 +685,43 @@ public class ChatWindow : IDisposable
     {
         _channels.Clear();
         _channels.AddRange(ChannelDtoExtensions.SortForDisplay(channels));
+        if (_channels.Count == 0)
+        {
+            _selectedIndex = 0;
+            _channelSelection.SetChannel(_channelKind, _config.GuildId, string.Empty);
+            return;
+        }
+
         var current = CurrentChannelId;
         if (!string.IsNullOrEmpty(current))
         {
             _selectedIndex = _channels.FindIndex(c => c.Id == current);
-            if (_selectedIndex < 0) _selectedIndex = 0;
         }
-        if (_channels.Count > 0)
+
+        if (_selectedIndex < 0 || _selectedIndex >= _channels.Count)
         {
-            var newId = _channels[_selectedIndex].Id;
-            _channelSelection.SetChannel(_channelKind, _config.GuildId, newId);
+            _selectedIndex = 0;
         }
+
+        var newId = _channels[_selectedIndex].Id;
+        _channelSelection.SetChannel(_channelKind, _config.GuildId, newId);
+    }
+
+    private bool EnsureChannelAvailable(string channelId, string action)
+    {
+        if (_channels.Any(c => c.Id == channelId))
+        {
+            return true;
+        }
+
+        PluginServices.Instance!.Log.Warning($"Cannot {action}: channel {channelId} is no longer available.");
+        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            _statusMessage = ChannelUnavailableMessage;
+            _lastError = ChannelUnavailableMessage;
+        });
+
+        return false;
     }
 
     protected void FormatContent(DiscordMessageDto msg)
@@ -1002,6 +1029,11 @@ public class ChatWindow : IDisposable
             return;
         }
 
+        if (!EnsureChannelAvailable(channelId, "send message"))
+        {
+            return;
+        }
+
         var formatted = GetFormattedMessage();
         if (formatted.Errors.Count > 0)
         {
@@ -1023,7 +1055,7 @@ public class ChatWindow : IDisposable
             HttpRequestMessage request;
             if (_attachments.Count > 0)
             {
-                request = await BuildMultipartRequest(content);
+                request = await BuildMultipartRequest(channelId, content);
             }
             else
             {
@@ -1183,9 +1215,8 @@ public class ChatWindow : IDisposable
         return request;
     }
 
-    protected virtual async Task<HttpRequestMessage> BuildMultipartRequest(string content)
+    protected virtual async Task<HttpRequestMessage> BuildMultipartRequest(string channelId, string content)
     {
-        var channelId = CurrentChannelId;
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages";
         var form = new MultipartFormDataContent();
         form.Add(new StringContent(content), "content");
@@ -1236,6 +1267,11 @@ public class ChatWindow : IDisposable
         }
         var channelId = CurrentChannelId;
         if (string.IsNullOrWhiteSpace(channelId) || string.IsNullOrWhiteSpace(messageId) || string.IsNullOrWhiteSpace(emoji))
+        {
+            return;
+        }
+
+        if (!EnsureChannelAvailable(channelId, remove ? "remove reaction" : "react to message"))
         {
             return;
         }

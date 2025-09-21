@@ -165,9 +165,8 @@ public class OfficerChatWindow : ChatWindow
         return request;
     }
 
-    protected override async Task<HttpRequestMessage> BuildMultipartRequest(string content)
+    protected override async Task<HttpRequestMessage> BuildMultipartRequest(string channelId, string content)
     {
-        var channelId = CurrentChannelId;
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/officer-messages";
         var form = new MultipartFormDataContent();
         form.Add(new StringContent(content), "content");
