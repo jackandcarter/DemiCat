@@ -120,7 +120,7 @@ public class PresenceSidebar : IDisposable
         if (ungroupedOnline.Count > 0)
         {
             anyOnline = true;
-            ungroupedOnline.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparer.OrdinalIgnoreCase));
+            ungroupedOnline.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
             ImGui.TextUnformatted($"ONLINE — {ungroupedOnline.Count}");
             foreach (var presence in ungroupedOnline)
             {
