@@ -33,7 +33,8 @@ public class ChatWindowMessageLimitTests
         Assert.Equal("21", msgs[0].Id);
         Assert.Equal("120", msgs[^1].Id);
         var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
-        Assert.Equal(120, config.ChatCursors[cursorKey]);
+        Assert.Equal(120, config.RestChatCursors[cursorKey]);
+        Assert.False(config.ChatCursors.ContainsKey(cursorKey));
         Assert.Equal(2, handler.Requests.Count);
 
         handler.Requests.Clear();
@@ -44,7 +45,8 @@ public class ChatWindowMessageLimitTests
         Assert.Equal(100, msgs.Count);
         Assert.Equal("31", msgs[0].Id);
         Assert.Equal("130", msgs[^1].Id);
-        Assert.Equal(130, config.ChatCursors[cursorKey]);
+        Assert.Equal(130, config.RestChatCursors[cursorKey]);
+        Assert.False(config.ChatCursors.ContainsKey(cursorKey));
         Assert.Single(handler.Requests);
         Assert.DoesNotContain("after=", handler.Requests[0].Query);
     }
@@ -66,7 +68,8 @@ public class ChatWindowMessageLimitTests
 
         Assert.Single(handler.Requests);
         Assert.DoesNotContain("after=", handler.Requests[0].Query);
-        Assert.Equal(20, config.ChatCursors[cursorKey]);
+        Assert.Equal(20, config.RestChatCursors[cursorKey]);
+        Assert.False(config.ChatCursors.ContainsKey(cursorKey));
     }
 
     [Fact]
@@ -80,7 +83,7 @@ public class ChatWindowMessageLimitTests
         var channelService = new ChannelService(config, client, tm);
         var window = new ChatWindow(config, client, null, tm, channelService);
         var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
-        config.ChatCursors[cursorKey] = 120;
+        config.RestChatCursors[cursorKey] = 120;
 
         handler.EnqueueResponse(SerializeMessages(71, 120));
         handler.EnqueueResponse(SerializeMessages(21, 70));
@@ -107,6 +110,7 @@ public class ChatWindowMessageLimitTests
         for (int i = 1; i <= 100; i++)
             msgs.Add(new DiscordMessageDto { Id = i.ToString(), ChannelId = "1", Author = new DiscordUserDto(), Timestamp = DateTime.UtcNow });
         config.ChatCursors[cursorKey] = 100;
+        config.RestChatCursors[cursorKey] = 100;
 
         var method = typeof(ChatWindow).GetMethod("HandleBridgeMessage", BindingFlags.Instance | BindingFlags.NonPublic)!;
         var newMsg = new DiscordMessageDto { Id = "101", ChannelId = "1", Author = new DiscordUserDto(), Timestamp = DateTime.UtcNow };
@@ -116,7 +120,8 @@ public class ChatWindowMessageLimitTests
         Assert.Equal(100, msgs.Count);
         Assert.Equal("2", msgs[0].Id);
         Assert.Equal("101", msgs[^1].Id);
-        Assert.Equal(101, config.ChatCursors[cursorKey]);
+        Assert.Equal(101, config.RestChatCursors[cursorKey]);
+        Assert.Equal(100, config.ChatCursors[cursorKey]);
     }
 
     private static List<DiscordMessageDto> GetMessages(ChatWindow window)

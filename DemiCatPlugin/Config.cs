@@ -9,7 +9,7 @@ namespace DemiCatPlugin;
 public class Config : IPluginConfiguration
 {
     // Required by Dalamud
-    public int Version { get; set; } = 6;
+    public int Version { get; set; } = 7;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -19,6 +19,7 @@ public class Config : IPluginConfiguration
     public string GuildId { get; set; } = string.Empty;
     public string ChatChannelId { get; set; } = string.Empty;
     public Dictionary<string, long> ChatCursors { get; set; } = new();
+    public Dictionary<string, long> RestChatCursors { get; set; } = new();
     public Dictionary<string, string> ChannelSelections { get; set; } = new();
     public string EventChannelId { get; set; } = string.Empty;
     public string FcChannelId { get; set; } = string.Empty;
@@ -92,6 +93,8 @@ public class Config : IPluginConfiguration
 
     public void Migrate()
     {
+        RestChatCursors ??= new Dictionary<string, long>();
+
         if (Version < 3)
         {
             if (ExtensionData != null)
@@ -214,6 +217,22 @@ public class Config : IPluginConfiguration
             }
 
             Version = 6;
+            ExtensionData = null;
+        }
+        if (Version < 7)
+        {
+            if (RestChatCursors.Count == 0 && ChatCursors.Count > 0)
+            {
+                foreach (var kvp in ChatCursors)
+                {
+                    if (!RestChatCursors.ContainsKey(kvp.Key))
+                    {
+                        RestChatCursors[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
+
+            Version = 7;
             ExtensionData = null;
         }
     }
