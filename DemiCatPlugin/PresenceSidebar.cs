@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
-using ImGuiNET;
+using ImGuiMouseCursor = Dalamud.Bindings.ImGui.ImGuiMouseCursor;
 
 namespace DemiCatPlugin;
 
