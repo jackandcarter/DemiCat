@@ -13,16 +13,16 @@ public static class EmojiRenderer
             return;
         }
 
-        if (!EmojiFormatter.TryParseCustomToken(value, out var id))
+        if (!EmojiFormatter.TryParseCustomToken(value, out var id, out var fallbackName, out var fallbackAnimated))
         {
             using var font = manager.PushEmojiFont();
             ImGui.TextUnformatted(value);
             return;
         }
 
-        var label = ":emoji:";
-        var imageUrl = BuildCdnUrl(id, animated: false);
-        var animated = false;
+        var label = string.IsNullOrEmpty(fallbackName) ? ":emoji:" : $":{fallbackName}:";
+        var animated = fallbackAnimated;
+        var imageUrl = BuildCdnUrl(id, animated);
 
         if (manager.TryGetCustomEmoji(id, out var emoji) && emoji != null)
         {

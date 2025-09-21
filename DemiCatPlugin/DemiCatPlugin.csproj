@@ -40,7 +40,10 @@
     <EmbeddedResource Include="icon.png" />
   </ItemGroup>
 
-  <ItemGroup Condition="Exists('NotoColorEmoji.ttf')">
+  <ItemGroup Condition="Exists('Emoji/NotoColorEmoji.ttf')">
+    <None Include="Emoji/NotoColorEmoji.ttf" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup Condition="!Exists('Emoji/NotoColorEmoji.ttf') and Exists('NotoColorEmoji.ttf')">
     <None Include="NotoColorEmoji.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

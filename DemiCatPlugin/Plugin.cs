@@ -187,10 +187,29 @@ public class Plugin : IDalamudPlugin
                 return null;
             }
 
-            var fontPath = Path.Combine(directory.FullName, "NotoColorEmoji.ttf");
-            if (!File.Exists(fontPath))
+            string? fontPath = null;
+            var basePath = directory.FullName;
+            var candidates = new[]
             {
-                _services.Log.Info("Emoji font not found at {Path}. Unicode emoji will use fallback glyphs.", fontPath);
+                Path.Combine(basePath, "Emoji", "NotoColorEmoji.ttf"),
+                Path.Combine(basePath, "NotoColorEmoji.ttf"),
+            };
+
+            foreach (var candidate in candidates)
+            {
+                if (File.Exists(candidate))
+                {
+                    fontPath = candidate;
+                    break;
+                }
+            }
+
+            if (fontPath == null)
+            {
+                _services.Log.Info(
+                    "Emoji font not found at any known path ({Paths}). Unicode emoji will use fallback glyphs.",
+                    string.Join(", ", candidates)
+                );
                 return null;
             }
 
