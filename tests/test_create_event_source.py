@@ -41,7 +41,7 @@ async def _run_test() -> None:
         time="2024-01-01T00:00:00Z",
         description="desc",
     )
-    ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
+    ctx = SimpleNamespace(guild=SimpleNamespace(id=1), user=SimpleNamespace(id=1, global_name="SourceTester"), roles=[])
     async with get_session() as db:
         original_dumps = json.dumps
         with patch(

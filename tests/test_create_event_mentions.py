@@ -66,7 +66,7 @@ async def _run_test() -> None:
         description="desc",
         mentions=["1", "2"],
     )
-    ctx = SimpleNamespace(guild=SimpleNamespace(id=1))
+    ctx = SimpleNamespace(guild=SimpleNamespace(id=1), user=SimpleNamespace(id=1, global_name="Tester"), roles=[])
     client = DummyClient()
     async with get_session() as db:
         original_dumps = json.dumps
@@ -80,6 +80,7 @@ async def _run_test() -> None:
         ).scalar_one()
         payload = json.loads(row.payload_json)
         assert payload["mentions"] == [1, 2]
+        assert payload["footerText"] == "Event created by Tester"
         assert client.channel.last_content == "<@&1> <@&2>"
 
 

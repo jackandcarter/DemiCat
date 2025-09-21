@@ -95,6 +95,7 @@ public class EventCreateWindow
             return;
         }
 
+        _ = MembershipCache.EnsureLoaded(_httpClient, _config);
         _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
         _ = RefreshChannels();
     }
@@ -817,6 +818,8 @@ public class EventCreateWindow
             timestamp = parsedTs;
         }
 
+        var creatorLabel = MembershipCache.GetCreatorLabel();
+
         return EventPreviewFormatter.Build(
             _title,
             _description,
@@ -828,6 +831,7 @@ public class EventCreateWindow
             fields,
             buttons,
             mentionIds,
+            creatorLabel: creatorLabel,
             embedId: "event-create-preview");
     }
 

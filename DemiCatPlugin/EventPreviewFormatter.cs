@@ -16,6 +16,8 @@ public static class EventPreviewFormatter
 
     private static readonly IReadOnlyList<string> DefaultAttendance = new[] { "yes", "maybe", "no" };
 
+    private const int FooterTextLimit = 2048;
+
     public static Result Build(
         string? title,
         string? description,
@@ -28,6 +30,7 @@ public static class EventPreviewFormatter
         IEnumerable<EmbedButtonDto>? buttons,
         IEnumerable<ulong>? mentions,
         IEnumerable<string>? attendance = null,
+        string? creatorLabel = null,
         string? embedId = null)
     {
         var fieldList = fields?
@@ -69,6 +72,8 @@ public static class EventPreviewFormatter
             ? string.Join(" ", mentionList.Select(id => $"<@&{id}>"))
             : null;
 
+        var footer = NormalizeFooter(creatorLabel);
+
         var embed = new EmbedDto
         {
             Id = string.IsNullOrWhiteSpace(embedId) ? "preview" : embedId!,
@@ -81,7 +86,8 @@ public static class EventPreviewFormatter
             Timestamp = timestamp,
             Fields = fieldList.Count > 0 ? fieldList : null,
             Buttons = buttonList.Count > 0 ? buttonList : null,
-            Mentions = mentionList.Count > 0 ? mentionList : null
+            Mentions = mentionList.Count > 0 ? mentionList : null,
+            FooterText = footer
         };
 
         var warnings = new List<string>();
@@ -89,6 +95,22 @@ public static class EventPreviewFormatter
         warnings.AddRange(ValidateButtonLayout(buttonList));
 
         return new Result(embed, content, buttonList, warnings);
+    }
+
+    private static string? NormalizeFooter(string? creatorLabel)
+    {
+        if (string.IsNullOrWhiteSpace(creatorLabel))
+        {
+            return null;
+        }
+
+        var trimmed = creatorLabel.Trim();
+        if (trimmed.Length <= FooterTextLimit)
+        {
+            return trimmed;
+        }
+
+        return trimmed.Substring(0, FooterTextLimit);
     }
 
     private static EmbedButtonDto CopyButton(EmbedButtonDto button)

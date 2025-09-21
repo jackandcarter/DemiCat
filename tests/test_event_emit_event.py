@@ -42,7 +42,7 @@ async def _run_test() -> None:
         db.add(User(id=9991, discord_user_id=9991))
         await db.commit()
 
-        ctx = SimpleNamespace(guild=SimpleNamespace(id=guild.id))
+        ctx = SimpleNamespace(guild=SimpleNamespace(id=guild.id), user=SimpleNamespace(id=9990, global_name=None), roles=[])
         body = CreateEventBody(
             channelId="9999",
             title="Title",
@@ -72,6 +72,7 @@ async def _run_test() -> None:
             dt.fromisoformat.side_effect = datetime.fromisoformat
             res = await create_event(body=body, ctx=ctx, db=db)
         assert events and events[0]["op"] == "ec" and events[0]["channel"] == 9999
+        assert events[0]["d"]["footerText"] == "Event created by Player"
         event_id = res["id"]
 
         ctx_user = SimpleNamespace(user=SimpleNamespace(id=9991), guild=SimpleNamespace(id=guild.id))

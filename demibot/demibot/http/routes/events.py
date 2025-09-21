@@ -5,6 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, NamedTuple
 
+import copy
 import re
 import discord
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,7 +30,9 @@ from ...db.models import (
     EventSignup,
     User,
     GuildConfig,
+    Membership,
 )
+from ._user_display import compute_creator_base_name, build_creator_label
 from ._messages_common import _send_via_webhook, ALLOWED_MENTIONS
 from models.event import Event
 
@@ -50,6 +53,36 @@ class FieldBody(BaseModel):
     name: str
     value: str
     inline: bool | None = None
+
+async def _resolve_creator_label(ctx: RequestContext, db: AsyncSession) -> str:
+    guild_id = getattr(getattr(ctx, "guild", None), "id", None)
+    user_id = getattr(getattr(ctx, "user", None), "id", None)
+    nickname = None
+    if guild_id is not None and user_id is not None:
+        nickname = await db.scalar(
+            select(Membership.nickname).where(
+                Membership.guild_id == guild_id,
+                Membership.user_id == user_id,
+            )
+        )
+    base_name = compute_creator_base_name(ctx, nickname)
+    return build_creator_label(base_name)
+
+
+def _apply_footer_to_embeds(embeds: List[dict[str, Any]], footer: str) -> List[dict[str, Any]]:
+    updated: List[dict[str, Any]] = []
+    for embed in embeds:
+        if not isinstance(embed, dict):
+            updated.append(embed)
+            continue
+        embed_copy = copy.deepcopy(embed)
+        footer_dict = embed_copy.get("footer")
+        if not isinstance(footer_dict, dict):
+            footer_dict = {}
+        footer_dict["text"] = footer
+        embed_copy["footer"] = footer_dict
+        updated.append(embed_copy)
+    return updated
 
 
 class CreateEventBody(BaseModel):
@@ -167,8 +200,12 @@ async def create_event(
         } if cfg else set()
         mention_ids = [m for m in mention_ids if m in allowed]
 
+    creator_label = await _resolve_creator_label(ctx, db)
     formatted = format_event_embed(body, timestamp=ts, mention_ids=mention_ids)
     buttons = formatted.buttons
+
+    if creator_label:
+        formatted.embed.set_footer(text=creator_label)
 
     dto = EmbedDto(
         id=eid,
@@ -188,6 +225,7 @@ async def create_event(
         buttons=buttons,
         channel_id=channel_id,
         mentions=mention_ids or None,
+        footer_text=creator_label,
     )
     validate_embed_payload(dto, buttons)
     logger.debug(
@@ -389,6 +427,9 @@ async def create_event(
                     }
                     for a in sent.attachments
                 ]
+
+    if stored_embeds:
+        stored_embeds = _apply_footer_to_embeds(stored_embeds, creator_label)
 
     if discord_msg_id is not None:
         eid = str(discord_msg_id)
