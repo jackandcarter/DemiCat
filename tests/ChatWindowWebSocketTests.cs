@@ -514,6 +514,92 @@ public class ChatWindowWebSocketTests
     }
 
     [Fact]
+    public async Task WebSocket_SecondLaunchAfterRestRefreshReceivesHistory()
+    {
+        var observedSince = -1;
+
+        using var server = new MockWsServer(async (ws, _, srv) =>
+        {
+            while (ws.State == WebSocketState.Open)
+            {
+                var msg = await srv.Receive(ws);
+                if (msg.Contains("\"op\":\"sub\""))
+                {
+                    var since = ExtractSince(msg);
+                    Volatile.Write(ref observedSince, since);
+
+                    var ack = JsonSerializer.Serialize(new { op = "ack", channel = "1", guildId = "", kind = "CHAT" });
+                    await srv.Send(ws, ack);
+
+                    var batch = JsonSerializer.Serialize(new
+                    {
+                        op = "batch",
+                        channel = "1",
+                        guildId = "",
+                        kind = "CHAT",
+                        messages = new[]
+                        {
+                            new
+                            {
+                                cursor = 5,
+                                op = "mc",
+                                d = new
+                                {
+                                    id = "m5",
+                                    channelId = "1",
+                                    content = "hello",
+                                    author = new { id = "u1", name = "Tester" },
+                                    timestamp = DateTime.UtcNow
+                                }
+                            }
+                        }
+                    });
+                    await srv.Send(ws, batch);
+                }
+            }
+        });
+
+        _ = SetupServices();
+        var config = new Config { ApiBaseUrl = "http://localhost", ChatChannelId = "1" };
+        var restHandler = new RestMessageHandler(SerializeMessages(1, 5));
+        using var restClient = new HttpClient(restHandler);
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, restClient, tm);
+        var window = new ChatWindow(config, restClient, null, tm, channelService);
+        var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
+
+        await window.RefreshMessages();
+
+        Assert.True(config.RestChatCursors.TryGetValue(cursorKey, out var restCursor));
+        Assert.Equal(5, restCursor);
+        Assert.False(config.ChatCursors.ContainsKey(cursorKey));
+
+        config.ApiBaseUrl = server.HttpBase;
+        var selection = new ChannelSelectionService(config);
+        using var client = new HttpClient();
+        var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
+
+        var messageCount = 0;
+        bridge.MessageReceived += _ => Interlocked.Increment(ref messageCount);
+
+        bridge.Start();
+        bridge.Subscribe("1", config.GuildId, ChannelKind.Chat);
+
+        try
+        {
+            await WaitUntil(() => Volatile.Read(ref observedSince) >= 0, TimeSpan.FromSeconds(5));
+            await WaitUntil(() => Volatile.Read(ref messageCount) > 0, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            bridge.Stop();
+        }
+
+        Assert.Equal(0, Volatile.Read(ref observedSince));
+        Assert.True(messageCount > 0);
+    }
+
+    [Fact]
     public async Task WebSocket_DropsMismatchedBatch()
     {
         using var server = new MockWsServer(async (ws, _, srv) =>
@@ -669,6 +755,24 @@ public class ChatWindowWebSocketTests
         }
     }
 
+    private static string SerializeMessages(int start, int end, string channelId = "1")
+    {
+        var list = new List<object>();
+        for (var i = start; i <= end; i++)
+        {
+            list.Add(new
+            {
+                id = i.ToString(),
+                channelId,
+                author = new { id = "u", name = "n" },
+                content = string.Empty,
+                timestamp = DateTime.UtcNow
+            });
+        }
+
+        return JsonSerializer.Serialize(list);
+    }
+
     private static TestLog SetupServices()
     {
         var ps = new PluginServices();
@@ -724,6 +828,30 @@ public class ChatWindowWebSocketTests
             {
                 _warnings.Add(message);
             }
+        }
+    }
+
+    private sealed class RestMessageHandler : HttpMessageHandler
+    {
+        private readonly Queue<HttpResponseMessage> _responses;
+
+        public RestMessageHandler(params string[] payloads)
+        {
+            _responses = new Queue<HttpResponseMessage>(payloads.Select(payload =>
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(payload, Encoding.UTF8, "application/json")
+                }));
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            if (_responses.Count == 0)
+            {
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+            }
+
+            return Task.FromResult(_responses.Dequeue());
         }
     }
 

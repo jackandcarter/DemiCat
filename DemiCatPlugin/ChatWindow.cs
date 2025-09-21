@@ -1361,7 +1361,7 @@ public class ChatWindow : IDisposable
             var all = new List<DiscordMessageDto>();
             string? before = null;
             var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
-            var hasCursor = _config.ChatCursors.TryGetValue(cursorKey, out var since);
+            var hasCursor = _config.RestChatCursors.TryGetValue(cursorKey, out var since);
             var storedAfter = hasCursor ? since.ToString() : null;
             var firstPage = true;
             while (all.Count < MaxMessages)
@@ -1448,7 +1448,7 @@ public class ChatWindow : IDisposable
             if (!string.IsNullOrEmpty(channelId))
             {
                 var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
-                _config.ChatCursors[cursorKey] = last;
+                _config.RestChatCursors[cursorKey] = last;
             }
         }
     }
