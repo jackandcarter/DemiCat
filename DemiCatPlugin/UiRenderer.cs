@@ -317,6 +317,13 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             var request = new HttpRequestMessage(HttpMethod.Get, url);
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
+            if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+            {
+                PluginServices.Instance?.Log.Warning(
+                    $"Sync unauthorized (status={response.StatusCode}); clearing token");
+                TokenManager.Instance?.Clear("Invalid API key");
+                return false;
+            }
             if (!response.IsSuccessStatusCode)
             {
                 _failureCount++;
@@ -338,6 +345,13 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             _lastSync = DateTime.UtcNow;
             PluginServices.Instance?.Log.Info($"Sync at {_lastSync:O}");
             return true;
+        }
+        catch (HttpRequestException ex)
+            when (ex.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        {
+            PluginServices.Instance?.Log.Warning(ex, $"Sync unauthorized ({ex.StatusCode}); clearing token");
+            TokenManager.Instance?.Clear("Invalid API key");
+            return false;
         }
         catch (Exception ex)
         {
@@ -378,6 +392,14 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             {
                 var pingService = PingService.Instance ?? new PingService(_httpClient, _config, TokenManager.Instance!);
                 var pingResponse = await pingService.PingAsync(CancellationToken.None);
+                if (pingResponse?.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+                {
+                    PluginServices.Instance?.Log.Warning(
+                        $"WebSocket ping returned {pingResponse.StatusCode}; clearing token");
+                    TokenManager.Instance?.Clear("Invalid API key");
+                    return;
+                }
+
                 if (pingResponse?.IsSuccessStatusCode != true)
                 {
                     if (pingResponse?.StatusCode == HttpStatusCode.NotFound)
@@ -956,15 +978,9 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
-                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    _channelFetchFailed = true;
-                    _channelErrorMessage = response.StatusCode == HttpStatusCode.Unauthorized
-                        ? "Authentication failed"
-                        : "Forbidden \u2013 check API key/roles";
-                    _channelsLoaded = true;
-                });
+                PluginServices.Instance!.Log.Warning(
+                    $"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}. Clearing token");
+                TokenManager.Instance?.Clear("Invalid API key");
                 return;
             }
             if (!response.IsSuccessStatusCode)
@@ -1039,15 +1055,22 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         }
         catch (HttpRequestException ex)
         {
+            if (ex.StatusCode == HttpStatusCode.Unauthorized || ex.StatusCode == HttpStatusCode.Forbidden)
+            {
+                PluginServices.Instance!.Log.Warning(
+                    ex,
+                    "Failed to fetch channels due to authorization failure; clearing token");
+                TokenManager.Instance?.Clear("Invalid API key");
+                return;
+            }
+
             PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channelFetchFailed = true;
-                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Unauthorized
-                    ? "Authentication failed"
-                    : ex.StatusCode == HttpStatusCode.Forbidden
-                        ? "Forbidden \u2013 check API key/roles"
-                        : "Failed to load channels";
+                _channelErrorMessage = ex.StatusCode == HttpStatusCode.Forbidden
+                    ? "Forbidden \u2013 check API key/roles"
+                    : "Failed to load channels";
                 _channelsLoaded = true;
             });
         }
