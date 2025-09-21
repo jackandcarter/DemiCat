@@ -47,6 +47,55 @@ from ..discord_client import discord_client, is_discord_client_ready
 # Cache webhook URLs per channel to avoid recreation
 _channel_webhooks: dict[int, str] = {}
 
+
+async def _cache_and_store_webhook_url(
+    *,
+    db: AsyncSession,
+    guild_id: int,
+    webhook_url: str,
+    channel_id: int | None,
+    configured_channel_id: int | None,
+    channel_kind: ChannelKind | None,
+) -> None:
+    """Persist the provided webhook URL for the supplied channel ids."""
+
+    targets: dict[int, ChannelKind] = {}
+    if channel_id is not None:
+        targets[channel_id] = ChannelKind.CHAT
+    if configured_channel_id is not None:
+        targets.setdefault(
+            configured_channel_id,
+            channel_kind or ChannelKind.CHAT,
+        )
+    if not targets:
+        return
+
+    for cid in targets:
+        _channel_webhooks[cid] = webhook_url
+
+    result = await db.execute(
+        select(GuildChannel).where(
+            GuildChannel.guild_id == guild_id,
+            GuildChannel.channel_id.in_(list(targets.keys())),
+        )
+    )
+    rows = result.scalars().all()
+    seen_ids = {row.channel_id for row in rows}
+    for row in rows:
+        if row.webhook_url != webhook_url:
+            row.webhook_url = webhook_url
+    for cid, default_kind in targets.items():
+        if cid in seen_ids:
+            continue
+        db.add(
+            GuildChannel(
+                guild_id=guild_id,
+                channel_id=cid,
+                kind=default_kind,
+                webhook_url=webhook_url,
+            )
+        )
+
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 
@@ -195,6 +244,8 @@ async def create_webhook_for_channel(
     guild_id: int,
     guild_discord_id: int | None = None,
     db: AsyncSession,
+    channel_kind: ChannelKind | None = None,
+    configured_channel_id: int | None = None,
 ) -> tuple[discord.Webhook | None, str | None, list[str]]:
     """Create a webhook for the given channel and persist its URL.
 
@@ -289,26 +340,14 @@ async def create_webhook_for_channel(
         return None, None, errors
 
     webhook_url = created.url
-    _channel_webhooks[channel_id] = webhook_url
-    result = await db.execute(
-        select(GuildChannel).where(
-            GuildChannel.guild_id == guild_id,
-            GuildChannel.channel_id == channel_id,
-        )
+    await _cache_and_store_webhook_url(
+        db=db,
+        guild_id=guild_id,
+        webhook_url=webhook_url,
+        channel_id=channel_id,
+        configured_channel_id=configured_channel_id,
+        channel_kind=channel_kind,
     )
-    rows = result.scalars().all()
-    if rows:
-        for gc in rows:
-            gc.webhook_url = webhook_url
-    else:
-        db.add(
-            GuildChannel(
-                guild_id=guild_id,
-                channel_id=channel_id,
-                kind=ChannelKind.CHAT,
-                webhook_url=webhook_url,
-            )
-        )
     return created, webhook_url, errors
 
 
@@ -411,6 +450,7 @@ async def _send_via_webhook(
     channel_id: int,
     guild_id: int,
     guild_discord_id: int | None = None,
+    configured_channel_id: int | None = None,
     content: str,
     username: str,
     avatar: str | None,
@@ -425,7 +465,9 @@ async def _send_via_webhook(
 
     ``channel`` should be the channel owning the webhook.  When ``thread`` is
     provided, the message will be sent to that thread using the parent
-    channel's webhook.
+    channel's webhook.  ``configured_channel_id`` should be the configured
+    channel identifier which may differ from ``channel_id`` when sending to a
+    thread.
 
     ``embeds`` and ``view`` are optional and allow rich messages to be sent via
     the webhook.  Returns the Discord message id, attachments, any error
@@ -433,7 +475,34 @@ async def _send_via_webhook(
     """
 
     errors: list[str] = []
-    webhook_url: str | None = _channel_webhooks.get(channel_id)
+    candidate_ids: list[int] = []
+    if channel_id is not None:
+        candidate_ids.append(channel_id)
+    if (
+        configured_channel_id is not None
+        and configured_channel_id not in candidate_ids
+    ):
+        candidate_ids.append(configured_channel_id)
+
+    webhook_url: str | None = None
+    for candidate in candidate_ids:
+        cached_url = _channel_webhooks.get(candidate)
+        if cached_url:
+            webhook_url = cached_url
+            break
+
+    if webhook_url and any(
+        _channel_webhooks.get(cid) != webhook_url for cid in candidate_ids
+    ):
+        await _cache_and_store_webhook_url(
+            db=db,
+            guild_id=guild_id,
+            webhook_url=webhook_url,
+            channel_id=channel_id,
+            configured_channel_id=configured_channel_id,
+            channel_kind=channel_kind,
+        )
+
     if not webhook_url:
         stmt = select(GuildChannel.webhook_url).where(
             GuildChannel.guild_id == guild_id,
@@ -444,7 +513,69 @@ async def _send_via_webhook(
             stmt = stmt.where(GuildChannel.kind == channel_kind)
         webhook_url = await db.scalar(stmt)
         if webhook_url:
-            _channel_webhooks[channel_id] = webhook_url
+            await _cache_and_store_webhook_url(
+                db=db,
+                guild_id=guild_id,
+                webhook_url=webhook_url,
+                channel_id=channel_id,
+                configured_channel_id=configured_channel_id,
+                channel_kind=channel_kind,
+            )
+        elif channel_kind is not None:
+            fallback_stmt = select(GuildChannel.webhook_url).where(
+                GuildChannel.guild_id == guild_id,
+                GuildChannel.channel_id == channel_id,
+                GuildChannel.webhook_url.is_not(None),
+            )
+            webhook_url = await db.scalar(fallback_stmt)
+            if webhook_url:
+                await _cache_and_store_webhook_url(
+                    db=db,
+                    guild_id=guild_id,
+                    webhook_url=webhook_url,
+                    channel_id=channel_id,
+                    configured_channel_id=configured_channel_id,
+                    channel_kind=channel_kind,
+                )
+
+    if (
+        not webhook_url
+        and configured_channel_id is not None
+        and configured_channel_id != channel_id
+    ):
+        stmt = select(GuildChannel.webhook_url).where(
+            GuildChannel.guild_id == guild_id,
+            GuildChannel.channel_id == configured_channel_id,
+            GuildChannel.webhook_url.is_not(None),
+        )
+        if channel_kind is not None:
+            stmt = stmt.where(GuildChannel.kind == channel_kind)
+        webhook_url = await db.scalar(stmt)
+        if webhook_url:
+            await _cache_and_store_webhook_url(
+                db=db,
+                guild_id=guild_id,
+                webhook_url=webhook_url,
+                channel_id=channel_id,
+                configured_channel_id=configured_channel_id,
+                channel_kind=channel_kind,
+            )
+        elif channel_kind is not None:
+            fallback_stmt = select(GuildChannel.webhook_url).where(
+                GuildChannel.guild_id == guild_id,
+                GuildChannel.channel_id == configured_channel_id,
+                GuildChannel.webhook_url.is_not(None),
+            )
+            webhook_url = await db.scalar(fallback_stmt)
+            if webhook_url:
+                await _cache_and_store_webhook_url(
+                    db=db,
+                    guild_id=guild_id,
+                    webhook_url=webhook_url,
+                    channel_id=channel_id,
+                    configured_channel_id=configured_channel_id,
+                    channel_kind=channel_kind,
+                )
 
     webhook = None
     if webhook_url:
@@ -462,6 +593,8 @@ async def _send_via_webhook(
             guild_id=guild_id,
             guild_discord_id=guild_discord_id,
             db=db,
+            channel_kind=channel_kind,
+            configured_channel_id=configured_channel_id,
         )
         errors.extend(creation_errors)
         if created_url:
@@ -525,6 +658,8 @@ async def _send_via_webhook(
             guild_id=guild_id,
             guild_discord_id=guild_discord_id,
             db=db,
+            channel_kind=channel_kind,
+            configured_channel_id=configured_channel_id,
         )
         errors.extend(retry_errors)
         if created_url:
@@ -902,6 +1037,7 @@ async def save_message(
         channel_id=getattr(base_channel, "id", cid),
         guild_id=ctx.guild.id,
         guild_discord_id=guild_discord_id,
+        configured_channel_id=cid,
         content=bridge_content,
         username=username,
         avatar=avatar,
@@ -980,7 +1116,11 @@ async def save_message(
                         for a in sent.attachments
                     ]
                 if webhook_url is None:
-                    webhook_url = _channel_webhooks.get(cid)
+                    for candidate in candidate_ids:
+                        cached_url = _channel_webhooks.get(candidate)
+                        if cached_url:
+                            webhook_url = cached_url
+                            break
             except Exception as e:
                 if isinstance(e, discord.HTTPException):
                     logging.error(
@@ -1087,7 +1227,11 @@ async def save_message(
                             if isinstance(a, dict)
                         ]
                     if webhook_url is None:
-                        webhook_url = _channel_webhooks.get(cid)
+                        for candidate in candidate_ids:
+                            cached_url = _channel_webhooks.get(candidate)
+                            if cached_url:
+                                webhook_url = cached_url
+                                break
 
             if discord_msg_id is None:
                 if is_officer:

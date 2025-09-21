@@ -1331,6 +1331,7 @@ def test_send_via_webhook_reuses_existing_url(monkeypatch):
                     channel=None,
                     channel_id=channel_id,
                     guild_id=guild_id,
+                    configured_channel_id=channel_id,
                     content="hello",
                     username="Tester",
                     avatar=None,
@@ -1353,6 +1354,110 @@ def test_send_via_webhook_reuses_existing_url(monkeypatch):
             db_session._Session = None
             if unique_constraint is not None:
                 table.constraints.add(unique_constraint)
+
+    asyncio.run(_run())
+
+
+def test_send_via_webhook_thread_reuses_cached_url(monkeypatch):
+    async def _run():
+        from demibot.db import session as db_session
+
+        db_session._engine = None
+        db_session._Session = None
+
+        engine = await init_db("sqlite+aiosqlite://")
+        try:
+            async with get_session() as db:
+                await db.execute(text("DELETE FROM posted_messages"))
+                await db.execute(text("DELETE FROM messages"))
+                await db.execute(text("DELETE FROM memberships"))
+                await db.execute(text("DELETE FROM users"))
+                await db.execute(text("DELETE FROM guilds"))
+                await db.execute(text("DELETE FROM guild_channels"))
+
+                guild_id = 12
+                parent_channel_id = 555
+                thread_channel_id = 556
+                webhook_url = "https://example.com/thread/webhook"
+
+                db.add(Guild(id=guild_id, discord_guild_id=912, name="Guild"))
+                db.add(
+                    GuildChannel(
+                        guild_id=guild_id,
+                        channel_id=thread_channel_id,
+                        kind=ChannelKind.FC_CHAT,
+                    )
+                )
+                db.add(
+                    GuildChannel(
+                        guild_id=guild_id,
+                        channel_id=parent_channel_id,
+                        kind=ChannelKind.CHAT,
+                        webhook_url=webhook_url,
+                    )
+                )
+                await db.commit()
+
+                monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+                async def fail_create(**kwargs):
+                    raise AssertionError("should not create webhook")
+
+                monkeypatch.setattr(mc, "create_webhook_for_channel", fail_create)
+                monkeypatch.setattr(mc, "discord_client", None)
+
+                captured: dict[str, object] = {}
+
+                class DummyWebhook:
+                    async def send(self, *args, **kwargs):
+                        captured["send_kwargs"] = kwargs
+                        return types.SimpleNamespace(id=111, attachments=[])
+
+                class DummyWebhookCls:
+                    @staticmethod
+                    def from_url(url: str, client=None):
+                        captured["url"] = url
+                        return DummyWebhook()
+
+                monkeypatch.setattr(mc.discord, "Webhook", DummyWebhookCls)
+
+                msg_id, attachments, errors, used_url = await mc._send_via_webhook(
+                    channel=None,
+                    channel_id=parent_channel_id,
+                    guild_id=guild_id,
+                    configured_channel_id=thread_channel_id,
+                    content="hello",
+                    username="Tester",
+                    avatar=None,
+                    files=None,
+                    channel_kind=ChannelKind.FC_CHAT,
+                    db=db,
+                    thread=None,
+                )
+
+                assert msg_id == 111
+                assert attachments is None
+                assert errors == []
+                assert used_url == webhook_url
+                assert captured.get("url") == webhook_url
+                assert mc._channel_webhooks.get(parent_channel_id) == webhook_url
+                assert mc._channel_webhooks.get(thread_channel_id) == webhook_url
+
+                result = await db.execute(
+                    select(GuildChannel.channel_id, GuildChannel.webhook_url).where(
+                        GuildChannel.guild_id == guild_id,
+                        GuildChannel.channel_id.in_(
+                            [parent_channel_id, thread_channel_id]
+                        ),
+                    )
+                )
+                stored = {cid: url for cid, url in result.all()}
+                assert stored[parent_channel_id] == webhook_url
+                assert stored[thread_channel_id] == webhook_url
+        finally:
+            await engine.dispose()
+            db_session._engine = None
+            db_session._Session = None
 
     asyncio.run(_run())
 

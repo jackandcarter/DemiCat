@@ -923,6 +923,8 @@ class ChatConnectionManager:
                         channel_id=channel_id,
                         guild_id=info.ctx.guild.id,
                         db=db,
+                        channel_kind=channel_kind_value or ChannelKind.FC_CHAT,
+                        configured_channel_id=channel_id,
                     )
                 except HTTPException:
                     logger.warning(

@@ -354,6 +354,7 @@ async def create_event(
                         channel=base_channel,
                         channel_id=base_channel.id,
                         guild_id=ctx.guild.id,
+                        configured_channel_id=channel_id,
                         content=content or "",
                         username="DemiCat",
                         avatar=None,
