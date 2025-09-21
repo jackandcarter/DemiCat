@@ -322,6 +322,10 @@ public class ChatWindow : IDisposable
                 }
                 if (msg.Attachments != null)
                 {
+                    var attachmentCap = new Vector2(480f, 360f) * ImGuiHelpers.GlobalScale;
+                    var availableForAttachments = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
+                    var maxAttachmentBounds = new Vector2(MathF.Max(1f, MathF.Min(availableForAttachments, attachmentCap.X)), MathF.Max(1f, attachmentCap.Y));
+
                     foreach (var att in msg.Attachments)
                     {
                         if (att.ContentType != null && att.ContentType.StartsWith("image"))
@@ -333,8 +337,19 @@ public class ChatWindow : IDisposable
                             if (att.Texture != null)
                             {
                                 var wrapAtt = att.Texture.GetWrapOrEmpty();
-                                var size = new Vector2(wrapAtt.Width, wrapAtt.Height);
-                                ImGui.Image(wrapAtt.Handle, size);
+                                var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
+                                var displaySize = CalculateAttachmentDisplaySize(originalSize, maxAttachmentBounds);
+                                ImGui.Image(wrapAtt.Handle, displaySize);
+                                if (ImGui.IsItemHovered())
+                                {
+                                    ImGui.BeginTooltip();
+                                    ImGui.TextUnformatted("Open original");
+                                    ImGui.EndTooltip();
+                                }
+                                if (ImGui.IsItemClicked())
+                                {
+                                    try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
+                                }
                             }
                         }
                         else
@@ -697,6 +712,20 @@ public class ChatWindow : IDisposable
         });
 
         return false;
+    }
+
+    private static Vector2 CalculateAttachmentDisplaySize(Vector2 originalSize, Vector2 maxSize)
+    {
+        var width = MathF.Max(1f, originalSize.X);
+        var height = MathF.Max(1f, originalSize.Y);
+        var maxWidth = MathF.Max(1f, maxSize.X);
+        var maxHeight = MathF.Max(1f, maxSize.Y);
+
+        var widthScale = maxWidth / width;
+        var heightScale = maxHeight / height;
+        var scale = MathF.Min(1f, MathF.Min(widthScale, heightScale));
+
+        return new Vector2(width * scale, height * scale);
     }
 
     protected void FormatContent(DiscordMessageDto msg)
