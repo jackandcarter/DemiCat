@@ -213,6 +213,103 @@ async def test_channel_history_returns_messages():
 
 
 @pytest.mark.asyncio
+async def test_add_reaction_does_not_require_chat_role(monkeypatch):
+    await init_db("sqlite+aiosqlite://")
+    async with get_session() as db:
+        await db.execute(text("DELETE FROM messages"))
+        await db.execute(text("DELETE FROM guild_channels"))
+        await db.execute(text("DELETE FROM users"))
+        await db.execute(text("DELETE FROM guilds"))
+
+        guild_id = 151
+        user_id = 251
+        channel_id = 351
+        message_id = 451
+
+        db.add(Guild(id=guild_id, discord_guild_id=2001, name="Guild"))
+        db.add(User(id=user_id, discord_user_id=2002, global_name="Member"))
+        db.add(
+            GuildChannel(
+                guild_id=guild_id,
+                channel_id=channel_id,
+                kind=ChannelKind.FC_CHAT,
+                name="FC Chat",
+            )
+        )
+        db.add(
+            Message(
+                discord_message_id=message_id,
+                channel_id=channel_id,
+                guild_id=guild_id,
+                author_id=user_id,
+                author_name="Member",
+                author_avatar_url=None,
+                content_raw="Hello",
+                content_display="Hello",
+                content="Hello",
+                attachments_json=None,
+                author_json=None,
+                embeds_json=None,
+                mentions_json=None,
+                reference_json=None,
+                components_json=None,
+                reactions_json=None,
+                is_officer=False,
+            )
+        )
+        await db.commit()
+
+    class DummyMessage:
+        def __init__(self) -> None:
+            self.called_with: str | None = None
+
+        async def add_reaction(self, emoji: str) -> None:
+            self.called_with = emoji
+
+    dummy_message = DummyMessage()
+
+    class DummyChannel:
+        async def fetch_message(self, mid: int) -> DummyMessage:
+            return dummy_message
+
+    dummy_channel = DummyChannel()
+
+    class DummyDiscordClient:
+        def get_channel(self, cid: int):
+            return dummy_channel if cid == channel_id else None
+
+    monkeypatch.setattr(messages_routes, "discord_client", DummyDiscordClient())
+    monkeypatch.setattr(messages_routes.discord.abc, "Messageable", DummyChannel)
+
+    app = create_app()
+
+    user_ctx = SimpleNamespace(id=user_id, global_name="Member", character_name=None)
+    guild_ctx = SimpleNamespace(id=guild_id, discord_guild_id=2001)
+
+    async def override_auth():
+        return RequestContext(user=user_ctx, guild=guild_ctx, key=None, roles=[])
+
+    async def override_db():
+        async with get_session() as session:
+            yield session
+
+    app.dependency_overrides[api_key_auth] = override_auth
+    app.dependency_overrides[get_db] = override_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.put(
+            f"/api/channels/{channel_id}/messages/{message_id}/reactions/smile"
+        )
+
+    app.dependency_overrides.clear()
+
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}
+    assert dummy_message.called_with == "smile"
+
+
+@pytest.mark.asyncio
 async def test_channel_history_officer_requires_role():
     await init_db("sqlite+aiosqlite://")
     async with get_session() as db:

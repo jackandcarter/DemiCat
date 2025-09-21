@@ -85,10 +85,7 @@ async def add_reaction(
     row = await db.get(Message, int(message_id))
     if not row or row.channel_id != cid:
         raise HTTPException(status_code=404, detail="message not found")
-    if row.is_officer:
-        if "officer" not in ctx.roles:
-            raise HTTPException(status_code=403, detail="forbidden")
-    elif "chat" not in ctx.roles:
+    if row.is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403, detail="forbidden")
     channel = discord_client.get_channel(cid)
     if not channel or not isinstance(channel, discord.abc.Messageable):
@@ -127,10 +124,7 @@ async def remove_reaction(
     row = await db.get(Message, int(message_id))
     if not row or row.channel_id != cid:
         raise HTTPException(status_code=404, detail="message not found")
-    if row.is_officer:
-        if "officer" not in ctx.roles:
-            raise HTTPException(status_code=403, detail="forbidden")
-    elif "chat" not in ctx.roles:
+    if row.is_officer and "officer" not in ctx.roles:
         raise HTTPException(status_code=403, detail="forbidden")
     channel = discord_client.get_channel(cid)
     if not channel or not isinstance(channel, discord.abc.Messageable):
