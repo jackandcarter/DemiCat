@@ -153,6 +153,100 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_save_message_private_thread(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+            db.add(Guild(id=1, discord_guild_id=1, name="Guild"))
+            db.add(User(id=1, discord_user_id=10, global_name="Alice"))
+            db.add(
+                Membership(
+                    guild_id=1,
+                    user_id=1,
+                    nickname="AliceNick",
+                    avatar_url="http://example.com/avatar.png",
+                )
+            )
+            thread_id = 456
+            db.add(
+                GuildChannel(
+                    guild_id=1,
+                    channel_id=thread_id,
+                    kind=ChannelKind.FC_CHAT,
+                )
+            )
+            await db.commit()
+            guild = await db.get(Guild, 1)
+            user = await db.get(User, 1)
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            broadcast_calls: List[Tuple[str, int, bool, str | None]] = []
+
+            async def dummy_broadcast(message: str, guild_id: int, officer_only: bool = False, path: str | None = None):
+                broadcast_calls.append((message, guild_id, officer_only, path))
+
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+
+            class DummyMessageable:
+                pass
+
+            class DummyParent:
+                id = 123
+
+            class DummyThread(DummyMessageable):
+                def __init__(self) -> None:
+                    self.id = thread_id
+                    self.parent = DummyParent()
+                    self.archived = False
+                    self.joined = False
+                    self.join_calls = 0
+                    self.send_calls = 0
+
+                async def join(self) -> None:
+                    self.join_calls += 1
+                    self.joined = True
+
+                async def send(self, *args, **kwargs):
+                    if not self.joined:
+                        raise AssertionError("thread must be joined before send")
+                    self.send_calls += 1
+                    return types.SimpleNamespace(id=99, attachments=[])
+
+            thread = DummyThread()
+
+            class DummyClient:
+                def get_channel(self, cid: int):
+                    assert cid == thread_id
+                    return thread
+
+            async def fake_send_via_webhook(**kwargs):
+                return None, None, ["webhook unavailable"], None
+
+            monkeypatch.setattr(mc, "discord_client", DummyClient())
+            monkeypatch.setattr(mc.discord, "Thread", DummyThread, raising=False)
+            monkeypatch.setattr(mc.discord.abc, "Messageable", DummyMessageable, raising=False)
+            monkeypatch.setattr(mc, "_channel_supports_webhooks", lambda channel: True)
+            monkeypatch.setattr(mc, "_send_via_webhook", fake_send_via_webhook)
+            monkeypatch.setattr(mc, "_channel_webhooks", {})
+
+            body = mc.PostBody(channel_id=str(thread_id), content="hello thread")
+            res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT)
+
+            assert res["ok"] is True
+            assert res["id"] == "99"
+            assert broadcast_calls
+            assert thread.join_calls == 1
+            assert thread.send_calls == 1
+
+    asyncio.run(_run())
+
+
 def test_fetch_messages_attachment_aliases():
     async def _run():
         await init_db("sqlite+aiosqlite://")

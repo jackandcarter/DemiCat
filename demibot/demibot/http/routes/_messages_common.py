@@ -917,6 +917,44 @@ async def save_message(
         target_channel = thread_obj or base_channel
         log_extra = {"guild_id": ctx.guild.id, "channel_id": cid}
         if target_channel and isinstance(target_channel, discord.abc.Messageable):
+            thread_identifier = getattr(target_channel, "id", cid)
+            if isinstance(target_channel, discord.Thread):
+                joined = getattr(target_channel, "joined", None)
+                if joined is None:
+                    thread_member = getattr(target_channel, "me", None)
+                    joined = getattr(thread_member, "joined", None) if thread_member else None
+                if joined is not True:
+                    logging.info(
+                        "Joining thread %s prior to direct send fallback",
+                        thread_identifier,
+                        extra=log_extra,
+                    )
+                    try:
+                        await target_channel.join()
+                    except discord.HTTPException as exc:
+                        logging.error(
+                            "thread.join failed for thread %s: %s %s",
+                            thread_identifier,
+                            exc.status,
+                            exc.text,
+                            extra=log_extra,
+                        )
+                        error_details.append(
+                            f"Thread join failed: {exc.status} {exc.text or _discord_error(exc)}"
+                        )
+                    except Exception as exc:
+                        logging.exception(
+                            "thread.join failed for thread %s",
+                            thread_identifier,
+                            extra=log_extra,
+                        )
+                        error_details.append(f"Thread join failed: {exc}")
+                    else:
+                        logging.info(
+                            "Joined thread %s prior to direct send fallback",
+                            thread_identifier,
+                            extra=log_extra,
+                        )
             try:
                 fallback_files = _make_discord_files(uploads)
                 sent = await target_channel.send(
@@ -1064,7 +1102,14 @@ async def save_message(
                             "channelId": str(cid),
                         },
                     )
-                logging.warning("Failed to resolve channel", extra=log_extra)
+                if error_details:
+                    logging.error(
+                        "Failed to resolve channel due to Discord errors: %s",
+                        error_details,
+                        extra=log_extra,
+                    )
+                else:
+                    logging.warning("Failed to resolve channel", extra=log_extra)
                 detail: dict[str, object] = {"message": "channel not found"}
                 if error_details:
                     detail["discord"] = error_details
