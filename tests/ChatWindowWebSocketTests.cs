@@ -196,6 +196,23 @@ public class ChatWindowWebSocketTests
     }
 
     [Fact]
+    public void OfficerChatResync_UsesStoredSelectionForUppercaseKind()
+    {
+        var config = new Config
+        {
+            Officer = true,
+            OfficerChannelId = "42"
+        };
+        var selection = new ChannelSelectionService(config);
+
+        // Simulate the websocket resync path passing an uppercased kind from the server.
+        var channel = selection.GetChannel("OFFICER_CHAT", config.GuildId, out var hasStoredSelection);
+
+        Assert.False(hasStoredSelection);
+        Assert.Equal("42", channel);
+    }
+
+    [Fact]
     public async Task WebSocket_ReconnectPersistsCursor()
     {
         int firstSince = -1;
