@@ -107,7 +107,6 @@ public class Plugin : IDalamudPlugin
             _httpClient,
             _channelService,
             _channelSelection,
-            () => RefreshRoles(_services.Log),
             _emojiManager
         );
 
