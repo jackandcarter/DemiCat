@@ -42,8 +42,8 @@ public class ChatWindowMessageLimitTests
         await window.RefreshMessages();
 
         msgs = GetMessages(window);
-        Assert.Equal(100, msgs.Count);
-        Assert.Equal("31", msgs[0].Id);
+        Assert.Equal(10, msgs.Count);
+        Assert.Equal("121", msgs[0].Id);
         Assert.Equal("130", msgs[^1].Id);
         Assert.Equal(130, config.RestChatCursors[cursorKey]);
         Assert.False(config.ChatCursors.ContainsKey(cursorKey));
@@ -70,6 +70,30 @@ public class ChatWindowMessageLimitTests
         Assert.DoesNotContain("after=", handler.Requests[0].Query);
         Assert.Equal(20, config.RestChatCursors[cursorKey]);
         Assert.False(config.ChatCursors.ContainsKey(cursorKey));
+    }
+
+    [Fact]
+    public async Task RefreshMessages_ReplacesMessagesForActiveChannel()
+    {
+        SetupServices();
+        var config = new Config { ApiBaseUrl = "http://localhost", ChatChannelId = "1" };
+        var handler = new SequenceHandler();
+        using var client = new HttpClient(handler);
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, client, tm);
+        var window = new ChatWindow(config, client, null, tm, channelService);
+
+        handler.EnqueueResponse(SerializeMessages(1, 20));
+        await window.RefreshMessages();
+
+        handler.EnqueueResponse(SerializeMessages(201, 203));
+        await window.RefreshMessages();
+
+        var msgs = GetMessages(window);
+        Assert.Collection(msgs,
+            m => Assert.Equal("201", m.Id),
+            m => Assert.Equal("202", m.Id),
+            m => Assert.Equal("203", m.Id));
     }
 
     [Fact]
