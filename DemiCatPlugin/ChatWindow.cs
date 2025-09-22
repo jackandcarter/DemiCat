@@ -188,6 +188,7 @@ public class ChatWindow : IDisposable
         {
             _bridge.Unsubscribe(chan);
             _bridge.Subscribe(chan, _config.GuildId, _channelKind);
+            _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshMessages());
         }
         _presence?.Reset();
     }
