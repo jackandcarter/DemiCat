@@ -126,10 +126,13 @@ public class EventCreateWindow
         if (_channels.Count > 0)
         {
             var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
-            if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
-                var newId = _channels[_selectedIndex].Id;
-                _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
+                {
+                    var newId = _channels[_selectedIndex].Id;
+                    _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
+                }
             }
         }
         else
@@ -229,6 +232,7 @@ public class EventCreateWindow
                     {
                         if (_roles.Count > 0)
                         {
+                            using var emojiFont = _emojiManager.PushEmojiFont();
                             var selectedRoleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
                             var previewLabel = selectedRoleNames.Count > 0 ? string.Join(", ", selectedRoleNames) : "Select roles";
                             var maxTextWidth = ImGui.CalcTextSize(previewLabel).X;
@@ -326,7 +330,10 @@ public class EventCreateWindow
                 EmojiRenderer.Draw(button.Emoji, _emojiManager);
                 ImGui.SameLine();
             }
-            ImGui.TextUnformatted($"{button.Label} ({button.Tag})");
+            {
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                ImGui.TextUnformatted($"{button.Label} ({button.Tag})");
+            }
             ImGui.SameLine();
             if (ImGui.Button("Edit"))
             {
@@ -362,6 +369,7 @@ public class EventCreateWindow
             var preview = _selectedPreset >= 0 && _selectedPreset < presets.Count
                 ? presets[_selectedPreset].Name
                 : string.Empty;
+            using var emojiFont = _emojiManager.PushEmojiFont();
             if (ImGui.BeginCombo("Presets", preview))
             {
                 for (var i = 0; i < presets.Count; i++)
@@ -452,7 +460,10 @@ public class EventCreateWindow
             for (var i = 0; i < _schedules.Count; i++)
             {
                 var s = _schedules[i];
-                ImGui.TextUnformatted($"{s.Title} ({s.Repeat}) next {s.Next}");
+                {
+                    using var emojiFont = _emojiManager.PushEmojiFont();
+                    ImGui.TextUnformatted($"{s.Title} ({s.Repeat}) next {s.Next}");
+                }
                 ImGui.SameLine();
                 if (ImGui.Button($"Cancel##{i}"))
                 {
@@ -484,9 +495,15 @@ public class EventCreateWindow
         if (_confirmCreate && ImGui.BeginPopupModal("Confirm Event Create", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
         {
             var channelName = _channels.FirstOrDefault(c => c.Id == ChannelId)?.Name ?? ChannelId;
-            ImGui.TextUnformatted($"Channel: {channelName}");
+            {
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                ImGui.TextUnformatted($"Channel: {channelName}");
+            }
             var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
-            ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+            {
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+            }
             if (ImGui.Button("Confirm"))
             {
                 _ = CreateEvent();

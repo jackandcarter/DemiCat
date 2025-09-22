@@ -909,17 +909,25 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             comboIndex = Math.Clamp(comboIndex, 0, channelNames.Length - 1);
         }
 
-        if (ImGui.Combo("Channel", ref comboIndex, channelNames, channelNames.Length))
         {
-            if (comboIndex >= 0 && comboIndex < _channels.Count)
+            using var emojiFont = _emojiManager.PushEmojiFont();
+            if (ImGui.Combo("Channel", ref comboIndex, channelNames, channelNames.Length))
             {
-                var selectedChannel = _channels[comboIndex];
-                if (!string.IsNullOrEmpty(selectedChannel?.Id))
+                if (comboIndex >= 0 && comboIndex < _channels.Count)
                 {
-                    _selectedIndex = comboIndex;
-                    _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, selectedChannel.Id);
-                    _ = RefreshChannels();
-                    _ = RefreshEmbeds();
+                    var selectedChannel = _channels[comboIndex];
+                    if (!string.IsNullOrEmpty(selectedChannel?.Id))
+                    {
+                        _selectedIndex = comboIndex;
+                        _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, selectedChannel.Id);
+                        _ = RefreshChannels();
+                        _ = RefreshEmbeds();
+                    }
+                    else
+                    {
+                        ShowWarningOrToast("Select a valid channel to view events.", ref _channelSelectionWarningShown);
+                        return;
+                    }
                 }
                 else
                 {
@@ -929,13 +937,8 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             }
             else
             {
-                ShowWarningOrToast("Select a valid channel to view events.", ref _channelSelectionWarningShown);
-                return;
+                _selectedIndex = comboIndex;
             }
-        }
-        else
-        {
-            _selectedIndex = comboIndex;
         }
 
         if (_selectedIndex < 0 || _selectedIndex >= _channels.Count)

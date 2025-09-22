@@ -132,6 +132,7 @@ public class EventView : IDisposable
 
     public void Draw(float? availableHeight)
     {
+        using var emojiFont = _emojiManager.PushEmojiFont();
         var dto = _dto;
         var cursorStart = ImGui.GetCursorPosY();
 
@@ -204,6 +205,7 @@ public class EventView : IDisposable
 
     private void DrawEmbed(EmbedDto dto, float? availableHeight)
     {
+        using var emojiFont = _emojiManager.PushEmojiFont();
         const float stripeWidth = 4f;
         const float contentPadding = 8f;
         const float verticalPadding = 4f;
@@ -483,6 +485,7 @@ public class EventView : IDisposable
 
     public void DrawButtons()
     {
+        using var emojiFont = _emojiManager.PushEmojiFont();
         if (Buttons != null && Buttons.Count > 0)
         {
             foreach (var row in Buttons
