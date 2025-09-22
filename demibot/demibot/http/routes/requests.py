@@ -86,6 +86,17 @@ def _dto(req: DbRequest) -> dict[str, Any]:
     return dto.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
+async def _load_request_with_children(
+    db: AsyncSession, request_id: int
+) -> DbRequest | None:
+    result = await db.execute(
+        select(DbRequest)
+        .where(DbRequest.id == request_id)
+        .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
+    )
+    return result.scalars().one_or_none()
+
+
 async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> None:
     payload = json.dumps({"topic": "requests.stream", "payload": delta})
     await manager.broadcast_text(payload, guild_id, path="/ws/requests")
@@ -203,7 +214,9 @@ async def create_request(
     )
     db.add(req)
     await db.commit()
-    await db.refresh(req)
+    req = await _load_request_with_children(db, req.id)
+    if req is None:
+        raise HTTPException(status_code=500)
     await _broadcast(ctx.guild.id, req.id, _dto(req))
     await _notify(ctx.guild.id, req, "created", db, ctx.user)
     return {"id": str(req.id)}
@@ -215,7 +228,7 @@ async def get_request(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    req = await db.get(DbRequest, request_id)
+    req = await _load_request_with_children(db, request_id)
     if not req or req.guild_id != ctx.guild.id:
         raise HTTPException(status_code=404)
     return _dto(req)
@@ -238,7 +251,9 @@ async def update_request(
     if body.urgency is not None:
         req.urgency = body.urgency
     await db.commit()
-    await db.refresh(req)
+    req = await _load_request_with_children(db, req.id)
+    if req is None:
+        raise HTTPException(status_code=404)
     await _broadcast(ctx.guild.id, req.id, _dto(req))
     return {"ok": True}
 
