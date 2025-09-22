@@ -50,6 +50,7 @@ public class ChatBridge : IDisposable
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SubscribeMismatchThrottle = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan BatchDropThrottle = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan WebSocketCloseTimeout = TimeSpan.FromSeconds(1);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
     private const string ForbiddenMessage = "Forbidden – check API key/roles";
     private bool _permissionWarningShown;
@@ -84,6 +85,18 @@ public class ChatBridge : IDisposable
         try { _task?.GetAwaiter().GetResult(); }
         catch (OperationCanceledException) { }
         catch { }
+        if (_ws != null)
+        {
+            using var closeCts = new CancellationTokenSource(WebSocketCloseTimeout);
+            var closeTask = CloseWebSocketGracefully(closeCts.Token);
+            try
+            {
+                closeTask.GetAwaiter().GetResult();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
         _ws?.Dispose();
         _ws = null;
         _cts?.Dispose();
@@ -527,6 +540,16 @@ public class ChatBridge : IDisposable
             {
                 var status = _ws?.CloseStatus;
                 var description = _ws?.CloseStatusDescription;
+                try
+                {
+                    await CloseWebSocketGracefully(token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+                {
+                }
+                catch (OperationCanceledException)
+                {
+                }
                 _ws?.Dispose();
                 _ws = null;
                 if (attemptedConnect)
@@ -945,5 +968,88 @@ public class ChatBridge : IDisposable
         _lastErrorSignature = signature;
         _lastErrorLog = now;
         PluginServices.Instance?.Log.Error(ex, $"chat.ws {stage} failed");
+    }
+
+    private async Task CloseWebSocketGracefully(CancellationToken token)
+    {
+        var socket = _ws;
+        if (socket == null)
+        {
+            return;
+        }
+
+        WebSocketState state;
+        try
+        {
+            state = socket.State;
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        if (state != WebSocketState.Open && state != WebSocketState.CloseReceived && state != WebSocketState.CloseSent)
+        {
+            return;
+        }
+
+        if (state == WebSocketState.Open || state == WebSocketState.CloseReceived)
+        {
+            try
+            {
+                await socket.CloseOutputAsync(WebSocketCloseStatus.NormalClosure, string.Empty, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+            {
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (WebSocketException)
+            {
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            catch (InvalidOperationException)
+            {
+            }
+
+            try
+            {
+                state = socket.State;
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+        }
+
+        if (state != WebSocketState.CloseSent && state != WebSocketState.CloseReceived)
+        {
+            return;
+        }
+
+        try
+        {
+            await socket.CloseAsync(WebSocketCloseStatus.NormalClosure, string.Empty, token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
+        {
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (WebSocketException)
+        {
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 }
