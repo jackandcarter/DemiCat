@@ -649,14 +649,12 @@ public class ChatWindow : IDisposable
         {
             UpdatePreviewMessage();
 
+            var plainTextPreview = GetPreviewPlainText(_previewMessage);
+
             ImGui.BeginChild("##inputPreview", new Vector2(0, ImGui.GetTextLineHeight() * 6), true);
-            if (!string.IsNullOrEmpty(_previewMessage.DisplayContent))
+            if (!string.IsNullOrEmpty(plainTextPreview))
             {
-                ImGui.TextWrapped(_previewMessage.DisplayContent);
-            }
-            else if (!string.IsNullOrEmpty(_previewMessage.Content))
-            {
-                ImGui.TextWrapped(ChatWindow.ReplaceMentionTokens(_previewMessage.Content, _previewMessage.Mentions));
+                ImGui.TextWrapped(plainTextPreview);
             }
 
             foreach (var embed in _previewMessage.Embeds)
@@ -926,6 +924,59 @@ public class ChatWindow : IDisposable
         _previewMessage = BridgeMessageFormatter.Format(_input, _attachments, options);
         _previewKey = key;
         CleanupAttachmentPreviews(_previewMessage.Attachments.Select(a => a.Path));
+    }
+
+    internal static string? GetPreviewPlainText(BridgeMessageFormatter.BridgeFormattedMessage message)
+    {
+        var displayContent = message.DisplayContent ?? string.Empty;
+        var embeds = message.Embeds ?? Array.Empty<EmbedDto>();
+        var hasEmbedChunks = embeds.Any(e => !string.IsNullOrEmpty(e?.Description));
+
+        if (hasEmbedChunks)
+        {
+            var remainder = GetUnrepresentedPlainText(displayContent, embeds);
+            return string.IsNullOrEmpty(remainder) ? null : remainder;
+        }
+
+        if (!string.IsNullOrEmpty(displayContent))
+        {
+            return displayContent;
+        }
+
+        if (!string.IsNullOrEmpty(message.Content))
+        {
+            var fallback = ReplaceMentionTokens(message.Content, message.Mentions);
+            return string.IsNullOrEmpty(fallback) ? null : fallback;
+        }
+
+        return null;
+    }
+
+    private static string GetUnrepresentedPlainText(string displayContent, IReadOnlyList<EmbedDto> embeds)
+    {
+        if (string.IsNullOrEmpty(displayContent))
+            return string.Empty;
+
+        var index = 0;
+        foreach (var embed in embeds)
+        {
+            var description = embed?.Description;
+            if (string.IsNullOrEmpty(description))
+                continue;
+
+            var remaining = displayContent.AsSpan(index);
+            var desc = description.AsSpan();
+
+            if (remaining.Length < desc.Length || !remaining.StartsWith(desc, StringComparison.Ordinal))
+                return string.Empty;
+
+            index += desc.Length;
+        }
+
+        if (index >= displayContent.Length)
+            return string.Empty;
+
+        return displayContent[index..];
     }
 
     private BridgeMessageFormatter.BridgeFormattedMessage GetFormattedMessage()
