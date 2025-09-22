@@ -7,6 +7,9 @@ public class ChannelSelectionService
 {
     private const string EventSelectionPrefix = "Event:";
     private static readonly string NormalizedEventKind = ChannelKeyHelper.NormalizeKind(ChannelKind.Event);
+    private static readonly string NormalizedFcKind = ChannelKeyHelper.NormalizeKind(ChannelKind.FcChat);
+    private static readonly string NormalizedOfficerKind = ChannelKeyHelper.NormalizeKind(ChannelKind.OfficerChat);
+    private static readonly string NormalizedChatKind = ChannelKeyHelper.NormalizeKind(ChannelKind.Chat);
     private readonly Config _config;
 
     public ChannelSelectionService(Config config)
@@ -52,14 +55,27 @@ public class ChannelSelectionService
             return string.Empty;
         }
 
-        return (kind switch
+        if (normalizedKind == NormalizedEventKind)
         {
-            ChannelKind.Event => _config.EventChannelId,
-            ChannelKind.FcChat => _config.FcChannelId,
-            ChannelKind.OfficerChat => _config.OfficerChannelId,
-            ChannelKind.Chat => _config.ChatChannelId,
-            _ => string.Empty
-        }) ?? string.Empty;
+            return _config.EventChannelId ?? string.Empty;
+        }
+
+        if (normalizedKind == NormalizedFcKind)
+        {
+            return _config.FcChannelId ?? string.Empty;
+        }
+
+        if (normalizedKind == NormalizedOfficerKind)
+        {
+            return _config.OfficerChannelId ?? string.Empty;
+        }
+
+        if (normalizedKind == NormalizedChatKind)
+        {
+            return _config.ChatChannelId ?? string.Empty;
+        }
+
+        return string.Empty;
     }
 
     public void SetChannel(string kind, string? guildId, string id)
