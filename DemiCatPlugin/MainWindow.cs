@@ -30,6 +30,7 @@ public class MainWindow : IDisposable
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;
     public TemplatesWindow TemplatesWindow => _templates;
+    internal static MainWindow? Instance { get; private set; }
 
     public MainWindow(
         Config config,
@@ -53,6 +54,7 @@ public class MainWindow : IDisposable
         _requestBoard = new RequestBoardWindow(config, httpClient);
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
+        Instance = this;
     }
 
     internal void UpdateSyncshell()
@@ -382,5 +384,9 @@ public class MainWindow : IDisposable
 
     public void Dispose()
     {
+        if (Instance == this)
+        {
+            Instance = null;
+        }
     }
 }
