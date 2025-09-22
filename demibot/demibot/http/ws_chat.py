@@ -961,6 +961,20 @@ class ChatConnectionManager:
                 data.get("channel"),
             )
             return
+        channel = str(channel_id)
+        if channel not in info.channels:
+            logger.warning(
+                "chat.ws send drop reason=not_subscribed channel=%s",
+                channel_id,
+            )
+            return
+        meta = info.metadata.get(channel)
+        if meta is None:
+            logger.warning(
+                "chat.ws send drop reason=missing_meta channel=%s",
+                channel_id,
+            )
+            return
         payload = data.get("d") or data.get("payload") or {}
         content = payload.get("content", "")
         attachments = payload.get("attachments") or []
@@ -968,6 +982,23 @@ class ChatConnectionManager:
         use_character_name_flag = bool(
             payload.get("useCharacterName") or payload.get("use_character_name")
         )
+
+        def _normalize_channel_kind(value: object | None) -> ChannelKind:
+            if isinstance(value, ChannelKind):
+                return value
+            if isinstance(value, str):
+                lowered = value.lower()
+                try:
+                    return ChannelKind(lowered)
+                except ValueError:
+                    try:
+                        return ChannelKind(value)
+                    except ValueError:
+                        return ChannelKind.FC_CHAT
+            return ChannelKind.FC_CHAT
+
+        raw_channel_kind_value: object | None = None
+        normalized_channel_kind: ChannelKind = ChannelKind.FC_CHAT
         async with get_session() as db:
             result = await db.execute(
                 select(GuildChannel.webhook_url, GuildChannel.kind).where(
@@ -977,7 +1008,8 @@ class ChatConnectionManager:
             )
             row = result.one_or_none()
             webhook_url = row[0] if row else None
-            channel_kind_value = row[1] if row else None
+            raw_channel_kind_value = row[1] if row else None
+            normalized_channel_kind = _normalize_channel_kind(raw_channel_kind_value)
             if not webhook_url:
                 if not discord_client:
                     logger.warning(
@@ -998,7 +1030,7 @@ class ChatConnectionManager:
                         channel_id=channel_id,
                         guild_id=info.ctx.guild.id,
                         db=db,
-                        channel_kind=channel_kind_value or ChannelKind.FC_CHAT,
+                        channel_kind=normalized_channel_kind,
                         configured_channel_id=channel_id,
                     )
                 except HTTPException:
@@ -1026,7 +1058,21 @@ class ChatConnectionManager:
                     Membership.user_id == info.ctx.user.id,
                 )
             )
-        channel_kind_value = channel_kind_value or ChannelKind.FC_CHAT
+        channel_kind_value = normalized_channel_kind
+        if raw_channel_kind_value is None and meta.kind:
+            try:
+                channel_kind_value = ChannelKind(meta.kind.lower())
+            except ValueError:
+                pass
+        if (
+            channel_kind_value == ChannelKind.OFFICER_CHAT
+            and "officer" not in info.ctx.roles
+        ):
+            logger.warning(
+                "chat.ws send drop reason=officer_required channel=%s",
+                channel_id,
+            )
+            return
         if not webhook_url:
             logger.warning("chat.ws missing webhook channel=%s", channel_id)
             return
