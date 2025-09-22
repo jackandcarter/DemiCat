@@ -85,6 +85,9 @@ class ChannelMeta:
         return None
 
 
+OFFICER_CHAT_KIND = getattr(ChannelKind.OFFICER_CHAT, "value", ChannelKind.OFFICER_CHAT).upper()
+
+
 @dataclass
 class PendingWebhookMessage:
     channel_id: int
@@ -300,6 +303,15 @@ class ChatConnectionManager:
         info = self.connections.get(websocket)
         if info is None:
             return
+        has_officer_role = "officer" in info.ctx.roles
+
+        def is_authorized(meta: ChannelMeta | None) -> bool:
+            if meta is None:
+                return True
+            if meta.kind == OFFICER_CHAT_KIND and not has_officer_role:
+                return False
+            return True
+
         channels = data.get("channels", [])
         old_channels = set(info.channels)
         new_channels: Set[str] = set()
@@ -307,7 +319,6 @@ class ChatConnectionManager:
         since_map: Dict[str, int | None] = {}
         for ch in channels:
             channel_id: str
-            is_officer = False
             expected_guild: str | None = None
             expected_kind: str | None = None
             since_value: str | int | None = None
@@ -317,7 +328,6 @@ class ChatConnectionManager:
                 if raw_id is None:
                     continue
                 channel_id = str(raw_id)
-                is_officer = bool(ch.get("officer"))
                 guild_val = ch.get("guildId")
                 if guild_val is not None:
                     expected_guild = str(guild_val).strip()
@@ -345,9 +355,6 @@ class ChatConnectionManager:
                 channel_id,
                 since_value,
             )
-            if is_officer and "officer" not in info.ctx.roles:
-                # Skip officer-only channels for non-officers.
-                continue
             new_channels.add(channel_id)
             expected_meta[channel_id] = (expected_guild, expected_kind)
             if since_value is not None:
@@ -392,10 +399,14 @@ class ChatConnectionManager:
                         meta.kind,
                     )
                     continue
+                if not is_authorized(meta):
+                    logger.info(
+                        "chat.ws subscribe drop channel=%s reason=officer_required kind=%s",
+                        channel_id,
+                        meta.kind,
+                    )
+                    continue
                 valid_added.append((channel_id, meta))
-        info.channels = retained | {channel_id for channel_id, _ in valid_added}
-        for channel_id, _ in valid_added:
-            self._increment_channel_subscriber(channel_id)
         if retained:
             missing_meta = {ch for ch in retained if ch not in info.metadata}
             if missing_meta:
@@ -403,6 +414,21 @@ class ChatConnectionManager:
                 for ch, meta in retained_meta.items():
                     if meta is not None:
                         info.metadata[ch] = meta
+            for channel_id in list(retained):
+                meta = info.metadata.get(channel_id)
+                if not is_authorized(meta):
+                    logger.info(
+                        "chat.ws drop channel=%s reason=officer_required kind=%s",
+                        channel_id,
+                        meta.kind if meta is not None else None,
+                    )
+                    info.cursors.pop(channel_id, None)
+                    info.metadata.pop(channel_id, None)
+                    self._decrement_channel_subscriber(channel_id)
+                    retained.discard(channel_id)
+        info.channels = retained | {channel_id for channel_id, _ in valid_added}
+        for channel_id, _ in valid_added:
+            self._increment_channel_subscriber(channel_id)
         for channel_id, meta in valid_added:
             info.metadata[channel_id] = meta
         for channel_id, _ in valid_added:
