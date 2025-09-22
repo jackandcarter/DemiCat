@@ -1,7 +1,6 @@
 using System;
 using System.Net.Http;
 using System.Numerics;
-using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using DemiCatPlugin.Emoji;
 
@@ -21,9 +20,6 @@ public class MainWindow : IDisposable
     private bool _syncshellEnabled;
     private bool _templatesTabActive;
     private readonly HttpClient _httpClient;
-    private readonly Func<Task<bool>> _refreshRoles;
-    private bool _checkingOfficer;
-    private bool _officerChecked;
     private const float FadeAlphaTolerance = 0.001f;
     private const float MinimumFadeDuration = 0.001f;
     private float _timeSinceLastInteraction;
@@ -44,7 +40,6 @@ public class MainWindow : IDisposable
         HttpClient httpClient,
         ChannelService channelService,
         ChannelSelectionService channelSelection,
-        Func<Task<bool>> refreshRoles,
         EmojiManager emojiManager)
     {
         _config = config;
@@ -53,7 +48,6 @@ public class MainWindow : IDisposable
         _officer = officer;
         _settings = settings;
         _httpClient = httpClient;
-        _refreshRoles = refreshRoles;
         _create = new EventCreateWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _requestBoard = new RequestBoardWindow(config, httpClient);
@@ -284,21 +278,6 @@ public class MainWindow : IDisposable
                                 ImGui.PushStyleVar(ImGuiStyleVar.Alpha, officerAlpha);
                             }
 
-                            if (!_officerChecked && !_checkingOfficer)
-                            {
-                                _officerChecked = true;
-                                _checkingOfficer = true;
-                                _ = Task.Run(async () =>
-                                {
-                                    await _refreshRoles();
-                                    PluginServices.Instance?.Framework.RunOnTick(() =>
-                                    {
-                                        _checkingOfficer = false;
-                                        if (!HasOfficerRole)
-                                            ImGui.SetTabItemClosed("Officer");
-                                    });
-                                });
-                            }
                             ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
                             _officer.Draw();
                             ImGui.EndChild();
@@ -308,10 +287,6 @@ public class MainWindow : IDisposable
                             {
                                 ImGui.PopStyleVar();
                             }
-                        }
-                        else
-                        {
-                            _officerChecked = false;
                         }
                     }
                 }
