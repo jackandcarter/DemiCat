@@ -49,6 +49,7 @@ public class ChatWindow : IDisposable
     protected string _editingChannelId = string.Empty;
     protected string _editContent = string.Empty;
     private static readonly string[] DefaultReactions = new[] { "👍", "👎", "❤️" };
+    private static readonly ImGuiMouseCursor ResizeNsCursor = ResolveResizeNsCursor();
     private readonly EmojiManager _emojiManager;
     private readonly EmojiPicker _emojiPicker;
     private readonly Dictionary<string, EmojiData> _emojiCatalog = new();
@@ -528,7 +529,7 @@ public class ChatWindow : IDisposable
             ImGui.InvisibleButton("##chatInputSplitter", new Vector2(splitterWidth, splitterHeight));
             if (ImGui.IsItemHovered() || ImGui.IsItemActive())
             {
-                ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeNS);
+                ImGui.SetMouseCursor(ResizeNsCursor);
             }
 
             if (ImGui.IsItemActive() && totalAvailableHeight > 0f)
@@ -853,6 +854,16 @@ public class ChatWindow : IDisposable
         });
 
         return false;
+    }
+
+    private static ImGuiMouseCursor ResolveResizeNsCursor()
+    {
+        if (Enum.TryParse("ResizeNS", ignoreCase: true, out ImGuiMouseCursor cursor))
+        {
+            return cursor;
+        }
+
+        return ImGuiMouseCursor.ResizeAll;
     }
 
     private static Vector2 CalculateAttachmentDisplaySize(Vector2 originalSize, Vector2 maxSize)
