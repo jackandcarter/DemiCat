@@ -317,6 +317,14 @@ class ChatConnectionManager:
         new_channels: Set[str] = set()
         expected_meta: Dict[str, tuple[str | None, str | None]] = {}
         since_map: Dict[str, int | None] = {}
+        sync_channels: list[str] = []
+        sync_channels_seen: set[str] = set()
+
+        def mark_for_sync(channel_id: str) -> None:
+            if channel_id in sync_channels_seen:
+                return
+            sync_channels.append(channel_id)
+            sync_channels_seen.add(channel_id)
         for ch in channels:
             channel_id: str
             expected_guild: str | None = None
@@ -407,30 +415,75 @@ class ChatConnectionManager:
                     )
                     continue
                 valid_added.append((channel_id, meta))
+                info.metadata[channel_id] = meta
+                mark_for_sync(channel_id)
         if retained:
-            missing_meta = {ch for ch in retained if ch not in info.metadata}
-            if missing_meta:
-                retained_meta = await self._fetch_channel_meta_bulk(missing_meta)
-                for ch, meta in retained_meta.items():
-                    if meta is not None:
-                        info.metadata[ch] = meta
+            retained_meta = await self._fetch_channel_meta_bulk(retained)
             for channel_id in list(retained):
-                meta = info.metadata.get(channel_id)
-                if not is_authorized(meta):
+                meta = retained_meta.get(channel_id)
+                if meta is None:
                     logger.info(
-                        "chat.ws drop channel=%s reason=officer_required kind=%s",
+                        "chat.ws drop channel=%s reason=missing_meta",
                         channel_id,
-                        meta.kind if meta is not None else None,
                     )
                     info.cursors.pop(channel_id, None)
                     info.metadata.pop(channel_id, None)
                     self._decrement_channel_subscriber(channel_id)
                     retained.discard(channel_id)
+                    continue
+                expected_guild, expected_kind = expected_meta.get(channel_id, (None, None))
+                actual_guild = meta.guild_id_value()
+                if expected_guild and actual_guild and expected_guild != actual_guild:
+                    logger.info(
+                        "chat.ws drop channel=%s reason=guild_mismatch expected=%s actual=%s",
+                        channel_id,
+                        expected_guild,
+                        actual_guild,
+                    )
+                    info.cursors.pop(channel_id, None)
+                    info.metadata.pop(channel_id, None)
+                    self._decrement_channel_subscriber(channel_id)
+                    retained.discard(channel_id)
+                    continue
+                if expected_kind and meta.kind and expected_kind != meta.kind:
+                    logger.info(
+                        "chat.ws drop channel=%s reason=kind_mismatch expected=%s actual=%s",
+                        channel_id,
+                        expected_kind,
+                        meta.kind,
+                    )
+                    info.cursors.pop(channel_id, None)
+                    info.metadata.pop(channel_id, None)
+                    self._decrement_channel_subscriber(channel_id)
+                    retained.discard(channel_id)
+                    continue
+                if not is_authorized(meta):
+                    logger.info(
+                        "chat.ws drop channel=%s reason=officer_required kind=%s",
+                        channel_id,
+                        meta.kind,
+                    )
+                    info.cursors.pop(channel_id, None)
+                    info.metadata.pop(channel_id, None)
+                    self._decrement_channel_subscriber(channel_id)
+                    retained.discard(channel_id)
+                    continue
+                existing_meta = info.metadata.get(channel_id)
+                existing_guild = (
+                    existing_meta.guild_id_value() if existing_meta is not None else None
+                )
+                fresh_guild = meta.guild_id_value()
+                meta_changed = (
+                    existing_meta is None
+                    or existing_meta.kind != meta.kind
+                    or existing_guild != fresh_guild
+                )
+                info.metadata[channel_id] = meta
+                if meta_changed:
+                    mark_for_sync(channel_id)
         info.channels = retained | {channel_id for channel_id, _ in valid_added}
         for channel_id, _ in valid_added:
             self._increment_channel_subscriber(channel_id)
-        for channel_id, meta in valid_added:
-            info.metadata[channel_id] = meta
         for channel_id, _ in valid_added:
             self._sub_count += 1
             logger.info(
@@ -457,7 +510,10 @@ class ChatConnectionManager:
                     "messages": history,
                 }
                 await websocket.send_text(json.dumps(payload))
-        for channel_id, meta in valid_added:
+        for channel_id in sync_channels:
+            meta = info.metadata.get(channel_id)
+            if meta is None:
+                continue
             await self._send_subscription_ack(websocket, channel_id, meta)
             await self._send_resync(websocket, channel_id, meta)
 
