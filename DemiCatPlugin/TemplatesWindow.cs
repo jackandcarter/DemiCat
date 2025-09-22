@@ -148,10 +148,13 @@ public class TemplatesWindow
         if (_channels.Count > 0)
         {
             var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
-            if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
             {
-                var newId = _channels[_channelIndex].Id;
-                _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
+                {
+                    var newId = _channels[_channelIndex].Id;
+                    _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
+                }
             }
         }
         else
@@ -160,13 +163,16 @@ public class TemplatesWindow
         }
 
         ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
-        for (var i = 0; i < _templates.Count; i++)
         {
-            var tmplItem = _templates[i];
-            var name = tmplItem.Template.Name;
-            if (ImGui.Selectable(name, _selectedIndex == i))
+            using var emojiFont = _emojiManager.PushEmojiFont();
+            for (var i = 0; i < _templates.Count; i++)
             {
-                SelectTemplate(i, tmplItem.Template);
+                var tmplItem = _templates[i];
+                var name = tmplItem.Template.Name;
+                if (ImGui.Selectable(name, _selectedIndex == i))
+                {
+                    SelectTemplate(i, tmplItem.Template);
+                }
             }
         }
         ImGui.EndChild();
@@ -200,13 +206,16 @@ public class TemplatesWindow
                 {
                     ImGui.Separator();
                     ImGui.Text("Mention Roles");
-                    foreach (var role in _roles)
                     {
-                        var roleId = role.Id;
-                        var sel = _mentions.Contains(roleId);
-                        if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
+                        using var emojiFont = _emojiManager.PushEmojiFont();
+                        foreach (var role in _roles)
                         {
-                            if (sel) _mentions.Add(roleId); else _mentions.Remove(roleId);
+                            var roleId = role.Id;
+                            var sel = _mentions.Contains(roleId);
+                            if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
+                            {
+                                if (sel) _mentions.Add(roleId); else _mentions.Remove(roleId);
+                            }
                         }
                     }
                 }
@@ -224,9 +233,15 @@ public class TemplatesWindow
             if (_confirmPost && ImGui.BeginPopupModal("Confirm Template Post", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
             {
             var channelName = _channels.FirstOrDefault(c => c.Id == ChannelId)?.Name ?? ChannelId;
-                ImGui.TextUnformatted($"Channel: {channelName}");
+                {
+                    using var emojiFont = _emojiManager.PushEmojiFont();
+                    ImGui.TextUnformatted($"Channel: {channelName}");
+                }
                 var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
-                ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+                {
+                    using var emojiFont = _emojiManager.PushEmojiFont();
+                    ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+                }
                 var buttonsCount = _buttonRows.FlattenNonEmpty().Count();
                 bool canConfirm = !string.IsNullOrWhiteSpace(ChannelId)
                     && DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl)

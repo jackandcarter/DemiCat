@@ -16,6 +16,7 @@ public static class EmbedRenderer
 
     public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null)
     {
+        using var emojiFont = emojiManager.PushEmojiFont();
         if (!string.IsNullOrEmpty(dto.Title))
         {
             ImGui.TextUnformatted(dto.Title);

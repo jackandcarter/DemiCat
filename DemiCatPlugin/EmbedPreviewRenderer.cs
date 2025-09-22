@@ -15,6 +15,7 @@ public static class EmbedPreviewRenderer
 
     public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null)
     {
+        using var emojiFont = emojiManager.PushEmojiFont();
         const float stripeWidth = 4f;
         const float contentPadding = 8f;
         const float verticalPadding = 4f;

@@ -248,17 +248,20 @@ public class ChatWindow : IDisposable
             var activeChannelId = CurrentChannelId;
             string? selectedChannelId = null;
 
-            if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
-                selectedChannelId = _channels[_selectedIndex].Id;
-                if (string.Equals(selectedChannelId, activeChannelId, StringComparison.Ordinal))
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
                 {
-                    if (previousIndex != _selectedIndex)
+                    selectedChannelId = _channels[_selectedIndex].Id;
+                    if (string.Equals(selectedChannelId, activeChannelId, StringComparison.Ordinal))
                     {
-                        _selectedIndex = previousIndex;
-                    }
+                        if (previousIndex != _selectedIndex)
+                        {
+                            _selectedIndex = previousIndex;
+                        }
 
-                    selectedChannelId = null;
+                        selectedChannelId = null;
+                    }
                 }
             }
 
@@ -311,6 +314,7 @@ public class ChatWindow : IDisposable
             {
                 var msg = _messages[i];
                 ImGui.PushID(msg.Id);
+                using var emojiFont = _emojiManager.PushEmojiFont();
                 ImGui.BeginGroup();
                 if (msg.Author != null && msg.AvatarTexture == null && _avatarCache != null)
                 {
@@ -452,7 +456,6 @@ public class ChatWindow : IDisposable
 
                         if (!handled)
                         {
-                            using var emojiFont = _emojiManager.PushEmojiFont();
                             if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
                             {
                                 _ = React(msg.Id, reaction.Emoji, reaction.Me);
@@ -472,7 +475,6 @@ public class ChatWindow : IDisposable
                     ImGui.TextUnformatted("Pick an emoji:");
                     foreach (var emoji in DefaultReactions)
                     {
-                        using var emojiFont = _emojiManager.PushEmojiFont();
                         if (ImGui.Button($"{emoji}##pick{msg.Id}{emoji}"))
                         {
                             _ = React(msg.Id, emoji, false);
@@ -513,7 +515,6 @@ public class ChatWindow : IDisposable
                 }
 
                 ImGui.PopID();
-                ImGui.EndGroup();
             }
         }
         clipper.End();
@@ -568,7 +569,10 @@ public class ChatWindow : IDisposable
             {
                 var preview = refMsg.Content ?? string.Empty;
                 if (preview.Length > 50) preview = preview.Substring(0, 50) + "...";
-                ImGui.TextUnformatted($"Replying to {refMsg.Author?.Name ?? "Unknown"}: {preview}");
+                {
+                    using var emojiFont = _emojiManager.PushEmojiFont();
+                    ImGui.TextUnformatted($"Replying to {refMsg.Author?.Name ?? "Unknown"}: {preview}");
+                }
                 ImGui.SameLine();
                 if (ImGui.SmallButton("Cancel Reply"))
                 {
@@ -639,7 +643,10 @@ public class ChatWindow : IDisposable
         }
         foreach (var att in _attachments.ToArray())
         {
-            ImGui.TextUnformatted(Path.GetFileName(att));
+            {
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                ImGui.TextUnformatted(Path.GetFileName(att));
+            }
             ImGui.SameLine();
             if (ImGui.SmallButton($"X##{att}"))
             {
@@ -657,7 +664,10 @@ public class ChatWindow : IDisposable
         {
             var names = string.Join(", ", _typingUsers.Values.Select(v => v.Name));
             var verb = _typingUsers.Count > 1 ? "are" : "is";
-            ImGui.TextUnformatted($"{names} {verb} typing...");
+            {
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                ImGui.TextUnformatted($"{names} {verb} typing...");
+            }
         }
 
         if (ImGui.SmallButton("B")) WrapSelection("**", "**");
@@ -754,23 +764,26 @@ public class ChatWindow : IDisposable
 
             var plainTextPreview = GetPreviewPlainText(_previewMessage);
 
-            ImGui.BeginChild("##inputPreview", new Vector2(0, ImGui.GetTextLineHeight() * 6), true);
-            if (!string.IsNullOrEmpty(plainTextPreview))
+            using (var emojiFont = _emojiManager.PushEmojiFont())
             {
-                ImGui.TextWrapped(plainTextPreview);
-            }
+                ImGui.BeginChild("##inputPreview", new Vector2(0, ImGui.GetTextLineHeight() * 6), true);
+                if (!string.IsNullOrEmpty(plainTextPreview))
+                {
+                    ImGui.TextWrapped(plainTextPreview);
+                }
 
-            foreach (var embed in _previewMessage.Embeds)
-            {
-                EmbedPreviewRenderer.Draw(embed, LoadTexture, _emojiManager);
-            }
+                foreach (var embed in _previewMessage.Embeds)
+                {
+                    EmbedPreviewRenderer.Draw(embed, LoadTexture, _emojiManager);
+                }
 
-            foreach (var att in _previewMessage.Attachments)
-            {
-                RenderAttachmentPreview(att);
-            }
+                foreach (var att in _previewMessage.Attachments)
+                {
+                    RenderAttachmentPreview(att);
+                }
 
-            ImGui.EndChild();
+                ImGui.EndChild();
+            }
 
             foreach (var warning in _previewMessage.Warnings)
             {
@@ -858,6 +871,7 @@ public class ChatWindow : IDisposable
 
     protected void FormatContent(DiscordMessageDto msg)
     {
+        using var emojiFont = _emojiManager.PushEmojiFont();
         var text = msg.Content ?? string.Empty;
         text = ReplaceMentionTokens(text, msg.Mentions);
         text = MarkdownFormatter.Format(text);
@@ -1131,6 +1145,7 @@ public class ChatWindow : IDisposable
     private void RenderAttachmentPreview(BridgeMessageFormatter.BridgeFormattedAttachment attachment)
     {
         var icon = attachment.IsImage ? "🖼️" : "📎";
+        using var emojiFont = _emojiManager.PushEmojiFont();
         ImGui.TextUnformatted($"{icon} {attachment.FileName}");
         if (!attachment.IsImage)
             return;
