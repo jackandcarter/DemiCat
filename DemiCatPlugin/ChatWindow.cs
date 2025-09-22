@@ -238,11 +238,28 @@ public class ChatWindow : IDisposable
         if (_channels.Count > 0)
         {
             var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
+            var previousIndex = _selectedIndex;
+            var activeChannelId = CurrentChannelId;
+            string? selectedChannelId = null;
+
             if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
             {
-                var newId = _channels[_selectedIndex].Id;
+                selectedChannelId = _channels[_selectedIndex].Id;
+                if (string.Equals(selectedChannelId, activeChannelId, StringComparison.Ordinal))
+                {
+                    if (previousIndex != _selectedIndex)
+                    {
+                        _selectedIndex = previousIndex;
+                    }
+
+                    selectedChannelId = null;
+                }
+            }
+
+            if (selectedChannelId != null)
+            {
                 ClearTextureCache();
-                _channelSelection.SetChannel(_channelKind, _config.GuildId, newId);
+                _channelSelection.SetChannel(_channelKind, _config.GuildId, selectedChannelId);
             }
         }
         else
