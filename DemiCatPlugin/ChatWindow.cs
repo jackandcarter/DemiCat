@@ -1413,6 +1413,7 @@ public class ChatWindow : IDisposable
 
         try
         {
+            var requestedChannelId = channelId;
             const int PageSize = 50;
             var all = new List<DiscordMessageDto>();
             string? before = null;
@@ -1474,6 +1475,11 @@ public class ChatWindow : IDisposable
 
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
+                if (!string.Equals(requestedChannelId, CurrentChannelId, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
                 if (since == 0)
                 {
                     _messages.Clear();
