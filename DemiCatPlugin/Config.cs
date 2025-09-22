@@ -9,7 +9,7 @@ namespace DemiCatPlugin;
 public class Config : IPluginConfiguration
 {
     // Required by Dalamud
-    public int Version { get; set; } = 7;
+    public int Version { get; set; } = 8;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -32,6 +32,9 @@ public class Config : IPluginConfiguration
     public bool ChatFadeOutEnabled { get; set; } = false;
     public int ChatFadeOutDelaySeconds { get; set; } = 10;
     public float ChatFadeOutMinimumAlpha { get; set; } = 0.3f;
+
+    [JsonPropertyName("chatInputSplitRatio")]
+    public float ChatInputSplitRatio { get; set; } = 0.35f;
 
     [JsonPropertyName("syncedChat")]
     public bool SyncedChat { get; set; } = true;
@@ -233,6 +236,18 @@ public class Config : IPluginConfiguration
             }
 
             Version = 7;
+            ExtensionData = null;
+        }
+        if (Version < 8)
+        {
+            if (float.IsNaN(ChatInputSplitRatio) || float.IsInfinity(ChatInputSplitRatio) || ChatInputSplitRatio <= 0f)
+            {
+                ChatInputSplitRatio = 0.35f;
+            }
+
+            ChatInputSplitRatio = Math.Clamp(ChatInputSplitRatio, 0.2f, 0.8f);
+
+            Version = 8;
             ExtensionData = null;
         }
     }

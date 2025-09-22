@@ -35,5 +35,6 @@ public class ConfigDefaultsTests
         Assert.False(cfg.ChatFadeOutEnabled);
         Assert.Equal(10, cfg.ChatFadeOutDelaySeconds);
         Assert.Equal(0.3f, cfg.ChatFadeOutMinimumAlpha);
+        Assert.Equal(0.35f, cfg.ChatInputSplitRatio);
     }
 }

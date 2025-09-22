@@ -63,6 +63,11 @@ public class ChatWindow : IDisposable
     };
     private const int TextureCacheCapacity = 100;
     private const int MaxMessages = 100;
+    private const float DefaultComposeSplitRatio = 0.35f;
+    private const float MinComposeSplitRatio = 0.2f;
+    private const float MaxComposeSplitRatio = 0.8f;
+    private const int MinInputLines = 1;
+    private const int MaxInputLines = 8;
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
     private readonly Dictionary<string, TypingUser> _typingUsers = new();
@@ -274,10 +279,29 @@ public class ChatWindow : IDisposable
             InvalidatePreview();
         }
 
-        // Calculate available space and reserve room for the input section so it remains visible
-        var availableHeight = ImGui.GetContentRegionAvail().Y;
-        var inputSectionHeight = ImGui.GetFrameHeightWithSpacing() * 8;
-        var scrollRegionHeight = MathF.Max(1f, availableHeight - inputSectionHeight);
+        var totalAvailableHeight = ImGui.GetContentRegionAvail().Y;
+        var ratioDenominator = totalAvailableHeight > 0f ? totalAvailableHeight : 1f;
+        var composeRatio = _config.ChatInputSplitRatio;
+        if (!float.IsFinite(composeRatio) || composeRatio <= 0f)
+        {
+            composeRatio = DefaultComposeSplitRatio;
+        }
+        composeRatio = Math.Clamp(composeRatio, MinComposeSplitRatio, MaxComposeSplitRatio);
+        var composeHeight = ratioDenominator * composeRatio;
+        var scrollRegionHeight = totalAvailableHeight - composeHeight;
+        if (scrollRegionHeight < 0f)
+        {
+            scrollRegionHeight = 0f;
+            composeHeight = totalAvailableHeight;
+        }
+        var composeAreaHeight = Math.Max(0f, totalAvailableHeight - scrollRegionHeight);
+        var actualRatio = totalAvailableHeight > 0f ? composeAreaHeight / ratioDenominator : composeRatio;
+        actualRatio = Math.Clamp(actualRatio, MinComposeSplitRatio, MaxComposeSplitRatio);
+        if (Math.Abs(actualRatio - _config.ChatInputSplitRatio) > 0.0001f)
+        {
+            _config.ChatInputSplitRatio = actualRatio;
+        }
+        composeRatio = actualRatio;
         ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), true);
         var clipper = new ImGuiListClipper();
         clipper.Begin(_messages.Count);
@@ -494,6 +518,46 @@ public class ChatWindow : IDisposable
         }
         clipper.End();
         ImGui.EndChild();
+
+        var style = ImGui.GetStyle();
+        var splitterHeight = Math.Max(4f, style.FramePadding.Y);
+        var splitterWidth = ImGui.GetContentRegionAvail().X;
+        if (splitterWidth > 0f)
+        {
+            ImGui.InvisibleButton("##chatInputSplitter", new Vector2(splitterWidth, splitterHeight));
+            if (ImGui.IsItemHovered() || ImGui.IsItemActive())
+            {
+                ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeNS);
+            }
+
+            if (ImGui.IsItemActive() && totalAvailableHeight > 0f)
+            {
+                var delta = ImGui.GetIO().MouseDelta.Y;
+                if (Math.Abs(delta) > float.Epsilon)
+                {
+                    var minHeight = totalAvailableHeight * MinComposeSplitRatio;
+                    var maxHeight = totalAvailableHeight * MaxComposeSplitRatio;
+                    var newComposeHeight = Math.Clamp(composeAreaHeight - delta, minHeight, maxHeight);
+                    var newRatio = Math.Clamp(newComposeHeight / totalAvailableHeight, MinComposeSplitRatio, MaxComposeSplitRatio);
+                    if (Math.Abs(newRatio - _config.ChatInputSplitRatio) > 0.0001f)
+                    {
+                        _config.ChatInputSplitRatio = newRatio;
+                        composeAreaHeight = newComposeHeight;
+                    }
+                }
+            }
+
+            var splitterMin = ImGui.GetItemRectMin();
+            var splitterMax = ImGui.GetItemRectMax();
+            var drawList = ImGui.GetWindowDrawList();
+            var separatorColor = ImGui.GetColorU32(ImGuiCol.Separator);
+            var centerY = (splitterMin.Y + splitterMax.Y) * 0.5f;
+            drawList.AddLine(new Vector2(splitterMin.X, centerY), new Vector2(splitterMax.X, centerY), separatorColor);
+        }
+
+        composeRatio = _config.ChatInputSplitRatio;
+        composeAreaHeight = Math.Max(0f, totalAvailableHeight * composeRatio);
+
         _bridge.Ack(CurrentChannelId, _config.GuildId, _channelKind);
         SaveConfig();
 
@@ -607,7 +671,6 @@ public class ChatWindow : IDisposable
         if (ImGui.SmallButton("Link")) WrapSelection("[", "](url)");
 
         var inputBuf = ImGuiTextUtil.MakeUtf8Buffer(_input, 2048);
-        var style = ImGui.GetStyle();
         var availableWidth = ImGui.GetContentRegionAvail().X;
         var framePadding = style.FramePadding.X * 2f;
         var emojiButtonWidth = 0f;
@@ -618,15 +681,55 @@ public class ChatWindow : IDisposable
         var sendButtonWidth = ImGui.CalcTextSize("Send").X + framePadding;
         var spacing = style.ItemSpacing.X * 2f;
         var inputWidth = Math.Max(120f, availableWidth - emojiButtonWidth - sendButtonWidth - spacing);
-        ImGui.PushItemWidth(inputWidth);
-        var send = ImGui.InputText(
+        var textForCalc = string.IsNullOrEmpty(_input) ? " " : _input;
+        var lineHeight = ImGui.GetTextLineHeight();
+        if (lineHeight <= 0f)
+        {
+            lineHeight = 1f;
+        }
+        var textSize = ImGui.CalcTextSize(textForCalc, false, inputWidth);
+        var wrapLineCount = Math.Max(1, (int)MathF.Ceiling(textSize.Y / lineHeight));
+        var newlineCount = string.IsNullOrEmpty(_input) ? 1 : _input.Count(c => c == '\n') + 1;
+        var lineCount = Math.Clamp(Math.Max(newlineCount, wrapLineCount), MinInputLines, MaxInputLines);
+        var inputHeight = lineCount * lineHeight + style.FramePadding.Y * 2f;
+        _ = ImGui.InputTextMultiline(
             "##chatInput",
             inputBuf,
+            new Vector2(inputWidth, inputHeight),
             ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
             new ImGui.ImGuiInputTextCallbackDelegate(OnInputEdited)
         );
-        ImGui.PopItemWidth();
         _input = ImGuiTextUtil.ReadUtf8Buffer(inputBuf);
+
+        var io = ImGui.GetIO();
+        var send = false;
+        if (ImGui.IsItemActive() && ImGui.IsKeyPressed(ImGuiKey.Enter))
+        {
+            if (io.KeyShift)
+            {
+                var start = Math.Min(_selectionStart, _selectionEnd);
+                var end = Math.Max(_selectionStart, _selectionEnd);
+                start = Math.Clamp(start, 0, _input.Length);
+                end = Math.Clamp(end, 0, _input.Length);
+                var builder = new StringBuilder(_input.Length + 1);
+                if (start > 0)
+                {
+                    builder.Append(_input.AsSpan(0, start));
+                }
+                builder.Append('\n');
+                if (end < _input.Length)
+                {
+                    builder.Append(_input.AsSpan(end));
+                }
+                _input = builder.ToString();
+                _selectionStart = _selectionEnd = start + 1;
+                ImGui.SetKeyboardFocusHere(-1);
+            }
+            else
+            {
+                send = true;
+            }
+        }
 
         ImGui.SameLine();
         using (var _ = _emojiManager.PushEmojiFont())
