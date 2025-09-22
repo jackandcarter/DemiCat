@@ -16,6 +16,7 @@ discord_stub.Embed = type("Embed", (), {})
 discord_stub.HTTPException = type("HTTPException", (Exception,), {})
 discord_stub.Forbidden = type("Forbidden", (Exception,), {})
 discord_stub.NotFound = type("NotFound", (Exception,), {})
+discord_stub.ClientException = type("ClientException", (Exception,), {})
 discord_stub.Webhook = type(
     "Webhook",
     (),
@@ -276,6 +277,13 @@ def test_chat_ws_send_uses_channel_field(monkeypatch):
             roles=[],
         )
         manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+        info = manager.connections[ws]
+        info.channels.add("12345")
+        info.metadata["12345"] = ws_chat.ChannelMeta(
+            guild_id=ctx.guild.id,
+            discord_guild_id=ctx.guild.discord_guild_id,
+            kind="FC_CHAT",
+        )
 
         class FakeSession:
             def __init__(self):
@@ -340,6 +348,128 @@ def test_chat_ws_send_uses_channel_field(monkeypatch):
         message = queued[0]
         assert message.channel_id == 12345
         assert ws_chat._channel_webhooks[12345] == "https://example.invalid/webhook"
+
+    _run(scenario())
+
+
+def test_chat_ws_send_requires_subscription(monkeypatch):
+    async def scenario():
+        ws_chat._channel_webhooks.clear()
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(
+                id=7, discord_user_id=77, character_name="Tester"
+            ),
+            guild=types.SimpleNamespace(id=3, discord_guild_id=333),
+            key=None,
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+
+        get_session_called = False
+
+        @asynccontextmanager
+        async def fake_get_session():
+            nonlocal get_session_called
+            get_session_called = True
+            yield types.SimpleNamespace()
+
+        async def fake_queue_webhook(self, msg):  # pragma: no cover - not expected
+            raise AssertionError("queue should not be called")
+
+        monkeypatch.setattr(ws_chat, "get_session", fake_get_session)
+        monkeypatch.setattr(
+            manager,
+            "_queue_webhook",
+            types.MethodType(fake_queue_webhook, manager),
+        )
+
+        await manager._handle_send(
+            ws,
+            {
+                "channel": 12345,
+                "payload": {"content": "hello"},
+            },
+        )
+
+        assert get_session_called is False
+
+    _run(scenario())
+
+
+def test_chat_ws_officer_send_requires_role(monkeypatch):
+    async def scenario():
+        ws_chat._channel_webhooks.clear()
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(
+                id=7, discord_user_id=77, character_name="Tester"
+            ),
+            guild=types.SimpleNamespace(id=3, discord_guild_id=333),
+            key=None,
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+        info = manager.connections[ws]
+        info.channels.add("1")
+        info.metadata["1"] = ws_chat.ChannelMeta(
+            guild_id=ctx.guild.id,
+            discord_guild_id=ctx.guild.discord_guild_id,
+            kind=ws_chat.OFFICER_CHAT_KIND,
+        )
+
+        class DummySession:
+            async def execute(self, *args, **kwargs):
+                return types.SimpleNamespace(
+                    one_or_none=lambda: (
+                        "https://example.invalid/webhook",
+                        ws_chat.ChannelKind.OFFICER_CHAT,
+                    )
+                )
+
+            async def scalar(self, *args, **kwargs):
+                return None
+
+            async def commit(self):  # pragma: no cover - commit not expected
+                raise AssertionError("commit should not be called")
+
+            async def close(self):  # pragma: no cover - trivial
+                pass
+
+        session = DummySession()
+
+        @asynccontextmanager
+        async def fake_get_session():
+            yield session
+
+        def fake_build_bridge_message(**kwargs):  # pragma: no cover - not expected
+            raise AssertionError("build_bridge_message should not be called")
+
+        queued: list[ws_chat.PendingWebhookMessage] = []
+
+        async def fake_queue_webhook(self, msg):
+            queued.append(msg)
+
+        monkeypatch.setattr(ws_chat, "get_session", fake_get_session)
+        monkeypatch.setattr(ws_chat, "build_bridge_message", fake_build_bridge_message)
+        monkeypatch.setattr(
+            manager,
+            "_queue_webhook",
+            types.MethodType(fake_queue_webhook, manager),
+        )
+
+        await manager._handle_send(
+            ws,
+            {
+                "channel": 1,
+                "payload": {"content": "hello"},
+            },
+        )
+
+        assert queued == []
+        assert 1 not in ws_chat._channel_webhooks
 
     _run(scenario())
 

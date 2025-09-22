@@ -560,6 +560,13 @@ def test_ws_handle_send_creates_webhook(monkeypatch):
         manager = ws_chat.ChatConnectionManager()
         websocket = object()
         manager.connections[websocket] = ws_chat.ChatConnection(ctx=ctx)
+        info = manager.connections[websocket]
+        info.channels.add("555")
+        info.metadata["555"] = ws_chat.ChannelMeta(
+            guild_id=guild.id,
+            discord_guild_id=guild.discord_guild_id,
+            kind="CHAT",
+        )
 
         monkeypatch.setattr(mc, "_channel_webhooks", {})
         monkeypatch.setattr(ws_chat, "_channel_webhooks", mc._channel_webhooks)

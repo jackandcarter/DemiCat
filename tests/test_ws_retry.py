@@ -47,6 +47,13 @@ def test_webhook_retry_success(monkeypatch):
         manager = ws_chat.ChatConnectionManager()
         ws = object()
         manager.connections[ws] = ws_chat.ChatConnection(ctx)
+        info = manager.connections[ws]
+        info.channels.add("123")
+        info.metadata["123"] = ws_chat.ChannelMeta(
+            guild_id=ctx.guild.id,
+            discord_guild_id=getattr(ctx.guild, "discord_guild_id", None),
+            kind="FC_CHAT",
+        )
 
         @asynccontextmanager
         async def fake_get_session():
@@ -153,6 +160,13 @@ def test_webhook_retry_failure(monkeypatch):
         manager = ws_chat.ChatConnectionManager()
         ws = object()
         manager.connections[ws] = ws_chat.ChatConnection(ctx)
+        info = manager.connections[ws]
+        info.channels.add("123")
+        info.metadata["123"] = ws_chat.ChannelMeta(
+            guild_id=ctx.guild.id,
+            discord_guild_id=getattr(ctx.guild, "discord_guild_id", None),
+            kind="FC_CHAT",
+        )
 
         @asynccontextmanager
         async def fake_get_session():
