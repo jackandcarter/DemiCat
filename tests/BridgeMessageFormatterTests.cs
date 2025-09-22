@@ -5,6 +5,8 @@ using Xunit;
 
 public class BridgeMessageFormatterTests
 {
+    private static readonly DateTimeOffset FixedTimestamp = new(2024, 1, 2, 3, 4, 5, TimeSpan.Zero);
+
     private static BridgeMessageFormatter.BridgeFormatterOptions CreateOptions()
         => new()
         {
@@ -12,11 +14,13 @@ public class BridgeMessageFormatterTests
             ChannelKind = ChannelKind.FcChat,
             Presences = Array.Empty<PresenceDto>(),
             Roles = Array.Empty<RoleDto>(),
-            Timestamp = DateTimeOffset.UtcNow,
+            Timestamp = FixedTimestamp,
             AuthorName = "You",
             CharacterName = "Tester",
             WorldName = "World"
         };
+
+    private static string ExpectedHeader() => "Message Sent by: You @ 2024-01-02 03:04:05 UTC";
 
     [Fact]
     public void Format_LongContentProducesError()
@@ -24,6 +28,7 @@ public class BridgeMessageFormatterTests
         var input = new string('x', 2100);
         var result = BridgeMessageFormatter.Format(input, Array.Empty<string>(), CreateOptions());
 
+        Assert.StartsWith(ExpectedHeader(), result.Content);
         Assert.Contains(result.Errors, e => e.Contains("2000"));
     }
 
@@ -36,6 +41,7 @@ public class BridgeMessageFormatterTests
         Assert.True(result.Embeds.Count >= 2);
         Assert.True(result.Embeds[0].Description!.Length <= 4096);
         Assert.Contains(result.Warnings, w => w.Contains("split"));
+        Assert.StartsWith(ExpectedHeader(), result.Embeds[0].Description!);
     }
 
     [Fact]
@@ -46,7 +52,8 @@ public class BridgeMessageFormatterTests
 
         var result = BridgeMessageFormatter.Format("Hello @Alice", Array.Empty<string>(), options);
 
-        Assert.Equal("Hello <@1>", result.Content);
+        Assert.Equal($"{ExpectedHeader()}\nHello <@1>", result.Content);
+        Assert.StartsWith(ExpectedHeader(), result.DisplayContent);
         Assert.Contains("@Alice", result.DisplayContent);
         Assert.Single(result.Mentions);
         Assert.Equal("1", result.Mentions[0].Id);

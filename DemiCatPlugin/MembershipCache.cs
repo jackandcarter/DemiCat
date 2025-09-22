@@ -9,6 +9,7 @@ internal static class MembershipCache
 {
     private static readonly object SyncRoot = new();
     private static string? _displayName;
+    private static string? _discordUserId;
     private static bool _loading;
 
     internal static string? DisplayName
@@ -22,11 +23,23 @@ internal static class MembershipCache
         }
     }
 
+    internal static string? DiscordUserId
+    {
+        get
+        {
+            lock (SyncRoot)
+            {
+                return _discordUserId;
+            }
+        }
+    }
+
     internal static void Reset()
     {
         lock (SyncRoot)
         {
             _displayName = null;
+            _discordUserId = null;
             _loading = false;
         }
     }
@@ -65,13 +78,28 @@ internal static class MembershipCache
 
             await using var stream = await response.Content.ReadAsStreamAsync();
             using var doc = await JsonDocument.ParseAsync(stream);
-            if (doc.RootElement.TryGetProperty("displayName", out var displayNameElement))
+            void SetValue(ref string? field, string? value)
             {
-                var value = displayNameElement.GetString();
                 lock (SyncRoot)
                 {
-                    _displayName = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+                    field = string.IsNullOrWhiteSpace(value) ? null : value.Trim();
                 }
+            }
+
+            if (doc.RootElement.TryGetProperty("displayName", out var displayNameElement))
+            {
+                SetValue(ref _displayName, displayNameElement.GetString());
+            }
+
+            if (doc.RootElement.TryGetProperty("discordUserId", out var discordUserIdElement))
+            {
+                string? idValue = discordUserIdElement.ValueKind switch
+                {
+                    JsonValueKind.String => discordUserIdElement.GetString(),
+                    JsonValueKind.Number => discordUserIdElement.GetRawText(),
+                    _ => null
+                };
+                SetValue(ref _discordUserId, idValue);
             }
         }
         catch
