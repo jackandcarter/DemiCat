@@ -1420,6 +1420,7 @@ public class ChatWindow : IDisposable
             var hasCursor = _config.RestChatCursors.TryGetValue(cursorKey, out var since);
             var storedAfter = hasCursor ? since.ToString() : null;
             var firstPage = true;
+            var backfillSucceeded = true;
             while (all.Count < MaxMessages)
             {
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{channelId}?limit={PageSize}";
@@ -1446,6 +1447,7 @@ public class ChatWindow : IDisposable
                         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                             _statusMessage = "Forbidden – check API key/roles");
                     }
+                    backfillSucceeded = false;
                     break;
                 }
 
@@ -1472,13 +1474,20 @@ public class ChatWindow : IDisposable
                 all = all.Skip(all.Count - MaxMessages).ToList();
             }
 
+            if (!backfillSucceeded)
+            {
+                return;
+            }
+
+            var messagesToApply = all;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                if (since == 0)
+                foreach (var existing in _messages)
                 {
-                    _messages.Clear();
+                    DisposeMessageTextures(existing);
                 }
-                foreach (var m in all)
+                _messages.Clear();
+                foreach (var m in messagesToApply)
                 {
                     _messages.Add(m);
                 }

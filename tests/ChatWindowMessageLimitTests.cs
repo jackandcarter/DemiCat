@@ -42,8 +42,8 @@ public class ChatWindowMessageLimitTests
         await window.RefreshMessages();
 
         msgs = GetMessages(window);
-        Assert.Equal(100, msgs.Count);
-        Assert.Equal("31", msgs[0].Id);
+        Assert.Equal(10, msgs.Count);
+        Assert.Equal("121", msgs[0].Id);
         Assert.Equal("130", msgs[^1].Id);
         Assert.Equal(130, config.RestChatCursors[cursorKey]);
         Assert.False(config.ChatCursors.ContainsKey(cursorKey));
