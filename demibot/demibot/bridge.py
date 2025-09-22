@@ -168,17 +168,21 @@ def build_bridge_message(
     display_name = _determine_display_name(user=user, membership=membership)
     character_name = user.character_name if use_character_name else None
     world_name = user.world if use_character_name else None
-    header = _format_header_line(
-        display_name=display_name,
-        use_character_name=use_character_name,
-        character_name=character_name,
-        world_name=world_name,
-        timestamp=timestamp,
-    )
-    if normalized:
-        normalized = f"{header}\n{normalized}"
-    else:
-        normalized = header
+
+    header_present = _has_existing_header(normalized)
+    if not header_present:
+        header = _format_header_line(
+            display_name=display_name,
+            use_character_name=use_character_name,
+            character_name=character_name,
+            world_name=world_name,
+            timestamp=timestamp,
+        )
+        if normalized:
+            normalized = f"{header}\n{normalized}"
+        else:
+            normalized = header
+
 
     chunks = _split_embed_text(normalized)
     if not chunks:
@@ -231,6 +235,28 @@ def _format_header_line(
         "%Y-%m-%d %H:%M:%S UTC"
     )
     return f"Message Sent by: {' / '.join(segments)} @ {formatted_timestamp}"
+
+
+
+def _has_existing_header(content: str) -> bool:
+    if not content:
+        return False
+    first_line, _, _ = content.partition("\n")
+    line = first_line.strip()
+    if not line.startswith("Message Sent by:"):
+        return False
+    parts = line.rsplit("@", 1)
+    if len(parts) != 2:
+        return False
+    timestamp_text = parts[1].strip()
+    if not timestamp_text:
+        return False
+    try:
+        datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M:%S UTC")
+    except ValueError:
+        return False
+    return True
+
 
 
 def extract_bridge_nonce_from_footer(text: str | None) -> str | None:

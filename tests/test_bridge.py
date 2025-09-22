@@ -145,3 +145,27 @@ def test_build_bridge_message_includes_character_when_enabled(
     assert embeds[0].to_dict().get("description", "").startswith(expected_header)
     assert not uploads
     assert nonce
+
+
+def test_build_bridge_message_preserves_existing_header(sample_user, sample_membership):
+    existing_header = "Message Sent by: Nick @ 2024-01-02 03:04:05 UTC"
+    body = "Preformatted content"
+    preformatted = f"{existing_header}\n{body}"
+    server_timestamp = datetime(2024, 12, 11, 10, 9, 8, tzinfo=timezone.utc)
+
+    discord_content, embeds, uploads, nonce = build_bridge_message(
+        content=preformatted,
+        user=sample_user,
+        membership=sample_membership,
+        channel_kind=ChannelKind.FC_CHAT,
+        timestamp=server_timestamp,
+    )
+
+    assert discord_content == preformatted
+    assert discord_content.count("Message Sent by:") == 1
+    assert not uploads
+    assert nonce
+
+    description = embeds[0].to_dict().get("description", "")
+    assert description == preformatted
+
