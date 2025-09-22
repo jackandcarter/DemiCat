@@ -360,27 +360,91 @@ public class OfficerChatWindow : ChatWindow
         {
             return;
         }
+
+        var services = PluginServices.Instance;
         try
         {
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/roles";
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
-            if (!response.IsSuccessStatusCode)
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                services?.Log.Error($"Failed to refresh roles: {response.StatusCode}. Response Body: {responseBody}");
+                _tokenManager.Clear("Authentication failed");
+                services?.ToastGui?.ShowError("Authentication failed – please relink.");
                 return;
             }
+
+            if (response.StatusCode == HttpStatusCode.Forbidden)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                services?.Log.Error($"Failed to refresh roles: {response.StatusCode}. Response Body: {responseBody}");
+                services?.ToastGui?.ShowError("Forbidden – check API key/roles");
+                return;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                services?.Log.Warning($"Failed to refresh roles. Status: {response.StatusCode}. Response Body: {responseBody}");
+                services?.ToastGui?.ShowError("Failed to refresh officer roles.");
+                return;
+            }
+
             var stream = await response.Content.ReadAsStreamAsync();
             var dto = await JsonSerializer.DeserializeAsync<RolesDto>(stream) ?? new RolesDto();
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            var filteredRoles = dto.Roles != null
+                ? new List<string>(dto.Roles)
+                : new List<string>();
+            filteredRoles.RemoveAll(r => string.Equals(r, "chat", StringComparison.Ordinal));
+
+            var hadOfficer = _config.Roles.Contains("officer");
+            var hasOfficer = filteredRoles.Contains("officer");
+
+            if (filteredRoles.Count == 0)
             {
-                _config.Roles = dto.Roles;
-                PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
-            });
+                services?.Log.Warning("Received empty role list while refreshing officer roles.");
+                if (_config.Roles.Count > 0)
+                {
+                    services?.ToastGui?.ShowError("Failed to refresh officer roles; keeping cached permissions.");
+                }
+                return;
+            }
+
+            if (!hasOfficer && hadOfficer)
+            {
+                services?.Log.Warning("Officer role missing from refresh response; retaining cached permissions.");
+                services?.ToastGui?.ShowError("Officer role missing from refresh; keeping cached permissions.");
+                return;
+            }
+
+            void ApplyRoles()
+            {
+                _config.Roles = filteredRoles;
+                services?.PluginInterface?.SavePluginConfig(_config);
+                var mainWindow = MainWindow.Instance;
+                if (mainWindow != null)
+                {
+                    mainWindow.HasOfficerRole = hasOfficer;
+                }
+            }
+
+            if (services?.Framework != null)
+            {
+                services.Framework.RunOnTick(ApplyRoles);
+            }
+            else
+            {
+                ApplyRoles();
+            }
         }
         catch (Exception ex)
         {
-            PluginServices.Instance!.Log.Error(ex, "Error refreshing roles");
+            services?.Log.Error(ex, "Error refreshing roles");
+            services?.ToastGui?.ShowError("Failed to refresh officer roles.");
         }
     }
 
