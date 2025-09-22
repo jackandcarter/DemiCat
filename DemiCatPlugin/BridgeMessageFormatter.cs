@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -74,6 +75,21 @@ public static class BridgeMessageFormatter
         var content = resolution.Content;
         var displayContent = ChatWindow.ReplaceMentionTokens(content, resolution.Mentions);
         displayContent = displayContent.Replace("@\u200B", "@");
+
+        var header = BuildHeaderLine(options);
+        if (!string.IsNullOrEmpty(header))
+        {
+            if (!string.IsNullOrEmpty(content))
+            {
+                content = string.Concat(header, "\n", content);
+                displayContent = string.Concat(header, "\n", displayContent);
+            }
+            else
+            {
+                content = header;
+                displayContent = header;
+            }
+        }
 
         var warnings = new List<string>();
         var errors = new List<string>();
@@ -184,6 +200,36 @@ public static class BridgeMessageFormatter
             _ => 0x5865F2 // Discord blurple
         };
     }
+
+    private static string BuildHeaderLine(BridgeFormatterOptions options)
+    {
+        var displayName = string.IsNullOrWhiteSpace(options.AuthorName)
+            ? "You"
+            : options.AuthorName!.Trim();
+
+        var segments = new List<string> { displayName };
+        if (options.UseCharacterName)
+        {
+            if (!string.IsNullOrWhiteSpace(options.CharacterName))
+            {
+                segments.Add(options.CharacterName.Trim());
+                if (!string.IsNullOrWhiteSpace(options.WorldName))
+                {
+                    segments.Add(options.WorldName.Trim());
+                }
+            }
+            else if (!string.IsNullOrWhiteSpace(options.WorldName))
+            {
+                segments.Add(options.WorldName.Trim());
+            }
+        }
+
+        var timestamp = FormatTimestamp(options.Timestamp);
+        return $"Message Sent by: {string.Join(" / ", segments)} @ {timestamp}";
+    }
+
+    private static string FormatTimestamp(DateTimeOffset timestamp)
+        => timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
 
     private static IReadOnlyList<string> SplitIntoEmbedChunks(
         string displayContent,

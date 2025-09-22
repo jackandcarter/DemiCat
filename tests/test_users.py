@@ -268,9 +268,14 @@ def test_get_my_profile_returns_creator_label():
             db.add(Membership(id=10, guild_id=1, user_id=10, nickname='ProfileNick'))
             await db.commit()
             ctx = StubContext(1)
-            ctx.user = types.SimpleNamespace(id=10, global_name='ProfileUser')
+            ctx.user = types.SimpleNamespace(
+                id=10,
+                global_name='ProfileUser',
+                discord_user_id=100,
+            )
             res = await get_my_profile(ctx=ctx, db=db)
             assert res['displayName'] == 'ProfileNick'
             assert res['creatorLabel'] == 'Event created by ProfileNick'
+            assert res['discordUserId'] == '100'
 
     asyncio.run(_run())

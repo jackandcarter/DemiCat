@@ -67,6 +67,18 @@ def _determine_author_name(
     return str(user.discord_user_id)
 
 
+def _determine_display_name(*, user: User, membership: Membership | None) -> str:
+    if membership and membership.nickname:
+        nickname = membership.nickname.strip()
+        if nickname:
+            return nickname
+    if user.global_name:
+        global_name = user.global_name.strip()
+        if global_name:
+            return global_name
+    return str(user.discord_user_id)
+
+
 def _normalize_content(content: str) -> str:
     return content.replace("\r\n", "\n").replace("\r", "\n")
 
@@ -136,6 +148,7 @@ def build_bridge_message(
     use_character_name: bool = False,
     attachments: Sequence[tuple[str, bytes, str | None]] | None = None,
     nonce: str | None = None,
+    timestamp: datetime | None = None,
 ) -> tuple[str, list[discord.Embed], list[BridgeUpload], str]:
     """Construct the Discord payload for a bridge message."""
 
@@ -151,13 +164,30 @@ def build_bridge_message(
             if image_filename is None and _is_image(filename, content_type):
                 image_filename = filename
 
+    timestamp = timestamp or datetime.now(timezone.utc)
+    display_name = _determine_display_name(user=user, membership=membership)
+    character_name = user.character_name if use_character_name else None
+    world_name = user.world if use_character_name else None
+    header_present = _has_existing_header(normalized)
+    if not header_present:
+        header = _format_header_line(
+            display_name=display_name,
+            use_character_name=use_character_name,
+            character_name=character_name,
+            world_name=world_name,
+            timestamp=timestamp,
+        )
+        if normalized:
+            normalized = f"{header}\n{normalized}"
+        else:
+            normalized = header
+
     chunks = _split_embed_text(normalized)
     if not chunks:
         chunks = [""]
 
     embed_nonce = nonce or uuid.uuid4().hex
     footer = f"DemiCat • {_tab_label(channel_kind)} • {BRIDGE_MARKER}{embed_nonce}"
-    timestamp = datetime.now(timezone.utc)
     author_name = _determine_author_name(
         user=user, membership=membership, use_character_name=use_character_name
     )
@@ -178,6 +208,51 @@ def build_bridge_message(
 
     discord_content = normalized[:DISCORD_CONTENT_LIMIT]
     return discord_content, embeds, uploads, embed_nonce
+
+
+def _format_header_line(
+    *,
+    display_name: str,
+    use_character_name: bool,
+    character_name: str | None,
+    world_name: str | None,
+    timestamp: datetime,
+) -> str:
+    name = display_name.strip() or "You"
+    segments = [name]
+    if use_character_name:
+        char = (character_name or "").strip()
+        world = (world_name or "").strip()
+        if char:
+            segments.append(char)
+            if world:
+                segments.append(world)
+        elif world:
+            segments.append(world)
+    formatted_timestamp = timestamp.astimezone(timezone.utc).strftime(
+        "%Y-%m-%d %H:%M:%S UTC"
+    )
+    return f"Message Sent by: {' / '.join(segments)} @ {formatted_timestamp}"
+
+
+def _has_existing_header(content: str) -> bool:
+    if not content:
+        return False
+    first_line, _, _ = content.partition("\n")
+    line = first_line.strip()
+    if not line.startswith("Message Sent by:"):
+        return False
+    parts = line.rsplit("@", 1)
+    if len(parts) != 2:
+        return False
+    timestamp_text = parts[1].strip()
+    if not timestamp_text:
+        return False
+    try:
+        datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M:%S UTC")
+    except ValueError:
+        return False
+    return True
 
 
 def extract_bridge_nonce_from_footer(text: str | None) -> str | None:

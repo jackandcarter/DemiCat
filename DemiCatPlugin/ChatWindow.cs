@@ -930,8 +930,8 @@ public class ChatWindow : IDisposable
 
     private BridgeMessageFormatter.BridgeFormattedMessage GetFormattedMessage()
     {
-        UpdatePreviewMessage();
-        return _previewMessage;
+        var options = BuildFormatterOptions();
+        return BridgeMessageFormatter.Format(_input, _attachments, options);
     }
 
     private BridgeMessageFormatter.BridgeFormatterOptions BuildFormatterOptions()
@@ -950,6 +950,16 @@ public class ChatWindow : IDisposable
             }
         }
 
+        var authorName = MembershipCache.DisplayName;
+        if (string.IsNullOrWhiteSpace(authorName))
+        {
+            authorName = MembershipCache.DiscordUserId;
+        }
+        if (string.IsNullOrWhiteSpace(authorName))
+        {
+            authorName = "You";
+        }
+
         return new BridgeMessageFormatter.BridgeFormatterOptions
         {
             UseCharacterName = _useCharacterName,
@@ -957,7 +967,7 @@ public class ChatWindow : IDisposable
             Presences = presences,
             Roles = RoleCache.Roles,
             AllowedRoleIds = _config.MentionRoleIds,
-            AuthorName = _useCharacterName ? characterName : characterName ?? "You",
+            AuthorName = authorName,
             CharacterName = characterName,
             WorldName = worldName,
             Timestamp = DateTimeOffset.UtcNow

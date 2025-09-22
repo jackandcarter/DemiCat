@@ -231,9 +231,12 @@ async def get_my_profile(
         )
     base_name = compute_creator_base_name(ctx, nickname)
     creator_label = build_creator_label(base_name)
+    discord_user_id = getattr(getattr(ctx, "user", None), "discord_user_id", None)
+    discord_user_id_str = str(discord_user_id) if discord_user_id is not None else None
     return {
         "displayName": base_name,
         "creatorLabel": creator_label,
         "nickname": nickname,
         "globalName": ctx.user.global_name,
+        "discordUserId": discord_user_id_str,
     }
