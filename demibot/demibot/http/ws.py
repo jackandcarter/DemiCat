@@ -1,6 +1,6 @@
-
 from __future__ import annotations
 import asyncio
+import inspect
 from dataclasses import dataclass
 from typing import Dict
 
@@ -14,6 +14,7 @@ from .deps import RequestContext, api_key_auth
 PING_INTERVAL = 30.0
 PING_TIMEOUT = 60.0
 SEND_TIMEOUT = 5.0
+HEARTBEAT_PAYLOAD = "{\"op\":\"ping\"}"
 
 # Mapping of websocket paths to roles required to access them.
 # Additional entries can be added as new protected paths are introduced.
@@ -97,13 +98,61 @@ class ConnectionManager:
                 dead: list[WebSocket] = []
                 for ws in list(self.connections.keys()):
                     try:
-                        await asyncio.wait_for(ws.ping(), PING_TIMEOUT)
+                        alive = await self._probe_connection(ws)
+                    except asyncio.CancelledError:
+                        raise
                     except Exception:
+                        alive = False
+                    if not alive:
                         dead.append(ws)
                 for ws in dead:
                     self.disconnect(ws)
         except asyncio.CancelledError:
             pass
+
+    async def _probe_connection(self, ws: WebSocket) -> bool:
+        ping = getattr(ws, "ping", None)
+        supports_ping = callable(ping)
+        if supports_ping:
+            try:
+                result = ping()
+            except NotImplementedError:
+                supports_ping = False
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                return False
+            else:
+                if result is not None and inspect.isawaitable(result):
+                    try:
+                        await asyncio.wait_for(result, PING_TIMEOUT)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        return False
+            if supports_ping:
+                return True
+
+        send_text = getattr(ws, "send_text", None)
+        if callable(send_text):
+            try:
+                result = send_text(HEARTBEAT_PAYLOAD)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                return False
+            if result is not None and inspect.isawaitable(result):
+                try:
+                    await asyncio.wait_for(result, SEND_TIMEOUT)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    return False
+            return True
+
+        # Without ping or the ability to send a heartbeat, assume the socket
+        # remains healthy and let other send paths detect failures.
+        return True
 
 manager = ConnectionManager()
 

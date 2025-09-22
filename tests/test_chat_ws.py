@@ -11,6 +11,72 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "demibot"))
 
+discord_stub = types.ModuleType("discord")
+discord_stub.Embed = type("Embed", (), {})
+discord_stub.HTTPException = type("HTTPException", (Exception,), {})
+discord_stub.Forbidden = type("Forbidden", (Exception,), {})
+discord_stub.NotFound = type("NotFound", (Exception,), {})
+discord_stub.Webhook = type(
+    "Webhook",
+    (),
+    {
+        "from_url": staticmethod(
+            lambda url, client: types.SimpleNamespace(send=lambda *args, **kwargs: None)
+        )
+    },
+)
+discord_stub.abc = types.SimpleNamespace(Messageable=object)
+discord_commands_stub = types.ModuleType("discord.ext.commands")
+discord_commands_stub.Bot = type("Bot", (), {})
+discord_ext_stub = types.ModuleType("discord.ext")
+discord_ext_stub.commands = discord_commands_stub
+discord_stub.ext = discord_ext_stub
+sys.modules.setdefault("discord", discord_stub)
+sys.modules.setdefault("discord.ext", discord_ext_stub)
+sys.modules.setdefault("discord.ext.commands", discord_commands_stub)
+
+structlog_stub = types.ModuleType("structlog")
+structlog_stub.get_logger = lambda *args, **kwargs: None
+sys.modules.setdefault("structlog", structlog_stub)
+
+alembic_stub = types.ModuleType("alembic")
+alembic_command_stub = types.ModuleType("alembic.command")
+alembic_command_stub.upgrade = lambda *args, **kwargs: None
+alembic_stub.command = alembic_command_stub
+sys.modules.setdefault("alembic", alembic_stub)
+sys.modules.setdefault("alembic.command", alembic_command_stub)
+
+class _AlembicConfig:
+    def __init__(self):
+        self.options: dict[str, str] = {}
+
+    def set_main_option(self, key: str, value: str) -> None:
+        self.options[key] = value
+
+
+alembic_config_stub = types.ModuleType("alembic.config")
+alembic_config_stub.Config = _AlembicConfig
+sys.modules.setdefault("alembic.config", alembic_config_stub)
+
+messages_common_stub = types.ModuleType("demibot.http.routes._messages_common")
+messages_common_stub._channel_webhooks = {}
+messages_common_stub.create_webhook_for_channel = lambda *args, **kwargs: None
+routes_stub = types.ModuleType("demibot.http.routes")
+routes_stub.__path__ = []
+routes_stub._messages_common = messages_common_stub
+sys.modules.setdefault("demibot.http.routes", routes_stub)
+sys.modules.setdefault("demibot.http.routes._messages_common", messages_common_stub)
+
+discord_helpers_stub = types.ModuleType("demibot.http.discord_helpers")
+discord_helpers_stub.serialize_message = lambda message: (message, [])
+sys.modules.setdefault("demibot.http.discord_helpers", discord_helpers_stub)
+
+discord_client_stub = types.ModuleType("demibot.http.discord_client")
+discord_client_stub.discord_client = None
+discord_client_stub.set_discord_client = lambda client: None
+discord_client_stub.is_discord_client_ready = lambda client=None: False
+sys.modules.setdefault("demibot.http.discord_client", discord_client_stub)
+
 from demibot.http import ws_chat
 from demibot.http.deps import RequestContext
 
@@ -88,6 +154,35 @@ def test_chat_ws_role_access(monkeypatch):
 
     _run(scenario(["officer"], True))
     _run(scenario([], False))
+
+
+def test_chat_ws_ping_fallback_sends_heartbeat():
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+
+        class NoPingWebSocket:
+            def __init__(self) -> None:
+                self.scope = {"path": "/ws/chat"}
+                self.sent: list[str] = []
+
+            async def send_text(self, message: str) -> None:
+                self.sent.append(message)
+
+        ws = NoPingWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(id=1, discord_user_id=1, character_name="Tester"),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=1),
+            key=None,
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+
+        alive = await manager._probe_connection(ws)
+
+        assert alive is True
+        assert ws.sent == [ws_chat.HEARTBEAT_PAYLOAD]
+
+    _run(scenario())
 
 
 def test_chat_ws_invalid_token(monkeypatch):

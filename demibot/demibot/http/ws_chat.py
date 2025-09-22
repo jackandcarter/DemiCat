@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import inspect
 import json
 import logging
 import random
@@ -36,6 +37,8 @@ BATCH_MAX = 0.08
 
 PING_INTERVAL = 30.0
 PING_TIMEOUT = 60.0
+HEARTBEAT_TIMEOUT = 5.0
+HEARTBEAT_PAYLOAD = "{\"op\":\"ping\"}"
 
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
@@ -156,14 +159,60 @@ class ChatConnectionManager:
                 dead: list[WebSocket] = []
                 for ws in list(self.connections.keys()):
                     try:
-                        await asyncio.wait_for(ws.ping(), PING_TIMEOUT)
+                        alive = await self._probe_connection(ws)
+                    except asyncio.CancelledError:
+                        raise
                     except Exception:
+                        alive = False
+                    if not alive:
                         dead.append(ws)
                 for ws in dead:
                     self.disconnect(ws)
                 self._purge_idle_channels()
         except asyncio.CancelledError:
             pass
+
+    async def _probe_connection(self, ws: WebSocket) -> bool:
+        ping = getattr(ws, "ping", None)
+        supports_ping = callable(ping)
+        if supports_ping:
+            try:
+                result = ping()
+            except NotImplementedError:
+                supports_ping = False
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                return False
+            else:
+                if result is not None and inspect.isawaitable(result):
+                    try:
+                        await asyncio.wait_for(result, PING_TIMEOUT)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception:
+                        return False
+            if supports_ping:
+                return True
+
+        send_text = getattr(ws, "send_text", None)
+        if callable(send_text):
+            try:
+                result = send_text(HEARTBEAT_PAYLOAD)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                return False
+            if result is not None and inspect.isawaitable(result):
+                try:
+                    await asyncio.wait_for(result, HEARTBEAT_TIMEOUT)
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    return False
+            return True
+
+        return True
 
     def _release_connection_channels(self, info: ChatConnection) -> None:
         for channel in list(info.channels):

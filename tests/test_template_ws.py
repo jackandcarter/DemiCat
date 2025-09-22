@@ -47,7 +47,7 @@ fastapi_stub.WebSocketDisconnect = type("WebSocketDisconnect", (Exception,), {})
 fastapi_stub.HTTPException = type("HTTPException", (Exception,), {})
 sys.modules.setdefault("fastapi", fastapi_stub)
 
-from demibot.http.ws import ConnectionManager
+from demibot.http.ws import ConnectionInfo, ConnectionManager, HEARTBEAT_PAYLOAD
 
 
 class StubWebSocket:
@@ -86,5 +86,28 @@ def test_templates_updates_broadcast_to_all():
 
         assert ws_officer.sent == [msg]
         assert ws_member.sent == [msg]
+
+    asyncio.run(_run())
+
+
+def test_templates_ping_fallback_sends_heartbeat():
+    async def _run():
+        manager = ConnectionManager()
+
+        class NoPingWebSocket:
+            def __init__(self) -> None:
+                self.scope = {"path": "/ws/templates"}
+                self.sent: list[str] = []
+
+            async def send_text(self, message: str) -> None:
+                self.sent.append(message)
+
+        ws = NoPingWebSocket()
+        manager.connections[ws] = ConnectionInfo(guild_id=1, roles=[], path="/ws/templates")
+
+        alive = await manager._probe_connection(ws)
+
+        assert alive is True
+        assert ws.sent == [HEARTBEAT_PAYLOAD]
 
     asyncio.run(_run())
