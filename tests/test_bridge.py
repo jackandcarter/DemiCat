@@ -168,3 +168,4 @@ def test_build_bridge_message_preserves_existing_header(sample_user, sample_memb
 
     description = embeds[0].to_dict().get("description", "")
     assert description == preformatted
+

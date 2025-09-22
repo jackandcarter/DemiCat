@@ -168,6 +168,7 @@ def build_bridge_message(
     display_name = _determine_display_name(user=user, membership=membership)
     character_name = user.character_name if use_character_name else None
     world_name = user.world if use_character_name else None
+
     header_present = _has_existing_header(normalized)
     if not header_present:
         header = _format_header_line(
@@ -181,6 +182,7 @@ def build_bridge_message(
             normalized = f"{header}\n{normalized}"
         else:
             normalized = header
+
 
     chunks = _split_embed_text(normalized)
     if not chunks:
@@ -235,6 +237,7 @@ def _format_header_line(
     return f"Message Sent by: {' / '.join(segments)} @ {formatted_timestamp}"
 
 
+
 def _has_existing_header(content: str) -> bool:
     if not content:
         return False
@@ -253,6 +256,7 @@ def _has_existing_header(content: str) -> bool:
     except ValueError:
         return False
     return True
+
 
 
 def extract_bridge_nonce_from_footer(text: str | None) -> str | None:
