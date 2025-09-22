@@ -153,6 +153,112 @@ def test_save_and_fetch_messages(monkeypatch):
     asyncio.run(_run())
 
 
+def test_fetch_messages_filters_by_guild(monkeypatch):
+    monkeypatch.setattr(mc, "discord_client", None)
+
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+            await db.execute(text("DELETE FROM guild_channels"))
+
+            db.add_all(
+                [
+                    Guild(id=1, discord_guild_id=1, name="Guild One"),
+                    Guild(id=2, discord_guild_id=2, name="Guild Two"),
+                ]
+            )
+            db.add_all(
+                [
+                    User(id=1, discord_user_id=10, global_name="Alice"),
+                    User(id=2, discord_user_id=20, global_name="Bob"),
+                ]
+            )
+            db.add_all(
+                [
+                    Membership(guild_id=1, user_id=1, nickname="AliceNick", avatar_url=None),
+                    Membership(guild_id=2, user_id=2, nickname="BobNick", avatar_url=None),
+                ]
+            )
+            await db.commit()
+
+            shared_channel_id = 321
+            now = datetime.utcnow()
+            db.add_all(
+                [
+                    Message(
+                        discord_message_id=111,
+                        channel_id=shared_channel_id,
+                        guild_id=1,
+                        author_id=1,
+                        author_name="AliceNick",
+                        author_avatar_url="http://example.com/alice.png",
+                        content_raw="guild-one",
+                        content_display="guild-one",
+                        content="guild-one",
+                        attachments_json=None,
+                        mentions_json=None,
+                        author_json=None,
+                        embeds_json=None,
+                        reference_json=None,
+                        components_json=None,
+                        reactions_json=None,
+                        edited_timestamp=None,
+                        is_officer=False,
+                        created_at=now,
+                    ),
+                    Message(
+                        discord_message_id=222,
+                        channel_id=shared_channel_id,
+                        guild_id=2,
+                        author_id=2,
+                        author_name="BobNick",
+                        author_avatar_url="http://example.com/bob.png",
+                        content_raw="guild-two",
+                        content_display="guild-two",
+                        content="guild-two",
+                        attachments_json=None,
+                        mentions_json=None,
+                        author_json=None,
+                        embeds_json=None,
+                        reference_json=None,
+                        components_json=None,
+                        reactions_json=None,
+                        edited_timestamp=None,
+                        is_officer=False,
+                        created_at=now,
+                    ),
+                ]
+            )
+            await db.commit()
+
+            guild_one = await db.get(Guild, 1)
+            user_one = await db.get(User, 1)
+            ctx_one = RequestContext(user=user_one, guild=guild_one, key=DummyKey(), roles=[])
+
+            results_one = await mc.fetch_messages(
+                str(shared_channel_id), ctx_one, db, is_officer=False
+            )
+            assert len(results_one) == 1
+            assert results_one[0]["content"] == "guild-one"
+
+            guild_two = await db.get(Guild, 2)
+            user_two = await db.get(User, 2)
+            ctx_two = RequestContext(user=user_two, guild=guild_two, key=DummyKey(), roles=[])
+
+            results_two = await mc.fetch_messages(
+                str(shared_channel_id), ctx_two, db, is_officer=False
+            )
+            assert len(results_two) == 1
+            assert results_two[0]["content"] == "guild-two"
+
+    asyncio.run(_run())
+
+
 def test_save_message_private_thread(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")

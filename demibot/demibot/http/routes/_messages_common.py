@@ -850,6 +850,7 @@ async def fetch_messages(
     after_int = int(after) if after is not None else None
     stmt = select(Message).where(
         Message.channel_id == cid,
+        Message.guild_id == ctx.guild.id,
         Message.is_officer.is_(is_officer),
     )
     if before_int is not None:
