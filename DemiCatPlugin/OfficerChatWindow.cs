@@ -432,9 +432,10 @@ public class OfficerChatWindow : ChatWindow
                 }
             }
 
-            if (services?.Framework != null)
+            var framework = services?.Framework;
+            if (framework != null)
             {
-                services.Framework.RunOnTick(ApplyRoles);
+                await framework.RunOnTick(ApplyRoles);
             }
             else
             {
