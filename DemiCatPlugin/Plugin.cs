@@ -219,12 +219,21 @@ public class Plugin : IDalamudPlugin
                 toolkit.OnPreBuild(pre =>
                 {
                     var baseFont = pre.AddDalamudDefaultFont(fontSize);
+                    var glyphRanges = default(FluentGlyphRangeBuilder)
+                        .With(0xD83C, 0xD83E) // high-surrogates covering U+1F000-U+1FAFF
+                        .With(0xDC00, 0xDFFF) // low-surrogates for the same range
+                        .With(0x200D, 0x200D) // zero width joiner for multi-glyph emoji sequences
+                        .With(0x20E3, 0x20E3) // combining enclosing keycap used by keycap emoji
+                        .With(0xFE0E, 0xFE0F) // text & emoji presentation selectors
+                        .Build();
                     var config = new SafeFontConfig
                     {
                         SizePx = fontSize,
                         MergeFont = baseFont,
-                        PixelSnapH = true
+                        PixelSnapH = true,
+                        GlyphRanges = glyphRanges,
                     };
+                    config.Raw.FontBuilderFlags |= 1u << 8; // ImGuiFreeTypeBuilderFlags_LoadColor
                     pre.AddFontFromFile(fontPath, config);
                     pre.Font = baseFont;
                 }));
