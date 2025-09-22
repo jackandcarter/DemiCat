@@ -1481,13 +1481,25 @@ public class ChatWindow : IDisposable
                     return;
                 }
 
-                if (since == 0)
+                foreach (var message in _messages)
                 {
-                    _messages.Clear();
+                    DisposeMessageTextures(message);
                 }
-                foreach (var m in all)
+
+                _messages.Clear();
+
+                if (all.Count > 0)
                 {
-                    _messages.Add(m);
+                    var seenIds = new HashSet<string>(StringComparer.Ordinal);
+                    foreach (var m in all)
+                    {
+                        if (!string.IsNullOrEmpty(m.Id) && !seenIds.Add(m.Id))
+                        {
+                            continue;
+                        }
+
+                        _messages.Add(m);
+                    }
                 }
                 TrimMessages();
             });
