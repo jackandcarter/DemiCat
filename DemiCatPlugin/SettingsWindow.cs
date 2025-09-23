@@ -154,7 +154,9 @@ public class SettingsWindow : IDisposable
                 else
                 {
                     ChatWindow.StopNetworking();
-                    ChatWindow.Presence?.Dispose();
+                    var presenceService = ChatWindow.Presence ?? OfficerChatWindow?.Presence;
+                    presenceService?.SetPresenceReady(false);
+                    presenceService?.Stop();
                 }
             }
         }
@@ -495,8 +497,12 @@ public class SettingsWindow : IDisposable
         SafeInvoke(() =>
         {
             var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
-            presence?.Dispose();
-        }, "Failed to dispose presence service.");
+            if (presence != null)
+            {
+                presence.SetPresenceReady(false);
+                presence.Stop();
+            }
+        }, "Failed to stop presence service.");
     }
 
     private void ClearRuntimeCaches()
@@ -601,6 +607,7 @@ public class SettingsWindow : IDisposable
     {
         var framework = PluginServices.Instance?.Framework;
         var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
+        var presenceRestarted = false;
 
         void UpdateStatus(string status)
         {
@@ -791,6 +798,7 @@ public class SettingsWindow : IDisposable
             {
                 presence?.Reset();
                 presence?.Reload();
+                presenceRestarted = presence != null;
             }
             catch (Exception ex)
             {
@@ -826,7 +834,7 @@ public class SettingsWindow : IDisposable
         }
         finally
         {
-            presence?.SetPresenceReady(true);
+            presence?.SetPresenceReady(presenceRestarted);
             lock (_hardReloadLock)
             {
                 _hardReloadTask = null;

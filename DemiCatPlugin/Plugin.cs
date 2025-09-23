@@ -627,6 +627,8 @@ public class Plugin : IDalamudPlugin
         _chatWindow.StopNetworking();
         _officerChatWindow.StopNetworking();
         _officerWatcherRunning = false;
+        _presenceService?.SetPresenceReady(false);
+        _presenceService?.Stop();
         _ui.StopNetworking();
         _mainWindow.TemplatesWindow.StopNetworking();
         MembershipCache.Reset();
@@ -807,7 +809,8 @@ public class Plugin : IDalamudPlugin
                         {
                             _services.Log.Info("Stopping chat window networking");
                             _chatWindow.StopNetworking();
-                            _presenceService?.Dispose();
+                            _presenceService?.SetPresenceReady(false);
+                            _presenceService?.Stop();
                         }
 
                         if (startChannelWatcher)
