@@ -2062,7 +2062,22 @@ public class ChatWindow : IDisposable
 
     protected void SaveConfig()
     {
-        PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+        var services = PluginServices.Instance;
+        var pluginInterface = services?.PluginInterface;
+        if (pluginInterface == null)
+        {
+            return;
+        }
+
+        var framework = services?.Framework;
+        if (framework != null)
+        {
+            framework.RunOnTick(() => pluginInterface.SavePluginConfig(_config));
+        }
+        else
+        {
+            pluginInterface.SavePluginConfig(_config);
+        }
     }
 
     public Task RefreshChannels()
