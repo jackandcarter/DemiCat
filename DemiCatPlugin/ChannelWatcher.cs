@@ -20,7 +20,6 @@ public class ChannelWatcher : IDisposable
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
     private readonly TokenManager _tokenManager;
-    private ClientWebSocket? _ws;
     private Task? _task;
     private CancellationTokenSource? _cts;
     private DateTime _lastRefresh = DateTime.MinValue;
@@ -61,7 +60,6 @@ public class ChannelWatcher : IDisposable
         {
             try { await _task; } catch { }
         }
-        _ws?.Dispose();
         _cts = new CancellationTokenSource();
         _task = Run(_cts.Token);
     }
@@ -70,8 +68,6 @@ public class ChannelWatcher : IDisposable
     {
         _cts?.Cancel();
         try { _task?.GetAwaiter().GetResult(); } catch { }
-        _ws?.Dispose();
-        _ws = null;
         _cts = null;
         _task = null;
     }
@@ -93,6 +89,7 @@ public class ChannelWatcher : IDisposable
             string? retryStatusDetail = null;
             WebSocketCloseStatus? closeStatus = null;
             string? closeStatusDescription = null;
+            ClientWebSocket? ws = null;
             try
             {
                 var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
@@ -123,9 +120,8 @@ public class ChannelWatcher : IDisposable
                     continue;
                 }
 
-                _ws?.Dispose();
-                _ws = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_ws, _tokenManager);
+                ws = new ClientWebSocket();
+                ApiHelpers.AddAuthHeader(ws, _tokenManager);
 
                 Uri? uri;
                 try
@@ -149,16 +145,16 @@ public class ChannelWatcher : IDisposable
                 }
 
                 PluginServices.Instance!.Log.Information("Connecting to channel watcher at {Uri}", uri);
-                await _ws.ConnectAsync(uri!, token);
+                await ws.ConnectAsync(uri!, token);
                 PluginServices.Instance!.Log.Information("Channel watcher connected to {Uri}", uri);
                 _retryAttempt = 0;
                 hadTransportError = false;
                 ResetPermissionWarning();
 
                 var buffer = new byte[1024];
-                while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
+                while (ws != null && ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
-                    var (message, messageType) = await ReceiveMessageAsync(_ws, buffer, token);
+                    var (message, messageType) = await ReceiveMessageAsync(ws, buffer, token);
                     if (messageType == WebSocketMessageType.Close)
                     {
                         break;
@@ -172,7 +168,7 @@ public class ChannelWatcher : IDisposable
                     }
                 }
 
-                if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
+                if (ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
                     ShowPermissionWarning();
                     retryStatusCode = (int)WebSocketCloseStatus.PolicyViolation;
@@ -204,7 +200,7 @@ public class ChannelWatcher : IDisposable
             catch (WebSocketException ex)
             {
                 hadTransportError = true;
-                if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
+                if (ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
                 {
                     ShowPermissionWarning();
                 }
@@ -226,8 +222,8 @@ public class ChannelWatcher : IDisposable
             }
             finally
             {
-                closeStatus = _ws?.CloseStatus;
-                closeStatusDescription = _ws?.CloseStatusDescription;
+                closeStatus = ws?.CloseStatus;
+                closeStatusDescription = ws?.CloseStatusDescription;
                 if (closeStatus.HasValue)
                 {
                     retryStatusCode ??= (int)closeStatus.Value;
@@ -235,8 +231,8 @@ public class ChannelWatcher : IDisposable
                 }
                 PluginServices.Instance!.Log.Information("Channel watcher disconnected. Status: {Status}, Description: {Description}",
                     closeStatus?.ToString() ?? "unknown", closeStatusDescription ?? "");
-                _ws?.Dispose();
-                _ws = null;
+                ws?.Dispose();
+                ws = null;
             }
 
             if (token.IsCancellationRequested)
@@ -414,8 +410,9 @@ public class ChannelWatcher : IDisposable
     {
         _cts?.Cancel();
         try { _task?.GetAwaiter().GetResult(); } catch { }
-        _ws?.Dispose();
         _cts?.Dispose();
+        _cts = null;
+        _task = null;
         if (Instance == this) Instance = null;
     }
 }
