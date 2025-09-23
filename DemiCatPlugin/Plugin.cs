@@ -291,6 +291,9 @@ public class Plugin : IDalamudPlugin
                 _config.GuildId = normalizedResponseGuild;
                 _services.PluginInterface.SavePluginConfig(_config);
 
+                _chatWindow.OnGuildUpdated();
+                _officerChatWindow.OnGuildUpdated();
+
                 if (guildChanged)
                 {
                     await HandleGuildChangedAsync(normalizedResponseGuild, kind).ConfigureAwait(false);

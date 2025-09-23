@@ -10,6 +10,7 @@ public class ChannelDto
     [JsonPropertyName("name")] public string Name { get; set; } = string.Empty;
     [JsonPropertyName("parentId")] public string? ParentId { get; set; }
     [JsonPropertyName("kind")] public string Kind { get; set; } = string.Empty;
+    [JsonPropertyName("guildId")] public string? GuildId { get; set; }
 }
 
 public static class ChannelDtoExtensions

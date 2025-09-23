@@ -39,7 +39,7 @@ public class ChatWindowWebSocketTests
         });
 
         _ = SetupServices();
-        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1", GuildId = "guild-1" };
         var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
         var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
@@ -242,7 +242,7 @@ public class ChatWindowWebSocketTests
         });
 
         _ = SetupServices();
-        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1" };
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = server.HttpBase, ChatChannelId = "1", GuildId = "guild-1" };
         var selection = new ChannelSelectionService(config);
         using var client = new HttpClient();
         var bridge = new ChatBridge(config, client, new TokenManager(), () => server.Uri, selection);
