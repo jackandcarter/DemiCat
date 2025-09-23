@@ -42,13 +42,13 @@ public class ChatWindowMessageLimitTests
         await window.RefreshMessages();
 
         msgs = GetMessages(window);
-        Assert.Equal(10, msgs.Count);
-        Assert.Equal("121", msgs[0].Id);
+        Assert.Equal(100, msgs.Count);
+        Assert.Equal("31", msgs[0].Id);
         Assert.Equal("130", msgs[^1].Id);
         Assert.Equal(130, config.RestChatCursors[cursorKey]);
         Assert.False(config.ChatCursors.ContainsKey(cursorKey));
         Assert.Single(handler.Requests);
-        Assert.DoesNotContain("after=", handler.Requests[0].Query);
+        Assert.Contains("after=120", handler.Requests[0].Query);
     }
 
     [Fact]
@@ -90,10 +90,44 @@ public class ChatWindowMessageLimitTests
         await window.RefreshMessages();
 
         var msgs = GetMessages(window);
-        Assert.Collection(msgs,
+        Assert.Equal(23, msgs.Count);
+        var tail = msgs.GetRange(msgs.Count - 3, 3);
+        Assert.Collection(tail,
             m => Assert.Equal("201", m.Id),
             m => Assert.Equal("202", m.Id),
             m => Assert.Equal("203", m.Id));
+    }
+
+    [Fact]
+    public async Task RefreshMessages_WithCursorAndEmptyResponse_RetainsMessages()
+    {
+        SetupServices();
+        var config = new Config { ApiBaseUrl = "http://localhost", ChatChannelId = "1" };
+        var handler = new SequenceHandler();
+        using var client = new HttpClient(handler);
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, client, tm);
+        var window = new ChatWindow(config, client, null, tm, channelService);
+        var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
+
+        handler.EnqueueResponse(SerializeMessages(1, 5));
+        await window.RefreshMessages();
+
+        var initial = GetMessages(window);
+        Assert.Equal(5, initial.Count);
+        Assert.Equal("5", initial[^1].Id);
+
+        handler.Requests.Clear();
+        handler.EnqueueResponse("[]");
+        await window.RefreshMessages();
+
+        var refreshed = GetMessages(window);
+        Assert.Equal(5, refreshed.Count);
+        Assert.Equal("1", refreshed[0].Id);
+        Assert.Equal("5", refreshed[^1].Id);
+        Assert.Equal(5, config.RestChatCursors[cursorKey]);
+        Assert.Single(handler.Requests);
+        Assert.Contains("after=5", handler.Requests[0].Query);
     }
 
     [Fact]
