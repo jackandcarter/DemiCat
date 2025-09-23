@@ -129,7 +129,7 @@ async def post_interaction(
             )
         ).scalar_one_or_none()
         await manager.broadcast_text(
-            json.dumps(payload),
+            json.dumps(payload, ensure_ascii=False),
             embed.guild_id,
             officer_only=kind == ChannelKind.OFFICER_CHAT,
             path="/ws/embeds",

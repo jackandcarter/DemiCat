@@ -98,9 +98,11 @@ async def _load_request_with_children(
 
 
 async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> None:
-    payload = json.dumps({"topic": "requests.stream", "payload": delta})
+    payload = json.dumps({"topic": "requests.stream", "payload": delta}, ensure_ascii=False)
     await manager.broadcast_text(payload, guild_id, path="/ws/requests")
-    payload = json.dumps({"topic": f"request.{request_id}", "payload": delta})
+    payload = json.dumps(
+        {"topic": f"request.{request_id}", "payload": delta}, ensure_ascii=False
+    )
     await manager.broadcast_text(payload, guild_id, path="/ws/requests")
 
 

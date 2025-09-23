@@ -509,7 +509,7 @@ class ChatConnectionManager:
                     "kind": meta.kind,
                     "messages": history,
                 }
-                await websocket.send_text(json.dumps(payload))
+                await websocket.send_text(json.dumps(payload, ensure_ascii=False))
         for channel_id in sync_channels:
             meta = info.metadata.get(channel_id)
             if meta is None:
@@ -722,7 +722,7 @@ class ChatConnectionManager:
             "kind": meta.kind,
             "messages": queue,
         }
-        message = json.dumps(payload)
+        message = json.dumps(payload, ensure_ascii=False)
         targets: list[WebSocket] = []
         for ws, info in self.connections.items():
             if channel not in info.channels:
@@ -925,7 +925,7 @@ class ChatConnectionManager:
             meta.kind,
             channel,
         )
-        await websocket.send_text(json.dumps(payload))
+        await websocket.send_text(json.dumps(payload, ensure_ascii=False))
 
     async def _send_resync(
         self,
@@ -955,7 +955,8 @@ class ChatConnectionManager:
                     "kind": meta.kind,
                     "channel": channel,
                     "cursor": cursor,
-                }
+                },
+                ensure_ascii=False,
             )
         )
 
