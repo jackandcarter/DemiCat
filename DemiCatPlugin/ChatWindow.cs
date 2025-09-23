@@ -10,6 +10,7 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
+using System.Globalization;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
@@ -77,6 +78,7 @@ public class ChatWindow : IDisposable
     private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
     private string _previewKey = string.Empty;
     private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
+    private const string OldestRestCursorSuffix = ":oldest";
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKind => _channelKind;
@@ -1612,13 +1614,21 @@ public class ChatWindow : IDisposable
             string? before = null;
             var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
             string? storedAfter = null;
-            var usedStoredCursor = false;
             if (_config.RestChatCursors.TryGetValue(cursorKey, out var since))
             {
-                storedAfter = since.ToString();
-                usedStoredCursor = true;
+                storedAfter = since.ToString(CultureInfo.InvariantCulture);
             }
+
+            var messageState = storedAfter != null
+                ? await GetExistingMessageStateAsync(requestedChannelId).ConfigureAwait(false)
+                : (hadExistingMessages: false, hasMatchingChannel: false, hasConflictingChannel: false);
+            var useAfterForInitialRequest = storedAfter != null &&
+                messageState.hadExistingMessages &&
+                messageState.hasMatchingChannel &&
+                !messageState.hasConflictingChannel;
+
             var firstPage = true;
+            var appliedStoredCursor = false;
             while (all.Count < MaxMessages)
             {
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{channelId}?limit={PageSize}";
@@ -1626,11 +1636,22 @@ public class ChatWindow : IDisposable
                 {
                     url += $"&before={before}";
                 }
-                // The "after" cursor is only for incremental refreshes; pagination uses "before" alone.
-                var after = firstPage && before == null ? storedAfter : null;
-                if (after != null)
+                // Use the stored "after" cursor for true incremental refreshes, and retain it for
+                // subsequent pagination requests so we don't lose the existing boundary.
+                var shouldApplyAfter = false;
+                if (before == null)
                 {
-                    url += $"&after={after}";
+                    shouldApplyAfter = useAfterForInitialRequest;
+                }
+                else if (storedAfter != null)
+                {
+                    shouldApplyAfter = true;
+                }
+
+                if (shouldApplyAfter && storedAfter != null)
+                {
+                    url += $"&after={storedAfter}";
+                    appliedStoredCursor = true;
                 }
 
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
@@ -1682,7 +1703,7 @@ public class ChatWindow : IDisposable
                 var hadExistingMessages = _messages.Count > 0;
                 var hasMatchingChannel = _messages.Any(m => string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
                 var hasConflictingChannel = _messages.Any(m => !string.IsNullOrEmpty(m.ChannelId) && !string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
-                var canMergeIncremental = usedStoredCursor && hadExistingMessages && hasMatchingChannel && !hasConflictingChannel;
+                var canMergeIncremental = appliedStoredCursor && hadExistingMessages && hasMatchingChannel && !hasConflictingChannel;
 
                 if (canMergeIncremental)
                 {
@@ -1760,14 +1781,62 @@ public class ChatWindow : IDisposable
             DisposeMessageTextures(_messages[0]);
             _messages.RemoveAt(0);
         }
-        if (_messages.Count > 0 && long.TryParse(_messages[^1].Id, out var last))
+        UpdateRestCursorBounds();
+    }
+
+    private async Task<(bool hadExistingMessages, bool hasMatchingChannel, bool hasConflictingChannel)> GetExistingMessageStateAsync(string requestedChannelId)
+    {
+        var services = PluginServices.Instance;
+        var framework = services?.Framework;
+        if (framework != null)
         {
-            var channelId = CurrentChannelId;
-            if (!string.IsNullOrEmpty(channelId))
+            var tcs = new TaskCompletionSource<(bool, bool, bool)>(TaskCreationOptions.RunContinuationsAsynchronously);
+            framework.RunOnTick(() =>
             {
-                var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
-                _config.RestChatCursors[cursorKey] = last;
-            }
+                try
+                {
+                    var hadExisting = _messages.Count > 0;
+                    var hasMatching = _messages.Any(m => string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+                    var hasConflicting = _messages.Any(m => !string.IsNullOrEmpty(m.ChannelId) && !string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+                    tcs.TrySetResult((hadExisting, hasMatching, hasConflicting));
+                }
+                catch (Exception ex)
+                {
+                    tcs.TrySetException(ex);
+                }
+            });
+            return await tcs.Task.ConfigureAwait(false);
+        }
+
+        var hadExistingFallback = _messages.Count > 0;
+        var hasMatchingFallback = _messages.Any(m => string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+        var hasConflictingFallback = _messages.Any(m => !string.IsNullOrEmpty(m.ChannelId) && !string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+        return (hadExistingFallback, hasMatchingFallback, hasConflictingFallback);
+    }
+
+    private void UpdateRestCursorBounds()
+    {
+        if (_messages.Count == 0)
+        {
+            return;
+        }
+
+        var channelId = CurrentChannelId;
+        if (string.IsNullOrEmpty(channelId))
+        {
+            return;
+        }
+
+        var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
+
+        if (long.TryParse(_messages[^1].Id, out var latest))
+        {
+            _config.RestChatCursors[cursorKey] = latest;
+        }
+
+        if (long.TryParse(_messages[0].Id, out var oldest))
+        {
+            _config.RestChatCursors[$"{cursorKey}{OldestRestCursorSuffix}"] = oldest;
         }
     }
 

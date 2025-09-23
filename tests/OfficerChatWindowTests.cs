@@ -37,6 +37,9 @@ public class OfficerChatWindowTests
         Assert.Equal(100, msgs.Count);
         Assert.Equal("21", msgs[0].Id);
         Assert.Equal("120", msgs[^1].Id);
+        var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.OfficerChat, "42");
+        Assert.Equal(120, config.RestChatCursors[cursorKey]);
+        Assert.Equal(21, config.RestChatCursors[$"{cursorKey}:oldest"]);
         Assert.Equal("/api/officer-messages/42", handler.Requests[0].AbsolutePath);
         Assert.Equal("/api/officer-messages/42", handler.Requests[1].AbsolutePath);
     }

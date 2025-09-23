@@ -33,7 +33,9 @@ public class ChatWindowMessageLimitTests
         Assert.Equal("21", msgs[0].Id);
         Assert.Equal("120", msgs[^1].Id);
         var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
+        var oldestKey = $"{cursorKey}:oldest";
         Assert.Equal(120, config.RestChatCursors[cursorKey]);
+        Assert.Equal(21, config.RestChatCursors[oldestKey]);
         Assert.False(config.ChatCursors.ContainsKey(cursorKey));
         Assert.Equal(2, handler.Requests.Count);
 
@@ -46,6 +48,7 @@ public class ChatWindowMessageLimitTests
         Assert.Equal("31", msgs[0].Id);
         Assert.Equal("130", msgs[^1].Id);
         Assert.Equal(130, config.RestChatCursors[cursorKey]);
+        Assert.Equal(31, config.RestChatCursors[oldestKey]);
         Assert.False(config.ChatCursors.ContainsKey(cursorKey));
         Assert.Single(handler.Requests);
         Assert.Contains("after=120", handler.Requests[0].Query);
@@ -69,6 +72,7 @@ public class ChatWindowMessageLimitTests
         Assert.Single(handler.Requests);
         Assert.DoesNotContain("after=", handler.Requests[0].Query);
         Assert.Equal(20, config.RestChatCursors[cursorKey]);
+        Assert.Equal(1, config.RestChatCursors[$"{cursorKey}:oldest"]);
         Assert.False(config.ChatCursors.ContainsKey(cursorKey));
     }
 
@@ -96,6 +100,9 @@ public class ChatWindowMessageLimitTests
             m => Assert.Equal("201", m.Id),
             m => Assert.Equal("202", m.Id),
             m => Assert.Equal("203", m.Id));
+        var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
+        Assert.Equal(203, config.RestChatCursors[cursorKey]);
+        Assert.Equal(1, config.RestChatCursors[$"{cursorKey}:oldest"]);
     }
 
     [Fact]
@@ -126,6 +133,7 @@ public class ChatWindowMessageLimitTests
         Assert.Equal("1", refreshed[0].Id);
         Assert.Equal("5", refreshed[^1].Id);
         Assert.Equal(5, config.RestChatCursors[cursorKey]);
+        Assert.Equal(1, config.RestChatCursors[$"{cursorKey}:oldest"]);
         Assert.Single(handler.Requests);
         Assert.Contains("after=5", handler.Requests[0].Query);
     }
@@ -185,6 +193,8 @@ public class ChatWindowMessageLimitTests
         Assert.DoesNotContain("after=", handler.Requests[0].Query);
         Assert.Contains("before=71", handler.Requests[1].Query);
         Assert.Contains("after=120", handler.Requests[1].Query);
+        Assert.Equal(120, config.RestChatCursors[cursorKey]);
+        Assert.Equal(21, config.RestChatCursors[$"{cursorKey}:oldest"]);
     }
 
     [Fact]
@@ -214,6 +224,7 @@ public class ChatWindowMessageLimitTests
         Assert.Equal("101", msgs[^1].Id);
         Assert.Equal(101, config.RestChatCursors[cursorKey]);
         Assert.Equal(100, config.ChatCursors[cursorKey]);
+        Assert.Equal(2, config.RestChatCursors[$"{cursorKey}:oldest"]);
     }
 
     private static List<DiscordMessageDto> GetMessages(ChatWindow window)
