@@ -144,6 +144,9 @@ CHANNEL_NOT_CONFIGURED_DETAIL = (
 )
 
 
+DISCORD_CLIENT_UNAVAILABLE_DETAIL = "Discord client unavailable"
+
+
 def _role_set(ctx: RequestContext | object) -> Set[str]:
     roles: Iterable[str] | str | None = getattr(ctx, "roles", None)
     if roles is None:
@@ -350,6 +353,10 @@ async def create_webhook_for_channel(
                     "fetch_channel(%s) failed during webhook creation: %s",
                     channel_id,
                     exc,
+                )
+                resolution_error = DISCORD_CLIENT_UNAVAILABLE_DETAIL
+                errors.append(
+                    f"Webhook creation failed: {DISCORD_CLIENT_UNAVAILABLE_DETAIL}"
                 )
             except Exception:  # pragma: no cover - network errors
                 logging.exception(
@@ -1334,14 +1341,31 @@ async def save_message(
                             "channelId": str(cid),
                         },
                     )
+                client_unavailable = False
                 if error_details:
-                    logging.error(
-                        "Failed to resolve channel due to Discord errors: %s",
-                        error_details,
-                        extra=log_extra,
+                    client_unavailable = any(
+                        DISCORD_CLIENT_UNAVAILABLE_DETAIL in detail
+                        for detail in error_details
                     )
+                    if client_unavailable:
+                        logging.warning(
+                            "Discord client unavailable while resolving channel: %s",
+                            error_details,
+                            extra=log_extra,
+                        )
+                    else:
+                        logging.error(
+                            "Failed to resolve channel due to Discord errors: %s",
+                            error_details,
+                            extra=log_extra,
+                        )
                 else:
                     logging.warning("Failed to resolve channel", extra=log_extra)
+                if client_unavailable:
+                    detail = {"message": DISCORD_CLIENT_UNAVAILABLE_DETAIL}
+                    if error_details:
+                        detail["discord"] = error_details
+                    raise HTTPException(status_code=503, detail=detail)
                 detail: dict[str, object] = {"message": "channel not found"}
                 if error_details:
                     detail["discord"] = error_details
