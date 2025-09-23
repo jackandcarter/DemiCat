@@ -1795,7 +1795,6 @@ public class ChatWindow : IDisposable
                 messageState.hasMatchingChannel &&
                 !messageState.hasConflictingChannel;
 
-            var firstPage = true;
             var appliedStoredCursor = false;
             while (all.Count < MaxMessages)
             {
@@ -1852,7 +1851,6 @@ public class ChatWindow : IDisposable
                 {
                     break;
                 }
-                firstPage = false;
                 before = msgs[0].Id;
             }
 
@@ -1959,7 +1957,7 @@ public class ChatWindow : IDisposable
         if (framework != null)
         {
             var tcs = new TaskCompletionSource<(bool, bool, bool)>(TaskCreationOptions.RunContinuationsAsynchronously);
-            framework.RunOnTick(() =>
+            _ = framework.RunOnTick(() =>
             {
                 try
                 {
