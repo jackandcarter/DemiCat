@@ -312,7 +312,8 @@ public class OfficerChatWindow : ChatWindow
             }
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                SetChannels(channels);
+                var preparedChannels = PrepareChannelsForDisplay(channels);
+                ApplyPreparedChannels(preparedChannels);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;

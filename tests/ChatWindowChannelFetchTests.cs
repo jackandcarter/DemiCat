@@ -6,8 +6,10 @@ using System.Reflection;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin;
+using Moq;
 using Xunit;
 
 public class ChatWindowChannelFetchTests
@@ -69,6 +71,40 @@ public class ChatWindowChannelFetchTests
         window.Dispose();
     }
 
+    [Fact]
+    public void SetChannels_FiltersMismatchedGuildEntries()
+    {
+        SetupServices();
+        var config = new Config
+        {
+            ApiBaseUrl = "http://localhost",
+            GuildId = "guild-a"
+        };
+        using var client = new HttpClient(new HttpClientHandler());
+        var tokenManager = new TokenManager();
+        var channelService = new ChannelService(config, client, tokenManager);
+        var window = new ChatWindow(config, client, null, tokenManager, channelService);
+
+        var channels = new List<ChannelDto>
+        {
+            new() { Id = "1", Name = "General", GuildId = "guild-a" },
+            new() { Id = "2", Name = "Other", GuildId = "guild-b" }
+        };
+
+        window.SetChannels(channels);
+
+        Assert.Equal("guild-a", config.GuildId);
+
+        var storedChannels = (List<ChannelDto>)typeof(ChatWindow)
+            .GetField("_channels", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(window)!;
+
+        Assert.Single(storedChannels);
+        Assert.Equal("1", storedChannels[0].Id);
+
+        window.Dispose();
+    }
+
     private static string SerializeChannels(params (string Id, string Name)[] channels)
     {
         var list = new List<object>();
@@ -91,6 +127,8 @@ public class ChatWindowChannelFetchTests
         var log = new TestLog();
         typeof(PluginServices).GetProperty("Framework", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, framework);
         typeof(PluginServices).GetProperty("Log", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, log);
+        var pluginInterface = new Mock<IDalamudPluginInterface>();
+        typeof(PluginServices).GetProperty("PluginInterface", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, pluginInterface.Object);
     }
 
     private sealed class SequenceHandler : HttpMessageHandler

@@ -933,28 +933,54 @@ public class ChatWindow : IDisposable
         }
     }
 
-    public void SetChannels(List<ChannelDto> channels)
+    protected List<ChannelDto> PrepareChannelsForDisplay(IEnumerable<ChannelDto> channels)
+    {
+        var channelList = channels?.ToList() ?? new List<ChannelDto>();
+        var hasStoredGuild = !ChannelKeyHelper.IsDefaultGuild(_config.GuildId);
+        var normalizedStoredGuild = ChannelKeyHelper.NormalizeGuildId(_config.GuildId);
+
+        if (!hasStoredGuild)
+        {
+            var channelWithGuild = channelList.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.GuildId));
+            if (channelWithGuild != null && !string.IsNullOrWhiteSpace(channelWithGuild.GuildId))
+            {
+                normalizedStoredGuild = ChannelKeyHelper.NormalizeGuildId(channelWithGuild.GuildId);
+                _config.GuildId = normalizedStoredGuild;
+                SaveConfig();
+                hasStoredGuild = true;
+            }
+        }
+
+        if (hasStoredGuild)
+        {
+            channelList = channelList
+                .Where(c =>
+                    string.IsNullOrWhiteSpace(c.GuildId) ||
+                    string.Equals(
+                        ChannelKeyHelper.NormalizeGuildId(c.GuildId),
+                        normalizedStoredGuild,
+                        StringComparison.Ordinal))
+                .ToList();
+        }
+
+        return ChannelDtoExtensions.SortForDisplay(channelList);
+    }
+
+    public void SetChannels(IEnumerable<ChannelDto> channels)
+    {
+        var prepared = PrepareChannelsForDisplay(channels);
+        ApplyPreparedChannels(prepared);
+    }
+
+    protected void ApplyPreparedChannels(List<ChannelDto> channels)
     {
         _channels.Clear();
-        _channels.AddRange(ChannelDtoExtensions.SortForDisplay(channels));
+        _channels.AddRange(channels);
         if (_channels.Count == 0)
         {
             _selectedIndex = 0;
             _channelSelection.SetChannel(_channelKind, _config.GuildId, string.Empty);
             return;
-        }
-
-        var storedNormalizedGuild = ChannelKeyHelper.NormalizeGuildId(_config.GuildId);
-        string? normalizedGuildFromChannels = null;
-        var channelWithGuild = _channels.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.GuildId));
-        if (channelWithGuild != null && !string.IsNullOrWhiteSpace(channelWithGuild.GuildId))
-        {
-            normalizedGuildFromChannels = ChannelKeyHelper.NormalizeGuildId(channelWithGuild.GuildId);
-            if (!string.Equals(normalizedGuildFromChannels, storedNormalizedGuild, StringComparison.Ordinal))
-            {
-                _config.GuildId = normalizedGuildFromChannels;
-                PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
-            }
         }
 
         var current = CurrentChannelId;
@@ -970,11 +996,6 @@ public class ChatWindow : IDisposable
 
         var newId = _channels[_selectedIndex].Id;
         _channelSelection.SetChannel(_channelKind, _config.GuildId, newId);
-
-        if (normalizedGuildFromChannels != null)
-        {
-            OnGuildUpdated();
-        }
     }
 
     internal void OnGuildUpdated()
@@ -2041,7 +2062,7 @@ public class ChatWindow : IDisposable
 
     protected void SaveConfig()
     {
-        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+        PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
     }
 
     public Task RefreshChannels()
