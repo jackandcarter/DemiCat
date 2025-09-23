@@ -22,6 +22,10 @@ public class OfficerChatWindow : ChatWindow
     private bool _subscribed;
     private readonly PresenceSidebar? _presenceSidebar;
     private float _presenceWidth = 200f;
+    private const string NoOfficerAccessStatus = "No officer access for this key.";
+
+    private static bool HasOfficerAccess(Config config)
+        => config.Officer && config.IsOfficerToken;
 
     public OfficerChatWindow(
         Config config,
@@ -81,29 +85,24 @@ public class OfficerChatWindow : ChatWindow
     {
         MarkNetworkingStarted();
         _bridge.Start();
-        if (_config.Roles.Contains("officer"))
+        if (HasOfficerAccess(_config))
         {
+            _statusMessage = string.Empty;
             Subscribe();
         }
         else
         {
+            _statusMessage = NoOfficerAccessStatus;
             TryRefreshRoles();
         }
     }
 
     public override void Draw()
     {
-        if (!_config.Roles.Contains("officer"))
+        if (!HasOfficerAccess(_config))
         {
-            TryRefreshRoles();
-            if (!string.IsNullOrEmpty(_statusMessage))
-            {
-                ImGui.TextUnformatted(_statusMessage);
-            }
-            else
-            {
-                ImGui.TextUnformatted("Link DemiCat…");
-            }
+            var message = string.IsNullOrEmpty(_statusMessage) ? NoOfficerAccessStatus : _statusMessage;
+            ImGui.TextUnformatted(message);
             return;
         }
 
@@ -312,7 +311,8 @@ public class OfficerChatWindow : ChatWindow
             }
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                SetChannels(channels);
+                var preparedChannels = PrepareChannelsForDisplay(channels);
+                ApplyPreparedChannels(preparedChannels);
                 _channelsLoaded = true;
                 _channelFetchFailed = false;
                 _channelErrorMessage = string.Empty;
@@ -438,7 +438,7 @@ public class OfficerChatWindow : ChatWindow
                 var mainWindow = MainWindow.Instance;
                 if (mainWindow != null)
                 {
-                    mainWindow.HasOfficerRole = hasOfficer;
+                    mainWindow.HasOfficerRole = HasOfficerAccess(_config);
                 }
             }
 

@@ -671,6 +671,8 @@ public class SettingsWindow : IDisposable
                 return;
             }
 
+            await FetchIdentityClaimsAsync().ConfigureAwait(false);
+
             if (_refreshRoles != null)
             {
                 try
@@ -973,6 +975,85 @@ public class SettingsWindow : IDisposable
         finally
         {
             _syncInProgress = false;
+        }
+    }
+
+    private sealed class MeDto
+    {
+        public string? guildId { get; set; }
+        public bool isOfficer { get; set; }
+    }
+
+    private async Task FetchIdentityClaimsAsync()
+    {
+        if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return;
+        }
+
+        try
+        {
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me";
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
+            var response = await _httpClient.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                _log.Warning("Failed to fetch /api/users/me. Status: {Status}", response.StatusCode);
+                return;
+            }
+
+            await using var stream = await response.Content.ReadAsStreamAsync();
+            var me = await JsonSerializer.DeserializeAsync<MeDto>(
+                stream,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+            if (me == null)
+            {
+                return;
+            }
+
+            var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(me.guildId ?? string.Empty);
+            var updated = false;
+
+            if (ChannelKeyHelper.IsDefaultGuild(_config.GuildId) && !string.IsNullOrEmpty(normalizedGuild))
+            {
+                _config.GuildId = normalizedGuild;
+                updated = true;
+            }
+
+            if (_config.IsOfficerToken != me.isOfficer)
+            {
+                _config.IsOfficerToken = me.isOfficer;
+                updated = true;
+            }
+
+            if (updated)
+            {
+                SaveConfig();
+            }
+
+            var framework = PluginServices.Instance?.Framework;
+            void ApplyOfficerState()
+            {
+                if (MainWindow != null)
+                {
+                    MainWindow.HasOfficerRole = _config.Officer && _config.IsOfficerToken;
+                }
+            }
+
+            if (framework != null)
+            {
+                framework.RunOnTick(ApplyOfficerState);
+            }
+            else
+            {
+                ApplyOfficerState();
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Failed to fetch /api/users/me");
         }
     }
 

@@ -128,7 +128,7 @@ public class PluginChannelValidationTests
 
         try
         {
-            await (Task)method.Invoke(plugin, new object?[] { ChannelKind.Chat, string.Empty, "123456" })!;
+            await (Task)method.Invoke(plugin, new object?[] { ChannelKind.Chat, string.Empty, "123456", null })!;
 
             Assert.Equal("guild-123", config.GuildId);
             pluginInterfaceMock.Verify(pi => pi.SavePluginConfig(config), Times.AtLeastOnce());

@@ -121,7 +121,7 @@ public class Plugin : IDalamudPlugin
         _settings.ChannelWatcher = _channelWatcher;
         _settings.RequestWatcher = _requestWatcher;
 
-        _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+        _mainWindow.HasOfficerRole = HasOfficerAccess(_config);
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
@@ -252,10 +252,10 @@ public class Plugin : IDalamudPlugin
 
     private async void HandleChannelSelectionValidation(string kind, string guildId, string oldId, string newId)
     {
-        await ValidateChannelSelectionAsync(kind, guildId, newId);
+        await ValidateChannelSelectionAsync(kind, guildId, newId, oldId);
     }
 
-    private async Task ValidateChannelSelectionAsync(string kind, string guildId, string channelId)
+    private async Task ValidateChannelSelectionAsync(string kind, string guildId, string channelId, string? previousChannelId = null)
     {
         if (string.IsNullOrWhiteSpace(channelId))
         {
@@ -286,16 +286,42 @@ public class Plugin : IDalamudPlugin
             if (!string.IsNullOrWhiteSpace(response.GuildId))
             {
                 var normalizedResponseGuild = ChannelKeyHelper.NormalizeGuildId(response.GuildId);
-                var guildChanged = !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal);
+                var hasStoredGuild = !ChannelKeyHelper.IsDefaultGuild(_config.GuildId);
 
-                _config.GuildId = normalizedResponseGuild;
-                _services.PluginInterface.SavePluginConfig(_config);
-
-                _chatWindow.OnGuildUpdated();
-                _officerChatWindow.OnGuildUpdated();
-
-                if (guildChanged)
+                if (hasStoredGuild &&
+                    !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal))
                 {
+                    void RejectSelection()
+                    {
+                        var restoreChannelId = string.IsNullOrWhiteSpace(previousChannelId) ? string.Empty : previousChannelId;
+                        _channelSelection.SetChannel(kind, _config.GuildId, restoreChannelId);
+                        PluginServices.Instance?.ToastGui.ShowError(
+                            "Cannot select a channel from a different Discord server without unlinking first."
+                        );
+                    }
+
+                    var framework = PluginServices.Instance?.Framework;
+                    if (framework != null)
+                    {
+                        framework.RunOnTick(RejectSelection);
+                    }
+                    else
+                    {
+                        RejectSelection();
+                    }
+
+                    return;
+                }
+
+                if (!hasStoredGuild)
+                {
+                    var guildChanged = !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal);
+                    _config.GuildId = normalizedResponseGuild;
+                    _services.PluginInterface.SavePluginConfig(_config);
+
+                    _chatWindow.OnGuildUpdated();
+                    _officerChatWindow.OnGuildUpdated();
+
                     await HandleGuildChangedAsync(normalizedResponseGuild, kind).ConfigureAwait(false);
                 }
             }
@@ -402,7 +428,12 @@ public class Plugin : IDalamudPlugin
                 continue;
             }
 
-            await ValidateChannelSelectionAsync(targetKind, normalizedGuildId, selectedChannel).ConfigureAwait(false);
+            await ValidateChannelSelectionAsync(
+                targetKind,
+                normalizedGuildId,
+                selectedChannel,
+                previousChannelId: string.Empty)
+                .ConfigureAwait(false);
         }
     }
 
@@ -506,8 +537,8 @@ public class Plugin : IDalamudPlugin
             _requestWatcher.Start();
         }
 
-        var hasOfficerRole = _config.Roles.Contains("officer");
-        if (_config.Events || _config.SyncedChat || hasOfficerRole)
+        var hasOfficerAccess = HasOfficerAccess(_config);
+        if (_config.Events || _config.SyncedChat || hasOfficerAccess)
         {
             _services.Log.Info("Starting channel watcher");
             _ = _channelWatcher.Start();
@@ -519,7 +550,7 @@ public class Plugin : IDalamudPlugin
             _chatWindow.StartNetworking();
         }
 
-        if (hasOfficerRole)
+        if (hasOfficerAccess)
         {
             if (!_officerWatcherRunning)
             {
@@ -547,6 +578,9 @@ public class Plugin : IDalamudPlugin
     private static bool IsAuthenticationFailure(string? reason)
         => string.Equals(reason, "Invalid API key", StringComparison.Ordinal)
             || string.Equals(reason, "Authentication failed", StringComparison.Ordinal);
+
+    private static bool HasOfficerAccess(Config config)
+        => config.Officer && config.IsOfficerToken;
 
     private void ShowInvalidTokenToast()
     {
@@ -733,7 +767,6 @@ public class Plugin : IDalamudPlugin
 
             _ = _services.Framework.RunOnTick(() =>
             {
-                var hadOfficerRole = _config.Roles.Contains("officer");
                 var officerWatcherWasRunning = _officerWatcherRunning;
                 var channelWatcherWasRunning = _channelWatcher.IsRunning;
                 var requestWatcherWasRunning = _requestWatcher.IsRunning;
@@ -741,8 +774,8 @@ public class Plugin : IDalamudPlugin
 
                 dto.Roles.RemoveAll(r => r == "chat");
                 _config.Roles = dto.Roles;
-                var hasOfficerRole = _config.Roles.Contains("officer");
-                _mainWindow.HasOfficerRole = hasOfficerRole;
+                var officerAccessAfterUpdate = HasOfficerAccess(_config);
+                _mainWindow.HasOfficerRole = officerAccessAfterUpdate;
 
                 var stopChat = false;
                 var startChat = false;
@@ -771,11 +804,11 @@ public class Plugin : IDalamudPlugin
                     log.Warning("Skipping FC chat updates because channels could not be fetched.");
                 }
 
-                var shouldRunChannelWatcher = _config.Events || _config.SyncedChat || hasOfficerRole;
+                var shouldRunChannelWatcher = _config.Events || _config.SyncedChat || officerAccessAfterUpdate;
                 var shouldRunRequestWatcher = _config.Requests;
 
-                var stopOfficer = officerWatcherWasRunning && !hasOfficerRole;
-                var startOfficer = !officerWatcherWasRunning && hasOfficerRole;
+                var stopOfficer = officerWatcherWasRunning && !officerAccessAfterUpdate;
+                var startOfficer = !officerWatcherWasRunning && officerAccessAfterUpdate;
                 var stopChannelWatcher = channelWatcherWasRunning && !shouldRunChannelWatcher;
                 var startChannelWatcher = !channelWatcherWasRunning && shouldRunChannelWatcher;
                 var stopRequestWatcher = requestWatcherWasRunning && !shouldRunRequestWatcher;
@@ -850,7 +883,7 @@ public class Plugin : IDalamudPlugin
                         _watcherRestartLock.Release();
                         _ = _services.Framework.RunOnTick(() =>
                         {
-                            _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+                            _mainWindow.HasOfficerRole = HasOfficerAccess(_config);
                         });
                     }
                 });

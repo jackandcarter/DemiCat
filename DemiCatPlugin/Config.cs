@@ -46,6 +46,7 @@ public class Config : IPluginConfiguration
     public bool Requests { get; set; } = true;
     [JsonPropertyName("officer")]
     public bool Officer { get; set; } = true;
+    public bool IsOfficerToken { get; set; }
     [JsonPropertyName("fcSyncShell")]
     public bool FCSyncShell { get; set; } = false;
     public bool UseCharacterName { get; set; } = false;
