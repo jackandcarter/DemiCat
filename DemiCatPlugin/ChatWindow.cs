@@ -188,6 +188,7 @@ public class ChatWindow : IDisposable
 
     public virtual void StartNetworking()
     {
+        _presence?.SetPresenceReady(true);
         _bridge.Start();
         var chan = CurrentChannelId;
         if (!string.IsNullOrEmpty(chan))
@@ -203,6 +204,7 @@ public class ChatWindow : IDisposable
     {
         _bridge.Stop();
         _presence?.Stop();
+        _presence?.SetPresenceReady(false);
         _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
     }
 
