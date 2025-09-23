@@ -220,6 +220,8 @@ public class Plugin : IDalamudPlugin
                 {
                     var baseFont = pre.AddDalamudDefaultFont(fontSize);
                     var glyphRanges = default(FluentGlyphRangeBuilder)
+                        .With(0x2000, 0x27FF) // general punctuation, arrows, dingbats, enclosed & geometric symbols
+                        .With(0x2B00, 0x2BFF) // misc symbols and arrows (e.g. stars, triangles)
                         .With(0xD83C, 0xD83E) // high-surrogates covering U+1F000-U+1FAFF
                         .With(0xDC00, 0xDFFF) // low-surrogates for the same range
                         .With(0x200D, 0x200D) // zero width joiner for multi-glyph emoji sequences
