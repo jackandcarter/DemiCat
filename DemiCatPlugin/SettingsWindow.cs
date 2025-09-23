@@ -116,6 +116,14 @@ public class SettingsWindow : IDisposable
         {
             _config.ApiBaseUrl = _apiBaseUrl;
             SaveConfig();
+            if (ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                _ = HardReloadIdentityAndStartAsync();
+            }
+            else
+            {
+                StopAllWatchersAndPresence();
+            }
         }
 
         // Allow room for longer server-generated API keys
@@ -178,6 +186,14 @@ public class SettingsWindow : IDisposable
         {
             _config.Enabled = !paused;
             SaveConfig();
+            if (_config.Enabled)
+            {
+                _ = HardReloadIdentityAndStartAsync();
+            }
+            else
+            {
+                StopAllWatchersAndPresence();
+            }
         }
 
         foreach (var kvp in _categoryToggles.ToList())
@@ -898,7 +914,7 @@ public class SettingsWindow : IDisposable
                     StopAllWatchersAndPresence();
                     ClearRuntimeCaches();
                     _tokenManager.Clear("API key replaced");
-                    SaveConfig(restartWatchers: false);
+                    SaveConfig();
                 }
 
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/validate";
@@ -949,7 +965,7 @@ public class SettingsWindow : IDisposable
         }
     }
 
-    private void SaveConfig(bool restartWatchers = true)
+    private void SaveConfig()
     {
         var services = PluginServices.Instance;
         if (services?.PluginInterface == null)
@@ -965,16 +981,6 @@ public class SettingsWindow : IDisposable
         }
 
         _ = services.Framework.RunOnTick(() => services.PluginInterface.SavePluginConfig(_config));
-        if (!restartWatchers)
-        {
-            return;
-        }
-
-        if (ChannelWatcher != null)
-        {
-            _ = ChannelWatcher.Start();
-        }
-        RequestWatcher?.Start();
     }
 
     public void Dispose()
