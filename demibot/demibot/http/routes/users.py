@@ -34,6 +34,20 @@ def _normalize_status(value: str | None) -> str:
 router = APIRouter(prefix="/api")
 
 
+@router.get("/users/me")
+async def get_me(
+    ctx: RequestContext = Depends(api_key_auth),
+) -> dict[str, str | bool | None]:
+    guild = getattr(ctx, "guild", None)
+    discord_guild_id = getattr(guild, "discord_guild_id", None)
+    guild_id: str | None = None
+    if discord_guild_id is not None:
+        guild_id = str(discord_guild_id)
+    roles = getattr(ctx, "roles", []) or []
+    is_officer = "officer" in roles
+    return {"guildId": guild_id, "isOfficer": is_officer}
+
+
 @router.get("/users")
 async def get_users(
     ctx: RequestContext = Depends(api_key_auth),

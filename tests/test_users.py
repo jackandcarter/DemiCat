@@ -32,7 +32,58 @@ ext_pkg.commands = commands_pkg
 sys.modules.setdefault('discord.ext', ext_pkg)
 sys.modules.setdefault('discord.ext.commands', commands_pkg)
 
-from demibot.http.routes.users import get_users, get_my_profile
+fastapi_pkg = types.ModuleType('fastapi')
+
+
+class DummyAPIRouter:
+    def __init__(self, prefix: str | None = None):
+        self.prefix = prefix
+        self.routes: list[tuple[str, str, object]] = []
+
+    def get(self, path: str):
+        def decorator(func):
+            self.routes.append(("GET", path, func))
+            return func
+
+        return decorator
+
+
+def _depends(dependency=None, *args, **kwargs):
+    return dependency
+
+
+def _header(default=None, *args, **kwargs):
+    return default
+
+
+class HTTPException(Exception):
+    def __init__(self, status_code: int, detail: str | None = None):
+        super().__init__(detail)
+        self.status_code = status_code
+        self.detail = detail
+
+
+class _StatusModule:
+    HTTP_401_UNAUTHORIZED = 401
+    HTTP_403_FORBIDDEN = 403
+
+
+class Request:
+    def __init__(self):
+        self.client = types.SimpleNamespace(host="", port=0)
+        self.method = "GET"
+        self.url = types.SimpleNamespace(path="/")
+
+
+fastapi_pkg.APIRouter = DummyAPIRouter
+fastapi_pkg.Depends = _depends
+fastapi_pkg.Header = _header
+fastapi_pkg.HTTPException = HTTPException
+fastapi_pkg.status = _StatusModule()
+fastapi_pkg.Request = Request
+sys.modules.setdefault('fastapi', fastapi_pkg)
+
+from demibot.http.routes.users import get_users, get_my_profile, get_me
 import demibot.http.routes.users as users_route
 from demibot.discordbot.presence_store import set_presence, Presence as StorePresence
 from demibot.db.models import (
@@ -251,6 +302,25 @@ def test_get_users_fetches_multiple_users_once():
             assert names['90'] == 'Name90'
             assert set(client.fetched) == {80, 90}
             users_route.discord_client = None
+
+    asyncio.run(_run())
+
+
+def test_get_me_returns_guild_and_officer_status():
+    async def _run():
+        ctx = StubContext(321)
+        ctx.roles = ["officer"]
+        res = await get_me(ctx=ctx)
+        assert res == {"guildId": "321", "isOfficer": True}
+
+        ctx.roles = []
+        res = await get_me(ctx=ctx)
+        assert res == {"guildId": "321", "isOfficer": False}
+
+        ctx.guild = None
+        res = await get_me(ctx=ctx)
+        assert res["guildId"] is None
+        assert res["isOfficer"] is False
 
     asyncio.run(_run())
 
