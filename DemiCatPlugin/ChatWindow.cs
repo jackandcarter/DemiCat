@@ -1609,8 +1609,13 @@ public class ChatWindow : IDisposable
             var all = new List<DiscordMessageDto>();
             string? before = null;
             var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
-            var hasCursor = _config.RestChatCursors.TryGetValue(cursorKey, out var since);
-            var storedAfter = hasCursor ? since.ToString() : null;
+            string? storedAfter = null;
+            var usedStoredCursor = false;
+            if (_config.RestChatCursors.TryGetValue(cursorKey, out var since))
+            {
+                storedAfter = since.ToString();
+                usedStoredCursor = true;
+            }
             var firstPage = true;
             while (all.Count < MaxMessages)
             {
@@ -1669,6 +1674,51 @@ public class ChatWindow : IDisposable
             {
                 if (!string.Equals(requestedChannelId, CurrentChannelId, StringComparison.Ordinal))
                 {
+                    return;
+                }
+
+                var hadExistingMessages = _messages.Count > 0;
+                var hasMatchingChannel = _messages.Any(m => string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+                var hasConflictingChannel = _messages.Any(m => !string.IsNullOrEmpty(m.ChannelId) && !string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+                var canMergeIncremental = usedStoredCursor && hadExistingMessages && hasMatchingChannel && !hasConflictingChannel;
+
+                if (canMergeIncremental)
+                {
+                    if (all.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var existingIndices = new Dictionary<string, int>(StringComparer.Ordinal);
+                    for (var i = 0; i < _messages.Count; i++)
+                    {
+                        var id = _messages[i].Id;
+                        if (!string.IsNullOrEmpty(id) && !existingIndices.ContainsKey(id))
+                        {
+                            existingIndices[id] = i;
+                        }
+                    }
+
+                    foreach (var message in all)
+                    {
+                        if (string.IsNullOrEmpty(message.Id))
+                        {
+                            continue;
+                        }
+
+                        if (existingIndices.TryGetValue(message.Id, out var index))
+                        {
+                            DisposeMessageTextures(_messages[index]);
+                            _messages[index] = message;
+                        }
+                        else
+                        {
+                            _messages.Add(message);
+                            existingIndices[message.Id] = _messages.Count - 1;
+                        }
+                    }
+
+                    TrimMessages();
                     return;
                 }
 
