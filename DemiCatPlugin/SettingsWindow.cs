@@ -682,7 +682,10 @@ public class SettingsWindow : IDisposable
             OfficerChatWindow.ChannelsLoaded = false;
         }
 
-        MainWindow?.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
+        if (MainWindow != null)
+        {
+            MainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
+        }
     }
 
     internal Task HardReloadIdentityAndStartAsync(bool openMainWindow = false)
