@@ -52,7 +52,7 @@ def _setup_db(
     asyncio.run(populate())
 
 
-def test_get_channels_returns_placeholder_and_flags_retry(monkeypatch):
+def test_get_channels_removes_unresolved_channel(monkeypatch):
     _setup_db("test_channels.db")
 
     async def fake_ensure_channel_name(*args, **kwargs):
@@ -60,8 +60,11 @@ def test_get_channels_returns_placeholder_and_flags_retry(monkeypatch):
 
     monkeypatch.setattr(channel_routes, "ensure_channel_name", fake_ensure_channel_name)
 
+    broadcast_called = False
+
     async def dummy_broadcast(*args, **kwargs):
-        return None
+        nonlocal broadcast_called
+        broadcast_called = True
 
     monkeypatch.setattr(channel_routes.manager, "broadcast_text", dummy_broadcast)
 
@@ -82,12 +85,13 @@ def test_get_channels_returns_placeholder_and_flags_retry(monkeypatch):
                         GuildChannel.kind == ChannelKind.EVENT,
                     )
                 )
-            ).scalar_one()
-            return data, row.name
+            ).scalar_one_or_none()
+            return data, row
 
-    data, name = asyncio.run(run())
-    assert data[ChannelKind.EVENT.value][0]["name"] == "100"
-    assert name is None
+    data, row = asyncio.run(run())
+    assert data[ChannelKind.EVENT.value] == []
+    assert row is None
+    assert broadcast_called
 
 
 def test_get_channels_kind_event(monkeypatch):
