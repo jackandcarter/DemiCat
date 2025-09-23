@@ -303,7 +303,7 @@ public class Plugin : IDalamudPlugin
                     var framework = PluginServices.Instance?.Framework;
                     if (framework != null)
                     {
-                        framework.RunOnTick(RejectSelection);
+                        _ = framework.RunOnTick(RejectSelection);
                     }
                     else
                     {

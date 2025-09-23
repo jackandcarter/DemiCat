@@ -546,7 +546,7 @@ public class SettingsWindow : IDisposable
             {
                 try
                 {
-                    framework.RunOnTick(ApplyOfficerAccess);
+                    _ = framework.RunOnTick(ApplyOfficerAccess);
                 }
                 catch (Exception ex)
                 {
@@ -932,7 +932,7 @@ public class SettingsWindow : IDisposable
                 {
                     try
                     {
-                        framework.RunOnTick(() => MainWindow.IsOpen = true);
+                        _ = framework.RunOnTick(() => MainWindow.IsOpen = true);
                     }
                     catch (Exception ex)
                     {
