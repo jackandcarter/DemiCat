@@ -50,7 +50,8 @@ public class ChatWindowChannelFetchTests
         {
             ApiBaseUrl = "http://localhost",
             GuildId = "guild",
-            Roles = new[] { "officer" }
+            Roles = new[] { "officer" },
+            IsOfficerToken = true
         };
         var handler = new SequenceHandler();
         handler.EnqueueResponse(SerializeChannels(("1", "officer")));

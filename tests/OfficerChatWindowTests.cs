@@ -21,7 +21,8 @@ public class OfficerChatWindowTests
             Officer = true,
             Roles = new[] { "officer" },
             ApiBaseUrl = "http://localhost",
-            OfficerChannelId = "42"
+            OfficerChannelId = "42",
+            IsOfficerToken = true
         };
         var handler = new SequenceHandler();
         using var client = new HttpClient(handler);
@@ -53,7 +54,8 @@ public class OfficerChatWindowTests
             Officer = true,
             Roles = new[] { "officer" },
             ApiBaseUrl = "http://localhost",
-            OfficerChannelId = "42"
+            OfficerChannelId = "42",
+            IsOfficerToken = true
         };
         var handler = new TestHandler();
         using var client = new HttpClient(handler);
@@ -81,7 +83,8 @@ public class OfficerChatWindowTests
             Officer = true,
             Roles = new[] { "officer" },
             ApiBaseUrl = "https://example.com/base",
-            OfficerChannelId = "42"
+            OfficerChannelId = "42",
+            IsOfficerToken = true
         };
         using var client = new HttpClient(new EmojiStubHandler());
         var tm = new TokenManager();
@@ -92,6 +95,30 @@ public class OfficerChatWindowTests
         var uri = (Uri)method.Invoke(window, null)!;
 
         Assert.Equal("wss://example.com/base/ws/chat", uri.ToString());
+    }
+
+    [Fact]
+    public void StartNetworkingWithoutOfficerClaimShowsMessage()
+    {
+        SetupServices();
+        var config = new Config
+        {
+            Officer = true,
+            ApiBaseUrl = "http://localhost",
+            OfficerChannelId = "42"
+        };
+        using var client = new HttpClient(new EmojiStubHandler());
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, client, tm);
+        var window = new OfficerChatWindow(config, client, null, tm, channelService);
+
+        window.StartNetworking();
+
+        var statusMessage = (string)typeof(ChatWindow)
+            .GetField("_statusMessage", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(window)!;
+
+        Assert.Contains("officer", statusMessage, StringComparison.OrdinalIgnoreCase);
     }
 
     private static List<DiscordMessageDto> GetMessages(ChatWindow window)

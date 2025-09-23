@@ -26,7 +26,7 @@ public class MainWindow : IDisposable
     private float _fadeAlpha = 1f;
 
     public bool IsOpen;
-    public bool HasOfficerRole { get; set; }
+    public bool HasOfficerAccess { get; set; }
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;
     public TemplatesWindow TemplatesWindow => _templates;
@@ -258,7 +258,7 @@ public class MainWindow : IDisposable
                     }
                 }
 
-                if (HasOfficerRole)
+                if (HasOfficerAccess)
                 {
                     if (!linked)
                     {

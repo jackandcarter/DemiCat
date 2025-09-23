@@ -9,7 +9,7 @@ namespace DemiCatPlugin;
 public class Config : IPluginConfiguration
 {
     // Required by Dalamud
-    public int Version { get; set; } = 8;
+    public int Version { get; set; } = 9;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -46,6 +46,8 @@ public class Config : IPluginConfiguration
     public bool Requests { get; set; } = true;
     [JsonPropertyName("officer")]
     public bool Officer { get; set; } = true;
+    [JsonPropertyName("isOfficerToken")]
+    public bool IsOfficerToken { get; set; }
     [JsonPropertyName("fcSyncShell")]
     public bool FCSyncShell { get; set; } = false;
     public bool UseCharacterName { get; set; } = false;
@@ -248,6 +250,12 @@ public class Config : IPluginConfiguration
             ChatInputSplitRatio = Math.Clamp(ChatInputSplitRatio, 0.2f, 0.8f);
 
             Version = 8;
+            ExtensionData = null;
+        }
+        if (Version < 9)
+        {
+            IsOfficerToken = false;
+            Version = 9;
             ExtensionData = null;
         }
     }
