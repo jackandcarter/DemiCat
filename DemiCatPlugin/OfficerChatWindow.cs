@@ -79,6 +79,7 @@ public class OfficerChatWindow : ChatWindow
 
     public override void StartNetworking()
     {
+        MarkNetworkingStarted();
         _bridge.Start();
         if (_config.Roles.Contains("officer"))
         {
@@ -346,12 +347,21 @@ public class OfficerChatWindow : ChatWindow
 
     private void Subscribe()
     {
-        var chan = CurrentChannelId;
-        _bridge.Unsubscribe(chan);
-        _bridge.Subscribe(chan, _config.GuildId, ChannelKind);
-        _presence?.Reset();
-        _ = RefreshMessages();
-        _subscribed = true;
+        var subscribed = TrySubscribeCurrentChannel(force: true);
+        if (!subscribed)
+        {
+            _subscribed = false;
+        }
+    }
+
+    protected override void OnSubscriptionStateChanged(bool isSubscribed)
+    {
+        base.OnSubscriptionStateChanged(isSubscribed);
+        _subscribed = isSubscribed && HasActiveSubscription;
+        if (_subscribed)
+        {
+            _presence?.Reset();
+        }
     }
 
     private async Task RefreshRoles()

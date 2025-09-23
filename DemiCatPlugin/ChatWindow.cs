@@ -73,6 +73,10 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
     private readonly Dictionary<string, TypingUser> _typingUsers = new();
+    private bool _networkingActive;
+    private string? _lastSubscribedChannelId;
+    private string? _lastSubscribedGuildId;
+    private bool _pendingRefreshAfterSubscribe;
     private int _selectionStart;
     private int _selectionEnd;
     private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
@@ -127,6 +131,16 @@ public class ChatWindow : IDisposable
         get => _channelsLoaded;
         set => _channelsLoaded = value;
     }
+
+    protected bool HasActiveSubscription =>
+        _networkingActive &&
+        !string.IsNullOrEmpty(_lastSubscribedChannelId) &&
+        !string.IsNullOrEmpty(_lastSubscribedGuildId) &&
+        string.Equals(_lastSubscribedChannelId, CurrentChannelId, StringComparison.Ordinal) &&
+        string.Equals(
+            _lastSubscribedGuildId,
+            ChannelKeyHelper.NormalizeGuildId(_config.GuildId),
+            StringComparison.Ordinal);
 
     public DiscordPresenceService? Presence => _presence;
     public Action<string?, Action<ISharedImmediateTexture?>> TextureLoader => LoadTexture;
@@ -188,23 +202,113 @@ public class ChatWindow : IDisposable
     }
 #endif
 
+    protected virtual void OnSubscriptionStateChanged(bool isSubscribed)
+    {
+    }
+
+    protected void MarkNetworkingStarted()
+    {
+        _networkingActive = true;
+    }
+
+    protected void MarkNetworkingStopped()
+    {
+        _networkingActive = false;
+        _lastSubscribedChannelId = null;
+        _lastSubscribedGuildId = null;
+        _pendingRefreshAfterSubscribe = false;
+    }
+
+    protected bool TrySubscribeCurrentChannel(bool force = false, bool refreshMessages = true)
+    {
+        if (refreshMessages)
+        {
+            _pendingRefreshAfterSubscribe = true;
+        }
+
+        if (!_networkingActive)
+        {
+            return false;
+        }
+
+        var channelId = CurrentChannelId;
+        if (string.IsNullOrEmpty(channelId))
+        {
+            if (!string.IsNullOrEmpty(_lastSubscribedChannelId))
+            {
+                _bridge.Unsubscribe(_lastSubscribedChannelId);
+            }
+
+            _lastSubscribedChannelId = null;
+            _lastSubscribedGuildId = null;
+            OnSubscriptionStateChanged(false);
+            return false;
+        }
+
+        var guildId = _config.GuildId;
+        if (string.IsNullOrWhiteSpace(guildId))
+        {
+            if (!string.IsNullOrEmpty(_lastSubscribedChannelId))
+            {
+                _bridge.Unsubscribe(_lastSubscribedChannelId);
+            }
+
+            _lastSubscribedChannelId = null;
+            _lastSubscribedGuildId = null;
+            OnSubscriptionStateChanged(false);
+            return false;
+        }
+
+        var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
+        var alreadySubscribed = !force &&
+            string.Equals(_lastSubscribedChannelId, channelId, StringComparison.Ordinal) &&
+            string.Equals(_lastSubscribedGuildId, normalizedGuild, StringComparison.Ordinal);
+
+        if (alreadySubscribed)
+        {
+            if (_pendingRefreshAfterSubscribe)
+            {
+                _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshMessages());
+                _pendingRefreshAfterSubscribe = false;
+            }
+
+            OnSubscriptionStateChanged(true);
+            return true;
+        }
+
+        if (!string.IsNullOrEmpty(_lastSubscribedChannelId))
+        {
+            _bridge.Unsubscribe(_lastSubscribedChannelId);
+        }
+
+        _bridge.Subscribe(channelId, guildId, _channelKind);
+
+        if (_pendingRefreshAfterSubscribe)
+        {
+            _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshMessages());
+            _pendingRefreshAfterSubscribe = false;
+        }
+
+        _lastSubscribedChannelId = channelId;
+        _lastSubscribedGuildId = normalizedGuild;
+        OnSubscriptionStateChanged(true);
+        return true;
+    }
+
     public virtual void StartNetworking()
     {
+        MarkNetworkingStarted();
         _presence?.SetPresenceReady(true);
         _bridge.Start();
-        var chan = CurrentChannelId;
-        if (!string.IsNullOrEmpty(chan))
-        {
-            _bridge.Unsubscribe(chan);
-            _bridge.Subscribe(chan, _config.GuildId, _channelKind);
-            _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshMessages());
-        }
+        TrySubscribeCurrentChannel(force: true);
         _presence?.Reset();
     }
 
     public void StopNetworking()
     {
         _bridge.Stop();
+        MarkNetworkingStopped();
+        OnSubscriptionStateChanged(false);
         _presence?.Stop();
         _presence?.SetPresenceReady(false);
         _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
@@ -215,13 +319,25 @@ public class ChatWindow : IDisposable
         if (kind != _channelKind) return;
         if (!string.Equals(ChannelKeyHelper.NormalizeGuildId(guildId), ChannelKeyHelper.NormalizeGuildId(_config.GuildId), StringComparison.Ordinal))
             return;
-        PluginServices.Instance!.Framework.RunOnTick(async () =>
+        PluginServices.Instance!.Framework.RunOnTick(() =>
         {
             if (!string.IsNullOrEmpty(oldId))
+            {
                 _bridge.Unsubscribe(oldId);
-            if (!string.IsNullOrEmpty(newId))
-                _bridge.Subscribe(newId, _config.GuildId, _channelKind);
-            await RefreshMessages();
+            }
+
+            if (string.IsNullOrEmpty(newId))
+            {
+                _lastSubscribedChannelId = null;
+                _lastSubscribedGuildId = null;
+                OnSubscriptionStateChanged(false);
+                return;
+            }
+
+            _lastSubscribedChannelId = null;
+            _lastSubscribedGuildId = null;
+            OnSubscriptionStateChanged(false);
+            TrySubscribeCurrentChannel(force: true);
         });
     }
 
@@ -828,6 +944,19 @@ public class ChatWindow : IDisposable
             return;
         }
 
+        var storedNormalizedGuild = ChannelKeyHelper.NormalizeGuildId(_config.GuildId);
+        string? normalizedGuildFromChannels = null;
+        var channelWithGuild = _channels.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c.GuildId));
+        if (channelWithGuild != null && !string.IsNullOrWhiteSpace(channelWithGuild.GuildId))
+        {
+            normalizedGuildFromChannels = ChannelKeyHelper.NormalizeGuildId(channelWithGuild.GuildId);
+            if (!string.Equals(normalizedGuildFromChannels, storedNormalizedGuild, StringComparison.Ordinal))
+            {
+                _config.GuildId = normalizedGuildFromChannels;
+                PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+            }
+        }
+
         var current = CurrentChannelId;
         if (!string.IsNullOrEmpty(current))
         {
@@ -841,6 +970,24 @@ public class ChatWindow : IDisposable
 
         var newId = _channels[_selectedIndex].Id;
         _channelSelection.SetChannel(_channelKind, _config.GuildId, newId);
+
+        if (normalizedGuildFromChannels != null)
+        {
+            OnGuildUpdated();
+        }
+    }
+
+    internal void OnGuildUpdated()
+    {
+        var framework = PluginServices.Instance?.Framework;
+        if (framework != null)
+        {
+            framework.RunOnTick(() => TrySubscribeCurrentChannel(force: true));
+        }
+        else
+        {
+            TrySubscribeCurrentChannel(force: true);
+        }
     }
 
     private bool EnsureChannelAvailable(string channelId, string action)
@@ -2056,9 +2203,7 @@ public class ChatWindow : IDisposable
     {
         _presence?.Reload();
         _ = _presence?.Refresh();
-        var chan = CurrentChannelId;
-        _bridge.Unsubscribe(chan);
-        _bridge.Subscribe(chan, _config.GuildId, _channelKind);
+        TrySubscribeCurrentChannel(force: true, refreshMessages: false);
     }
 
     private void HandleBridgeUnlinked()
