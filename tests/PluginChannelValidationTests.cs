@@ -144,6 +144,94 @@ public class PluginChannelValidationTests
         }
     }
 
+    [Fact]
+    public async Task RevalidationClearsRejectedSelection()
+    {
+        Cleanup();
+        PingService.Instance = null;
+
+        var plugin = (Plugin)FormatterServices.GetUninitializedObject(typeof(Plugin));
+        var services = new PluginServices();
+
+        var pluginInterfaceMock = new Mock<IDalamudPluginInterface>();
+        pluginInterfaceMock
+            .Setup(p => p.SavePluginConfig(It.IsAny<Config>()));
+
+        var logMock = new Mock<IPluginLog>();
+        logMock.Setup(l => l.Info(It.IsAny<string>()));
+        logMock.Setup(l => l.Warning(It.IsAny<string>()));
+        logMock.Setup(l => l.Warning(It.IsAny<Exception>(), It.IsAny<string>()));
+        logMock.Setup(l => l.Error(It.IsAny<string>()));
+
+        var frameworkMock = new Mock<IFramework>();
+        frameworkMock
+            .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
+            .Callback<Action, FrameworkUpdatePriority>((action, _) => action());
+
+        var toastMock = new Mock<IToastGui>();
+
+        SetPluginService(services, "PluginInterface", pluginInterfaceMock.Object);
+        SetPluginService(services, "Log", logMock.Object);
+        SetPluginService(services, "Framework", frameworkMock.Object);
+        SetPluginService(services, "ToastGui", toastMock.Object);
+
+        var config = new Config
+        {
+            ApiBaseUrl = "https://example.com",
+            GuildId = "guild-new",
+            Requests = false,
+            Events = false,
+            SyncedChat = false,
+            EnableFcChat = false
+        };
+        config.Roles.Clear();
+
+        var tokenManager = new TokenManager();
+        var handler = new RevalidationTestHandler();
+        var httpClient = new HttpClient(handler);
+
+        var channelService = new ChannelService(config, httpClient, tokenManager);
+        var channelSelection = new ChannelSelectionService(config);
+        channelSelection.SetChannel(ChannelKind.Chat, config.GuildId, "chan-1");
+
+        SetPrivateField(plugin, "_services", services);
+        SetPrivateField(plugin, "_config", config);
+        SetPrivateField(plugin, "_tokenManager", tokenManager);
+        SetPrivateField(plugin, "_httpClient", httpClient);
+        SetPrivateField(plugin, "_channelService", channelService);
+        SetPrivateField(plugin, "_channelSelection", channelSelection);
+
+        var method = typeof(Plugin)
+            .GetMethod("RevalidateChannelSelectionsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+
+        try
+        {
+            await (Task)method.Invoke(
+                plugin,
+                new object?[]
+                {
+                    ChannelKeyHelper.NormalizeGuildId(config.GuildId),
+                    ChannelKind.Event
+                }
+            )!;
+
+            Assert.Equal(string.Empty, channelSelection.GetChannel(ChannelKind.Chat, config.GuildId));
+            Assert.DoesNotContain(
+                ChannelKeyHelper.BuildSelectionKey(config.GuildId, ChannelKind.Chat),
+                config.ChannelSelections.Keys
+            );
+            Assert.Contains(
+                handler.Requests,
+                request => request.Method == HttpMethod.Get && request.Uri?.AbsolutePath == "/api/channels/chan-1/validate"
+            );
+            Assert.Equal("chan-1", handler.LastValidatedChannelId);
+        }
+        finally
+        {
+            Cleanup();
+        }
+    }
+
     private static void SetPrivateField(object instance, string fieldName, object value)
     {
         instance.GetType()
@@ -192,6 +280,42 @@ public class PluginChannelValidationTests
             if (request.Method == HttpMethod.Get && request.RequestUri?.AbsolutePath == "/api/channels/123456/validate")
             {
                 return Task.FromResult(CreateJsonResponse("{\"ok\":true,\"guildId\":\"guild-123\",\"kind\":\"chat\",\"name\":\"General\"}"));
+            }
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+        }
+
+        private static HttpResponseMessage CreateJsonResponse(string json)
+        {
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(json)
+            };
+        }
+    }
+
+    private sealed class RevalidationTestHandler : HttpMessageHandler
+    {
+        public List<(HttpMethod Method, Uri? Uri)> Requests { get; } = new();
+
+        public string? LastValidatedChannelId { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add((request.Method, request.RequestUri));
+
+            if (request.Method == HttpMethod.Get &&
+                request.RequestUri?.AbsolutePath.StartsWith("/api/channels/", StringComparison.Ordinal) == true &&
+                request.RequestUri.AbsolutePath.EndsWith("/validate", StringComparison.Ordinal))
+            {
+                var segments = request.RequestUri.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                if (segments.Length >= 4)
+                {
+                    LastValidatedChannelId = segments[2];
+                }
+
+                const string json = "{\"ok\":false,\"guildId\":\"guild-old\",\"kind\":\"chat\"}";
+                return Task.FromResult(CreateJsonResponse(json));
             }
 
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
