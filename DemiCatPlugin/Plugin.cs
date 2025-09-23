@@ -428,7 +428,7 @@ public class Plugin : IDalamudPlugin
                 continue;
             }
 
-            await ValidateChannelSelectionAsync(targetKind, normalizedGuildId, selectedChannel, selectedChannel)
+            await ValidateChannelSelectionAsync(targetKind, normalizedGuildId, selectedChannel, string.Empty)
                 .ConfigureAwait(false);
         }
     }
