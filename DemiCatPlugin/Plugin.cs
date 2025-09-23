@@ -262,13 +262,10 @@ public class Plugin : IDalamudPlugin
             return;
         }
 
-        if (
-            !string.Equals(
-                ChannelKeyHelper.NormalizeGuildId(guildId),
-                ChannelKeyHelper.NormalizeGuildId(_config.GuildId),
-                StringComparison.Ordinal
-            )
-        )
+        var normalizedRequestedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
+        var normalizedStoredGuild = ChannelKeyHelper.NormalizeGuildId(_config.GuildId);
+
+        if (!string.Equals(normalizedRequestedGuild, normalizedStoredGuild, StringComparison.Ordinal))
         {
             return;
         }
@@ -284,6 +281,20 @@ public class Plugin : IDalamudPlugin
             if (response == null)
             {
                 return;
+            }
+
+            if (!string.IsNullOrWhiteSpace(response.GuildId))
+            {
+                var normalizedResponseGuild = ChannelKeyHelper.NormalizeGuildId(response.GuildId);
+                var guildChanged = !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal);
+
+                _config.GuildId = normalizedResponseGuild;
+                _services.PluginInterface.SavePluginConfig(_config);
+
+                if (guildChanged)
+                {
+                    await HandleGuildChangedAsync(normalizedResponseGuild, kind).ConfigureAwait(false);
+                }
             }
 
             if (response.Ok)
@@ -327,6 +338,82 @@ public class Plugin : IDalamudPlugin
                 channelId,
                 kind
             );
+        }
+    }
+
+    private async Task HandleGuildChangedAsync(string normalizedGuildId, string changedKind)
+    {
+        try
+        {
+            await RevalidateChannelSelectionsAsync(normalizedGuildId, changedKind).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Warning(
+                ex,
+                $"Failed to revalidate channel selections after guild change to {normalizedGuildId}"
+            );
+        }
+
+        try
+        {
+            await RestartWatchersAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Warning(ex, "Failed to restart watchers after guild change");
+        }
+
+        try
+        {
+            await _emojiManager.RefreshCustomAsync().ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Warning(ex, "Failed to refresh custom emoji after guild change");
+        }
+    }
+
+    private async Task RevalidateChannelSelectionsAsync(string normalizedGuildId, string changedKind)
+    {
+        var normalizedChangedKind = ChannelKeyHelper.NormalizeKind(changedKind);
+        var kindsToValidate = new[]
+        {
+            ChannelKind.Chat,
+            ChannelKind.Event,
+            ChannelKind.FcChat,
+            ChannelKind.OfficerChat
+        };
+
+        foreach (var targetKind in kindsToValidate)
+        {
+            var normalizedTargetKind = ChannelKeyHelper.NormalizeKind(targetKind);
+            if (string.Equals(normalizedTargetKind, normalizedChangedKind, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var selectedChannel = _channelSelection.GetChannel(targetKind, normalizedGuildId);
+            if (string.IsNullOrWhiteSpace(selectedChannel))
+            {
+                continue;
+            }
+
+            await ValidateChannelSelectionAsync(targetKind, normalizedGuildId, selectedChannel).ConfigureAwait(false);
+        }
+    }
+
+    private async Task RestartWatchersAsync()
+    {
+        await _watcherRestartLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            StopWatchers();
+            await StartWatchersAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _watcherRestartLock.Release();
         }
     }
 
