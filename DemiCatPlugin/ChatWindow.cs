@@ -1619,7 +1619,8 @@ public class ChatWindow : IDisposable
                 {
                     url += $"&before={before}";
                 }
-                var after = !firstPage ? storedAfter : null;
+                // The "after" cursor is only for incremental refreshes; pagination uses "before" alone.
+                var after = firstPage && before == null ? storedAfter : null;
                 if (after != null)
                 {
                     url += $"&after={after}";
