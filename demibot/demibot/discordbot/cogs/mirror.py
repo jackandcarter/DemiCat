@@ -269,7 +269,10 @@ class Mirror(commands.Cog):
                     )
                     await manager.broadcast_text(
                         json.dumps(
-                            dto.model_dump(mode="json", by_alias=True, exclude_none=True)
+                            dto.model_dump(
+                                mode="json", by_alias=True, exclude_none=True
+                            ),
+                            ensure_ascii=False,
                         ),
                         guild_id,
                         officer_only=is_officer,
@@ -424,7 +427,10 @@ class Mirror(commands.Cog):
 
                 await manager.broadcast_text(
                     json.dumps(
-                        dto.model_dump(mode="json", by_alias=True, exclude_none=True)
+                        dto.model_dump(
+                            mode="json", by_alias=True, exclude_none=True
+                        ),
+                        ensure_ascii=False,
                     ),
                     guild_id,
                     officer_only=is_officer,
@@ -588,7 +594,9 @@ class Mirror(commands.Cog):
                     await db.commit()
 
                     await manager.broadcast_text(
-                        json.dumps({"deletedId": str(message.id)}),
+                        json.dumps(
+                            {"deletedId": str(message.id)}, ensure_ascii=False
+                        ),
                         guild_id,
                         officer_only=is_officer,
                         path="/ws/embeds",
@@ -607,7 +615,9 @@ class Mirror(commands.Cog):
                         await db.commit()
 
                     await manager.broadcast_text(
-                        json.dumps({"deletedId": str(message.id)}),
+                        json.dumps(
+                            {"deletedId": str(message.id)}, ensure_ascii=False
+                        ),
                         guild_id,
                         officer_only=is_officer,
                         path="/ws/messages",
@@ -626,7 +636,9 @@ class Mirror(commands.Cog):
                     await db.commit()
 
                 await manager.broadcast_text(
-                    json.dumps({"deletedId": str(message.id)}),
+                    json.dumps(
+                        {"deletedId": str(message.id)}, ensure_ascii=False
+                    ),
                     guild_id,
                     officer_only=is_officer,
                     path="/ws/messages",

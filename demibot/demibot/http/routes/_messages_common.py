@@ -1457,7 +1457,7 @@ async def save_message(
 
     payload = dto.model_dump(mode="json", by_alias=True, exclude_none=True)
     await manager.broadcast_text(
-        json.dumps(payload),
+        json.dumps(payload, ensure_ascii=False),
         ctx.guild.id,
         officer_only=is_officer,
         path="/ws/officer-messages" if is_officer else "/ws/messages",
@@ -1664,7 +1664,7 @@ async def edit_message(
     )
     payload = dto.model_dump(mode="json", by_alias=True, exclude_none=True)
     await manager.broadcast_text(
-        json.dumps(payload),
+        json.dumps(payload, ensure_ascii=False),
         ctx.guild.id,
         officer_only=is_officer,
         path="/ws/officer-messages" if is_officer else "/ws/messages",
@@ -1732,7 +1732,7 @@ async def delete_message(
                     pass
     payload = {"id": str(message_id), "channelId": str(cid), "deleted": True}
     await manager.broadcast_text(
-        json.dumps(payload),
+        json.dumps(payload, ensure_ascii=False),
         ctx.guild.id,
         officer_only=is_officer,
         path="/ws/officer-messages" if is_officer else "/ws/messages",

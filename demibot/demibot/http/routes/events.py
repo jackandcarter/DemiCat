@@ -538,7 +538,7 @@ async def create_event(
     payload = dto.model_dump(mode="json", by_alias=True, exclude_none=True)
     try:
         await manager.broadcast_text(
-            json.dumps(payload),
+            json.dumps(payload, ensure_ascii=False),
             ctx.guild.id,
             officer_only=kind == ChannelKind.OFFICER_CHAT,
             path="/ws/embeds",
@@ -714,7 +714,7 @@ async def rsvp_event(
     ).scalar_one_or_none()
     try:
         await manager.broadcast_text(
-            json.dumps(payload),
+            json.dumps(payload, ensure_ascii=False),
             embed.guild_id,
             officer_only=kind == ChannelKind.OFFICER_CHAT,
             path="/ws/embeds",

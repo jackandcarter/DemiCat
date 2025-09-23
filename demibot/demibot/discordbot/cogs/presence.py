@@ -227,7 +227,9 @@ class PresenceTracker(commands.Cog):
     ) -> None:
         payload = await self._update(after)
         await manager.broadcast_text(
-            json.dumps(payload), after.guild.id, path="/ws/presences"
+            json.dumps(payload, ensure_ascii=False),
+            after.guild.id,
+            path="/ws/presences",
         )
 
     @commands.Cog.listener()
@@ -236,7 +238,9 @@ class PresenceTracker(commands.Cog):
     ) -> None:
         payload = await self._update(after)
         await manager.broadcast_text(
-            json.dumps(payload), after.guild.id, path="/ws/presences"
+            json.dumps(payload, ensure_ascii=False),
+            after.guild.id,
+            path="/ws/presences",
         )
 
 

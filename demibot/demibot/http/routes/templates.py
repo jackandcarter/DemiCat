@@ -140,7 +140,8 @@ async def create_template(
                     "payload": dto.model_dump(
                         mode="json", by_alias=True, exclude_none=True
                     ),
-                }
+                },
+                ensure_ascii=False,
             ),
             ctx.guild.id,
             path="/ws/templates",
@@ -258,7 +259,8 @@ async def update_template(
                     "payload": dto.model_dump(
                         mode="json", by_alias=True, exclude_none=True
                     ),
-                }
+                },
+                ensure_ascii=False,
             ),
             ctx.guild.id,
             path="/ws/templates",
@@ -315,7 +317,8 @@ async def delete_template(
                     {
                         "topic": "templates.updated",
                         "payload": {"id": str(tid), "deleted": True},
-                    }
+                    },
+                    ensure_ascii=False,
                 ),
                 ctx.guild.id,
                 path="/ws/templates",
