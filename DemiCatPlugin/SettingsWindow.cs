@@ -600,6 +600,7 @@ public class SettingsWindow : IDisposable
     private async Task HardReloadIdentityAndStartInternalAsync()
     {
         var framework = PluginServices.Instance?.Framework;
+        var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
 
         void UpdateStatus(string status)
         {
@@ -619,6 +620,8 @@ public class SettingsWindow : IDisposable
                 _syncStatus = status;
             }
         }
+
+        presence?.SetPresenceReady(false);
 
         try
         {
@@ -786,7 +789,6 @@ public class SettingsWindow : IDisposable
 
             try
             {
-                var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
                 presence?.Reset();
                 presence?.Reload();
             }
@@ -824,6 +826,7 @@ public class SettingsWindow : IDisposable
         }
         finally
         {
+            presence?.SetPresenceReady(true);
             lock (_hardReloadLock)
             {
                 _hardReloadTask = null;

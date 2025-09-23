@@ -27,6 +27,7 @@ public class DiscordPresenceService : IDisposable
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
     private bool _loaded;
+    private volatile bool _presenceReady = true;
     private string _statusMessage = string.Empty;
     private int _retryAttempt;
     private string? _lastErrorSignature;
@@ -39,12 +40,16 @@ public class DiscordPresenceService : IDisposable
     public IReadOnlyList<PresenceDto> Presences => _presences;
     public string StatusMessage => _statusMessage;
     public bool Loaded => _loaded;
+    public bool IsPresenceReady => _presenceReady;
 
     public DiscordPresenceService(Config config, HttpClient httpClient)
     {
         _config = config;
         _httpClient = httpClient;
     }
+
+    public void SetPresenceReady(bool ready)
+        => _presenceReady = ready;
 
     /// <summary>
     /// Clears any cached presence information. Used when reconnecting to the

@@ -14,6 +14,7 @@ internal static class RoleCache
 
     internal static IReadOnlyList<RoleDto> Roles => _roles;
     internal static string? LastErrorMessage => _lastErrorMessage;
+    internal static bool IsLoaded => _loaded;
 
     internal static void Reset()
     {
