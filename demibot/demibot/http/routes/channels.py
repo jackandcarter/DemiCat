@@ -159,15 +159,13 @@ async def get_channels(
                 ctx.guild.id,
             )
             await db.execute(
-                update(GuildChannel)
-                .where(
+                delete(GuildChannel).where(
                     GuildChannel.guild_id == ctx.guild.id,
                     GuildChannel.channel_id == channel_id,
                     GuildChannel.kind == channel_kind,
                 )
-                .values(name=None)
             )
-            return {"id": str(channel_id), "name": str(channel_id)}, True
+            return None, True
         if new_name != name:
             await db.execute(
                 update(GuildChannel)
