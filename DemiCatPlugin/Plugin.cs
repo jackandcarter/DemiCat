@@ -420,7 +420,7 @@ public class Plugin : IDalamudPlugin
     private void StartWatchers()
     {
         _services.Log.Info("Starting watchers");
-        _ = StartWatchersAsync();
+        _ = _settings.HardReloadIdentityAndStartAsync();
     }
 
     private void HandleTokenLinked()

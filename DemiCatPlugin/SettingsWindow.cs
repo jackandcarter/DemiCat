@@ -5,6 +5,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Numerics;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
@@ -28,6 +29,9 @@ public class SettingsWindow : IDisposable
     private string _syncStatus = string.Empty;
     private bool _syncInProgress;
     private readonly Dictionary<string, bool> _categoryToggles = new();
+    private readonly object _hardReloadLock = new();
+    private Task? _hardReloadTask;
+    private bool _requestMainWindowOpen;
     private bool _settingsLoaded;
     private bool _isLinked;
     private static readonly int[] FadeDurations = { 5, 10, 15, 20, 30 };
@@ -446,6 +450,371 @@ public class SettingsWindow : IDisposable
         }
     }
 
+    private void StopAllWatchersAndPresence()
+    {
+        void SafeInvoke(Action action, string context)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, context);
+            }
+        }
+
+        SafeInvoke(() => ChatWindow?.StopNetworking(), "Failed to stop ChatWindow networking.");
+        SafeInvoke(() => OfficerChatWindow?.StopNetworking(), "Failed to stop OfficerChatWindow networking.");
+        SafeInvoke(() => MainWindow?.Ui.StopNetworking(), "Failed to stop UI networking.");
+        SafeInvoke(() => MainWindow?.TemplatesWindow.StopNetworking(), "Failed to stop TemplatesWindow networking.");
+        SafeInvoke(() =>
+        {
+            if (ChannelWatcher != null)
+            {
+                ChannelWatcher.Stop();
+            }
+        }, "Failed to stop ChannelWatcher.");
+        SafeInvoke(() => RequestWatcher?.Stop(), "Failed to stop RequestWatcher.");
+        SafeInvoke(() =>
+        {
+            var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
+            presence?.Dispose();
+        }, "Failed to dispose presence service.");
+    }
+
+    private void ClearRuntimeCaches()
+    {
+        try
+        {
+            RoleCache.Reset();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to reset role cache.");
+        }
+
+        try
+        {
+            SignupPresetService.Reset();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to reset signup presets.");
+        }
+
+        try
+        {
+            MembershipCache.Reset();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to reset membership cache.");
+        }
+
+        try
+        {
+            SyncshellWindow.Instance?.ClearCaches();
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to clear Syncshell caches.");
+        }
+
+        try
+        {
+            RequestStateService.Load(_config);
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to reset request state cache.");
+        }
+
+        _config.GuildId = string.Empty;
+        _config.GuildRoles.Clear();
+        _config.ChannelSelections.Clear();
+        _config.ChatChannelId = string.Empty;
+        _config.EventChannelId = string.Empty;
+        _config.FcChannelId = string.Empty;
+        _config.FcChannelName = string.Empty;
+        _config.OfficerChannelId = string.Empty;
+        _config.ChatCursors.Clear();
+        _config.RestChatCursors.Clear();
+        _config.Roles.Clear();
+        _config.MentionRoleIds.Clear();
+        _config.SignupPresets.Clear();
+        _config.TemplateData.Clear();
+        _config.RequestStates.Clear();
+        _config.RequestsDeltaToken = null;
+        _config.Categories.Clear();
+        _config.AutoApply.Clear();
+        _config.PenumbraChoices.Clear();
+
+        _categoryToggles.Clear();
+
+        if (ChatWindow != null)
+        {
+            ChatWindow.ChannelsLoaded = false;
+        }
+
+        if (OfficerChatWindow != null)
+        {
+            OfficerChatWindow.ChannelsLoaded = false;
+        }
+    }
+
+    internal Task HardReloadIdentityAndStartAsync(bool openMainWindow = false)
+    {
+        lock (_hardReloadLock)
+        {
+            if (openMainWindow)
+            {
+                _requestMainWindowOpen = true;
+            }
+
+            if (_hardReloadTask == null || _hardReloadTask.IsCompleted)
+            {
+                _hardReloadTask = HardReloadIdentityAndStartInternalAsync();
+            }
+
+            return _hardReloadTask;
+        }
+    }
+
+    private async Task HardReloadIdentityAndStartInternalAsync()
+    {
+        var framework = PluginServices.Instance?.Framework;
+
+        void UpdateStatus(string status)
+        {
+            if (framework == null)
+            {
+                _syncStatus = status;
+                return;
+            }
+
+            try
+            {
+                framework.RunOnTick(() => _syncStatus = status);
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to marshal sync status update to framework thread.");
+                _syncStatus = status;
+            }
+        }
+
+        try
+        {
+            try
+            {
+                MainWindow?.ReloadSignupPresets();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to reload signup presets during hard reload.");
+            }
+
+            HttpResponseMessage? pingResponse = null;
+            try
+            {
+                var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
+                pingResponse = await pingService.PingAsync(CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to ping DemiCat backend during hard reload.");
+            }
+
+            if (pingResponse == null)
+            {
+                UpdateStatus("Network error");
+                return;
+            }
+
+            if (pingResponse.StatusCode == HttpStatusCode.Unauthorized || pingResponse.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _tokenManager.Clear("Invalid API key");
+                UpdateStatus("Authentication failed");
+                return;
+            }
+
+            if (!pingResponse.IsSuccessStatusCode)
+            {
+                UpdateStatus("Network error");
+                return;
+            }
+
+            if (_refreshRoles != null)
+            {
+                try
+                {
+                    var rolesRefreshed = await _refreshRoles();
+                    if (!rolesRefreshed)
+                    {
+                        _log.Warning("Role refresh after key validation reported failure.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Failed to refresh roles during hard reload.");
+                }
+            }
+            else
+            {
+                _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
+            }
+
+            try
+            {
+                await _startNetworking();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to start UI networking during hard reload.");
+            }
+
+            try
+            {
+                if (_config.Events)
+                {
+                    MainWindow?.EventCreateWindow.StartNetworking();
+                    MainWindow?.TemplatesWindow.StartNetworking();
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to start event or template networking during hard reload.");
+            }
+
+            try
+            {
+                if (ChannelWatcher != null)
+                {
+                    await ChannelWatcher.Start();
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to start ChannelWatcher during hard reload.");
+            }
+
+            try
+            {
+                RequestWatcher?.Start();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to start RequestWatcher during hard reload.");
+            }
+
+            try
+            {
+                if (_config.EnableFcChat)
+                {
+                    ChatWindow?.StartNetworking();
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to start ChatWindow networking during hard reload.");
+            }
+
+            try
+            {
+                OfficerChatWindow?.StartNetworking();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to start OfficerChatWindow networking during hard reload.");
+            }
+
+            try
+            {
+                if (_config.EnableFcChat)
+                {
+                    _ = ChatWindow?.RefreshChannels();
+                }
+                _ = OfficerChatWindow?.RefreshChannels();
+                _ = MainWindow?.EventCreateWindow.RefreshChannels();
+                _ = MainWindow?.TemplatesWindow.RefreshChannels();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to refresh channels during hard reload.");
+            }
+
+            try
+            {
+                if (_config.EnableFcChat)
+                {
+                    _ = ChatWindow?.RefreshMessages();
+                }
+                _ = OfficerChatWindow?.RefreshMessages();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to refresh messages during hard reload.");
+            }
+
+            try
+            {
+                MainWindow?.Ui.ResetChannels();
+                MainWindow?.ResetEventCreateRoles();
+                MainWindow?.TemplatesWindow.ResetRoles();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to reset UI or roles during hard reload.");
+            }
+
+            try
+            {
+                var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
+                presence?.Reset();
+                presence?.Reload();
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to reset or reload presence during hard reload.");
+            }
+
+            bool shouldOpenWindow;
+            lock (_hardReloadLock)
+            {
+                shouldOpenWindow = _requestMainWindowOpen;
+                _requestMainWindowOpen = false;
+            }
+
+            if (shouldOpenWindow && MainWindow != null)
+            {
+                if (framework != null)
+                {
+                    try
+                    {
+                        framework.RunOnTick(() => MainWindow.IsOpen = true);
+                    }
+                    catch (Exception ex)
+                    {
+                        _log.Warning(ex, "Failed to open main window on framework thread during hard reload.");
+                        MainWindow.IsOpen = true;
+                    }
+                }
+                else
+                {
+                    MainWindow.IsOpen = true;
+                }
+            }
+        }
+        finally
+        {
+            lock (_hardReloadLock)
+            {
+                _hardReloadTask = null;
+            }
+        }
+    }
+
     private void ClearCachedData()
     {
         _config.Categories.Clear();
@@ -523,6 +892,15 @@ public class SettingsWindow : IDisposable
                 }
 
                 var key = _apiKey;
+                var existingToken = _tokenManager.Token;
+                if (!string.IsNullOrEmpty(existingToken) && !string.Equals(existingToken, key, StringComparison.Ordinal))
+                {
+                    StopAllWatchersAndPresence();
+                    ClearRuntimeCaches();
+                    _tokenManager.Clear("API key replaced");
+                    SaveConfig(restartWatchers: false);
+                }
+
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/validate";
                 var request = new HttpRequestMessage(HttpMethod.Post, url)
                 {
@@ -544,135 +922,8 @@ public class SettingsWindow : IDisposable
                     var newKey = key;
                     _tokenManager.Set(newKey);
                     _apiKey = newKey;
-                    SaveConfig();
                     _ = framework.RunOnTick(() => _syncStatus = "API key validated");
-
-                    try
-                    {
-                        MainWindow?.ReloadSignupPresets();
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to reload signup presets after key validation.");
-                    }
-
-                    if (_refreshRoles != null)
-                    {
-                        try
-                        {
-                            var rolesRefreshed = await _refreshRoles();
-                            if (!rolesRefreshed)
-                            {
-                                _log.Warning("Role refresh after key validation reported failure.");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _log.Error(ex, "Failed to refresh roles after key validation.");
-                        }
-                    }
-                    else
-                    {
-                        _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
-                    }
-
-                    try
-                    {
-                        await _startNetworking();
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to start networking after key validation.");
-                    }
-
-                    try
-                    {
-                        if (ChannelWatcher != null)
-                        {
-                            await ChannelWatcher.Start();
-                        }
-                        RequestWatcher?.Start();
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to start ChannelWatcher.");
-                    }
-
-                    try
-                    {
-                        if (_config.EnableFcChat)
-                        {
-                            ChatWindow?.StartNetworking();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to start ChatWindow networking.");
-                    }
-
-                    try
-                    {
-                        OfficerChatWindow?.StartNetworking();
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to start OfficerChatWindow networking.");
-                    }
-
-                    try
-                    {
-                        if (_config.EnableFcChat)
-                        {
-                            _ = ChatWindow?.RefreshChannels();
-                        }
-                        _ = OfficerChatWindow?.RefreshChannels();
-                        _ = MainWindow?.EventCreateWindow.RefreshChannels();
-                        _ = MainWindow?.TemplatesWindow.RefreshChannels();
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to refresh channels.");
-                    }
-
-                    try
-                    {
-                        if (_config.EnableFcChat)
-                        {
-                            _ = ChatWindow?.RefreshMessages();
-                        }
-                        _ = OfficerChatWindow?.RefreshMessages();
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to refresh messages.");
-                    }
-
-                    try
-                    {
-                        MainWindow?.Ui.ResetChannels();
-                        MainWindow?.ResetEventCreateRoles();
-                        MainWindow?.TemplatesWindow.ResetRoles();
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to reset UI or event create roles.");
-                    }
-
-                    try
-                    {
-                        var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
-                        presence?.Reset();
-                        presence?.Reload();
-                    }
-                    catch (Exception ex)
-                    {
-                        _log.Error(ex, "Failed to reset or reload presence.");
-                    }
-
-                    if (MainWindow != null)
-                    {
-                        _ = framework.RunOnTick(() => MainWindow.IsOpen = true);
-                    }
+                    await HardReloadIdentityAndStartAsync(openMainWindow: true);
                 }
                 else if (response.StatusCode == HttpStatusCode.Unauthorized)
                 {
@@ -698,7 +949,7 @@ public class SettingsWindow : IDisposable
         }
     }
 
-    private void SaveConfig()
+    private void SaveConfig(bool restartWatchers = true)
     {
         var services = PluginServices.Instance;
         if (services?.PluginInterface == null)
@@ -714,6 +965,11 @@ public class SettingsWindow : IDisposable
         }
 
         _ = services.Framework.RunOnTick(() => services.PluginInterface.SavePluginConfig(_config));
+        if (!restartWatchers)
+        {
+            return;
+        }
+
         if (ChannelWatcher != null)
         {
             _ = ChannelWatcher.Start();
