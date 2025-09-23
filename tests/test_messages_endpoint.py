@@ -566,3 +566,111 @@ async def test_channel_message_falls_back_when_webhook_forbidden(monkeypatch):
     discord_errors = data.get("detail", {}).get("discord")
     assert discord_errors is not None
     assert "Manage Webhooks required" in discord_errors[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status,payload",
+    [
+        (403, {"message": "Missing Access", "code": 50001}),
+        (404, {"message": "Unknown Channel", "code": 10003}),
+    ],
+)
+async def test_channel_message_reports_fetch_channel_errors(monkeypatch, status, payload):
+    await init_db("sqlite+aiosqlite://")
+    async with get_session() as db:
+        await db.execute(text("DELETE FROM posted_messages"))
+        await db.execute(text("DELETE FROM messages"))
+        await db.execute(text("DELETE FROM memberships"))
+        await db.execute(text("DELETE FROM users"))
+        await db.execute(text("DELETE FROM guilds"))
+        await db.execute(text("DELETE FROM guild_channels"))
+
+        guild_id = 88
+        channel_id = 654321
+        user_id = 44
+
+        db.add(Guild(id=guild_id, discord_guild_id=880, name="Guild"))
+        db.add(User(id=user_id, discord_user_id=440, global_name="Tester"))
+        db.add(
+            Membership(
+                guild_id=guild_id,
+                user_id=user_id,
+                nickname="TesterNick",
+                avatar_url="http://example.com/avatar.png",
+            )
+        )
+        db.add(
+            GuildChannel(
+                guild_id=guild_id,
+                channel_id=channel_id,
+                kind=ChannelKind.FC_CHAT,
+            )
+        )
+        await db.commit()
+
+    class DummyClient:
+        def __init__(self) -> None:
+            self.fetch_attempts = 0
+
+        def get_channel(self, cid: int):
+            return None
+
+        def get_guild(self, guild_id: int):
+            return None
+
+        async def fetch_channel(self, cid: int):
+            self.fetch_attempts += 1
+            raise messages_common.discord.HTTPException(
+                SimpleNamespace(status=status, reason="error", headers={}),
+                payload,
+            )
+
+    async def dummy_broadcast(message: str, guild_id: int, officer_only: bool = False, path: str | None = None):
+        return None
+
+    async def dummy_emit_event(event: dict) -> None:
+        return None
+
+    dummy_client = DummyClient()
+
+    monkeypatch.setattr(messages_common.manager, "broadcast_text", dummy_broadcast)
+    monkeypatch.setattr(messages_common, "emit_event", dummy_emit_event)
+    monkeypatch.setattr(messages_common, "discord_client", dummy_client)
+    monkeypatch.setattr(messages_common, "_channel_webhooks", {})
+
+    app = create_app()
+
+    user_ctx = SimpleNamespace(id=user_id, global_name="Tester", character_name=None)
+    guild_ctx = SimpleNamespace(id=guild_id, discord_guild_id=880)
+
+    async def override_auth():
+        return RequestContext(user=user_ctx, guild=guild_ctx, key=None, roles=["chat"])
+
+    async def override_db():
+        async with get_session() as session:
+            yield session
+
+    app.dependency_overrides[api_key_auth] = override_auth
+    app.dependency_overrides[get_db] = override_db
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.post(
+            f"/api/channels/{channel_id}/messages",
+            data={"content": "Hello world"},
+        )
+
+    app.dependency_overrides.clear()
+
+    assert resp.status_code == 404
+    data = resp.json()
+    detail = data.get("detail")
+    assert detail is not None
+    assert detail.get("message") == "channel not found"
+    discord_errors = detail.get("discord")
+    assert isinstance(discord_errors, list) and discord_errors
+    error_text = discord_errors[0]
+    assert error_text.startswith(f"Webhook creation failed: {status}")
+    assert payload.get("message") in error_text
+    assert "channel not available" not in error_text

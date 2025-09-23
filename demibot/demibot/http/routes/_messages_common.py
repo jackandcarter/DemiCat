@@ -308,6 +308,7 @@ async def create_webhook_for_channel(
     errors: list[str] = []
     resolved_channel = channel
     unsupported_channel = False
+    resolution_error: str | None = None
 
     if isinstance(resolved_channel, discord.Thread):
         resolved_channel = getattr(resolved_channel, "parent", None)
@@ -336,6 +337,14 @@ async def create_webhook_for_channel(
                     exc.status,
                     exc.text,
                 )
+                detail = _discord_error(exc)
+                if detail:
+                    resolution_error = (
+                        f"Webhook creation failed: {exc.status} {detail}"
+                    )
+                else:
+                    resolution_error = f"Webhook creation failed: {exc.status}"
+                errors.append(resolution_error)
             except ClientException as exc:  # pragma: no cover - defensive
                 logging.warning(
                     "fetch_channel(%s) failed during webhook creation: %s",
@@ -357,7 +366,8 @@ async def create_webhook_for_channel(
     if resolved_channel is None:
         if unsupported_channel:
             return None, None, errors
-        errors.append("Webhook creation failed: channel not available")
+        if resolution_error is None and not errors:
+            errors.append("Webhook creation failed: channel not available")
         return None, None, errors
 
     try:
