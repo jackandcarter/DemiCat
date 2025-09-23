@@ -18,6 +18,7 @@ namespace DemiCatPlugin;
 
 public class OfficerChatWindow : ChatWindow
 {
+    private const string NoOfficerAccessMessage = "No officer access for this key.";
     private DateTime _lastRolesRefresh = DateTime.MinValue;
     private bool _subscribed;
     private readonly PresenceSidebar? _presenceSidebar;
@@ -85,7 +86,7 @@ public class OfficerChatWindow : ChatWindow
             _bridge.Stop();
             _presence?.SetPresenceReady(false);
 
-            var message = "Officer tools require an officer-enabled key.";
+            var message = NoOfficerAccessMessage;
             var services = PluginServices.Instance;
             var framework = services?.Framework;
 
@@ -123,7 +124,7 @@ public class OfficerChatWindow : ChatWindow
         if (!OfficerPermissions.HasAccess(_config))
         {
             var message = string.IsNullOrEmpty(_statusMessage)
-                ? "Officer tools require an officer-enabled key."
+                ? NoOfficerAccessMessage
                 : _statusMessage;
             ImGui.TextUnformatted(message);
             return;
