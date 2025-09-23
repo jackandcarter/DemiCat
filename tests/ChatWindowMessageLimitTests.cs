@@ -131,6 +131,40 @@ public class ChatWindowMessageLimitTests
     }
 
     [Fact]
+    public async Task RefreshMessages_SwitchChannelsWithCursorAndEmptyResponse_ClearsPreviousMessages()
+    {
+        SetupServices();
+        var config = new Config { ApiBaseUrl = "http://localhost", ChatChannelId = "1" };
+        var handler = new SequenceHandler();
+        using var client = new HttpClient(handler);
+        var tm = new TokenManager();
+        var channelService = new ChannelService(config, client, tm);
+        var window = new ChatWindow(config, client, null, tm, channelService);
+
+        handler.EnqueueResponse(SerializeMessages(1, 3));
+        await window.RefreshMessages();
+
+        var initial = GetMessages(window);
+        Assert.Equal(3, initial.Count);
+        Assert.All(initial, m => Assert.Equal("1", m.ChannelId));
+
+        var selectionKey = ChannelKeyHelper.BuildSelectionKey(config.GuildId, ChannelKind.Chat);
+        config.ChannelSelections[selectionKey] = "2";
+        var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "2");
+        config.RestChatCursors[cursorKey] = 42;
+
+        handler.Requests.Clear();
+        handler.EnqueueResponse("[]");
+        await window.RefreshMessages();
+
+        var refreshed = GetMessages(window);
+        Assert.Empty(refreshed);
+        Assert.Single(handler.Requests);
+        Assert.Contains("/api/messages/2", handler.Requests[0].AbsolutePath);
+        Assert.Contains("after=42", handler.Requests[0].Query);
+    }
+
+    [Fact]
     public async Task RefreshMessages_ReappliesCursorWhenPaginating()
     {
         SetupServices();

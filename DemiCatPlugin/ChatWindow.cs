@@ -1678,8 +1678,11 @@ public class ChatWindow : IDisposable
                 }
 
                 var hadExistingMessages = _messages.Count > 0;
+                var hasMatchingChannel = _messages.Any(m => string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+                var hasConflictingChannel = _messages.Any(m => !string.IsNullOrEmpty(m.ChannelId) && !string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+                var canMergeIncremental = usedStoredCursor && hadExistingMessages && hasMatchingChannel && !hasConflictingChannel;
 
-                if (usedStoredCursor && hadExistingMessages)
+                if (canMergeIncremental)
                 {
                     if (all.Count == 0)
                     {
