@@ -14,7 +14,6 @@ public class RequestWatcher : IDisposable
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly TokenManager _tokenManager;
-    private ClientWebSocket? _ws;
     private Task? _task;
     private CancellationTokenSource? _cts;
     private int _retryAttempt;
@@ -40,7 +39,6 @@ public class RequestWatcher : IDisposable
             return;
         }
         _cts?.Cancel();
-        _ws?.Dispose();
         _cts = new CancellationTokenSource();
         _task = Run(_cts.Token);
     }
@@ -49,8 +47,6 @@ public class RequestWatcher : IDisposable
     {
         _cts?.Cancel();
         try { _task?.GetAwaiter().GetResult(); } catch { }
-        _ws?.Dispose();
-        _ws = null;
         _cts = null;
         _task = null;
     }
@@ -68,6 +64,7 @@ public class RequestWatcher : IDisposable
             }
 
             var hadTransportError = true;
+            ClientWebSocket? ws = null;
             try
             {
                 var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
@@ -89,9 +86,8 @@ public class RequestWatcher : IDisposable
 
                 try { await RequestStateService.RefreshAll(_httpClient, _config); } catch { }
 
-                _ws?.Dispose();
-                _ws = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_ws, _tokenManager);
+                ws = new ClientWebSocket();
+                ApiHelpers.AddAuthHeader(ws, _tokenManager);
 
                 Uri? uri;
                 try
@@ -114,21 +110,21 @@ public class RequestWatcher : IDisposable
                     continue;
                 }
 
-                await _ws.ConnectAsync(uri!, token);
+                await ws.ConnectAsync(uri!, token);
                 _retryAttempt = 0;
                 hadTransportError = false;
                 ResetPermissionWarning();
 
                 var buffer = new byte[1024];
-                while (_ws.State == WebSocketState.Open && !token.IsCancellationRequested)
+                while (ws != null && ws.State == WebSocketState.Open && !token.IsCancellationRequested)
                 {
-                    var (message, type) = await ChannelWatcher.ReceiveMessageAsync(_ws, buffer, token);
+                    var (message, type) = await ChannelWatcher.ReceiveMessageAsync(ws, buffer, token);
                     if (type == WebSocketMessageType.Close)
                         break;
                     HandleMessage(message);
                 }
 
-                if (_ws.CloseStatus == WebSocketCloseStatus.PolicyViolation)
+                if (ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
                     ShowPermissionWarning();
                     hadTransportError = true;
@@ -163,7 +159,7 @@ public class RequestWatcher : IDisposable
             catch (WebSocketException ex)
             {
                 hadTransportError = true;
-                if (_ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
+                if (ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
                 {
                     ShowPermissionWarning();
                 }
@@ -181,8 +177,8 @@ public class RequestWatcher : IDisposable
             }
             finally
             {
-                _ws?.Dispose();
-                _ws = null;
+                ws?.Dispose();
+                ws = null;
             }
 
             if (token.IsCancellationRequested)
@@ -374,7 +370,8 @@ public class RequestWatcher : IDisposable
     {
         _cts?.Cancel();
         try { _task?.GetAwaiter().GetResult(); } catch { }
-        _ws?.Dispose();
         _cts?.Dispose();
+        _cts = null;
+        _task = null;
     }
 }
