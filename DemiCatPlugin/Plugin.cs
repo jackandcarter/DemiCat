@@ -252,10 +252,10 @@ public class Plugin : IDalamudPlugin
 
     private async void HandleChannelSelectionValidation(string kind, string guildId, string oldId, string newId)
     {
-        await ValidateChannelSelectionAsync(kind, guildId, newId);
+        await ValidateChannelSelectionAsync(kind, guildId, newId, oldId);
     }
 
-    private async Task ValidateChannelSelectionAsync(string kind, string guildId, string channelId)
+    private async Task ValidateChannelSelectionAsync(string kind, string guildId, string channelId, string? previousChannelId = null)
     {
         if (string.IsNullOrWhiteSpace(channelId))
         {
@@ -286,16 +286,42 @@ public class Plugin : IDalamudPlugin
             if (!string.IsNullOrWhiteSpace(response.GuildId))
             {
                 var normalizedResponseGuild = ChannelKeyHelper.NormalizeGuildId(response.GuildId);
-                var guildChanged = !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal);
+                var hasStoredGuild = !ChannelKeyHelper.IsDefaultGuild(_config.GuildId);
 
-                _config.GuildId = normalizedResponseGuild;
-                _services.PluginInterface.SavePluginConfig(_config);
-
-                _chatWindow.OnGuildUpdated();
-                _officerChatWindow.OnGuildUpdated();
-
-                if (guildChanged)
+                if (hasStoredGuild &&
+                    !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal))
                 {
+                    void RejectSelection()
+                    {
+                        var restoreChannelId = string.IsNullOrWhiteSpace(previousChannelId) ? string.Empty : previousChannelId;
+                        _channelSelection.SetChannel(kind, _config.GuildId, restoreChannelId);
+                        PluginServices.Instance?.ToastGui.ShowError(
+                            "Cannot select a channel from a different Discord server without unlinking first."
+                        );
+                    }
+
+                    var framework = PluginServices.Instance?.Framework;
+                    if (framework != null)
+                    {
+                        framework.RunOnTick(RejectSelection);
+                    }
+                    else
+                    {
+                        RejectSelection();
+                    }
+
+                    return;
+                }
+
+                if (!hasStoredGuild)
+                {
+                    var guildChanged = !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal);
+                    _config.GuildId = normalizedResponseGuild;
+                    _services.PluginInterface.SavePluginConfig(_config);
+
+                    _chatWindow.OnGuildUpdated();
+                    _officerChatWindow.OnGuildUpdated();
+
                     await HandleGuildChangedAsync(normalizedResponseGuild, kind).ConfigureAwait(false);
                 }
             }
@@ -402,7 +428,8 @@ public class Plugin : IDalamudPlugin
                 continue;
             }
 
-            await ValidateChannelSelectionAsync(targetKind, normalizedGuildId, selectedChannel).ConfigureAwait(false);
+            await ValidateChannelSelectionAsync(targetKind, normalizedGuildId, selectedChannel, selectedChannel)
+                .ConfigureAwait(false);
         }
     }
 
