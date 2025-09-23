@@ -79,31 +79,53 @@ public class OfficerChatWindow : ChatWindow
 
     public override void StartNetworking()
     {
+        if (!OfficerPermissions.HasAccess(_config))
+        {
+            MarkNetworkingStopped();
+            _bridge.Stop();
+            _presence?.SetPresenceReady(false);
+
+            var message = "Officer tools require an officer-enabled key.";
+            var services = PluginServices.Instance;
+            var framework = services?.Framework;
+
+            if (framework != null)
+            {
+                try
+                {
+                    framework.RunOnTick(() => _statusMessage = message);
+                }
+                catch (Exception ex)
+                {
+                    services?.Log.Warning(ex, "Failed to update officer status message on framework thread.");
+                    _statusMessage = message;
+                }
+            }
+            else
+            {
+                _statusMessage = message;
+            }
+
+            _subscribed = false;
+            return;
+        }
+
         MarkNetworkingStarted();
+        _presence?.SetPresenceReady(true);
         _bridge.Start();
-        if (_config.Roles.Contains("officer"))
-        {
-            Subscribe();
-        }
-        else
-        {
-            TryRefreshRoles();
-        }
+        Subscribe();
+        TryRefreshRoles();
+        _presence?.Reset();
     }
 
     public override void Draw()
     {
-        if (!_config.Roles.Contains("officer"))
+        if (!OfficerPermissions.HasAccess(_config))
         {
-            TryRefreshRoles();
-            if (!string.IsNullOrEmpty(_statusMessage))
-            {
-                ImGui.TextUnformatted(_statusMessage);
-            }
-            else
-            {
-                ImGui.TextUnformatted("Link DemiCat…");
-            }
+            var message = string.IsNullOrEmpty(_statusMessage)
+                ? "Officer tools require an officer-enabled key."
+                : _statusMessage;
+            ImGui.TextUnformatted(message);
             return;
         }
 
@@ -412,9 +434,6 @@ public class OfficerChatWindow : ChatWindow
                 : new List<string>();
             filteredRoles.RemoveAll(r => string.Equals(r, "chat", StringComparison.Ordinal));
 
-            var hadOfficer = _config.Roles.Contains("officer");
-            var hasOfficer = filteredRoles.Contains("officer");
-
             if (filteredRoles.Count == 0)
             {
                 services?.Log.Warning("Received empty role list while refreshing officer roles.");
@@ -425,13 +444,6 @@ public class OfficerChatWindow : ChatWindow
                 return;
             }
 
-            if (!hasOfficer && hadOfficer)
-            {
-                services?.Log.Warning("Officer role missing from refresh response; retaining cached permissions.");
-                services?.ToastGui?.ShowError("Officer role missing from refresh; keeping cached permissions.");
-                return;
-            }
-
             void ApplyRoles()
             {
                 _config.Roles = filteredRoles;
@@ -439,7 +451,7 @@ public class OfficerChatWindow : ChatWindow
                 var mainWindow = MainWindow.Instance;
                 if (mainWindow != null)
                 {
-                    mainWindow.HasOfficerRole = hasOfficer;
+                    mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
                 }
             }
 

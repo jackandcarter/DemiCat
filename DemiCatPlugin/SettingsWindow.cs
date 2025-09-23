@@ -468,6 +468,103 @@ public class SettingsWindow : IDisposable
         }
     }
 
+    private async Task UpdateIdentityAsync(IFramework? framework)
+    {
+        try
+        {
+            if (_httpClient == null || !_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+                return;
+
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me";
+            var request = new HttpRequestMessage(HttpMethod.Get, url);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
+            var response = await _httpClient.SendAsync(request);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var responseBody = await response.Content.ReadAsStringAsync();
+                _log.Warning($"Failed to load user identity: {response.StatusCode}. Response Body: {responseBody}");
+                return;
+            }
+
+            using var stream = await response.Content.ReadAsStreamAsync();
+            using var doc = await JsonDocument.ParseAsync(stream);
+
+            string? newGuildId = null;
+            bool? officerClaim = null;
+
+            if (doc.RootElement.TryGetProperty("guildId", out var guildProperty) && guildProperty.ValueKind == JsonValueKind.String)
+            {
+                newGuildId = guildProperty.GetString();
+            }
+
+            if (doc.RootElement.TryGetProperty("isOfficer", out var officerProperty))
+            {
+                officerClaim = officerProperty.ValueKind switch
+                {
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    JsonValueKind.Number when officerProperty.TryGetInt32(out var numeric) => numeric != 0,
+                    _ => officerClaim
+                };
+            }
+
+            var configChanged = false;
+
+            if (newGuildId != null)
+            {
+                var normalizedGuild = string.IsNullOrWhiteSpace(newGuildId)
+                    ? string.Empty
+                    : ChannelKeyHelper.NormalizeGuildId(newGuildId);
+                if (!string.Equals(_config.GuildId, normalizedGuild, StringComparison.Ordinal))
+                {
+                    _config.GuildId = normalizedGuild;
+                    configChanged = true;
+                }
+            }
+
+            if (officerClaim.HasValue && _config.IsOfficerToken != officerClaim.Value)
+            {
+                _config.IsOfficerToken = officerClaim.Value;
+                configChanged = true;
+            }
+
+            if (configChanged)
+            {
+                SaveConfig();
+            }
+
+            void ApplyOfficerAccess()
+            {
+                if (MainWindow != null)
+                {
+                    MainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
+                }
+            }
+
+            if (framework != null)
+            {
+                try
+                {
+                    framework.RunOnTick(ApplyOfficerAccess);
+                }
+                catch (Exception ex)
+                {
+                    _log.Warning(ex, "Failed to apply officer access update on framework thread.");
+                    ApplyOfficerAccess();
+                }
+            }
+            else
+            {
+                ApplyOfficerAccess();
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "Failed to update user identity");
+        }
+    }
+
     private void StopAllWatchersAndPresence()
     {
         void SafeInvoke(Action action, string context)
@@ -563,6 +660,7 @@ public class SettingsWindow : IDisposable
         _config.ChatCursors.Clear();
         _config.RestChatCursors.Clear();
         _config.Roles.Clear();
+        _config.IsOfficerToken = false;
         _config.MentionRoleIds.Clear();
         _config.SignupPresets.Clear();
         _config.TemplateData.Clear();
@@ -583,6 +681,8 @@ public class SettingsWindow : IDisposable
         {
             OfficerChatWindow.ChannelsLoaded = false;
         }
+
+        MainWindow?.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
     }
 
     internal Task HardReloadIdentityAndStartAsync(bool openMainWindow = false)
@@ -671,6 +771,8 @@ public class SettingsWindow : IDisposable
                 return;
             }
 
+            await UpdateIdentityAsync(framework);
+
             if (_refreshRoles != null)
             {
                 try
@@ -748,7 +850,10 @@ public class SettingsWindow : IDisposable
 
             try
             {
-                OfficerChatWindow?.StartNetworking();
+                if (OfficerPermissions.HasAccess(_config))
+                {
+                    OfficerChatWindow?.StartNetworking();
+                }
             }
             catch (Exception ex)
             {
@@ -761,7 +866,10 @@ public class SettingsWindow : IDisposable
                 {
                     _ = ChatWindow?.RefreshChannels();
                 }
-                _ = OfficerChatWindow?.RefreshChannels();
+                if (OfficerPermissions.HasAccess(_config))
+                {
+                    _ = OfficerChatWindow?.RefreshChannels();
+                }
                 _ = MainWindow?.EventCreateWindow.RefreshChannels();
                 _ = MainWindow?.TemplatesWindow.RefreshChannels();
             }
@@ -776,7 +884,10 @@ public class SettingsWindow : IDisposable
                 {
                     _ = ChatWindow?.RefreshMessages();
                 }
-                _ = OfficerChatWindow?.RefreshMessages();
+                if (OfficerPermissions.HasAccess(_config))
+                {
+                    _ = OfficerChatWindow?.RefreshMessages();
+                }
             }
             catch (Exception ex)
             {

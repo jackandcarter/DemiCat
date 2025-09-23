@@ -121,7 +121,7 @@ public class Plugin : IDalamudPlugin
         _settings.ChannelWatcher = _channelWatcher;
         _settings.RequestWatcher = _requestWatcher;
 
-        _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+        _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
@@ -466,6 +466,14 @@ public class Plugin : IDalamudPlugin
         {
             StopWatchers();
 
+            var hadOfficerAccess = _config.IsOfficerToken;
+            _config.IsOfficerToken = false;
+            _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
+            if (hadOfficerAccess)
+            {
+                _services.PluginInterface?.SavePluginConfig(_config);
+            }
+
             if (IsAuthenticationFailure(reason))
             {
                 ShowInvalidTokenToast();
@@ -533,8 +541,8 @@ public class Plugin : IDalamudPlugin
             _requestWatcher.Start();
         }
 
-        var hasOfficerRole = _config.Roles.Contains("officer");
-        if (_config.Events || _config.SyncedChat || hasOfficerRole)
+        var hasOfficerAccess = OfficerPermissions.HasAccess(_config);
+        if (_config.Events || _config.SyncedChat || hasOfficerAccess)
         {
             _services.Log.Info("Starting channel watcher");
             _ = _channelWatcher.Start();
@@ -546,7 +554,7 @@ public class Plugin : IDalamudPlugin
             _chatWindow.StartNetworking();
         }
 
-        if (hasOfficerRole)
+        if (hasOfficerAccess)
         {
             if (!_officerWatcherRunning)
             {
@@ -760,7 +768,6 @@ public class Plugin : IDalamudPlugin
 
             _ = _services.Framework.RunOnTick(() =>
             {
-                var hadOfficerRole = _config.Roles.Contains("officer");
                 var officerWatcherWasRunning = _officerWatcherRunning;
                 var channelWatcherWasRunning = _channelWatcher.IsRunning;
                 var requestWatcherWasRunning = _requestWatcher.IsRunning;
@@ -768,8 +775,8 @@ public class Plugin : IDalamudPlugin
 
                 dto.Roles.RemoveAll(r => r == "chat");
                 _config.Roles = dto.Roles;
-                var hasOfficerRole = _config.Roles.Contains("officer");
-                _mainWindow.HasOfficerRole = hasOfficerRole;
+                var hasOfficerAccess = OfficerPermissions.HasAccess(_config);
+                _mainWindow.HasOfficerAccess = hasOfficerAccess;
 
                 var stopChat = false;
                 var startChat = false;
@@ -798,11 +805,11 @@ public class Plugin : IDalamudPlugin
                     log.Warning("Skipping FC chat updates because channels could not be fetched.");
                 }
 
-                var shouldRunChannelWatcher = _config.Events || _config.SyncedChat || hasOfficerRole;
+                var shouldRunChannelWatcher = _config.Events || _config.SyncedChat || hasOfficerAccess;
                 var shouldRunRequestWatcher = _config.Requests;
 
-                var stopOfficer = officerWatcherWasRunning && !hasOfficerRole;
-                var startOfficer = !officerWatcherWasRunning && hasOfficerRole;
+                var stopOfficer = officerWatcherWasRunning && !hasOfficerAccess;
+                var startOfficer = !officerWatcherWasRunning && hasOfficerAccess;
                 var stopChannelWatcher = channelWatcherWasRunning && !shouldRunChannelWatcher;
                 var startChannelWatcher = !channelWatcherWasRunning && shouldRunChannelWatcher;
                 var stopRequestWatcher = requestWatcherWasRunning && !shouldRunRequestWatcher;
@@ -877,7 +884,7 @@ public class Plugin : IDalamudPlugin
                         _watcherRestartLock.Release();
                         _ = _services.Framework.RunOnTick(() =>
                         {
-                            _mainWindow.HasOfficerRole = _config.Roles.Contains("officer");
+                            _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
                         });
                     }
                 });

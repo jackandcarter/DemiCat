@@ -14,6 +14,7 @@ public class ConfigDefaultsTests
         Assert.True(cfg.Templates);
         Assert.True(cfg.Requests);
         Assert.True(cfg.Officer);
+        Assert.False(cfg.IsOfficerToken);
         Assert.False(cfg.FCSyncShell);
     }
 
