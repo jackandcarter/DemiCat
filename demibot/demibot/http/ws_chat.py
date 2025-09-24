@@ -102,6 +102,7 @@ class PendingWebhookMessage:
     embeds: List[discord.Embed]
     nonce: str
     payload: dict
+    thread_id: int | None = None
     attempts: int = 0
 
 
@@ -939,16 +940,20 @@ class ChatConnectionManager:
         if created is None:
             return False, 0.0
         retry_start = time.perf_counter()
+        files = [upload.to_discord_file() for upload in msg.uploads] or None
+        embeds = list(msg.embeds) if msg.embeds else None
+        send_kwargs = {
+            "username": msg.username,
+            "avatar_url": msg.avatar_url,
+            "files": files,
+            "embeds": embeds,
+            "wait": True,
+            "allowed_mentions": ALLOWED_MENTIONS,
+        }
+        if msg.thread_id is not None:
+            send_kwargs["thread"] = discord.Object(id=msg.thread_id)
         try:
-            sent = await created.send(
-                msg.content,
-                username=msg.username,
-                avatar_url=msg.avatar_url,
-                files=[upload.to_discord_file() for upload in msg.uploads] or None,
-                embeds=list(msg.embeds) if msg.embeds else None,
-                wait=True,
-                allowed_mentions=ALLOWED_MENTIONS,
-            )
+            sent = await created.send(msg.content, **send_kwargs)
         except discord.HTTPException as e:
             headers = getattr(getattr(e, "response", None), "headers", {}) or {}
             retry_after = headers.get("Retry-After") or headers.get(
@@ -988,16 +993,20 @@ class ChatConnectionManager:
             msg.channel_id,
             total_bytes,
         )
+        files = [upload.to_discord_file() for upload in msg.uploads] or None
+        embeds = list(msg.embeds) if msg.embeds else None
+        send_kwargs = {
+            "username": msg.username,
+            "avatar_url": msg.avatar_url,
+            "files": files,
+            "embeds": embeds,
+            "wait": True,
+            "allowed_mentions": ALLOWED_MENTIONS,
+        }
+        if msg.thread_id is not None:
+            send_kwargs["thread"] = discord.Object(id=msg.thread_id)
         try:
-            sent = await webhook.send(
-                msg.content,
-                username=msg.username,
-                avatar_url=msg.avatar_url,
-                files=[upload.to_discord_file() for upload in msg.uploads] or None,
-                embeds=list(msg.embeds) if msg.embeds else None,
-                wait=True,
-                allowed_mentions=ALLOWED_MENTIONS,
-            )
+            sent = await webhook.send(msg.content, **send_kwargs)
         except discord.HTTPException as e:
             headers = getattr(getattr(e, "response", None), "headers", {}) or {}
             retry_after = headers.get("Retry-After") or headers.get(
@@ -1161,6 +1170,18 @@ class ChatConnectionManager:
             payload.get("useCharacterName") or payload.get("use_character_name")
         )
 
+        channel_obj: discord.abc.Messageable | discord.Thread | None = None
+        thread_id: int | None = None
+        thread_cls = getattr(discord, "Thread", None)
+        if discord_client:
+            channel_obj = discord_client.get_channel(channel_id)
+            if thread_cls is not None and isinstance(channel_obj, thread_cls):
+                thread_identifier = getattr(channel_obj, "id", None)
+                try:
+                    thread_id = int(thread_identifier) if thread_identifier is not None else channel_id
+                except (TypeError, ValueError):
+                    thread_id = channel_id
+
         def _normalize_channel_kind(value: object | None) -> ChannelKind:
             if isinstance(value, ChannelKind):
                 return value
@@ -1195,13 +1216,27 @@ class ChatConnectionManager:
                         channel_id,
                     )
                     return
-                channel_obj = discord_client.get_channel(channel_id)
+                channel_obj = channel_obj or discord_client.get_channel(channel_id)
                 if not isinstance(channel_obj, discord.abc.Messageable):
                     logger.warning(
                         "chat.ws missing webhook channel=%s reason=no_channel",
                         channel_id,
                     )
                     return
+                if (
+                    thread_id is None
+                    and thread_cls is not None
+                    and isinstance(channel_obj, thread_cls)
+                ):
+                    thread_identifier = getattr(channel_obj, "id", None)
+                    try:
+                        thread_id = (
+                            int(thread_identifier)
+                            if thread_identifier is not None
+                            else channel_id
+                        )
+                    except (TypeError, ValueError):
+                        thread_id = channel_id
                 try:
                     _, created_url, creation_errors = await create_webhook_for_channel(
                         channel=channel_obj,
@@ -1298,6 +1333,7 @@ class ChatConnectionManager:
             embeds=embed_objects,
             nonce=nonce,
             payload=payload_with_nonce,
+            thread_id=thread_id,
         )
         await self._queue_webhook(msg)
 
