@@ -1846,12 +1846,24 @@ public class ChatWindow : IDisposable
                     break;
                 }
 
-                all.InsertRange(0, msgs);
+                var oldestMessageId = msgs[^1].Id;
+                all.AddRange(msgs);
                 if (all.Count >= MaxMessages || msgs.Count < PageSize)
                 {
                     break;
                 }
-                before = msgs[0].Id;
+
+                if (string.IsNullOrEmpty(oldestMessageId))
+                {
+                    break;
+                }
+
+                before = oldestMessageId;
+            }
+
+            if (all.Count > 1)
+            {
+                all.Reverse();
             }
 
             if (all.Count > MaxMessages)
