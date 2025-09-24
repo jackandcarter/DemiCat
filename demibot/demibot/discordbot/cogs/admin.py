@@ -144,8 +144,10 @@ async def key_embed(interaction: discord.Interaction) -> None:
     embed = discord.Embed(
         title="Generate Sync Key",
         description=(
-            "Use the button below to generate a **Sync Key** for the DemiCat plugin. "
-            "This key links your Discord account with the bot."
+            "Tap the button below to create a **Sync Key** for the DemiCat plugin. "
+            "Your key only stores your Discord ID and optional server nickname—"
+            "no logins or personal data—and it helps connect you with DemiCat. "
+            "Keep it somewhere safe so you can sync again whenever you need."
         ),
     )
     if image_url:
@@ -155,7 +157,11 @@ async def key_embed(interaction: discord.Interaction) -> None:
         def __init__(self) -> None:
             super().__init__(timeout=180)
 
-        @discord.ui.button(label="Generate Key", style=discord.ButtonStyle.primary)
+        @discord.ui.button(
+            label="Generate Key",
+            style=discord.ButtonStyle.success,
+            emoji="🔑",
+        )
         async def generate(
             self, button_inter: discord.Interaction, button: discord.ui.Button
         ) -> None:
@@ -247,7 +253,12 @@ async def key_embed(interaction: discord.Interaction) -> None:
                 return
 
             await button_inter.response.send_message(
-                f"Your sync key: {token}", ephemeral=True
+                (
+                    f"Your sync key: {token}\n\n"
+                    "Paste this into the DemiCat Dalamud plugin settings and "
+                    "press **Sync** to turn on all the features!"
+                ),
+                ephemeral=True,
             )
 
     view = KeyView()
