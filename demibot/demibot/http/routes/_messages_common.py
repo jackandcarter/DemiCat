@@ -103,10 +103,7 @@ async def _cache_and_store_webhook_url(
     if channel_id is not None:
         targets[channel_id] = ChannelKind.CHAT
     if configured_channel_id is not None:
-        targets.setdefault(
-            configured_channel_id,
-            channel_kind or ChannelKind.CHAT,
-        )
+        targets[configured_channel_id] = channel_kind or ChannelKind.CHAT
     if not targets:
         return
 
