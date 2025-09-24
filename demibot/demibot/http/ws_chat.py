@@ -47,6 +47,8 @@ MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
 RETRY_BASE = 1.0  # seconds
 MAX_SEND_ATTEMPTS = 5
 
+FATAL_WEBHOOK_STATUSES = {401, 403, 404}
+
 HISTORY_LIMIT = 200
 HISTORY_CHANNEL_CAP = 500
 HISTORY_TTL_SECONDS = 10 * 60  # 10 minutes
@@ -845,9 +847,131 @@ class ChatConnectionManager:
         finally:
             self._webhook_supervisor = None
 
+    async def _finalize_webhook_success(
+        self,
+        msg: PendingWebhookMessage,
+        sent: discord.Message,
+        *,
+        started_at: float,
+    ) -> None:
+        latency_ms = (time.perf_counter() - started_at) * 1000
+        self._send_count += 1
+        logger.info(
+            "chat.ws send channel=%s latency_ms=%.1f count=%s",
+            msg.channel_id,
+            latency_ms,
+            self._send_count,
+        )
+        dto, _ = serialize_message(sent)
+        await emit_event(
+            {
+                "channel": str(msg.channel_id),
+                "op": "mc",
+                "d": dto.model_dump(by_alias=True, exclude_none=True),
+            }
+        )
+
+    async def _recover_stale_webhook(
+        self, msg: PendingWebhookMessage, meta: ChannelMeta | None
+    ) -> tuple[bool, float]:
+        _channel_webhooks.pop(msg.channel_id, None)
+        guild_id = meta.guild_id if meta is not None else None
+        discord_guild_id = meta.discord_guild_id if meta is not None else None
+        channel_kind: ChannelKind | None = None
+        if meta is not None and meta.kind:
+            try:
+                channel_kind = ChannelKind(meta.kind.lower())
+            except ValueError:
+                channel_kind = None
+        should_commit = False
+        created = None
+        created_url: str | None = None
+        creation_errors: list[str] = []
+        async with get_session() as db:
+            stmt = select(GuildChannel).where(
+                GuildChannel.channel_id == msg.channel_id
+            )
+            if guild_id is not None:
+                stmt = stmt.where(GuildChannel.guild_id == guild_id)
+            result = await db.execute(stmt)
+            rows = result.scalars().all()
+            for row in rows:
+                if row.webhook_url and (
+                    msg.webhook_url is None or row.webhook_url == msg.webhook_url
+                ):
+                    row.webhook_url = None
+                    should_commit = True
+                if guild_id is None:
+                    guild_id = row.guild_id
+                if channel_kind is None and getattr(row, "kind", None) is not None:
+                    channel_kind = row.kind
+            if guild_id is None:
+                if should_commit:
+                    await db.commit()
+                else:
+                    await db.rollback()
+                return False, 0.0
+            created, created_url, creation_errors = await create_webhook_for_channel(
+                channel=None,
+                channel_id=msg.channel_id,
+                guild_id=guild_id,
+                guild_discord_id=discord_guild_id,
+                db=db,
+                channel_kind=channel_kind,
+                configured_channel_id=msg.channel_id,
+            )
+            if creation_errors:
+                logger.warning(
+                    "chat.ws webhook recreate errors channel=%s errors=%s",
+                    msg.channel_id,
+                    creation_errors,
+                )
+            if created_url:
+                msg.webhook_url = created_url
+                should_commit = True
+            elif created is not None:
+                should_commit = True
+            if should_commit:
+                await db.commit()
+            else:
+                await db.rollback()
+        if created is None:
+            return False, 0.0
+        retry_start = time.perf_counter()
+        try:
+            sent = await created.send(
+                msg.content,
+                username=msg.username,
+                avatar_url=msg.avatar_url,
+                files=[upload.to_discord_file() for upload in msg.uploads] or None,
+                embeds=list(msg.embeds) if msg.embeds else None,
+                wait=True,
+            )
+        except discord.HTTPException as e:
+            headers = getattr(getattr(e, "response", None), "headers", {}) or {}
+            retry_after = headers.get("Retry-After") or headers.get(
+                "X-RateLimit-Reset-After"
+            )
+            retry_after_s = float(retry_after) if retry_after is not None else 0.0
+            logger.warning(
+                "chat.ws webhook resend error channel=%s status=%s attempt=%s",
+                msg.channel_id,
+                getattr(e, "status", None),
+                msg.attempts + 1,
+            )
+            return False, retry_after_s
+        except Exception:
+            logger.exception(
+                "chat.ws webhook resend failed channel=%s attempt=%s",
+                msg.channel_id,
+                msg.attempts + 1,
+            )
+            return False, 0.0
+        await self._finalize_webhook_success(msg, sent, started_at=retry_start)
+        return True, 0.0
+
     async def _send_webhook(self, msg: PendingWebhookMessage) -> tuple[bool, float]:
         webhook = discord.Webhook.from_url(msg.webhook_url, client=discord_client)
-        files = [upload.to_discord_file() for upload in msg.uploads]
         start = time.perf_counter()
         channel_str = str(msg.channel_id)
         meta = await self._ensure_channel_meta(channel_str)
@@ -867,7 +991,7 @@ class ChatConnectionManager:
                 msg.content,
                 username=msg.username,
                 avatar_url=msg.avatar_url,
-                files=files or None,
+                files=[upload.to_discord_file() for upload in msg.uploads] or None,
                 embeds=list(msg.embeds) if msg.embeds else None,
                 wait=True,
             )
@@ -877,10 +1001,19 @@ class ChatConnectionManager:
                 "X-RateLimit-Reset-After"
             )
             retry_after_s = float(retry_after) if retry_after is not None else 0.0
+            status = getattr(e, "status", None)
+            if status in FATAL_WEBHOOK_STATUSES:
+                logger.warning(
+                    "chat.ws webhook stale channel=%s status=%s attempt=%s",
+                    msg.channel_id,
+                    status,
+                    msg.attempts + 1,
+                )
+                return await self._recover_stale_webhook(msg, meta)
             logger.warning(
                 "chat.ws webhook send error channel=%s status=%s attempt=%s",
                 msg.channel_id,
-                getattr(e, "status", None),
+                status,
                 msg.attempts + 1,
             )
             return False, retry_after_s
@@ -891,22 +1024,7 @@ class ChatConnectionManager:
                 msg.attempts + 1,
             )
             return False, 0.0
-        latency_ms = (time.perf_counter() - start) * 1000
-        self._send_count += 1
-        logger.info(
-            "chat.ws send channel=%s latency_ms=%.1f count=%s",
-            msg.channel_id,
-            latency_ms,
-            self._send_count,
-        )
-        dto, _ = serialize_message(sent)
-        await emit_event(
-            {
-                "channel": str(msg.channel_id),
-                "op": "mc",
-                "d": dto.model_dump(by_alias=True, exclude_none=True),
-            }
-        )
+        await self._finalize_webhook_success(msg, sent, started_at=start)
         return True, 0.0
 
     async def _send_subscription_ack(

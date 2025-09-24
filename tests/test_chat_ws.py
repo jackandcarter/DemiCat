@@ -114,7 +114,7 @@ class StubWebSocket:
 class DummySession:
     async def execute(self, *args, **kwargs):
         return types.SimpleNamespace(
-            all=lambda: [(1, 1, "CHAT", 1)]
+            all=lambda: [(1, 1, ws_chat.OFFICER_CHAT_KIND, 1)]
         )
 
     async def close(self):  # pragma: no cover - trivial
@@ -470,6 +470,186 @@ def test_chat_ws_officer_send_requires_role(monkeypatch):
 
         assert queued == []
         assert 1 not in ws_chat._channel_webhooks
+
+    _run(scenario())
+
+
+def test_chat_ws_recovers_from_stale_webhook(monkeypatch):
+    async def scenario():
+        ws_chat._channel_webhooks.clear()
+        manager = ws_chat.ChatConnectionManager()
+        channel_id = 9876
+        manager._channel_meta[str(channel_id)] = ws_chat.ChannelMeta(
+            guild_id=5, discord_guild_id=50, kind="CHAT"
+        )
+
+        class FakeSession:
+            def __init__(self):
+                self.commit_called = False
+                self.rollback_called = False
+                self.cleared = False
+                self.row = self._make_row()
+
+            def _make_row(self):
+                session = self
+
+                class Row:
+                    def __init__(self) -> None:
+                        self.guild_id = 5
+                        self.channel_id = channel_id
+                        self.kind = ws_chat.ChannelKind.CHAT
+                        self._webhook_url = "https://example.invalid/stale"
+
+                    @property
+                    def webhook_url(self):
+                        return self._webhook_url
+
+                    @webhook_url.setter
+                    def webhook_url(self, value):
+                        if value is None:
+                            session.cleared = True
+                        self._webhook_url = value
+
+                return Row()
+
+            async def execute(self, *args, **kwargs):
+                return types.SimpleNamespace(
+                    scalars=lambda: types.SimpleNamespace(all=lambda: [self.row])
+                )
+
+            async def commit(self):
+                self.commit_called = True
+
+            async def rollback(self):
+                self.rollback_called = True
+
+            async def close(self):  # pragma: no cover - close not triggered
+                pass
+
+        fake_session = FakeSession()
+
+        @asynccontextmanager
+        async def fake_get_session():
+            yield fake_session
+
+        events: list[dict] = []
+
+        async def fake_emit_event(event):
+            events.append(event)
+
+        counter = itertools.count(100)
+
+        class DummyDiscordMessage:
+            def __init__(self):
+                self.id = next(counter)
+                self.attachments = []
+
+            def model_dump(self, **kwargs):  # pragma: no cover - defensive
+                return {"id": self.id}
+
+        class FreshWebhook:
+            def __init__(self) -> None:
+                self.calls: list[tuple] = []
+
+            async def send(
+                self,
+                content,
+                *,
+                username=None,
+                avatar_url=None,
+                files=None,
+                embeds=None,
+                wait=True,
+            ):
+                self.calls.append((content, username, avatar_url, files, embeds, wait))
+                return DummyDiscordMessage()
+
+        fresh_webhook = FreshWebhook()
+
+        class FailingWebhook:
+            def __init__(self) -> None:
+                self.calls = 0
+
+            async def send(self, *args, **kwargs):
+                self.calls += 1
+                exc = ws_chat.discord.HTTPException("gone")
+                exc.status = 404
+                exc.response = types.SimpleNamespace(headers={})
+                raise exc
+
+        failing_webhook = FailingWebhook()
+        created_urls: list[str] = []
+
+        async def fake_create_webhook_for_channel(**kwargs):
+            created_urls.append("https://example.invalid/fresh")
+            fake_session.row.webhook_url = "https://example.invalid/fresh"
+            ws_chat._channel_webhooks[channel_id] = "https://example.invalid/fresh"
+            return fresh_webhook, "https://example.invalid/fresh", []
+
+        def fake_from_url(url, client=None):
+            if url == "https://example.invalid/stale":
+                return failing_webhook
+            assert url == "https://example.invalid/fresh"
+            return fresh_webhook
+
+        def fake_serialize(message):
+            class DummyDto:
+                def model_dump(self, **kwargs):
+                    return {"id": message.id}
+
+            return DummyDto(), []
+
+        monkeypatch.setattr(ws_chat, "get_session", fake_get_session)
+        monkeypatch.setattr(ws_chat, "emit_event", fake_emit_event)
+        monkeypatch.setattr(ws_chat, "create_webhook_for_channel", fake_create_webhook_for_channel)
+        monkeypatch.setattr(ws_chat.discord.Webhook, "from_url", staticmethod(fake_from_url))
+        monkeypatch.setattr(ws_chat, "serialize_message", fake_serialize)
+
+        ws_chat._channel_webhooks[channel_id] = "https://example.invalid/stale"
+
+        msg = ws_chat.PendingWebhookMessage(
+            channel_id=channel_id,
+            webhook_url="https://example.invalid/stale",
+            content="hello",
+            username="Tester",
+            avatar_url=None,
+            uploads=[],
+            embeds=[],
+            nonce="nonce",
+            payload={"op": "mc"},
+        )
+
+        success, retry_after = await manager._send_webhook(msg)
+
+        assert success is True
+        assert retry_after == 0.0
+        assert msg.webhook_url == "https://example.invalid/fresh"
+        assert ws_chat._channel_webhooks[channel_id] == "https://example.invalid/fresh"
+        assert fake_session.cleared is True
+        assert fake_session.commit_called is True
+        assert created_urls == ["https://example.invalid/fresh"]
+        assert fresh_webhook.calls, "expected fresh webhook to be used"
+        assert failing_webhook.calls == 1
+        assert events and events[0]["channel"] == str(channel_id)
+
+        msg2 = ws_chat.PendingWebhookMessage(
+            channel_id=channel_id,
+            webhook_url=msg.webhook_url,
+            content="hello again",
+            username="Tester",
+            avatar_url=None,
+            uploads=[],
+            embeds=[],
+            nonce="nonce2",
+            payload={"op": "mc"},
+        )
+
+        success2, retry_after2 = await manager._send_webhook(msg2)
+
+        assert success2 is True
+        assert retry_after2 == 0.0
+        assert len(created_urls) == 1, "webhook creation should only occur once"
+        assert len(fresh_webhook.calls) == 2
 
     _run(scenario())
 
