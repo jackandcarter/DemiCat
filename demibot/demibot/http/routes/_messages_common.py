@@ -88,6 +88,20 @@ from ..discord_client import discord_client, is_discord_client_ready
 _channel_webhooks: dict[int, str] = {}
 
 
+def _format_kind(kind: ChannelKind | None) -> str | None:
+    return kind.value if kind is not None else None
+
+
+def _is_missing_webhook_error(exc: discord.HTTPException) -> bool:
+    if exc.status in {403, 404}:
+        text = (exc.text or "").lower()
+        if exc.status == 404:
+            return True
+        if "missing access" in text or "unknown webhook" in text:
+            return True
+    return False
+
+
 async def _cache_and_store_webhook_url(
     *,
     db: AsyncSession,
@@ -119,6 +133,13 @@ async def _cache_and_store_webhook_url(
     rows = result.scalars().all()
     seen_ids = {row.channel_id for row in rows}
     for row in rows:
+        if (
+            configured_channel_id is not None
+            and channel_kind is not None
+            and row.channel_id == configured_channel_id
+            and row.kind != channel_kind
+        ):
+            row.kind = channel_kind
         if row.webhook_url != webhook_url:
             row.webhook_url = webhook_url
     for cid, default_kind in targets.items():
@@ -132,6 +153,36 @@ async def _cache_and_store_webhook_url(
                 webhook_url=webhook_url,
             )
         )
+
+
+async def _purge_webhook_urls(
+    *, db: AsyncSession, guild_id: int, channel_ids: Iterable[int]
+) -> bool:
+    """Remove cached webhook URLs for the supplied channel ids.
+
+    Returns ``True`` when any cached or persisted entry was updated.
+    """
+
+    unique_ids = {cid for cid in channel_ids}
+    if not unique_ids:
+        return False
+
+    changed = False
+    for cid in unique_ids:
+        if _channel_webhooks.pop(cid, None) is not None:
+            changed = True
+
+    result = await db.execute(
+        select(GuildChannel).where(
+            GuildChannel.guild_id == guild_id,
+            GuildChannel.channel_id.in_(list(unique_ids)),
+        )
+    )
+    for row in result.scalars():
+        if row.webhook_url is not None:
+            row.webhook_url = None
+            changed = True
+    return changed
 
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
@@ -375,6 +426,14 @@ async def create_webhook_for_channel(
             errors.append("Webhook creation failed: channel not available")
         return None, None, errors
 
+    logging.info(
+        "webhook: creating",
+        extra={
+            "guild_id": guild_id,
+            "channel_id": channel_id,
+            "kind": _format_kind(channel_kind),
+        },
+    )
     try:
         created = await resolved_channel.create_webhook(name="DemiCat Relay")
     except discord.Forbidden:
@@ -560,10 +619,12 @@ async def _send_via_webhook(
         candidate_ids.append(configured_channel_id)
 
     webhook_url: str | None = None
+    webhook_source: str | None = None
     for candidate in candidate_ids:
         cached_url = _channel_webhooks.get(candidate)
         if cached_url:
             webhook_url = cached_url
+            webhook_source = "cache"
             break
 
     if webhook_url and any(
@@ -588,6 +649,7 @@ async def _send_via_webhook(
             stmt = stmt.where(GuildChannel.kind == channel_kind)
         webhook_url = await db.scalar(stmt)
         if webhook_url:
+            webhook_source = "database"
             await _cache_and_store_webhook_url(
                 db=db,
                 guild_id=guild_id,
@@ -604,6 +666,7 @@ async def _send_via_webhook(
             )
             webhook_url = await db.scalar(fallback_stmt)
             if webhook_url:
+                webhook_source = "database"
                 await _cache_and_store_webhook_url(
                     db=db,
                     guild_id=guild_id,
@@ -627,6 +690,7 @@ async def _send_via_webhook(
             stmt = stmt.where(GuildChannel.kind == channel_kind)
         webhook_url = await db.scalar(stmt)
         if webhook_url:
+            webhook_source = "database"
             await _cache_and_store_webhook_url(
                 db=db,
                 guild_id=guild_id,
@@ -643,6 +707,7 @@ async def _send_via_webhook(
             )
             webhook_url = await db.scalar(fallback_stmt)
             if webhook_url:
+                webhook_source = "database"
                 await _cache_and_store_webhook_url(
                     db=db,
                     guild_id=guild_id,
@@ -654,6 +719,15 @@ async def _send_via_webhook(
 
     webhook = None
     if webhook_url:
+        logging.info(
+            "webhook: using cached",
+            extra={
+                "guild_id": guild_id,
+                "channel_id": channel_id,
+                "kind": _format_kind(channel_kind),
+                "webhook_source": webhook_source,
+            },
+        )
         try:
             webhook = discord.Webhook.from_url(webhook_url, client=discord_client)
         except Exception as e:  # pragma: no cover - network errors
@@ -712,16 +786,36 @@ async def _send_via_webhook(
                 )
             except Exception as e2:  # pragma: no cover - network errors
                 e = e2
+        stale_webhook = False
         if sent is None:
-            logging.exception(
-                "webhook.send failed for channel %s: %s %s",
-                channel_id,
-                e.status,
-                e.text,
-            )
-            errors.append(
-                f"Webhook send failed: {e.status} {e.text or _discord_error(e)}"
-            )
+            stale_webhook = _is_missing_webhook_error(e)
+            if stale_webhook:
+                logging.info(
+                    "webhook: recreating after %s",
+                    e.status,
+                    extra={
+                        "guild_id": guild_id,
+                        "channel_id": channel_id,
+                        "kind": _format_kind(channel_kind),
+                    },
+                )
+                await _purge_webhook_urls(
+                    db=db,
+                    guild_id=guild_id,
+                    channel_ids=candidate_ids,
+                )
+                webhook = None
+                webhook_url = None
+            else:
+                logging.exception(
+                    "webhook.send failed for channel %s: %s %s",
+                    channel_id,
+                    e.status,
+                    e.text,
+                )
+                errors.append(
+                    f"Webhook send failed: {e.status} {e.text or _discord_error(e)}"
+                )
     except Exception as e:  # pragma: no cover - network errors
         logging.exception("webhook.send failed for channel %s", channel_id)
         errors.append(f"Webhook send failed: {e}")
