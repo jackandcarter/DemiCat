@@ -26,6 +26,22 @@ discord_stub.Webhook = type(
         )
     },
 )
+class _ThreadStub:
+    def __init__(self, *, id=0, parent=None, archived=False):
+        self.id = id
+        self.parent = parent
+        self.archived = archived
+
+
+class _ObjectStub:
+    def __init__(self, id=None, **kwargs):
+        if id is None:
+            id = kwargs.get("id")
+        self.id = id
+
+
+discord_stub.Thread = _ThreadStub
+discord_stub.Object = _ObjectStub
 discord_stub.abc = types.SimpleNamespace(Messageable=object)
 discord_commands_stub = types.ModuleType("discord.ext.commands")
 discord_commands_stub.Bot = type("Bot", (), {})
@@ -364,6 +380,152 @@ def test_chat_ws_send_uses_channel_field(monkeypatch):
         message = queued[0]
         assert message.channel_id == 12345
         assert ws_chat._channel_webhooks[12345] == "https://example.invalid/webhook"
+
+    _run(scenario())
+
+
+def test_chat_ws_thread_send_includes_thread_param(monkeypatch):
+    async def scenario():
+        ws_chat._channel_webhooks.clear()
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        thread_channel_id = 54321
+        ctx = RequestContext(
+            user=types.SimpleNamespace(
+                id=42,
+                discord_user_id=4242,
+                character_name="Tester",
+            ),
+            guild=types.SimpleNamespace(id=9, discord_guild_id=9090),
+            key=None,
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+        info = manager.connections[ws]
+        info.channels.add(str(thread_channel_id))
+        meta = ws_chat.ChannelMeta(
+            guild_id=ctx.guild.id,
+            discord_guild_id=ctx.guild.discord_guild_id,
+            kind="CHAT",
+        )
+        info.metadata[str(thread_channel_id)] = meta
+        manager._channel_meta[str(thread_channel_id)] = meta
+
+        parent_channel = types.SimpleNamespace(id=9876)
+        thread_obj = ws_chat.discord.Thread(id=thread_channel_id, parent=parent_channel)
+
+        class DummyDiscordClient:
+            def get_channel(self, cid):
+                assert cid == thread_channel_id
+                return thread_obj
+
+        monkeypatch.setattr(ws_chat, "discord_client", DummyDiscordClient())
+
+        class FakeSession:
+            def __init__(self):
+                self.commit_called = False
+
+            async def execute(self, *args, **kwargs):
+                return types.SimpleNamespace(
+                    one_or_none=lambda: (None, ws_chat.ChannelKind.CHAT)
+                )
+
+            async def scalar(self, *args, **kwargs):
+                return None
+
+            async def commit(self):
+                self.commit_called = True
+
+            async def close(self):  # pragma: no cover - trivial
+                pass
+
+        fake_session = FakeSession()
+
+        @asynccontextmanager
+        async def fake_get_session():
+            yield fake_session
+
+        def fake_build_bridge_message(
+            *,
+            content,
+            user,
+            membership,
+            channel_kind,
+            use_character_name=False,
+            attachments=None,
+            nonce=None,
+        ):
+            return content, [], [], nonce or "nonce"
+
+        async def fake_create_webhook_for_channel(**kwargs):
+            return None, "https://example.invalid/thread-webhook", []
+
+        queued: list[ws_chat.PendingWebhookMessage] = []
+
+        async def fake_queue_webhook(self, msg):
+            queued.append(msg)
+
+        events: list[dict] = []
+
+        async def fake_emit_event(payload):
+            events.append(payload)
+
+        monkeypatch.setattr(ws_chat, "get_session", fake_get_session)
+        monkeypatch.setattr(ws_chat, "build_bridge_message", fake_build_bridge_message)
+        monkeypatch.setattr(
+            ws_chat, "create_webhook_for_channel", fake_create_webhook_for_channel
+        )
+        monkeypatch.setattr(
+            manager,
+            "_queue_webhook",
+            types.MethodType(fake_queue_webhook, manager),
+        )
+
+        await manager._handle_send(
+            ws,
+            {
+                "channel": thread_channel_id,
+                "payload": {"content": "hello thread"},
+            },
+        )
+
+        assert queued, "expected webhook message to be queued"
+        message = queued[0]
+        assert message.thread_id == thread_channel_id
+        assert message.webhook_url == "https://example.invalid/thread-webhook"
+        assert fake_session.commit_called is True
+
+        webhook_calls: list[dict] = []
+
+        class DummyWebhook:
+            async def send(self, content, **kwargs):
+                webhook_calls.append({"content": content, **kwargs})
+
+                class DummyMessage:
+                    id = 777
+
+                    def model_dump(self, **kwargs):  # pragma: no cover - simple stub
+                        return {"id": str(self.id)}
+
+                return DummyMessage()
+
+        def fake_from_url(url, client=None):
+            assert url == "https://example.invalid/thread-webhook"
+            return DummyWebhook()
+
+        monkeypatch.setattr(
+            ws_chat.discord.Webhook, "from_url", staticmethod(fake_from_url)
+        )
+        monkeypatch.setattr(ws_chat, "emit_event", fake_emit_event)
+
+        success, retry_after = await manager._send_webhook(message)
+
+        assert success is True
+        assert retry_after == 0.0
+        assert webhook_calls, "expected webhook send to be invoked"
+        call = webhook_calls[-1]
+        assert call["thread"].id == thread_channel_id
+        assert events, "expected emit_event to be called"
 
     _run(scenario())
 
