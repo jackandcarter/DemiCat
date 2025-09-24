@@ -77,6 +77,9 @@ public class ChatWindow : IDisposable
     private string? _lastSubscribedChannelId;
     private string? _lastSubscribedGuildId;
     private bool _pendingRefreshAfterSubscribe;
+    private bool _pendingInitialScroll = true;
+    private bool _wasAtBottomLastFrame = true;
+    private float _chatTopPadding;
     private int _selectionStart;
     private int _selectionEnd;
     private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
@@ -321,6 +324,10 @@ public class ChatWindow : IDisposable
             return;
         PluginServices.Instance!.Framework.RunOnTick(() =>
         {
+            _pendingInitialScroll = true;
+            _wasAtBottomLastFrame = true;
+            _chatTopPadding = 0f;
+
             if (!string.IsNullOrEmpty(oldId))
             {
                 _bridge.Unsubscribe(oldId);
@@ -426,7 +433,27 @@ public class ChatWindow : IDisposable
             _config.ChatInputSplitRatio = actualRatio;
         }
         composeRatio = actualRatio;
+        const float ScrollTolerance = 1f;
         ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), true);
+
+        var shouldAutoScroll = _pendingInitialScroll || _wasAtBottomLastFrame;
+        if (shouldAutoScroll && _messages.Count == 0)
+        {
+            shouldAutoScroll = false;
+        }
+
+        var topPadding = _chatTopPadding;
+        if (_messages.Count == 0)
+        {
+            topPadding = 0f;
+            _chatTopPadding = 0f;
+        }
+
+        if (topPadding > 0f)
+        {
+            ImGui.Dummy(new Vector2(1f, topPadding));
+        }
+
         var clipper = new ImGuiListClipper();
         clipper.Begin(_messages.Count);
         while (clipper.Step())
@@ -639,6 +666,33 @@ public class ChatWindow : IDisposable
             }
         }
         clipper.End();
+
+        if (shouldAutoScroll)
+        {
+            ImGui.Dummy(Vector2.Zero);
+            ImGui.SetScrollHereY(1f);
+            _pendingInitialScroll = false;
+        }
+
+        var cursorStartY = ImGui.GetCursorStartPos().Y;
+        var contentRegionMaxY = ImGui.GetWindowContentRegionMax().Y;
+        var innerHeight = MathF.Max(0f, contentRegionMaxY - cursorStartY);
+        var usedHeight = ImGui.GetCursorPosY() - cursorStartY;
+        var messageHeight = MathF.Max(0f, usedHeight - topPadding);
+        if (_messages.Count > 0 && innerHeight > 0f)
+        {
+            var paddingNeeded = innerHeight - messageHeight;
+            _chatTopPadding = paddingNeeded > 0f ? paddingNeeded : 0f;
+        }
+        else
+        {
+            _chatTopPadding = 0f;
+        }
+
+        var newScrollMaxY = ImGui.GetScrollMaxY();
+        var newScrollY = ImGui.GetScrollY();
+        _wasAtBottomLastFrame = newScrollMaxY <= 0f || newScrollY >= newScrollMaxY - ScrollTolerance;
+
         ImGui.EndChild();
 
         var style = ImGui.GetStyle();
@@ -1944,6 +1998,9 @@ public class ChatWindow : IDisposable
                     }
                 }
                 TrimMessages();
+                _pendingInitialScroll = true;
+                _wasAtBottomLastFrame = true;
+                _chatTopPadding = 0f;
             });
         }
         catch (Exception ex)
