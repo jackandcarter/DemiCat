@@ -261,12 +261,26 @@ public class PresenceSidebar : IDisposable
         }
 
         var avatarPos = ImGui.GetCursorScreenPos();
+        var drewAvatar = false;
         if (p.AvatarTexture != null)
         {
-            var wrap = p.AvatarTexture.GetWrapOrEmpty();
-            ImGui.Image(wrap.Handle, avatarSize);
+            try
+            {
+                var wrap = p.AvatarTexture.GetWrapOrEmpty();
+                ImGui.Image(wrap.Handle, avatarSize);
+                drewAvatar = true;
+            }
+            catch (ObjectDisposedException)
+            {
+                p.AvatarTexture = null;
+                if (TextureLoader != null && !string.IsNullOrEmpty(p.AvatarUrl))
+                {
+                    TextureLoader(p.AvatarUrl, t => p.AvatarTexture = t);
+                }
+            }
         }
-        else
+
+        if (!drewAvatar)
         {
             ImGui.Dummy(avatarSize);
         }
