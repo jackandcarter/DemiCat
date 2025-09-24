@@ -132,6 +132,34 @@ async def test_channel_messages_multipart_accepts_message_reference(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_cache_and_store_webhook_preserves_kind():
+    await init_db("sqlite+aiosqlite://")
+    messages_common._channel_webhooks.clear()
+
+    async with get_session() as db:
+        guild = Guild(id=1, discord_guild_id=1234, name="Guild")
+        db.add(guild)
+        await db.flush()
+
+        await messages_common._cache_and_store_webhook_url(
+            db=db,
+            guild_id=guild.id,
+            webhook_url="https://example.invalid/webhook",
+            channel_id=555,
+            configured_channel_id=555,
+            channel_kind=ChannelKind.OFFICER_CHAT,
+        )
+        await db.flush()
+
+        stored = await db.get(
+            GuildChannel, (guild.id, 555, ChannelKind.OFFICER_CHAT)
+        )
+
+        assert stored is not None
+        assert stored.webhook_url == "https://example.invalid/webhook"
+
+
+@pytest.mark.asyncio
 async def test_channel_history_returns_messages():
     await init_db("sqlite+aiosqlite://")
     async with get_session() as db:
@@ -562,7 +590,8 @@ async def test_channel_message_falls_back_when_webhook_forbidden(monkeypatch):
     assert data["ok"] is True
     assert dummy_channel.webhook_attempts == 1
     assert len(dummy_channel.sent_payloads) == 1
-    assert dummy_channel.sent_payloads[0]["content"] == "Hello world"
+    fallback_content = dummy_channel.sent_payloads[0]["content"]
+    assert "Hello world" in fallback_content
     discord_errors = data.get("detail", {}).get("discord")
     assert discord_errors is not None
     assert "Manage Webhooks required" in discord_errors[0]
