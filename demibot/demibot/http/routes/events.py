@@ -33,7 +33,8 @@ from ...db.models import (
     Membership,
 )
 from ._user_display import compute_creator_base_name, build_creator_label
-from ._messages_common import _send_via_webhook, ALLOWED_MENTIONS, _role_set
+from ..discord_allowed_mentions import ALLOWED_MENTIONS
+from ._messages_common import _send_via_webhook, _role_set
 from models.event import Event
 
 router = APIRouter(prefix="/api")
