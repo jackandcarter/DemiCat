@@ -59,9 +59,25 @@ alembic_config_stub = types.ModuleType("alembic.config")
 alembic_config_stub.Config = _AlembicConfig
 sys.modules.setdefault("alembic.config", alembic_config_stub)
 
+allowed_mentions_stub = types.ModuleType("demibot.http.discord_allowed_mentions")
+
+
+class _AllowedMentionsStub:
+    users = True
+    roles = True
+    everyone = False
+
+    def to_dict(self) -> dict[str, object]:  # pragma: no cover - simple stub
+        return {"users": [], "roles": [], "everyone": False}
+
+
+allowed_mentions_stub.ALLOWED_MENTIONS = _AllowedMentionsStub()
+sys.modules.setdefault("demibot.http.discord_allowed_mentions", allowed_mentions_stub)
+
 messages_common_stub = types.ModuleType("demibot.http.routes._messages_common")
 messages_common_stub._channel_webhooks = {}
 messages_common_stub.create_webhook_for_channel = lambda *args, **kwargs: None
+messages_common_stub.ALLOWED_MENTIONS = allowed_mentions_stub.ALLOWED_MENTIONS
 routes_stub = types.ModuleType("demibot.http.routes")
 routes_stub.__path__ = []
 routes_stub._messages_common = messages_common_stub
@@ -549,7 +565,7 @@ def test_chat_ws_recovers_from_stale_webhook(monkeypatch):
 
         class FreshWebhook:
             def __init__(self) -> None:
-                self.calls: list[tuple] = []
+                self.calls: list[dict[str, object]] = []
 
             async def send(
                 self,
@@ -560,8 +576,19 @@ def test_chat_ws_recovers_from_stale_webhook(monkeypatch):
                 files=None,
                 embeds=None,
                 wait=True,
+                allowed_mentions=None,
             ):
-                self.calls.append((content, username, avatar_url, files, embeds, wait))
+                self.calls.append(
+                    {
+                        "content": content,
+                        "username": username,
+                        "avatar_url": avatar_url,
+                        "files": files,
+                        "embeds": embeds,
+                        "wait": wait,
+                        "allowed_mentions": allowed_mentions,
+                    }
+                )
                 return DummyDiscordMessage()
 
         fresh_webhook = FreshWebhook()
@@ -650,6 +677,10 @@ def test_chat_ws_recovers_from_stale_webhook(monkeypatch):
         assert retry_after2 == 0.0
         assert len(created_urls) == 1, "webhook creation should only occur once"
         assert len(fresh_webhook.calls) == 2
+        assert all(
+            call["allowed_mentions"] is ws_chat.ALLOWED_MENTIONS
+            for call in fresh_webhook.calls
+        )
 
     _run(scenario())
 

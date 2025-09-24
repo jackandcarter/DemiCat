@@ -22,6 +22,7 @@ from .chat_events import emit_event
 from .deps import RequestContext, api_key_auth
 from .discord_client import discord_client
 from .discord_helpers import serialize_message
+from .discord_allowed_mentions import ALLOWED_MENTIONS
 from .routes._messages_common import create_webhook_for_channel, _channel_webhooks
 from ..bridge import (
     BridgeUpload,
@@ -946,6 +947,7 @@ class ChatConnectionManager:
                 files=[upload.to_discord_file() for upload in msg.uploads] or None,
                 embeds=list(msg.embeds) if msg.embeds else None,
                 wait=True,
+                allowed_mentions=ALLOWED_MENTIONS,
             )
         except discord.HTTPException as e:
             headers = getattr(getattr(e, "response", None), "headers", {}) or {}
@@ -994,6 +996,7 @@ class ChatConnectionManager:
                 files=[upload.to_discord_file() for upload in msg.uploads] or None,
                 embeds=list(msg.embeds) if msg.embeds else None,
                 wait=True,
+                allowed_mentions=ALLOWED_MENTIONS,
             )
         except discord.HTTPException as e:
             headers = getattr(getattr(e, "response", None), "headers", {}) or {}
