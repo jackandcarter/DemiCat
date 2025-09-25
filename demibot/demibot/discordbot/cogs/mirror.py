@@ -9,6 +9,7 @@ import discord
 from discord.ext import commands
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 
 from ...db.models import Embed, Guild, GuildChannel, Message, ChannelKind
 from ...db.session import get_session
@@ -78,11 +79,29 @@ class Mirror(commands.Cog):
                         )
                         db_guild = result.scalar_one_or_none()
                         if db_guild is None:
-                            db_guild = Guild(
-                                discord_guild_id=guild.id, name=guild.name
-                            )
-                            db.add(db_guild)
-                            await db.flush()
+                            dialect_name = getattr(db.bind, "dialect", None)
+                            dialect_name = getattr(dialect_name, "name", None)
+                            if dialect_name == "mysql":
+                                stmt = mysql_insert(Guild).values(
+                                    discord_guild_id=guild.id,
+                                    name=guild.name,
+                                )
+                                stmt = stmt.on_duplicate_key_update(
+                                    name=stmt.inserted.name,
+                                    updated_at=datetime.utcnow(),
+                                )
+                                await db.execute(stmt)
+                                result = await db.execute(
+                                    select(Guild).where(Guild.discord_guild_id == guild.id)
+                                )
+                                db_guild = result.scalar_one()
+                            else:
+                                db_guild = Guild(
+                                    discord_guild_id=guild.id,
+                                    name=guild.name,
+                                )
+                                db.add(db_guild)
+                                await db.flush()
                         elif db_guild.name != guild.name:
                             db_guild.name = guild.name
 
