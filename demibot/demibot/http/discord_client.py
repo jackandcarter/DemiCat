@@ -3,10 +3,42 @@ from __future__ import annotations
 from discord.ext import commands
 
 
-discord_client: commands.Bot | None = None
+class _DiscordClientProxy:
+    """Proxy object that always reflects the current Discord client.
+
+    HTTP route modules often import ``discord_client`` directly, meaning they
+    receive the value that existed at import time.  Reassigning the module level
+    ``discord_client`` would therefore leave those imports pointing at the old
+    object (usually ``None``) even after the bot is created.  The proxy keeps a
+    mutable reference to the underlying client so that existing imports stay in
+    sync when :func:`set_discord_client` updates the client.
+    """
+
+    __slots__ = ("_client",)
+
+    def __init__(self) -> None:
+        self._client: commands.Bot | None = None
+
+    def set(self, client: commands.Bot | None) -> None:
+        self._client = client
+
+    def get(self) -> commands.Bot | None:
+        return self._client
+
+    def __bool__(self) -> bool:
+        return self._client is not None
+
+    def __getattr__(self, name: str):  # pragma: no cover - passthrough
+        client = self._client
+        if client is None:
+            raise AttributeError(name)
+        return getattr(client, name)
 
 
-def set_discord_client(client: commands.Bot) -> None:
+discord_client = _DiscordClientProxy()
+
+
+def set_discord_client(client: commands.Bot | None) -> None:
     """Register the Discord client used for sending messages.
 
     The HTTP routes rely on this client to forward messages to Discord
@@ -14,11 +46,16 @@ def set_discord_client(client: commands.Bot) -> None:
     the running :class:`commands.Bot` instance.
     """
 
-    global discord_client
-    discord_client = client
+    discord_client.set(client)
 
 
-def is_discord_client_ready(client: commands.Bot | None = None) -> bool:
+def get_discord_client() -> commands.Bot | None:
+    """Return the currently registered Discord client, if any."""
+
+    return discord_client.get()
+
+
+def is_discord_client_ready(client: commands.Bot | _DiscordClientProxy | None = None) -> bool:
     """Return ``True`` when the Discord client is ready for API access.
 
     The helper performs defensive checks around the lifecycle helpers exposed
@@ -28,7 +65,11 @@ def is_discord_client_ready(client: commands.Bot | None = None) -> bool:
     syncing with Discord.
     """
 
-    client = client or discord_client
+    if isinstance(client, _DiscordClientProxy):
+        client = client.get()
+
+    if client is None:
+        client = discord_client.get()
     if client is None:
         return False
 
