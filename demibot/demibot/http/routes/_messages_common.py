@@ -1191,6 +1191,30 @@ async def fetch_messages(
     return [o.model_dump(by_alias=True, exclude_none=True) for o in out]
 
 
+class PostBody(BaseModel):
+    channel_id: str = Field(alias="channelId")
+    content: str
+    use_character_name: bool | None = Field(default=False, alias="useCharacterName")
+    message_reference: MessageReferenceDto | None = Field(
+        default=None, alias="messageReference"
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_channel_id(cls, values: object) -> object:
+        if isinstance(values, dict):
+            channel_value = values.get("channel_id")
+            for alias in ("channelId", "channel"):
+                if channel_value is None and values.get(alias) is not None:
+                    channel_value = values[alias]
+                values.pop(alias, None)
+            if channel_value is not None:
+                values["channel_id"] = channel_value
+        return values
+
+
 async def save_message(
     body: PostBody,
     ctx: RequestContext,
