@@ -1900,8 +1900,15 @@ public class ChatWindow : IDisposable
                     break;
                 }
 
-                var oldestMessageId = msgs[^1].Id;
-                all.AddRange(msgs);
+                var oldestMessageId = msgs[0].Id;
+                if (all.Count == 0)
+                {
+                    all.AddRange(msgs);
+                }
+                else
+                {
+                    all.InsertRange(0, msgs);
+                }
                 if (all.Count >= MaxMessages || msgs.Count < PageSize)
                 {
                     break;
@@ -1913,11 +1920,6 @@ public class ChatWindow : IDisposable
                 }
 
                 before = oldestMessageId;
-            }
-
-            if (all.Count > 1)
-            {
-                all.Reverse();
             }
 
             if (all.Count > MaxMessages)
