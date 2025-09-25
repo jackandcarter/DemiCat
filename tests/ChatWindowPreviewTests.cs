@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using DemiCatPlugin;
 using DiscordHelper;
@@ -58,5 +59,46 @@ public class ChatWindowPreviewTests
         var preview = ChatWindow.GetPreviewPlainText(message);
 
         Assert.Equal("Plain preview", preview);
+    }
+
+    [Fact]
+    public void GetMessagePlainText_ReturnsNull_WhenEmbedsCoverContent()
+    {
+        var message = new DiscordMessageDto
+        {
+            Content = "Embed text",
+            Embeds = new List<EmbedDto> { new() { Description = "Embed text" } }
+        };
+
+        var preview = ChatWindow.GetMessagePlainText(message);
+
+        Assert.Null(preview);
+    }
+
+    [Fact]
+    public void GetMessagePlainText_ReturnsRemainder_WhenEmbedsDoNotCoverContent()
+    {
+        var message = new DiscordMessageDto
+        {
+            Content = "Embed text and more",
+            Embeds = new List<EmbedDto> { new() { Description = "Embed text" } }
+        };
+
+        var preview = ChatWindow.GetMessagePlainText(message);
+
+        Assert.Equal(" and more", preview);
+    }
+
+    [Fact]
+    public void GetMessagePlainText_ReturnsContent_WhenNoEmbeds()
+    {
+        var message = new DiscordMessageDto
+        {
+            Content = "Plain message"
+        };
+
+        var preview = ChatWindow.GetMessagePlainText(message);
+
+        Assert.Equal("Plain message", preview);
     }
 }

@@ -482,8 +482,6 @@ public class ChatWindow : IDisposable
 
                 ImGui.BeginGroup();
                 ImGui.TextUnformatted(msg.Author?.Name ?? "Unknown");
-                ImGui.SameLine();
-                ImGui.TextUnformatted(msg.Timestamp.ToLocalTime().ToString());
 
                 if (msg.Reference?.MessageId != null)
                 {
@@ -499,10 +497,19 @@ public class ChatWindow : IDisposable
                     }
                 }
 
-                FormatContent(msg);
+                var plainText = GetMessagePlainText(msg);
+                var hasPlainText = !string.IsNullOrEmpty(plainText);
+                if (hasPlainText)
+                {
+                    FormatContent(msg, plainText);
+                }
+
                 if (msg.EditedTimestamp != null)
                 {
-                    ImGui.SameLine();
+                    if (hasPlainText)
+                    {
+                        ImGui.SameLine();
+                    }
                     ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
                     ImGui.TextUnformatted("(edited)");
                     ImGui.PopStyleColor();
@@ -1106,10 +1113,10 @@ public class ChatWindow : IDisposable
         return new Vector2(width * scale, height * scale);
     }
 
-    protected void FormatContent(DiscordMessageDto msg)
+    protected void FormatContent(DiscordMessageDto msg, string? textOverride = null)
     {
         using var emojiFont = _emojiManager.PushEmojiFont();
-        var text = msg.Content ?? string.Empty;
+        var text = textOverride ?? msg.Content ?? string.Empty;
         text = ReplaceMentionTokens(text, msg.Mentions);
         text = MarkdownFormatter.Format(text);
         var parts = Regex.Split(text, "(<a?:[a-zA-Z0-9_]+:\\d+>)");
@@ -1304,6 +1311,24 @@ public class ChatWindow : IDisposable
         }
 
         return null;
+    }
+
+    internal static string? GetMessagePlainText(DiscordMessageDto message)
+    {
+        var content = message.Content ?? string.Empty;
+        if (string.IsNullOrEmpty(content))
+        {
+            return null;
+        }
+
+        var embeds = (IReadOnlyList<EmbedDto>?)message.Embeds ?? Array.Empty<EmbedDto>();
+        if (embeds.Count == 0)
+        {
+            return content;
+        }
+
+        var remainder = GetUnrepresentedPlainText(content, embeds);
+        return string.IsNullOrEmpty(remainder) ? null : remainder;
     }
 
     private static string GetUnrepresentedPlainText(string displayContent, IReadOnlyList<EmbedDto> embeds)
