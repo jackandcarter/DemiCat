@@ -83,15 +83,24 @@ def _normalize_content(content: str) -> str:
     return content.replace("\r\n", "\n").replace("\r", "\n")
 
 
-def _split_embed_text(text: str) -> list[str]:
-    """Split ``text`` into chunks that satisfy Discord's embed limits."""
+def _split_embed_text(text: str) -> tuple[list[str], int]:
+    """Split ``text`` into chunks that satisfy Discord's embed limits.
+
+    Returns
+    -------
+    tuple[list[str], int]
+        A tuple containing the resulting embed description chunks and the
+        number of characters from ``text`` that are represented in those
+        chunks (excluding any ellipsis added to signal truncation).
+    """
 
     if not text:
-        return []
+        return [], 0
 
     chunks: list[str] = []
     remaining = text
     total = 0
+    consumed = 0
     while (
         remaining
         and len(chunks) < DISCORD_EMBED_COUNT_LIMIT
@@ -118,13 +127,16 @@ def _split_embed_text(text: str) -> list[str]:
         chunks.append(slice_text)
         remaining = remaining[actual:]
         total += actual
+        consumed += actual
 
     if remaining:
         # Append an ellipsis to signal truncation while respecting limits.
+        removed_from_last = 0
         if chunks:
             last = chunks[-1]
             if len(last) >= DISCORD_EMBED_DESCRIPTION_LIMIT:
                 last = last[:-1]
+                removed_from_last += 1
             else:
                 space_available = min(
                     DISCORD_EMBED_DESCRIPTION_LIMIT - len(last),
@@ -132,11 +144,15 @@ def _split_embed_text(text: str) -> list[str]:
                 )
                 if space_available <= 0 and len(last) > 0:
                     last = last[:-1]
+                    removed_from_last += 1
             chunks[-1] = f"{last}…" if last else "…"
+            consumed -= removed_from_last
         else:
             truncated = remaining[: DISCORD_EMBED_DESCRIPTION_LIMIT - 1]
             chunks.append(f"{truncated}…")
-    return chunks
+            consumed += len(truncated)
+        consumed = max(consumed, 0)
+    return chunks, consumed
 
 
 def build_bridge_message(
@@ -184,7 +200,7 @@ def build_bridge_message(
             normalized = header
 
 
-    chunks = _split_embed_text(normalized)
+    chunks, represented = _split_embed_text(normalized)
     if not chunks:
         chunks = [""]
 
@@ -208,7 +224,10 @@ def build_bridge_message(
             embed.set_image(url=f"attachment://{image_filename}")
         embeds.append(embed)
 
-    discord_content = normalized[:DISCORD_CONTENT_LIMIT]
+    leftover = normalized[represented:]
+    if leftover.startswith("\n"):
+        leftover = leftover[1:]
+    discord_content = leftover[:DISCORD_CONTENT_LIMIT]
     return discord_content, embeds, uploads, embed_nonce
 
 

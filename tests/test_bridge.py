@@ -55,9 +55,7 @@ def test_build_bridge_message_populates_embed_footer(sample_user, sample_members
     )
 
     expected_header = "Message Sent by: Nick @ 2024-01-02 03:04:05 UTC"
-    header, body = discord_content.split("\n", 1)
-    assert header == expected_header
-    assert body == content
+    assert discord_content == ""
     assert nonce
     assert len(embeds) == 1
 
@@ -96,18 +94,22 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
     )
 
     expected_header = "Message Sent by: Nick @ 2024-05-06 07:08:09 UTC"
-    assert discord_content.startswith(f"{expected_header}\n")
-    header_len = len(expected_header) + 1
-    assert (
-        discord_content[header_len:]
-        == long_content[: DISCORD_CONTENT_LIMIT - header_len]
-    )
+    assert discord_content
     assert not uploads
     assert nonce
     assert len(embeds) >= 2
 
     first_description = embeds[0].to_dict().get("description", "")
     assert first_description.startswith(expected_header)
+
+    embed_descriptions = [
+        embed.to_dict().get("description", "") for embed in embeds
+    ]
+    combined = "".join(embed_descriptions)
+    assert combined.startswith(expected_header)
+    body_in_embeds = combined[len(expected_header):]
+    if body_in_embeds.startswith("\n"):
+        body_in_embeds = body_in_embeds[1:]
 
     total_length = 0
     for embed in embeds:
@@ -118,7 +120,18 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
         assert data.get("footer", {}).get("text", "").endswith(f"{BRIDGE_MARKER}{nonce}")
 
     assert total_length <= 6000
-    assert embeds[-1].to_dict().get("description", "").endswith("…")
+    last_description = embeds[-1].to_dict().get("description", "")
+    assert last_description.endswith("…")
+    if body_in_embeds.endswith("…"):
+        body_in_embeds_without_ellipsis = body_in_embeds[:-1]
+    else:
+        body_in_embeds_without_ellipsis = body_in_embeds
+
+    expected_leftover = long_content[len(body_in_embeds_without_ellipsis) :]
+    assert (
+        discord_content
+        == expected_leftover[: DISCORD_CONTENT_LIMIT]
+    )
 
     payload = {"embeds": [embed.to_dict() for embed in embeds]}
     assert extract_bridge_nonce_from_payload(payload) == nonce
@@ -141,7 +154,7 @@ def test_build_bridge_message_includes_character_when_enabled(
     expected_header = (
         "Message Sent by: Nick / Hero / Eorzea @ 2024-07-08 09:10:11 UTC"
     )
-    assert discord_content.startswith(f"{expected_header}\n")
+    assert discord_content == ""
     assert embeds[0].to_dict().get("description", "").startswith(expected_header)
     assert not uploads
     assert nonce
@@ -161,8 +174,7 @@ def test_build_bridge_message_preserves_existing_header(sample_user, sample_memb
         timestamp=server_timestamp,
     )
 
-    assert discord_content == preformatted
-    assert discord_content.count("Message Sent by:") == 1
+    assert discord_content == ""
     assert not uploads
     assert nonce
 
