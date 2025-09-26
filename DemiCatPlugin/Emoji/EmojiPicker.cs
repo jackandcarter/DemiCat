@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
@@ -10,6 +11,7 @@ public sealed class EmojiPicker
     private readonly EmojiManager _manager;
     private EmojiTab _tab;
     private string _search = string.Empty;
+    private readonly ConcurrentDictionary<string, bool> _customTextureRequests = new();
 
     private enum EmojiTab
     {
@@ -149,6 +151,7 @@ public sealed class EmojiPicker
         if (!canLoad) ImGui.BeginDisabled();
         if (ImGui.Button("Refresh"))
         {
+            _customTextureRequests.Clear();
             _ = _manager.RefreshCustomAsync();
         }
         if (!canLoad) ImGui.EndDisabled();
@@ -211,30 +214,52 @@ public sealed class EmojiPicker
 
             var clicked = false;
             var tooltip = emoji.Animated ? $":{emoji.Name}: (gif)" : $":{emoji.Name}:";
-            WebTextureCache.Get(emoji.ImageUrl, tex =>
+            var imageUrl = emoji.ImageUrl;
+
+            if (!string.IsNullOrEmpty(imageUrl))
             {
-                ImGui.PushID(emoji.Id);
-                if (tex != null)
+                _customTextureRequests.GetOrAdd(imageUrl, key =>
                 {
-                    var wrap = tex.GetWrapOrEmpty();
-                    if (ImGui.ImageButton(wrap.Handle, new Vector2(size, size)))
+                    WebTextureCache.Get(key, tex =>
                     {
-                        clicked = true;
-                    }
-                }
-                else
+                        if (tex != null)
+                        {
+                            _customTextureRequests[key] = true;
+                        }
+                        else
+                        {
+                            _customTextureRequests.TryRemove(key, out _);
+                        }
+                    });
+
+                    return false;
+                });
+            }
+
+            ImGui.PushID(emoji.Id);
+            if (!string.IsNullOrEmpty(imageUrl) &&
+                WebTextureCache.TryGetTexture(imageUrl, out var texture) &&
+                texture != null)
+            {
+                var wrap = texture.GetWrapOrEmpty();
+                if (ImGui.ImageButton(wrap.Handle, new Vector2(size, size)))
                 {
-                    if (ImGui.Button(tooltip, new Vector2(size * 3f, size)))
-                    {
-                        clicked = true;
-                    }
+                    clicked = true;
                 }
-                if (ImGui.IsItemHovered())
+            }
+            else
+            {
+                if (ImGui.Button(tooltip, new Vector2(size * 3f, size)))
                 {
-                    ImGui.SetTooltip(tooltip);
+                    clicked = true;
                 }
-                ImGui.PopID();
-            });
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(tooltip);
+            }
+            ImGui.PopID();
 
             if (clicked)
             {
