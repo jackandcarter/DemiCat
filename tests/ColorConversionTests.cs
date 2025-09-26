@@ -54,6 +54,31 @@ public class ColorConversionTests
         Assert.Equal(rgb, back);
     }
 
+    [Theory]
+    [InlineData(0x123456)]
+    [InlineData(0xABCDEF)]
+    [InlineData(0x000000)]
+    [InlineData(0xFFFFFF)]
+    public void RgbToVector4MatchesComponents(uint rgb)
+    {
+        var vec = ColorUtils.RgbToVector4(rgb);
+        Assert.Equal(((rgb >> 16) & 0xFF) / 255f, vec.X, 5);
+        Assert.Equal(((rgb >> 8) & 0xFF) / 255f, vec.Y, 5);
+        Assert.Equal((rgb & 0xFF) / 255f, vec.Z, 5);
+        Assert.Equal(1f, vec.W, 5);
+    }
+
+    [Theory]
+    [InlineData(0x000000, 0xFFFFFF, 0f, 0x000000)]
+    [InlineData(0x000000, 0xFFFFFF, 1f, 0xFFFFFF)]
+    [InlineData(0x000000, 0xFFFFFF, 0.5f, 0x808080)]
+    [InlineData(0x123456, 0x654321, 0.25f, 0x273849)]
+    public void MixRgbInterpolates(uint source, uint target, float amount, uint expected)
+    {
+        var result = ColorUtils.MixRgb(source, target, amount);
+        Assert.Equal(expected, result);
+    }
+
     private class StubHandler : HttpMessageHandler
     {
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)

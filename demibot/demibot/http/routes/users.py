@@ -62,6 +62,8 @@ async def get_users(
             Role.discord_role_id,
             Role.name,
             Membership.avatar_url,
+            Membership.banner_url,
+            Membership.accent_color,
         )
         .join(Membership, Membership.user_id == User.id)
         .join(
@@ -85,7 +87,7 @@ async def get_users(
     cache = {p.id: p for p in get_presences(ctx.guild.id)}
 
     user_map: dict[int, dict[str, object]] = {}
-    for u, n, s, st, rid, role_name, avatar in rows:
+    for u, n, s, st, rid, role_name, avatar, banner, accent in rows:
         entry = user_map.setdefault(
             u.discord_user_id,
             {
@@ -95,6 +97,8 @@ async def get_users(
                 "status_text": st,
                 "roles": {},
                 "avatar": avatar,
+                "banner": banner,
+                "accent_color": accent,
             },
         )
         if entry["status"] is None and s is not None:
@@ -105,6 +109,10 @@ async def get_users(
             entry["nickname"] = n
         if entry["avatar"] is None and avatar is not None:
             entry["avatar"] = avatar
+        if entry["banner"] is None and banner is not None:
+            entry["banner"] = banner
+        if entry["accent_color"] is None and accent is not None:
+            entry["accent_color"] = accent
         if rid is not None:
             roles_dict = entry["roles"]  # type: ignore[assignment]
             if role_name is not None:
@@ -116,6 +124,10 @@ async def get_users(
         presence = cache.get(uid)
         if presence and presence.avatar_url and not data.get("avatar"):
             data["avatar"] = presence.avatar_url
+        if presence and presence.banner_url and not data.get("banner"):
+            data["banner"] = presence.banner_url
+        if presence and presence.accent_color is not None and data.get("accent_color") is None:
+            data["accent_color"] = presence.accent_color
 
     avatars: dict[int, str] = {}
     for uid, data in user_map.items():
@@ -223,6 +235,8 @@ async def get_users(
                 "roles": role_ids,
                 "status_text": status_text,
                 "role_details": role_details,
+                "banner_url": data.get("banner"),
+                "accent_color": data.get("accent_color"),
             }
         )
     return users

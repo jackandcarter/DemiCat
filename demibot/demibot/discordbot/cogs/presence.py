@@ -69,6 +69,43 @@ class PresenceTracker(commands.Cog):
         ]
         display_name = member.display_name or member.name
         avatar_url = str(member.display_avatar.url)
+        banner_url: str | None = None
+        banner_asset = getattr(member, "banner", None)
+        if banner_asset is not None:
+            asset_url = getattr(banner_asset, "url", None)
+            banner_url = str(asset_url or banner_asset)
+
+        def _extract_accent(value: object | None) -> int | None:
+            if value is None:
+                return None
+            raw = getattr(value, "value", None)
+            if isinstance(raw, int):
+                return raw
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        accent_color_value = _extract_accent(getattr(member, "accent_color", None))
+
+        if banner_url is None or accent_color_value is None:
+            fallback_user: discord.abc.User | None = self.bot.get_user(member.id)
+            if fallback_user is None:
+                try:
+                    fallback_user = await self.bot.fetch_user(member.id)
+                except Exception:
+                    fallback_user = None
+            if fallback_user is not None:
+                if banner_url is None:
+                    fb_banner = getattr(fallback_user, "banner", None)
+                    if fb_banner is not None:
+                        asset_url = getattr(fb_banner, "url", None)
+                        banner_url = str(asset_url or fb_banner)
+                if accent_color_value is None:
+                    accent_color_value = _extract_accent(
+                        getattr(fallback_user, "accent_color", None)
+                    )
+
         status_text = self._status_text(member)
         data = StorePresence(
             id=member.id,
@@ -77,6 +114,8 @@ class PresenceTracker(commands.Cog):
             avatar_url=avatar_url,
             roles=role_ids,
             status_text=status_text,
+            banner_url=banner_url,
+            accent_color=accent_color_value,
         )
         set_presence(member.guild.id, data)
         async with get_session() as db:
@@ -130,6 +169,8 @@ class PresenceTracker(commands.Cog):
                 db.add(mem)
             mem.nickname = display_name
             mem.avatar_url = avatar_url
+            mem.banner_url = banner_url
+            mem.accent_color = accent_color_value
 
             cfg_res = await db.execute(
                 select(GuildConfig).where(GuildConfig.guild_id == guild_row.id)
@@ -213,6 +254,8 @@ class PresenceTracker(commands.Cog):
             "roles": [str(r) for r in role_ids],
             "status_text": data.status_text,
             "role_details": role_details,
+            "banner_url": banner_url,
+            "accent_color": accent_color_value,
         }
 
     @commands.Cog.listener()

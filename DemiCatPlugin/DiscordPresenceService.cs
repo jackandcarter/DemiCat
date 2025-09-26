@@ -390,27 +390,46 @@ public class DiscordPresenceService : IDisposable
             if (dto != null)
             {
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                {
-                    var idx = _presences.FindIndex(p => p.Id == dto.Id);
-                    if (idx >= 0)
-                    {
-                        var existing = _presences[idx];
-                        dto.AvatarUrl ??= existing.AvatarUrl;
-                        dto.AvatarTexture = existing.AvatarTexture;
-                        if (dto.Roles.Count == 0)
-                            dto.Roles = existing.Roles;
-                        if (dto.RoleDetails.Count == 0 && existing.RoleDetails.Count > 0)
-                            dto.RoleDetails = existing.RoleDetails;
-                        if (string.IsNullOrWhiteSpace(dto.StatusText) && !string.IsNullOrWhiteSpace(existing.StatusText))
-                            dto.StatusText = existing.StatusText;
-                        _presences[idx] = dto;
-                    }
-                    else
-                    {
-                        _presences.Add(dto);
-                    }
-                });
+                    ApplyPresenceUpdate(dto));
             }
+        }
+    }
+
+    internal void ApplyPresenceUpdate(PresenceDto dto)
+    {
+        var idx = _presences.FindIndex(p => p.Id == dto.Id);
+        if (idx >= 0)
+        {
+            var existing = _presences[idx];
+            dto.AvatarUrl ??= existing.AvatarUrl;
+            dto.AvatarTexture ??= existing.AvatarTexture;
+            var existingBannerUrl = existing.BannerUrl;
+            if (string.IsNullOrWhiteSpace(dto.BannerUrl) && !string.IsNullOrWhiteSpace(existingBannerUrl))
+            {
+                dto.BannerUrl = existingBannerUrl;
+            }
+            else if (!string.IsNullOrWhiteSpace(dto.BannerUrl) && !string.IsNullOrWhiteSpace(existingBannerUrl) &&
+                     !string.Equals(dto.BannerUrl, existingBannerUrl, StringComparison.Ordinal))
+            {
+                dto.BannerTexture = null;
+            }
+            if (dto.BannerTexture == null && string.Equals(dto.BannerUrl, existingBannerUrl, StringComparison.Ordinal))
+            {
+                dto.BannerTexture = existing.BannerTexture;
+            }
+            if (!dto.AccentColorValue.HasValue && existing.AccentColorValue.HasValue)
+                dto.AccentColorValue = existing.AccentColorValue;
+            if (dto.Roles.Count == 0)
+                dto.Roles = existing.Roles;
+            if (dto.RoleDetails.Count == 0 && existing.RoleDetails.Count > 0)
+                dto.RoleDetails = existing.RoleDetails;
+            if (string.IsNullOrWhiteSpace(dto.StatusText) && !string.IsNullOrWhiteSpace(existing.StatusText))
+                dto.StatusText = existing.StatusText;
+            _presences[idx] = dto;
+        }
+        else
+        {
+            _presences.Add(dto);
         }
     }
 

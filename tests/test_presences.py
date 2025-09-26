@@ -68,6 +68,8 @@ def test_list_presences_returns_data():
                 avatar_url="https://example.com/a.png",
                 roles=[100],
                 status_text="Working",
+                banner_url="https://example.com/a-banner.png",
+                accent_color=0x123456,
             ),
         )
         set_presence(
@@ -79,6 +81,8 @@ def test_list_presences_returns_data():
                 avatar_url="https://example.com/b.png",
                 roles=[],
                 status_text=None,
+                banner_url=None,
+                accent_color=None,
             ),
         )
         ctx = StubContext(1)
@@ -90,10 +94,14 @@ def test_list_presences_returns_data():
         assert data["10"]["role_details"] == [
             {"id": "100", "name": "100"}
         ]
+        assert data["10"]["banner_url"] == "https://example.com/a-banner.png"
+        assert data["10"]["accent_color"] == 0x123456
         assert data["20"]["status"] == "offline"
         assert data["20"]["status_text"] is None
         assert data["20"]["roles"] == []
         assert data["20"]["role_details"] == []
+        assert data["20"]["banner_url"] is None
+        assert data["20"]["accent_color"] is None
 
     asyncio.run(_run())
 
@@ -116,6 +124,10 @@ def test_list_presences_reads_from_db():
         assert data["10"]["status"] == "online"
         assert data["10"]["status_text"] is None
         assert data["10"]["roles"] == []
+        assert data["10"]["banner_url"] is None
+        assert data["10"]["accent_color"] is None
         assert data["20"]["status"] == "offline"
         assert data["20"]["status_text"] is None
+        assert data["20"]["banner_url"] is None
+        assert data["20"]["accent_color"] is None
     asyncio.run(_run())
