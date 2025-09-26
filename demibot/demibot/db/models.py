@@ -170,6 +170,8 @@ class Membership(Base):
     user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), ForeignKey("users.id"))
     nickname: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     avatar_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    banner_url: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    accent_color: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
 class Role(Base):

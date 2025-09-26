@@ -56,6 +56,17 @@ def _header(default=None, *args, **kwargs):
     return default
 
 
+class WebSocketDisconnect(Exception):
+    pass
+
+
+class WebSocket:
+    scope: dict[str, object]
+
+    def __init__(self):
+        self.scope = {}
+
+
 class HTTPException(Exception):
     def __init__(self, status_code: int, detail: str | None = None):
         super().__init__(detail)
@@ -81,6 +92,8 @@ fastapi_pkg.Header = _header
 fastapi_pkg.HTTPException = HTTPException
 fastapi_pkg.status = _StatusModule()
 fastapi_pkg.Request = Request
+fastapi_pkg.WebSocket = WebSocket
+fastapi_pkg.WebSocketDisconnect = WebSocketDisconnect
 sys.modules.setdefault('fastapi', fastapi_pkg)
 
 from demibot.http.routes.users import get_users, get_my_profile, get_me
@@ -128,6 +141,8 @@ def test_get_users_includes_status_from_cache():
                     status='online',
                     status_text='Working',
                     roles=[100],
+                    banner_url='https://example.com/banner.png',
+                    accent_color=0x112233,
                 ),
             )
             set_presence(1, StorePresence(id=20, name='Bob', status='offline'))
@@ -138,9 +153,13 @@ def test_get_users_includes_status_from_cache():
             assert data['10']['status_text'] == 'Working'
             assert tuple(data['10']['roles']) == ('100',)
             assert data['10']['role_details'] == [{'id': '100', 'name': 'Officer'}]
+            assert data['10']['banner_url'] == 'https://example.com/banner.png'
+            assert data['10']['accent_color'] == 0x112233
             assert data['20']['status'] == 'offline'
             assert data['20']['status_text'] is None
             assert tuple(data['20']['roles']) == ()
+            assert data['20']['banner_url'] is None
+            assert data['20']['accent_color'] is None
     asyncio.run(_run())
 
 
@@ -173,6 +192,8 @@ def test_get_users_uses_cached_avatars_without_discord():
                     name='PresenceUser',
                     status='online',
                     avatar_url='https://example.com/presence.png',
+                    banner_url='https://example.com/presence-banner.png',
+                    accent_color=0x445566,
                 ),
             )
             users_route.discord_client = None
@@ -181,6 +202,9 @@ def test_get_users_uses_cached_avatars_without_discord():
             data = {u['id']: u for u in res}
             assert data['110']['avatar_url'] == 'https://example.com/avatar.png'
             assert data['120']['avatar_url'] == 'https://example.com/presence.png'
+            assert data['110']['banner_url'] is None
+            assert data['120']['banner_url'] == 'https://example.com/presence-banner.png'
+            assert data['120']['accent_color'] == 0x445566
 
     asyncio.run(_run())
 
@@ -208,6 +232,10 @@ def test_get_users_reads_presence_from_db():
             assert data['30']['status'] == 'idle'
             assert data['30']['status_text'] == 'Away'
             assert data['40']['status'] == 'dnd'
+            assert data['30']['banner_url'] is None
+            assert data['40']['banner_url'] is None
+            assert data['30']['accent_color'] is None
+            assert data['40']['accent_color'] is None
     asyncio.run(_run())
 
 

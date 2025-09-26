@@ -45,6 +45,8 @@ async def list_presences(
                     User,
                     Role.discord_role_id,
                     Role.name,
+                    Membership.banner_url,
+                    Membership.accent_color,
                 )
                 .join(User, User.discord_user_id == DbPresence.user_id, isouter=True)
                 .join(
@@ -76,18 +78,20 @@ async def list_presences(
                             for r in guild.roles
                             if r.name != "@everyone"
                         }
-                    for p, _, _, _ in rows:
+                    for p, _, _, _, _, _ in rows:
                         member = guild.get_member(p.user_id) if guild else None
                         if member and member.display_avatar:
                             avatars[p.user_id] = str(member.display_avatar.url)
                 user_map: dict[int, dict[str, object]] = {}
-                for p, u, rid, role_name in rows:
+                for p, u, rid, role_name, banner, accent in rows:
                     entry = user_map.setdefault(
                         p.user_id,
                         {
                             "presence": p,
                             "user": u,
                             "roles": {},
+                            "banner": banner,
+                            "accent_color": accent,
                         },
                     )
                     if rid is not None:
@@ -97,7 +101,7 @@ async def list_presences(
                         else:
                             roles_dict.setdefault(rid, None)
                 db_presences = []
-                for data in user_map.values():
+                for uid, data in user_map.items():
                     p = data["presence"]  # type: ignore[assignment]
                     u = data["user"]  # type: ignore[assignment]
                     raw_status = getattr(p, "status", None)
@@ -119,6 +123,8 @@ async def list_presences(
                             "roles": [str(rid) for rid in role_map],
                             "status_text": getattr(p, "status_text", None),
                             "role_details": role_details,
+                            "banner_url": data.get("banner"),
+                            "accent_color": data.get("accent_color"),
                         }
                     )
     except RuntimeError:
@@ -150,6 +156,8 @@ async def list_presences(
                 }
                 for rid in p.roles
             ],
+            "banner_url": p.banner_url,
+            "accent_color": p.accent_color,
         }
         for p in presences
     ]

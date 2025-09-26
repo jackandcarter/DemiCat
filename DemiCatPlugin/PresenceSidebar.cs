@@ -244,12 +244,18 @@ public class PresenceSidebar : IDisposable
     private void DrawPresence(PresenceDto p)
     {
         ImGui.PushID(p.Id);
-        ImGui.BeginGroup();
+        var drawList = ImGui.GetWindowDrawList();
 
         const float rowHeight = 40f;
+        var backgroundMin = ImGui.GetCursorScreenPos();
+        var availableWidth = MathF.Max(0f, ImGui.GetContentRegionAvail().X);
+        var backgroundMax = new Vector2(backgroundMin.X + availableWidth, backgroundMin.Y + rowHeight);
+        DrawPresenceBackground(drawList, backgroundMin, backgroundMax, p);
+
+        ImGui.BeginGroup();
+
         var avatarSize = new Vector2(36f, 36f);
         var color = GetStatusColor(p.Status);
-        var drawList = ImGui.GetWindowDrawList();
 
         var groupStartY = ImGui.GetCursorPosY();
         var avatarOffsetY = MathF.Max(0f, (rowHeight - avatarSize.Y) * 0.5f);
@@ -357,6 +363,63 @@ public class PresenceSidebar : IDisposable
 
         ImGui.EndGroup();
         ImGui.PopID();
+    }
+
+    protected virtual void DrawPresenceBackground(ImDrawListPtr drawList, Vector2 min, Vector2 max, PresenceDto presence)
+    {
+        if (max.X <= min.X || max.Y <= min.Y)
+        {
+            if (TextureLoader != null && !string.IsNullOrEmpty(presence.BannerUrl) && presence.BannerTexture == null)
+            {
+                TextureLoader(presence.BannerUrl, t => presence.BannerTexture = t);
+            }
+            return;
+        }
+
+        var bannerDrawn = false;
+        if (presence.BannerTexture != null)
+        {
+            try
+            {
+                var wrap = presence.BannerTexture.GetWrapOrEmpty();
+                drawList.AddImage(wrap.Handle, min, max);
+                bannerDrawn = true;
+            }
+            catch (ObjectDisposedException)
+            {
+                presence.BannerTexture = null;
+            }
+        }
+
+        if (!bannerDrawn && TextureLoader != null && !string.IsNullOrEmpty(presence.BannerUrl) && presence.BannerTexture == null)
+        {
+            TextureLoader(presence.BannerUrl, t => presence.BannerTexture = t);
+        }
+
+        if (!bannerDrawn)
+        {
+            var gradient = presence.AccentColorValue.HasValue
+                ? ComputeAccentGradient(presence.AccentColorValue.Value)
+                : null;
+            if (gradient.HasValue)
+            {
+                var (top, bottom) = gradient.Value;
+                drawList.AddRectFilledMultiColor(min, max, top, top, bottom, bottom);
+            }
+        }
+    }
+
+    internal static (uint Top, uint Bottom)? ComputeAccentGradient(uint accentRgb)
+    {
+        var topRgb = ColorUtils.MixRgb(accentRgb, 0xFFFFFF, 0.35f);
+        var bottomRgb = ColorUtils.MixRgb(accentRgb, 0x000000, 0.45f);
+        var topColor = ColorUtils.RgbToImGui(topRgb);
+        var bottomColor = ColorUtils.RgbToImGui(bottomRgb);
+        if (topColor == bottomColor)
+        {
+            bottomColor = ColorUtils.RgbToImGui(ColorUtils.MixRgb(accentRgb, 0x000000, 0.6f));
+        }
+        return (topColor, bottomColor);
     }
 
     private static void DrawRoleBadge(ImDrawListPtr drawList, string text)

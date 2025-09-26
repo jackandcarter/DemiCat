@@ -7,7 +7,9 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DemiCatPlugin;
+using Dalamud.Interface.Textures;
 using Dalamud.Plugin.Services;
+using Moq;
 using Xunit;
 
 public class DiscordPresenceServiceTests
@@ -342,6 +344,88 @@ public class DiscordPresenceServiceTests
             var instanceProp = typeof(TokenManager).GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!;
             instanceProp.GetSetMethod(true)!.Invoke(null, new object?[] { previousToken });
         }
+    }
+
+    [Fact]
+    public void ApplyPresenceUpdate_PreservesExistingVisuals()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var field = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)field.GetValue(service)!;
+
+        var existingTexture = Mock.Of<ISharedImmediateTexture>();
+        var existing = new PresenceDto
+        {
+            Id = "42",
+            Name = "Existing",
+            Status = "online",
+            AvatarUrl = "https://example.com/avatar.png",
+            BannerUrl = "https://example.com/banner.png",
+            StatusText = "Hello"
+        };
+        existing.BannerTexture = existingTexture;
+        existing.AccentColorValue = 0x112233;
+        existing.Roles.Add("1");
+        existing.RoleDetails.Add(new PresenceRoleDto { Id = "1", Name = "Role" });
+        list.Add(existing);
+
+        var update = new PresenceDto
+        {
+            Id = "42",
+            Name = "Existing",
+            Status = "online",
+        };
+
+        service.ApplyPresenceUpdate(update);
+
+        Assert.Single(list);
+        var updated = list[0];
+        Assert.Equal("https://example.com/avatar.png", updated.AvatarUrl);
+        Assert.Equal("https://example.com/banner.png", updated.BannerUrl);
+        Assert.Same(existingTexture, updated.BannerTexture);
+        Assert.Equal((uint)0x112233, updated.AccentColorValue);
+        Assert.Equal("Hello", updated.StatusText);
+        Assert.Equal(existing.Roles, updated.Roles);
+        Assert.Equal(existing.RoleDetails, updated.RoleDetails);
+    }
+
+    [Fact]
+    public void ApplyPresenceUpdate_NewBannerClearsOldTexture()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var field = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)field.GetValue(service)!;
+
+        var existingTexture = Mock.Of<ISharedImmediateTexture>();
+        var existing = new PresenceDto
+        {
+            Id = "43",
+            Name = "Existing",
+            Status = "online",
+            BannerUrl = "https://example.com/old.png"
+        };
+        existing.BannerTexture = existingTexture;
+        list.Add(existing);
+
+        var update = new PresenceDto
+        {
+            Id = "43",
+            Name = "Existing",
+            Status = "online",
+            BannerUrl = "https://example.com/new.png"
+        };
+
+        service.ApplyPresenceUpdate(update);
+
+        var updated = list[0];
+        Assert.Equal("https://example.com/new.png", updated.BannerUrl);
+        Assert.Null(updated.BannerTexture);
     }
 
     private static void ConfigurePluginServices(PluginServices services, IFramework framework, IPluginLog log)
