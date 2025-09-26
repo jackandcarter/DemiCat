@@ -40,7 +40,7 @@ def sample_membership():
     )
 
 
-def test_build_bridge_message_populates_embed_footer(sample_user, sample_membership):
+def test_build_bridge_message_populates_embed_metadata(sample_user, sample_membership):
     content = "Hello from DemiCat"
     attachments = [("screenshot.png", b"bytes", "image/png")]
     fixed_time = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
@@ -54,17 +54,15 @@ def test_build_bridge_message_populates_embed_footer(sample_user, sample_members
         timestamp=fixed_time,
     )
 
-    expected_header = "Message Sent by: Nick @ 2024-01-02 03:04:05 UTC"
     assert discord_content == ""
     assert nonce
     assert len(embeds) == 1
 
     embed_dict = embeds[0].to_dict()
-    footer_text = embed_dict.get("footer", {}).get("text")
-    assert footer_text and footer_text.endswith(f"{BRIDGE_MARKER}{nonce}")
+    provider_text = embed_dict.get("provider", {}).get("name")
+    assert provider_text == f"{BRIDGE_MARKER}{nonce}"
     description = embed_dict.get("description", "")
-    assert description.startswith(expected_header)
-    assert description.split("\n", 1)[1] == content
+    assert description == content
     assert embed_dict.get("author", {}).get("name") == sample_membership.nickname
     assert embed_dict.get("author", {}).get("icon_url") == sample_membership.avatar_url
 
@@ -93,23 +91,16 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
         timestamp=fixed_time,
     )
 
-    expected_header = "Message Sent by: Nick @ 2024-05-06 07:08:09 UTC"
     assert discord_content
     assert not uploads
     assert nonce
     assert len(embeds) >= 2
 
-    first_description = embeds[0].to_dict().get("description", "")
-    assert first_description.startswith(expected_header)
-
     embed_descriptions = [
         embed.to_dict().get("description", "") for embed in embeds
     ]
     combined = "".join(embed_descriptions)
-    assert combined.startswith(expected_header)
-    body_in_embeds = combined[len(expected_header):]
-    if body_in_embeds.startswith("\n"):
-        body_in_embeds = body_in_embeds[1:]
+    body_in_embeds = combined
 
     total_length = 0
     for embed in embeds:
@@ -117,7 +108,7 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
         description = data.get("description", "")
         assert len(description) <= 4096
         total_length += len(description)
-        assert data.get("footer", {}).get("text", "").endswith(f"{BRIDGE_MARKER}{nonce}")
+        assert data.get("provider", {}).get("name") == f"{BRIDGE_MARKER}{nonce}"
 
     assert total_length <= 6000
     last_description = embeds[-1].to_dict().get("description", "")
@@ -151,11 +142,11 @@ def test_build_bridge_message_includes_character_when_enabled(
         timestamp=fixed_time,
     )
 
-    expected_header = (
-        "Message Sent by: Nick / Hero / Eorzea @ 2024-07-08 09:10:11 UTC"
-    )
     assert discord_content == ""
-    assert embeds[0].to_dict().get("description", "").startswith(expected_header)
+    embed_dict = embeds[0].to_dict()
+    assert embed_dict.get("description", "") == "Hi"
+    assert embed_dict.get("author", {}).get("name") == sample_user.character_name
+    assert embed_dict.get("provider", {}).get("name", "").startswith(BRIDGE_MARKER)
     assert not uploads
     assert nonce
 

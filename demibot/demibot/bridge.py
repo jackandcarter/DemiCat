@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Iterable, Mapping, Sequence
 
 import discord
@@ -65,19 +65,6 @@ def _determine_author_name(
     if user.character_name:
         return user.character_name
     return str(user.discord_user_id)
-
-
-def _determine_display_name(*, user: User, membership: Membership | None) -> str:
-    if membership and membership.nickname:
-        nickname = membership.nickname.strip()
-        if nickname:
-            return nickname
-    if user.global_name:
-        global_name = user.global_name.strip()
-        if global_name:
-            return global_name
-    return str(user.discord_user_id)
-
 
 def _normalize_content(content: str) -> str:
     return content.replace("\r\n", "\n").replace("\r", "\n")
@@ -180,32 +167,12 @@ def build_bridge_message(
             if image_filename is None and _is_image(filename, content_type):
                 image_filename = filename
 
-    timestamp = timestamp or datetime.now(timezone.utc)
-    display_name = _determine_display_name(user=user, membership=membership)
-    character_name = user.character_name if use_character_name else None
-    world_name = user.world if use_character_name else None
-
-    header_present = _has_existing_header(normalized)
-    if not header_present:
-        header = _format_header_line(
-            display_name=display_name,
-            use_character_name=use_character_name,
-            character_name=character_name,
-            world_name=world_name,
-            timestamp=timestamp,
-        )
-        if normalized:
-            normalized = f"{header}\n{normalized}"
-        else:
-            normalized = header
-
 
     chunks, represented = _split_embed_text(normalized)
     if not chunks:
         chunks = [""]
 
     embed_nonce = nonce or uuid.uuid4().hex
-    footer = f"DemiCat • {_tab_label(channel_kind)} • {BRIDGE_MARKER}{embed_nonce}"
     author_name = _determine_author_name(
         user=user, membership=membership, use_character_name=use_character_name
     )
@@ -217,9 +184,14 @@ def build_bridge_message(
 
     embeds: list[discord.Embed] = []
     for index, chunk in enumerate(chunks):
-        embed = discord.Embed(description=chunk or None, timestamp=timestamp, color=color)
-        embed.set_footer(text=footer)
+        embed = discord.Embed(description=chunk, color=color)
         embed.set_author(name=author_name, icon_url=author_icon)
+        provider_name = f"{BRIDGE_MARKER}{embed_nonce}"
+        # ``discord.Embed`` does not expose a public setter for provider metadata, so
+        # assign to the private slot that backs :meth:`discord.Embed.to_dict`.  This
+        # keeps the bridge nonce outside of visible embed elements while remaining
+        # discoverable in webhook payloads for deduplication purposes.
+        embed._provider = {"name": provider_name}  # type: ignore[attr-defined]
         if index == 0 and image_filename:
             embed.set_image(url=f"attachment://{image_filename}")
         embeds.append(embed)
@@ -229,53 +201,6 @@ def build_bridge_message(
         leftover = leftover[1:]
     discord_content = leftover[:DISCORD_CONTENT_LIMIT]
     return discord_content, embeds, uploads, embed_nonce
-
-
-def _format_header_line(
-    *,
-    display_name: str,
-    use_character_name: bool,
-    character_name: str | None,
-    world_name: str | None,
-    timestamp: datetime,
-) -> str:
-    name = display_name.strip() or "You"
-    segments = [name]
-    if use_character_name:
-        char = (character_name or "").strip()
-        world = (world_name or "").strip()
-        if char:
-            segments.append(char)
-            if world:
-                segments.append(world)
-        elif world:
-            segments.append(world)
-    formatted_timestamp = timestamp.astimezone(timezone.utc).strftime(
-        "%Y-%m-%d %H:%M:%S UTC"
-    )
-    return f"Message Sent by: {' / '.join(segments)} @ {formatted_timestamp}"
-
-
-
-def _has_existing_header(content: str) -> bool:
-    if not content:
-        return False
-    first_line, _, _ = content.partition("\n")
-    line = first_line.strip()
-    if not line.startswith("Message Sent by:"):
-        return False
-    parts = line.rsplit("@", 1)
-    if len(parts) != 2:
-        return False
-    timestamp_text = parts[1].strip()
-    if not timestamp_text:
-        return False
-    try:
-        datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M:%S UTC")
-    except ValueError:
-        return False
-    return True
-
 
 
 def extract_bridge_nonce_from_footer(text: str | None) -> str | None:
@@ -299,6 +224,18 @@ def extract_bridge_nonce_from_footer(text: str | None) -> str | None:
 
 
 def extract_bridge_nonce_from_embed_dict(embed: Mapping[str, object]) -> str | None:
+    provider = embed.get("provider")
+    if isinstance(provider, Mapping):
+        name = provider.get("name")
+        if isinstance(name, str):
+            marker = BRIDGE_MARKER.lower()
+            lower = name.lower()
+            idx = lower.find(marker)
+            if idx != -1:
+                remainder = name[idx + len(marker) :]
+                nonce = remainder.strip()
+                if nonce:
+                    return nonce
     footer_text = embed.get("footerText")
     if isinstance(footer_text, str):
         nonce = extract_bridge_nonce_from_footer(footer_text)

@@ -70,7 +70,11 @@ if "discord" not in sys.modules:
             self._data.setdefault("image", {}).update(kwargs)
 
         def to_dict(self):
-            return self._data.copy()
+            data = self._data.copy()
+            provider = getattr(self, "_provider", None)
+            if provider is not None:
+                data["provider"] = provider
+            return data
 
     discord_module = types.ModuleType("discord")
     discord_module.HTTPException = _DummyHTTPException
@@ -251,8 +255,19 @@ if "demibot.bridge" not in sys.modules:
         return "", [], [], ""
 
     def _extract_bridge_nonce_stub(payload):
-        nonce = payload.get("nonce") if isinstance(payload, dict) else None
-        return str(nonce) if nonce is not None else None
+        if isinstance(payload, dict):
+            nonce = payload.get("nonce")
+            if nonce is not None:
+                return str(nonce)
+            embeds = payload.get("embeds")
+            if isinstance(embeds, list):
+                for embed in embeds:
+                    provider = embed.get("provider") if isinstance(embed, dict) else None
+                    if isinstance(provider, dict):
+                        name = provider.get("name")
+                        if isinstance(name, str) and name.startswith(BRIDGE_MARKER):
+                            return name[len(BRIDGE_MARKER) :]
+        return None
 
     sys.modules["demibot.bridge"] = types.SimpleNamespace(
         BridgeUpload=_DummyBridgeUpload,
@@ -287,7 +302,7 @@ def test_should_drop_due_to_nonce_and_cleanup(monkeypatch):
             "nonce": "abc123",
             "embeds": [
                 {
-                    "footer": {"text": f"DemiCat • Chat • {BRIDGE_MARKER}abc123"},
+                    "provider": {"name": f"{BRIDGE_MARKER}abc123"},
                 }
             ],
         },
