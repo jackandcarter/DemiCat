@@ -824,18 +824,9 @@ public class ChatWindow : IDisposable
                 ImGui.SetTooltip(_attachmentError);
             }
         }
-        foreach (var att in _attachments.ToArray())
+        if (_attachments.Count > 0)
         {
-            {
-                using var emojiFont = _emojiManager.PushEmojiFont();
-                ImGui.TextUnformatted(Path.GetFileName(att));
-            }
-            ImGui.SameLine();
-            if (ImGui.SmallButton($"X##{att}"))
-            {
-                _attachments.Remove(att);
-                InvalidatePreview();
-            }
+            DrawAttachmentChips();
         }
 
         var now = DateTime.UtcNow;
@@ -1293,6 +1284,247 @@ public class ChatWindow : IDisposable
         var caret = start + text.Length;
         _selectionStart = _selectionEnd = caret;
         _focusComposerNextFrame = true;
+    }
+
+    private void DrawAttachmentChips()
+    {
+        var removed = new List<int>();
+
+        for (var i = 0; i < _attachments.Count; i++)
+        {
+            var path = _attachments[i];
+            ImGui.PushID(i);
+            var shouldRemove = DrawAttachmentChip(path);
+            ImGui.PopID();
+
+            if (shouldRemove)
+            {
+                removed.Add(i);
+            }
+
+            if (i < _attachments.Count - 1)
+            {
+                ImGui.SameLine();
+            }
+        }
+
+        if (removed.Count == 0)
+        {
+            return;
+        }
+
+        for (var i = removed.Count - 1; i >= 0; i--)
+        {
+            _attachments.RemoveAt(removed[i]);
+        }
+
+        InvalidatePreview();
+        CleanupAttachmentPreviews(_attachments);
+    }
+
+    private bool DrawAttachmentChip(string path)
+    {
+        var style = ImGui.GetStyle();
+        var scale = ImGuiHelpers.GlobalScale;
+        var fileName = Path.GetFileName(path);
+        var isImage = IsImageAttachment(path);
+
+        ISharedImmediateTexture? previewTexture = null;
+        var previewReady = false;
+        var previewLoading = false;
+
+        if (isImage)
+        {
+            EnsureAttachmentPreview(path);
+            if (_attachmentPreviewTextures.TryGetValue(path, out var existingTexture))
+            {
+                previewTexture = existingTexture;
+                previewReady = existingTexture != null;
+                previewLoading = existingTexture == null;
+            }
+            else
+            {
+                previewLoading = true;
+            }
+        }
+
+        var errorForAttachment =
+            !string.IsNullOrEmpty(_attachmentError) &&
+            !string.IsNullOrEmpty(fileName) &&
+            _attachmentError.IndexOf(fileName, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        var padding = new Vector2(8f, 6f) * scale;
+        var remove = false;
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildBorderSize, 1f);
+        ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, style.FrameRounding);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, padding);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, style.Colors[(int)ImGuiCol.FrameBg]);
+        var childFlags =
+            ImGuiWindowFlags.AlwaysAutoResize |
+            ImGuiWindowFlags.NoScrollbar |
+            ImGuiWindowFlags.NoScrollWithMouse;
+        if (ImGui.BeginChild("##attachmentChip", new Vector2(0, 0), true, childFlags))
+        {
+            ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(6f * scale, style.ItemSpacing.Y));
+
+            var renderedPreview = false;
+            if (previewReady && previewTexture != null)
+            {
+                var wrap = previewTexture.GetWrapOrEmpty();
+                if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                {
+                    var maxThumbnail = new Vector2(40f, 40f) * scale;
+                    var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), maxThumbnail);
+                    ImGui.Image(wrap.Handle, size);
+                    renderedPreview = true;
+                }
+            }
+
+            if (!renderedPreview)
+            {
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                var icon = isImage ? "🖼️" : "📎";
+                ImGui.TextUnformatted(icon);
+            }
+
+            ImGui.SameLine();
+            ImGui.TextUnformatted(fileName);
+
+            if (errorForAttachment)
+            {
+                ImGui.SameLine();
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+                ImGui.TextUnformatted("!");
+                ImGui.PopStyleColor();
+            }
+
+            ImGui.SameLine();
+            if (ImGui.SmallButton("×"))
+            {
+                remove = true;
+            }
+
+            ImGui.PopStyleVar();
+        }
+        ImGui.EndChild();
+        ImGui.PopStyleColor();
+        ImGui.PopStyleVar(3);
+
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenBlockedByPopup))
+        {
+            ImGui.BeginTooltip();
+            if (!string.IsNullOrEmpty(fileName))
+            {
+                ImGui.TextUnformatted(fileName);
+                ImGui.Separator();
+            }
+
+            long fileSize = 0;
+            var sizeKnown = false;
+            try
+            {
+                var info = new FileInfo(path);
+                fileSize = info.Length;
+                sizeKnown = true;
+            }
+            catch
+            {
+                // ignore file IO errors when attempting to inspect file size
+            }
+
+            ImGui.TextUnformatted(sizeKnown ? $"Size: {FormatFileSize(fileSize)}" : "Size: Unknown");
+
+            string status;
+            if (errorForAttachment && !string.IsNullOrEmpty(_attachmentError))
+            {
+                status = _attachmentError;
+            }
+            else if (previewReady)
+            {
+                status = "Preview ready";
+            }
+            else if (previewLoading && isImage)
+            {
+                status = "Loading preview…";
+            }
+            else if (isImage)
+            {
+                status = "Preview unavailable";
+            }
+            else
+            {
+                status = "Ready to upload";
+            }
+
+            ImGui.TextUnformatted($"Status: {status}");
+
+            if (errorForAttachment && !string.IsNullOrEmpty(_attachmentError))
+            {
+                ImGui.Separator();
+                ImGui.TextWrapped(_attachmentError);
+            }
+
+            ImGui.EndTooltip();
+        }
+
+        return remove;
+    }
+
+    private static bool IsImageAttachment(string path)
+    {
+        if (string.IsNullOrEmpty(path))
+        {
+            return false;
+        }
+
+        var ext = Path.GetExtension(path);
+        if (string.IsNullOrEmpty(ext))
+        {
+            return false;
+        }
+
+        switch (ext.ToLowerInvariant())
+        {
+            case ".png":
+            case ".jpg":
+            case ".jpeg":
+            case ".gif":
+            case ".bmp":
+            case ".tga":
+            case ".tif":
+            case ".tiff":
+            case ".webp":
+            case ".heic":
+            case ".heif":
+            case ".avif":
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0 B";
+        }
+
+        string[] units = { "B", "KB", "MB", "GB", "TB", "PB" };
+        double value = bytes;
+        var unitIndex = 0;
+        while (value >= 1024 && unitIndex < units.Length - 1)
+        {
+            value /= 1024;
+            unitIndex++;
+        }
+
+        if (unitIndex == 0)
+        {
+            return string.Format(CultureInfo.InvariantCulture, "{0} {1}", bytes, units[unitIndex]);
+        }
+
+        return string.Format(CultureInfo.InvariantCulture, "{0:0.##} {1}", value, units[unitIndex]);
     }
 
     private void InvalidatePreview()
