@@ -12,11 +12,13 @@ using Dalamud.Game.Gui.Toast;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface.ManagedFontAtlas;
+using Dalamud.Interface.Textures;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
+using StbImageSharp;
 
 namespace DemiCatPlugin;
 
@@ -77,6 +79,8 @@ public class Plugin : IDalamudPlugin
             AutomaticDecompression = DecompressionMethods.All
         };
         _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+
+        WebTextureCache.FetchOverride = FetchWebTexture;
 
         PingService.Instance = new PingService(_httpClient, _config, _tokenManager);
 
@@ -145,6 +149,17 @@ public class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        WebTextureCache.FetchOverride = null;
+        try
+        {
+            RunOnFrameworkAsync(WebTextureCache.Clear).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Warning(ex, "Failed to clear web texture cache on framework thread.");
+            WebTextureCache.Clear();
+        }
+
         _emojiManager.EmojiFontHandle = null;
         _emojiFontHandle?.Dispose();
 
@@ -174,6 +189,118 @@ public class Plugin : IDalamudPlugin
         _avatarCache.Dispose();
         _emojiManager.Dispose();
         _httpClient.Dispose();
+    }
+
+    private object? FetchWebTexture(string url, Action<ISharedImmediateTexture?> onReady)
+    {
+        if (string.IsNullOrEmpty(url))
+            return RunOnFrameworkAsync(() => onReady(null));
+
+        if (WebTextureCache.TryGetTexture(url, out var cached))
+            return RunOnFrameworkAsync(() => onReady(cached));
+
+        return FetchWebTextureAsync(url, onReady);
+    }
+
+    private async Task FetchWebTextureAsync(string url, Action<ISharedImmediateTexture?> onReady)
+    {
+        HttpResponseMessage? response = null;
+        byte[]? payload = null;
+
+        try
+        {
+            response = await _httpClient
+                .GetAsync(url, HttpCompletionOption.ResponseHeadersRead)
+                .ConfigureAwait(false);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _services.Log.Warning(
+                    $"Failed to download texture {url}: {(int)response.StatusCode} {response.StatusCode}. Falling back to text label.");
+                await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
+                return;
+            }
+
+            payload = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+        }
+        catch (TaskCanceledException ex)
+        {
+            _services.Log.Warning(ex, $"Texture download timed out for {url}. Falling back to text label.");
+            await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
+            return;
+        }
+        catch (HttpRequestException ex)
+        {
+            _services.Log.Warning(ex, $"Failed to download texture {url}. Falling back to text label.");
+            await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
+            return;
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Error(ex, $"Unexpected error downloading texture {url}. Falling back to text label.");
+            await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
+            return;
+        }
+        finally
+        {
+            response?.Dispose();
+        }
+
+        if (payload == null || payload.Length == 0)
+        {
+            _services.Log.Warning($"Texture download for {url} returned no data. Falling back to text label.");
+            await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
+            return;
+        }
+
+        ImageResult image;
+        try
+        {
+            image = ImageResult.FromMemory(payload, ColorComponents.RedGreenBlueAlpha);
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Error(ex, $"Failed to decode texture {url}. Falling back to text label.");
+            await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            await RunOnFrameworkAsync(() =>
+            {
+                try
+                {
+                    var wrap = TextureProvider.CreateFromRaw(
+                        RawImageSpecification.Rgba32(image.Width, image.Height),
+                        image.Data);
+                    var texture = new ForwardingSharedImmediateTexture(wrap);
+                    WebTextureCache.Set(url, texture);
+                    onReady(texture);
+                }
+                catch (Exception ex)
+                {
+                    _services.Log.Error(ex, $"Failed to create texture for {url}. Falling back to text label.");
+                    WebTextureCache.Set(url, null);
+                    onReady(null);
+                }
+            }).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Error(ex, $"Failed to finalize texture load for {url}. Falling back to text label.");
+            await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
+        }
+    }
+
+    private Task RunOnFrameworkAsync(Action action)
+    {
+        var framework = PluginServices.Instance?.Framework ?? _services.Framework;
+        if (framework != null)
+            return framework.RunOnTick(action);
+
+        action();
+        return Task.CompletedTask;
     }
 
     private IFontHandle? InitializeEmojiFont()

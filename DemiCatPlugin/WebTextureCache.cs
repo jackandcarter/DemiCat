@@ -12,7 +12,30 @@ namespace DemiCatPlugin;
 // invoke the callback with null so callers can fall back gracefully.
 public static class WebTextureCache
 {
-    private static readonly Dictionary<string, ISharedImmediateTexture> _map = new();
+    private sealed class CacheEntry : IDisposable
+    {
+        public CacheEntry(ISharedImmediateTexture texture)
+        {
+            Texture = texture;
+        }
+
+        public ISharedImmediateTexture Texture { get; }
+
+        public void Dispose()
+        {
+            try
+            {
+                (Texture.GetWrapOrEmpty() as IDisposable)?.Dispose();
+            }
+            catch
+            {
+                // Suppress disposal failures; Dalamud will clean these up on exit.
+            }
+        }
+    }
+
+    private static readonly Dictionary<string, CacheEntry> _map = new();
+    private static readonly object _lock = new();
 
     // Tests set this to intercept fetches and provide mocked textures.
     public static Func<string, Action<ISharedImmediateTexture?>, object?>? FetchOverride { get; set; }
@@ -31,7 +54,7 @@ public static class WebTextureCache
             return;
         }
 
-        if (_map.TryGetValue(url, out var tex))
+        if (TryGetTexture(url, out var tex))
         {
             onReady(tex);
             return;
@@ -39,6 +62,59 @@ public static class WebTextureCache
 
         // No engine-level URL loader available here; allow caller to render fallback.
         onReady(null);
+    }
+
+    internal static bool TryGetTexture(string url, out ISharedImmediateTexture? texture)
+    {
+        lock (_lock)
+        {
+            if (_map.TryGetValue(url, out var entry))
+            {
+                texture = entry.Texture;
+                return true;
+            }
+        }
+
+        texture = null;
+        return false;
+    }
+
+    internal static void Set(string url, ISharedImmediateTexture? texture)
+    {
+        lock (_lock)
+        {
+            if (texture == null)
+            {
+                if (_map.Remove(url, out var removed))
+                {
+                    removed.Dispose();
+                }
+                return;
+            }
+
+            if (_map.TryGetValue(url, out var existing))
+            {
+                if (ReferenceEquals(existing.Texture, texture))
+                    return;
+
+                existing.Dispose();
+            }
+
+            _map[url] = new CacheEntry(texture);
+        }
+    }
+
+    internal static void Clear()
+    {
+        lock (_lock)
+        {
+            foreach (var entry in _map.Values)
+            {
+                entry.Dispose();
+            }
+
+            _map.Clear();
+        }
     }
 
     public static void DrawImageButton(string id, ISharedImmediateTexture? tex, Vector2 size, Action onClick)
