@@ -17,6 +17,8 @@ public class Template
     public string Url { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
     public string ThumbnailUrl { get; set; } = string.Empty;
+    public string? ImageId { get; set; }
+    public string? ThumbnailId { get; set; }
     public uint Color { get; set; }
     public List<TemplateField> Fields { get; set; } = new();
     public List<TemplateButton> Buttons { get; set; } = new();

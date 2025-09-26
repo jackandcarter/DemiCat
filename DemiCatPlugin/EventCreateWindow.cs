@@ -1,6 +1,7 @@
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -11,9 +12,11 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Globalization;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ImGuiFileDialog;
 using DiscordHelper;
 using DemiCat.UI;
 using DemiCatPlugin.Emoji;
+using System.IO;
 
 namespace DemiCatPlugin;
 
@@ -57,6 +60,10 @@ public class EventCreateWindow
     private EventPreviewFormatter.Result? _preview;
     private EventView? _previewView;
     private bool _confirmCreate;
+    private readonly FileDialogManager _imageFileDialog = new();
+    private readonly FileDialogManager _thumbnailFileDialog = new();
+    private readonly ImageUploadState _bannerUpload = new();
+    private readonly ImageUploadState _thumbnailUpload = new();
 
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
@@ -118,6 +125,10 @@ public class EventCreateWindow
             ImGui.TextUnformatted("Feature disabled");
             return;
         }
+
+        _imageFileDialog.Draw();
+        _thumbnailFileDialog.Draw();
+
         var footer = ImGui.GetFrameHeightWithSpacing() * 2;
         var avail = ImGui.GetContentRegionAvail();
         ImGui.BeginChild("eventCreateScroll", new Vector2(avail.X, avail.Y - footer), true);
@@ -298,8 +309,8 @@ public class EventCreateWindow
                 setFullWidth: false);
 
             DrawFormRow("URL", () => ImGui.InputText("##Url", ref _url, 260));
-            DrawFormRow("Image URL", () => ImGui.InputText("##ImageUrl", ref _imageUrl, 260));
-            DrawFormRow("Thumbnail URL", () => ImGui.InputText("##ThumbnailUrl", ref _thumbnailUrl, 260));
+            DrawFormRow("Image", () => DrawImageInput(ImageUploadKind.Banner), setFullWidth: false);
+            DrawFormRow("Thumbnail", () => DrawImageInput(ImageUploadKind.Thumbnail), setFullWidth: false);
 
             ImGui.EndTable();
         }
@@ -644,6 +655,8 @@ public class EventCreateWindow
         _url = template.Url;
         _imageUrl = template.ImageUrl;
         _thumbnailUrl = template.ThumbnailUrl;
+        ResetUploadState(_bannerUpload, template.ImageId, template.ImageUrl);
+        ResetUploadState(_thumbnailUpload, template.ThumbnailId, template.ThumbnailUrl);
         _color = ColorUtils.RgbToImGui(template.Color);
         _mentions.Clear();
         if (template.Mentions != null)
@@ -707,7 +720,9 @@ public class EventCreateWindow
                 description = dto.Description,
                 url = dto.Url,
                 imageUrl = dto.ImageUrl,
+                imageId = ResolveUploadId(_bannerUpload, dto.ImageUrl),
                 thumbnailUrl = dto.ThumbnailUrl,
+                thumbnailId = ResolveUploadId(_thumbnailUpload, dto.ThumbnailUrl),
                 color = dto.Color,
                 fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
                 buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, style = b.Style.HasValue ? (int?)b.Style : null, emoji = b.Emoji, maxSignups = b.MaxSignups, width = b.Width, rowIndex = b.RowIndex }).ToList(),
@@ -780,7 +795,9 @@ public class EventCreateWindow
                 description = dto.Description,
                 url = dto.Url,
                 imageUrl = dto.ImageUrl,
+                imageId = ResolveUploadId(_bannerUpload, dto.ImageUrl),
                 thumbnailUrl = dto.ThumbnailUrl,
+                thumbnailId = ResolveUploadId(_thumbnailUpload, dto.ThumbnailUrl),
                 color = dto.Color,
                 fields = dto.Fields?.Select(f => new { name = f.Name, value = f.Value, inline = f.Inline }).ToList(),
                 buttons = buttons.Select(b => new { label = b.Label, customId = b.CustomId, url = b.Url, emoji = b.Emoji, style = b.Style.HasValue ? (int)b.Style : (int?)null, maxSignups = b.MaxSignups, width = b.Width, rowIndex = b.RowIndex }).ToList(),
@@ -962,6 +979,367 @@ public class EventCreateWindow
             mentionIds,
             creatorLabel: creatorLabel,
             embedId: "event-create-preview");
+    }
+
+    private void DrawImageInput(ImageUploadKind kind)
+    {
+        ref var url = ref kind == ImageUploadKind.Banner ? ref _imageUrl : ref _thumbnailUrl;
+        var state = kind == ImageUploadKind.Banner ? _bannerUpload : _thumbnailUpload;
+        var label = kind == ImageUploadKind.Banner ? "Image" : "Thumbnail";
+        var idSuffix = kind == ImageUploadKind.Banner ? "Image" : "Thumbnail";
+
+        ImGui.SetNextItemWidth(-1f);
+        var changed = ImGui.InputText($"##{idSuffix}Url", ref url, 260);
+        if (changed && state.Info != null && !UrlMatchesUpload(state.Info, url))
+        {
+            state.Info = null;
+            state.Status = string.Empty;
+            state.IsError = false;
+        }
+
+        ImGui.SameLine();
+        var dialog = kind == ImageUploadKind.Banner ? _imageFileDialog : _thumbnailFileDialog;
+        ImGui.BeginDisabled(state.Uploading);
+        if (ImGui.Button($"Upload##{idSuffix}"))
+        {
+            dialog.OpenFileDialog(
+                $"Select {label}",
+                "Image files{.png,.jpg,.jpeg,.gif,.bmp,.webp}",
+                (ok, files) =>
+                {
+                    if (!ok || files.Count == 0) return;
+                    var path = files[0];
+                    PluginServices.Instance!.Framework.RunOnTick(() => BeginImageUpload(kind, path));
+                },
+                1,
+                ".");
+        }
+        ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        if (ImGui.Button($"Clear##{idSuffix}"))
+        {
+            ClearUploadedImage(kind);
+        }
+
+        var status = state.Uploading
+            ? (string.IsNullOrEmpty(state.Status) ? "Uploading..." : state.Status)
+            : state.Status;
+        var infoText = state.Info != null && string.IsNullOrEmpty(status)
+            ? $"Using uploaded image ({state.Info.FileName ?? state.Info.Id})"
+            : null;
+
+        if (!string.IsNullOrEmpty(status))
+        {
+            ImGui.SameLine();
+            if (state.IsError)
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+                ImGui.TextUnformatted(status);
+                ImGui.PopStyleColor();
+            }
+            else
+            {
+                ImGui.TextUnformatted(status);
+            }
+        }
+        else if (!string.IsNullOrEmpty(infoText))
+        {
+            ImGui.SameLine();
+            ImGui.TextUnformatted(infoText);
+        }
+    }
+
+    private void BeginImageUpload(ImageUploadKind kind, string path)
+    {
+        if (string.IsNullOrEmpty(path) || !File.Exists(path))
+        {
+            SetUploadFailure(kind, "File not found");
+            return;
+        }
+
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            SetUploadFailure(kind, "Invalid API URL");
+            return;
+        }
+
+        var tokenManager = TokenManager.Instance;
+        if (tokenManager?.IsReady() != true)
+        {
+            SetUploadFailure(kind, "Link DemiCat to upload images");
+            return;
+        }
+
+        var state = kind == ImageUploadKind.Banner ? _bannerUpload : _thumbnailUpload;
+        if (state.Uploading)
+        {
+            return;
+        }
+
+        var fileName = Path.GetFileName(path);
+        SetUploadInProgress(kind, $"Uploading {fileName}...");
+        _ = Task.Run(() => UploadImageInternal(kind, path, tokenManager));
+    }
+
+    private async Task UploadImageInternal(ImageUploadKind kind, string path, TokenManager tokenManager)
+    {
+        try
+        {
+            var requestUri = BuildUploadUri(kind);
+            var response = await ApiHelpers.SendWithRetries(
+                () => BuildUploadRequest(path, requestUri, tokenManager),
+                _httpClient);
+
+            if (response?.IsSuccessStatusCode == true)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                var info = ParseUploadResponse(body, kind, Path.GetFileName(path));
+                if (info != null && !string.IsNullOrEmpty(info.Url))
+                {
+                    SetUploadSuccess(kind, info);
+                }
+                else
+                {
+                    var message = string.IsNullOrEmpty(body)
+                        ? "Upload succeeded but response was empty"
+                        : "Upload succeeded but response was missing data";
+                    SetUploadFailure(kind, message);
+                }
+            }
+            else if (response != null)
+            {
+                var body = await response.Content.ReadAsStringAsync();
+                SetUploadFailure(kind, $"Upload failed: {(int)response.StatusCode} {body}");
+            }
+            else
+            {
+                SetUploadFailure(kind, "Upload failed");
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error uploading event image");
+            SetUploadFailure(kind, "Upload failed");
+        }
+    }
+
+    private static HttpRequestMessage BuildUploadRequest(string path, string requestUri, TokenManager tokenManager)
+    {
+        var stream = File.OpenRead(path);
+        var content = new StreamContent(stream);
+        content.Headers.ContentType = MediaTypeHeaderValue.Parse("application/octet-stream");
+        var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
+        {
+            Content = content
+        };
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        ApiHelpers.AddAuthHeader(request, tokenManager);
+        return request;
+    }
+
+    private string BuildUploadUri(ImageUploadKind kind)
+    {
+        var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
+        var segment = kind == ImageUploadKind.Banner ? "banner" : "thumbnail";
+        return $"{baseUrl}/api/event-images/{segment}";
+    }
+
+    private void SetUploadInProgress(ImageUploadKind kind, string message)
+    {
+        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            var state = kind == ImageUploadKind.Banner ? _bannerUpload : _thumbnailUpload;
+            state.Uploading = true;
+            state.Status = message;
+            state.IsError = false;
+        });
+    }
+
+    private void SetUploadSuccess(ImageUploadKind kind, UploadedImageInfo info)
+    {
+        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            var state = kind == ImageUploadKind.Banner ? _bannerUpload : _thumbnailUpload;
+            state.Uploading = false;
+            state.Info = info;
+            state.Status = $"Uploaded {info.FileName ?? info.Id}";
+            state.IsError = false;
+            if (kind == ImageUploadKind.Banner)
+            {
+                _imageUrl = info.Url;
+            }
+            else
+            {
+                _thumbnailUrl = info.Url;
+            }
+        });
+    }
+
+    private void SetUploadFailure(ImageUploadKind kind, string message)
+    {
+        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            var state = kind == ImageUploadKind.Banner ? _bannerUpload : _thumbnailUpload;
+            state.Uploading = false;
+            state.Status = message;
+            state.IsError = true;
+        });
+    }
+
+    private void ClearUploadedImage(ImageUploadKind kind)
+    {
+        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            if (kind == ImageUploadKind.Banner)
+            {
+                _imageUrl = string.Empty;
+                _bannerUpload.Info = null;
+                _bannerUpload.Status = string.Empty;
+                _bannerUpload.IsError = false;
+                _bannerUpload.Uploading = false;
+            }
+            else
+            {
+                _thumbnailUrl = string.Empty;
+                _thumbnailUpload.Info = null;
+                _thumbnailUpload.Status = string.Empty;
+                _thumbnailUpload.IsError = false;
+                _thumbnailUpload.Uploading = false;
+            }
+        });
+    }
+
+    private static UploadedImageInfo? ParseUploadResponse(string body, ImageUploadKind kind, string fileName)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(body);
+            var root = doc.RootElement;
+            string? id;
+            string? url;
+            string? altUrl;
+
+            if (kind == ImageUploadKind.Banner)
+            {
+                id = TryGetString(root, "imageId") ?? TryGetString(root, "id");
+                url = TryGetString(root, "url") ?? TryGetString(root, "imageUrl") ?? TryGetString(root, "cdnUrl");
+                altUrl = TryGetString(root, "thumbnailUrl");
+            }
+            else
+            {
+                id = TryGetString(root, "thumbnailId") ?? TryGetString(root, "id");
+                url = TryGetString(root, "thumbnailUrl") ?? TryGetString(root, "url") ?? TryGetString(root, "imageUrl");
+                altUrl = TryGetString(root, "url") ?? TryGetString(root, "imageUrl");
+            }
+
+            if (string.IsNullOrEmpty(url))
+            {
+                url = altUrl;
+            }
+
+            var contentType = TryGetString(root, "contentType") ?? TryGetString(root, "mimeType");
+            var width = TryGetInt(root, "width") ?? TryGetInt(root, "imageWidth");
+            var height = TryGetInt(root, "height") ?? TryGetInt(root, "imageHeight");
+            var size = TryGetInt(root, "size") ?? TryGetInt(root, "fileSize");
+            var responseFileName = TryGetString(root, "fileName") ?? TryGetString(root, "filename") ?? fileName;
+
+            return new UploadedImageInfo
+            {
+                Id = id ?? string.Empty,
+                Url = url ?? string.Empty,
+                ThumbnailUrl = TryGetString(root, "thumbnailUrl"),
+                FileName = responseFileName,
+                ContentType = contentType,
+                Width = width,
+                Height = height,
+                Size = size
+            };
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static string? TryGetString(JsonElement element, string property)
+        => element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+
+    private static int? TryGetInt(JsonElement element, string property)
+        => element.TryGetProperty(property, out var value) && value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number)
+            ? number
+            : null;
+
+    private static bool UrlMatchesUpload(UploadedImageInfo info, string url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        return string.Equals(url, info.Url, StringComparison.OrdinalIgnoreCase) ||
+               (!string.IsNullOrEmpty(info.ThumbnailUrl) && string.Equals(url, info.ThumbnailUrl, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string? ResolveUploadId(ImageUploadState state, string? currentUrl)
+    {
+        if (state.Info == null || string.IsNullOrEmpty(state.Info.Id) || string.IsNullOrWhiteSpace(currentUrl))
+        {
+            return null;
+        }
+
+        return UrlMatchesUpload(state.Info, currentUrl) ? state.Info.Id : null;
+    }
+
+    private static void ResetUploadState(ImageUploadState state, string? id, string url)
+    {
+        state.Uploading = false;
+        state.Status = string.Empty;
+        state.IsError = false;
+        if (!string.IsNullOrEmpty(id) && !string.IsNullOrEmpty(url))
+        {
+            state.Info = new UploadedImageInfo
+            {
+                Id = id!,
+                Url = url,
+                FileName = id
+            };
+        }
+        else
+        {
+            state.Info = null;
+        }
+    }
+
+    private enum ImageUploadKind
+    {
+        Banner,
+        Thumbnail
+    }
+
+    private class ImageUploadState
+    {
+        public bool Uploading;
+        public string Status = string.Empty;
+        public bool IsError;
+        public UploadedImageInfo? Info;
+    }
+
+    private class UploadedImageInfo
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Url { get; set; } = string.Empty;
+        public string? ThumbnailUrl { get; set; }
+        public string? FileName { get; set; }
+        public string? ContentType { get; set; }
+        public int? Width { get; set; }
+        public int? Height { get; set; }
+        public int? Size { get; set; }
     }
 
     public Task RefreshChannels()

@@ -504,7 +504,9 @@ public class TemplatesWindow
         public string? Time { get; set; }
         public string? Url { get; set; }
         public string? ImageUrl { get; set; }
+        public string? ImageId { get; set; }
         public string? ThumbnailUrl { get; set; }
+        public string? ThumbnailId { get; set; }
         public uint? Color { get; set; }
         public List<EmbedFieldDto>? Fields { get; set; }
         public List<EmbedButtonDto>? Buttons { get; set; }
@@ -638,6 +640,10 @@ public class TemplatesWindow
             {
                 channelId,
                 time = string.IsNullOrWhiteSpace(tmpl.Time) ? null : tmpl.Time,
+                imageUrl = string.IsNullOrWhiteSpace(tmpl.ImageUrl) ? null : tmpl.ImageUrl,
+                imageId = string.IsNullOrWhiteSpace(tmpl.ImageId) ? null : tmpl.ImageId,
+                thumbnailUrl = string.IsNullOrWhiteSpace(tmpl.ThumbnailUrl) ? null : tmpl.ThumbnailUrl,
+                thumbnailId = string.IsNullOrWhiteSpace(tmpl.ThumbnailId) ? null : tmpl.ThumbnailId,
                 buttons = buttonsBody,
                 mentions = _mentions.Count > 0 ? _mentions.ToList() : null
             };
@@ -791,7 +797,9 @@ public class TemplatesWindow
             Time = payload.Time ?? string.Empty,
             Url = payload.Url ?? string.Empty,
             ImageUrl = payload.ImageUrl ?? string.Empty,
+            ImageId = payload.ImageId,
             ThumbnailUrl = payload.ThumbnailUrl ?? string.Empty,
+            ThumbnailId = payload.ThumbnailId,
             Color = payload.Color ?? 0,
             Fields = payload.Fields?.Select(f => new Template.TemplateField
             {
