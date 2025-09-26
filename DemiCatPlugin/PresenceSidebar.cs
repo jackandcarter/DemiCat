@@ -313,18 +313,19 @@ public class PresenceSidebar : IDisposable
         if (!string.IsNullOrWhiteSpace(statusText))
         {
             ImGui.PushStyleColor(ImGuiCol.Text, StatusTextColor);
-            var availableWidth = MathF.Max(0f, ImGui.GetContentRegionAvail().X);
-            if (availableWidth > 0f)
+            var wrapWidth = MathF.Max(0f, ImGui.GetContentRegionAvail().X);
+            if (wrapWidth > 0f)
             {
-                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + availableWidth);
+                ImGui.PushTextWrapPos(ImGui.GetCursorPosX() + wrapWidth);
             }
             ImGui.TextUnformatted(statusText);
-            if (availableWidth > 0f)
+            if (wrapWidth > 0f)
             {
                 ImGui.PopTextWrapPos();
             }
             ImGui.PopStyleColor();
         }
+
 
         if (p.RoleDetails.Count > 0)
         {
