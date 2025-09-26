@@ -662,6 +662,11 @@ public class ChatWindow : IDisposable
                     ImGui.EndPopup();
                 }
 
+                if (i < _messages.Count - 1)
+                {
+                    ImGui.Separator();
+                }
+
                 ImGui.PopID();
             }
         }
