@@ -28,8 +28,7 @@ public sealed class EmojiPopup
             return;
         }
 
-        var selected = string.Empty;
-        _picker.Draw(ref selected);
+        var selected = _picker.Draw();
         if (!string.IsNullOrEmpty(selected))
         {
             _onSelected?.Invoke(selected);

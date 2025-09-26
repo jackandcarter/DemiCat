@@ -19,22 +19,23 @@ public sealed class EmojiPicker
 
     public EmojiPicker(EmojiManager manager) => _manager = manager;
 
-    public void Draw(ref string targetText, float buttonSize = 28f)
+    public string? Draw(float buttonSize = 28f)
     {
         var previous = _tab;
+        string? selected = null;
         if (ImGui.BeginTabBar("##dc_emoji_tabs"))
         {
             if (ImGui.BeginTabItem("Standard"))
             {
                 _tab = EmojiTab.Standard;
-                DrawStandard(ref targetText, buttonSize);
+                selected = DrawStandard(buttonSize);
                 ImGui.EndTabItem();
             }
 
             if (ImGui.BeginTabItem("Custom"))
             {
                 _tab = EmojiTab.Custom;
-                DrawCustom(ref targetText, buttonSize);
+                selected ??= DrawCustom(buttonSize);
                 ImGui.EndTabItem();
             }
 
@@ -45,9 +46,11 @@ public sealed class EmojiPicker
         {
             _search = string.Empty;
         }
+
+        return string.IsNullOrEmpty(selected) ? null : selected;
     }
 
-    private void DrawStandard(ref string targetText, float size)
+    private string? DrawStandard(float size)
     {
         ImGui.InputTextWithHint("##emoji_std_search", "Search…", ref _search, 64);
         ImGui.Separator();
@@ -55,7 +58,7 @@ public sealed class EmojiPicker
         if (!_manager.CanLoadStandard)
         {
             ImGui.TextDisabled("Link DemiCat to load emoji.");
-            return;
+            return null;
         }
 
         _ = _manager.EnsureUnicodeAsync();
@@ -92,13 +95,14 @@ public sealed class EmojiPicker
             {
                 ImGui.TextDisabled(string.IsNullOrWhiteSpace(_search) ? "No emoji available." : "No matches.");
             }
-            return;
+            return null;
         }
 
         ImGui.BeginChild("##emoji_std_grid", new Vector2(0, 220f), false);
         var avail = ImGui.GetContentRegionAvail().X;
         var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (size + 4f)));
         var column = 0;
+        string? selected = null;
 
         for (var i = 0; i < filtered.Count; i++)
         {
@@ -113,7 +117,7 @@ public sealed class EmojiPicker
             using var _ = _manager.PushEmojiFont();
             if (ImGui.Button(emoji.Emoji, new Vector2(size, size)))
             {
-                EmojiFormatter.InsertUnicode(ref targetText, emoji);
+                selected = EmojiFormatter.CreateUnicodeToken(emoji);
             }
             if (!string.IsNullOrEmpty(emoji.Name) && ImGui.IsItemHovered())
             {
@@ -126,12 +130,18 @@ public sealed class EmojiPicker
             {
                 ImGui.SameLine();
             }
+
+            if (!string.IsNullOrEmpty(selected))
+            {
+                break;
+            }
         }
 
         ImGui.EndChild();
+        return string.IsNullOrEmpty(selected) ? null : selected;
     }
 
-    private void DrawCustom(ref string targetText, float size)
+    private string? DrawCustom(float size)
     {
         ImGui.InputTextWithHint("##emoji_custom_search", "Search :name:", ref _search, 64);
         ImGui.SameLine();
@@ -147,7 +157,7 @@ public sealed class EmojiPicker
         if (!canLoad)
         {
             ImGui.TextDisabled("Set GuildId in config to enable server emoji.");
-            return;
+            return null;
         }
 
         _ = _manager.EnsureCustomAsync();
@@ -182,13 +192,14 @@ public sealed class EmojiPicker
             {
                 ImGui.TextDisabled(string.IsNullOrWhiteSpace(_search) ? "No server emoji found." : "No matches.");
             }
-            return;
+            return null;
         }
 
         ImGui.BeginChild("##emoji_custom_grid", new Vector2(0, 220f), false);
         var avail = ImGui.GetContentRegionAvail().X;
         var columns = Math.Max(1, (int)Math.Floor((avail + 6f) / (size + 6f)));
         var column = 0;
+        string? selected = null;
 
         foreach (var emoji in items)
         {
@@ -227,7 +238,7 @@ public sealed class EmojiPicker
 
             if (clicked)
             {
-                EmojiFormatter.InsertCustom(ref targetText, emoji);
+                selected = EmojiFormatter.CreateCustomToken(emoji);
             }
 
             column++;
@@ -235,9 +246,15 @@ public sealed class EmojiPicker
             {
                 ImGui.SameLine();
             }
+
+            if (!string.IsNullOrEmpty(selected))
+            {
+                break;
+            }
         }
 
         ImGui.EndChild();
+        return string.IsNullOrEmpty(selected) ? null : selected;
     }
 
     private static void DrawError(string message)

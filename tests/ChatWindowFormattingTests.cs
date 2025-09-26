@@ -99,6 +99,30 @@ public class ChatWindowFormattingTests
         Assert.Equal("[click](url)", GetInput(window));
     }
 
+    [Fact]
+    public void InsertTextAtSelection_ReplacesSelection()
+    {
+        var window = CreateWindow();
+        SetInput(window, "hello world", 6, 11);
+        InsertAtSelection(window, ":smile:");
+        Assert.Equal("hello :smile:", GetInput(window));
+        var (start, end) = GetSelection(window);
+        Assert.Equal(13, start);
+        Assert.Equal(13, end);
+    }
+
+    [Fact]
+    public void InsertTextAtSelection_AppendsWhenCollapsedAtEnd()
+    {
+        var window = CreateWindow();
+        SetInput(window, "hello", 5, 5);
+        InsertAtSelection(window, "🙂");
+        Assert.Equal("hello🙂", GetInput(window));
+        var (start, end) = GetSelection(window);
+        Assert.Equal(6, start);
+        Assert.Equal(6, end);
+    }
+
     private static ChatWindow CreateWindow()
     {
         SetupServices();
@@ -123,9 +147,24 @@ public class ChatWindowFormattingTests
             .Invoke(window, new object[] { prefix, suffix });
     }
 
+    private static void InsertAtSelection(ChatWindow window, string text)
+    {
+        typeof(ChatWindow).GetMethod("InsertTextAtSelection", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .Invoke(window, new object[] { text });
+    }
+
     private static string GetInput(ChatWindow window)
     {
         return (string)typeof(ChatWindow).GetField("_input", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!;
+    }
+
+    private static (int Start, int End) GetSelection(ChatWindow window)
+    {
+        var start = (int)typeof(ChatWindow).GetField("_selectionStart", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(window)!;
+        var end = (int)typeof(ChatWindow).GetField("_selectionEnd", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(window)!;
+        return (start, end);
     }
 
     private class DummyHandler : HttpMessageHandler

@@ -28,6 +28,7 @@ public class EventCreateWindow
     private string _description = string.Empty;
     private int _descriptionSelectionStart;
     private int _descriptionSelectionEnd;
+    private bool _focusDescriptionNextFrame;
     private string _time = DateTime.UtcNow.ToString("O");
     private string _imageUrl = string.Empty;
     private string _url = string.Empty;
@@ -37,6 +38,7 @@ public class EventCreateWindow
     private string? _lastResult;
     private readonly List<Template.TemplateButton> _buttons = new();
     private readonly SignupOptionEditor _optionEditor;
+    private readonly EmojiPopup _descriptionEmojiPopup;
     private int _editingButtonIndex = -1;
     private int _selectedPreset = -1;
     private string _presetName = string.Empty;
@@ -70,6 +72,7 @@ public class EventCreateWindow
         _emojiManager = emojiManager;
         _channelSelection = channelSelection;
         _optionEditor = new SignupOptionEditor(config, httpClient, emojiManager);
+        _descriptionEmojiPopup = new EmojiPopup(emojiManager, "EventDescriptionEmoji");
         ResetDefaultButtons();
         _channelSelection.ChannelChanged += HandleChannelChanged;
     }
@@ -184,11 +187,24 @@ public class EventCreateWindow
                     if (ImGui.SmallButton("Spoiler##descSpoiler")) WrapDescription("||", "||");
                     ImGui.SameLine();
                     if (ImGui.SmallButton("Link##descLink")) WrapDescription("[", "](url)");
+                    ImGui.SameLine();
+                    using (var emojiFont = _emojiManager.PushEmojiFont())
+                    {
+                        if (ImGui.SmallButton("😊##descEmoji"))
+                        {
+                            _descriptionEmojiPopup.Open(InsertDescriptionText);
+                        }
+                    }
                     ImGui.Spacing();
 
                     var avail = ImGui.GetContentRegionAvail();
                     var descHeight = ImGui.GetTextLineHeight() * 6f;
                     var descBuf = ImGuiTextUtil.MakeUtf8Buffer(_description, 4096);
+                    if (_focusDescriptionNextFrame)
+                    {
+                        ImGui.SetKeyboardFocusHere();
+                        _focusDescriptionNextFrame = false;
+                    }
                     ImGui.InputTextMultiline(
                         "##Description",
                         descBuf,
@@ -197,6 +213,7 @@ public class EventCreateWindow
                         new ImGui.ImGuiInputTextCallbackDelegate(OnDescriptionEdited)
                     );
                     _description = ImGuiTextUtil.ReadUtf8Buffer(descBuf);
+                    _descriptionEmojiPopup.Draw();
                 },
                 alignLabel: false,
                 setFullWidth: false);
@@ -847,6 +864,38 @@ public class EventCreateWindow
         var description = _description;
         MarkdownSelectionHelper.WrapSelection(ref description, prefix, suffix, ref _descriptionSelectionStart, ref _descriptionSelectionEnd);
         _description = description ?? string.Empty;
+    }
+
+    private void InsertDescriptionText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        var value = _description ?? string.Empty;
+        var start = Math.Min(_descriptionSelectionStart, _descriptionSelectionEnd);
+        var end = Math.Max(_descriptionSelectionStart, _descriptionSelectionEnd);
+        start = Math.Clamp(start, 0, value.Length);
+        end = Math.Clamp(end, 0, value.Length);
+
+        var builder = new StringBuilder(value.Length + text.Length);
+        if (start > 0)
+        {
+            builder.Append(value.AsSpan(0, start));
+        }
+
+        builder.Append(text);
+
+        if (end < value.Length)
+        {
+            builder.Append(value.AsSpan(end));
+        }
+
+        _description = builder.ToString();
+        var caret = start + text.Length;
+        _descriptionSelectionStart = _descriptionSelectionEnd = caret;
+        _focusDescriptionNextFrame = true;
     }
 
     private int OnDescriptionEdited(ref ImGuiInputTextCallbackData data)
