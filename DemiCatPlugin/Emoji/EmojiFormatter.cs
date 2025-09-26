@@ -7,21 +7,11 @@ public static class EmojiFormatter
     public const string CustomPrefix = "custom:";
     private const string DefaultCustomName = "emoji";
 
-    public static void InsertUnicode(ref string target, UnicodeEmoji emoji)
-        => InsertUnicode(ref target, emoji.Emoji);
+    public static string CreateUnicodeToken(UnicodeEmoji emoji) => CreateUnicodeToken(emoji.Emoji);
 
-    public static void InsertUnicode(ref string target, string emoji)
-    {
-        if (string.IsNullOrEmpty(emoji))
-        {
-            return;
-        }
+    public static string CreateUnicodeToken(string emoji) => string.IsNullOrEmpty(emoji) ? string.Empty : emoji;
 
-        target += emoji;
-    }
-
-    public static void InsertCustom(ref string target, CustomEmoji emoji)
-        => target += CreateCustomToken(emoji.Id);
+    public static string CreateCustomToken(CustomEmoji emoji) => CreateCustomToken(emoji.Id);
 
     public static string CreateCustomToken(string id) => string.Concat(CustomPrefix, id);
 

@@ -82,6 +82,7 @@ public class ChatWindow : IDisposable
     private float _chatTopPadding;
     private int _selectionStart;
     private int _selectionEnd;
+    private bool _focusComposerNextFrame;
     private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
     private string _previewKey = string.Empty;
     private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
@@ -631,8 +632,7 @@ public class ChatWindow : IDisposable
                         ImGui.SameLine();
                     }
                     ImGui.NewLine();
-                    var pick = string.Empty;
-                    _emojiPicker.Draw(ref pick);
+                    var pick = _emojiPicker.Draw();
                     if (!string.IsNullOrEmpty(pick))
                     {
                         _ = React(msg.Id, pick, false);
@@ -885,6 +885,11 @@ public class ChatWindow : IDisposable
         var newlineCount = string.IsNullOrEmpty(_input) ? 1 : _input.Count(c => c == '\n') + 1;
         var lineCount = Math.Clamp(Math.Max(newlineCount, wrapLineCount), MinInputLines, MaxInputLines);
         var inputHeight = lineCount * lineHeight + style.FramePadding.Y * 2f;
+        if (_focusComposerNextFrame)
+        {
+            ImGui.SetKeyboardFocusHere();
+            _focusComposerNextFrame = false;
+        }
         _ = ImGui.InputTextMultiline(
             "##chatInput",
             inputBuf,
@@ -931,7 +936,12 @@ public class ChatWindow : IDisposable
         }
         if (ImGui.BeginPopup("##dc_emoji_picker"))
         {
-            _emojiPicker.Draw(ref _input);
+            var inserted = _emojiPicker.Draw();
+            if (!string.IsNullOrEmpty(inserted))
+            {
+                InsertTextAtSelection(inserted);
+                ImGui.CloseCurrentPopup();
+            }
             ImGui.EndPopup();
         }
 
@@ -1251,6 +1261,38 @@ public class ChatWindow : IDisposable
         var input = _input;
         MarkdownSelectionHelper.WrapSelection(ref input, prefix, suffix, ref _selectionStart, ref _selectionEnd);
         _input = input ?? string.Empty;
+    }
+
+    private void InsertTextAtSelection(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        var value = _input ?? string.Empty;
+        var start = Math.Min(_selectionStart, _selectionEnd);
+        var end = Math.Max(_selectionStart, _selectionEnd);
+        start = Math.Clamp(start, 0, value.Length);
+        end = Math.Clamp(end, 0, value.Length);
+
+        var builder = new StringBuilder(value.Length + text.Length);
+        if (start > 0)
+        {
+            builder.Append(value.AsSpan(0, start));
+        }
+
+        builder.Append(text);
+
+        if (end < value.Length)
+        {
+            builder.Append(value.AsSpan(end));
+        }
+
+        _input = builder.ToString();
+        var caret = start + text.Length;
+        _selectionStart = _selectionEnd = caret;
+        _focusComposerNextFrame = true;
     }
 
     private void InvalidatePreview()

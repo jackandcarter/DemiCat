@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DemiCatPlugin;
+using DemiCatPlugin.Emoji;
 using Xunit;
 
 public class EventCreateWindowFormattingTests
@@ -30,9 +31,11 @@ public class EventCreateWindowFormattingTests
         var config = new Config();
         var handler = new DummyHandler();
         var http = new HttpClient(handler);
-        var channelService = new ChannelService(config, http, new TokenManager());
+        var tokenManager = new TokenManager();
+        var channelService = new ChannelService(config, http, tokenManager);
         var selection = new ChannelSelectionService(config);
-        return new EventCreateWindow(config, http, channelService, selection);
+        var emojiManager = new EmojiManager(http, tokenManager, config);
+        return new EventCreateWindow(config, http, channelService, selection, emojiManager);
     }
 
     private static void SetDescription(EventCreateWindow window, string text, int start, int end)

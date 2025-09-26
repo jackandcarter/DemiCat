@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using DemiCatPlugin;
 using DemiCat.UI;
+using DemiCatPlugin.Emoji;
 using DiscordHelper;
 using Xunit;
 
@@ -21,9 +22,11 @@ public class EventButtonWidthTests
     {
         var config = new Config();
         var http = new HttpClient(new StubHandler());
-        var channelService = new ChannelService(config, http, new TokenManager());
+        var tokenManager = new TokenManager();
+        var channelService = new ChannelService(config, http, tokenManager);
         var selection = new ChannelSelectionService(config);
-        var window = new EventCreateWindow(config, http, channelService, selection);
+        var emojiManager = new EmojiManager(http, tokenManager, config);
+        var window = new EventCreateWindow(config, http, channelService, selection, emojiManager);
         var buttonsField = typeof(EventCreateWindow).GetField("_buttons", BindingFlags.NonPublic | BindingFlags.Instance)!;
         buttonsField.SetValue(window, new List<Template.TemplateButton>
         {

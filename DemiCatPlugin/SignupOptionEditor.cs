@@ -3,6 +3,7 @@ using Dalamud.Bindings.ImGui;
 using DiscordHelper;
 using System.Numerics;
 using System.Net.Http;
+using System.Text;
 using DemiCat.UI;
 using DemiCatPlugin.Emoji;
 
@@ -15,6 +16,9 @@ public class SignupOptionEditor
     private Action<Template.TemplateButton>? _onSave;
     private readonly EmojiPopup _emojiPopup;
     private readonly EmojiManager _emojiManager;
+    private int _emojiSelectionStart;
+    private int _emojiSelectionEnd;
+    private bool _focusEmojiNextFrame;
 
     public SignupOptionEditor(Config config, HttpClient httpClient, EmojiManager emojiManager)
     {
@@ -35,6 +39,8 @@ public class SignupOptionEditor
             MaxSignups = button.MaxSignups,
             Width = button.Width
         };
+        _emojiSelectionStart = _emojiSelectionEnd = _working.Emoji?.Length ?? 0;
+        _focusEmojiNextFrame = false;
         _onSave = onSave;
         _open = true;
     }
@@ -52,13 +58,30 @@ public class SignupOptionEditor
             var label = _working.Label;
             if (ImGui.InputText("Label", ref label, 64))
                 _working.Label = label;
-            var emoji = _working.Emoji;
-            if (ImGui.InputText("Emoji", ref emoji, 16))
+            var emojiBuf = ImGuiTextUtil.MakeUtf8Buffer(_working.Emoji ?? string.Empty, 64);
+            if (_focusEmojiNextFrame)
+            {
+                ImGui.SetKeyboardFocusHere();
+                _focusEmojiNextFrame = false;
+            }
+            ImGui.InputText(
+                "Emoji",
+                emojiBuf,
+                (uint)emojiBuf.Length,
+                ImGuiInputTextFlags.CallbackAlways,
+                new ImGui.ImGuiInputTextCallbackDelegate(OnEmojiEdited)
+            );
+            var emoji = ImGuiTextUtil.ReadUtf8Buffer(emojiBuf);
+            if (_working.Emoji != emoji)
+            {
                 _working.Emoji = emoji;
+                _emojiSelectionStart = Math.Clamp(_emojiSelectionStart, 0, _working.Emoji.Length);
+                _emojiSelectionEnd = Math.Clamp(_emojiSelectionEnd, 0, _working.Emoji.Length);
+            }
             ImGui.SameLine();
             if (ImGui.Button("Pick"))
             {
-                _emojiPopup.Open(e => _working.Emoji = e);
+                _emojiPopup.Open(InsertEmojiText);
             }
 
             if (!string.IsNullOrWhiteSpace(_working.Emoji))
@@ -120,5 +143,45 @@ public class SignupOptionEditor
             ImGui.EndPopup();
         }
         if (!open) _open = false;
+    }
+
+    private void InsertEmojiText(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        var value = _working.Emoji ?? string.Empty;
+        var start = Math.Min(_emojiSelectionStart, _emojiSelectionEnd);
+        var end = Math.Max(_emojiSelectionStart, _emojiSelectionEnd);
+        start = Math.Clamp(start, 0, value.Length);
+        end = Math.Clamp(end, 0, value.Length);
+
+        var builder = new StringBuilder(value.Length + text.Length);
+        if (start > 0)
+        {
+            builder.Append(value.AsSpan(0, start));
+        }
+
+        builder.Append(text);
+
+        if (end < value.Length)
+        {
+            builder.Append(value.AsSpan(end));
+        }
+
+        var result = builder.ToString();
+        _working.Emoji = result;
+        var caret = start + text.Length;
+        _emojiSelectionStart = _emojiSelectionEnd = caret;
+        _focusEmojiNextFrame = true;
+    }
+
+    private int OnEmojiEdited(ref ImGuiInputTextCallbackData data)
+    {
+        _emojiSelectionStart = data.SelectionStart;
+        _emojiSelectionEnd = data.SelectionEnd;
+        return 0;
     }
 }
