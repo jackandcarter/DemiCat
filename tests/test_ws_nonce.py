@@ -247,18 +247,62 @@ if "demibot.bridge" not in sys.modules:
         def __init__(self, *args, **kwargs):
             pass
 
+    _STUB_MARKER = "bridge:demicat nonce:"
+
+    def _extract_nonce_from_text(text):
+        if not isinstance(text, str):
+            return None
+        marker = _STUB_MARKER.lower()
+        lower = text.lower()
+        idx = lower.find(marker)
+        if idx == -1:
+            return None
+        remainder = text[idx + len(marker) :]
+        for separator in ("•", "|", "\n"):
+            parts = remainder.split(separator, 1)
+            if parts:
+                remainder = parts[0]
+        nonce = remainder.strip()
+        if " " in nonce:
+            nonce = nonce.split(" ", 1)[0]
+        return nonce or None
+
     def _build_bridge_message_stub(*args, **kwargs):
         return "", [], [], ""
 
     def _extract_bridge_nonce_stub(payload):
-        nonce = payload.get("nonce") if isinstance(payload, dict) else None
-        return str(nonce) if nonce is not None else None
+        if not isinstance(payload, dict):
+            return None
+        nonce = payload.get("nonce")
+        if isinstance(nonce, str) and nonce:
+            return nonce
+        embeds = payload.get("embeds")
+        if isinstance(embeds, list):
+            for embed in embeds:
+                if not isinstance(embed, dict):
+                    continue
+                provider = embed.get("provider")
+                if isinstance(provider, dict):
+                    provider_name = provider.get("name")
+                    extracted = _extract_nonce_from_text(provider_name)
+                    if extracted:
+                        return extracted
+                for key in ("providerName", "provider_name", "footerText"):
+                    extracted = _extract_nonce_from_text(embed.get(key))
+                    if extracted:
+                        return extracted
+                footer = embed.get("footer")
+                if isinstance(footer, dict):
+                    extracted = _extract_nonce_from_text(footer.get("text"))
+                    if extracted:
+                        return extracted
+        return None
 
     sys.modules["demibot.bridge"] = types.SimpleNamespace(
         BridgeUpload=_DummyBridgeUpload,
         build_bridge_message=_build_bridge_message_stub,
         extract_bridge_nonce_from_payload=_extract_bridge_nonce_stub,
-        BRIDGE_MARKER="bridge:demicat nonce:",
+        BRIDGE_MARKER=_STUB_MARKER,
     )
 
 BRIDGE_MARKER = "bridge:demicat nonce:"
@@ -345,3 +389,21 @@ def test_should_drop_due_to_nonce_and_cleanup(monkeypatch):
         assert "100" not in manager._channel_queues
 
     asyncio.run(run_scenario())
+
+
+def test_should_drop_due_to_nonce_with_provider_name():
+    manager = ChatConnectionManager()
+    payload = {
+        "op": "mc",
+        "d": {
+            "id": "55",
+            "embeds": [
+                {
+                    "providerName": f"DemiCat • Chat • {BRIDGE_MARKER}nonce-xyz",
+                }
+            ],
+        },
+    }
+
+    assert manager._should_drop_due_to_nonce("200", payload) is False
+    assert manager._should_drop_due_to_nonce("200", payload) is True

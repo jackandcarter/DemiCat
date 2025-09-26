@@ -299,6 +299,21 @@ def extract_bridge_nonce_from_footer(text: str | None) -> str | None:
 
 
 def extract_bridge_nonce_from_embed_dict(embed: Mapping[str, object]) -> str | None:
+    provider = embed.get("provider")
+    if isinstance(provider, Mapping):
+        provider_name = provider.get("name")
+        if isinstance(provider_name, str):
+            nonce = extract_bridge_nonce_from_footer(provider_name)
+            if nonce:
+                return nonce
+
+    for key in ("providerName", "provider_name"):
+        provider_name = embed.get(key)
+        if isinstance(provider_name, str):
+            nonce = extract_bridge_nonce_from_footer(provider_name)
+            if nonce:
+                return nonce
+
     footer_text = embed.get("footerText")
     if isinstance(footer_text, str):
         nonce = extract_bridge_nonce_from_footer(footer_text)
