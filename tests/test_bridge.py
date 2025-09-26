@@ -1,11 +1,148 @@
 import pytest
 
 import sys
+import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1] / "demibot"
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+if "structlog" not in sys.modules:
+    def _callable_stub(*args, **kwargs):
+        return None
+
+    def _factory_stub(*args, **kwargs):
+        return _callable_stub
+
+    sys.modules["structlog"] = types.SimpleNamespace(
+        processors=types.SimpleNamespace(
+            TimeStamper=lambda **kwargs: _callable_stub,
+            add_log_level=_callable_stub,
+            EventRenamer=lambda *args, **kwargs: _callable_stub,
+            JSONRenderer=lambda *args, **kwargs: _callable_stub,
+        ),
+        make_filtering_bound_logger=lambda *args, **kwargs: _callable_stub,
+        stdlib=types.SimpleNamespace(LoggerFactory=_factory_stub),
+        configure=_callable_stub,
+        get_logger=lambda *args, **kwargs: types.SimpleNamespace(
+            info=_callable_stub,
+            warning=_callable_stub,
+            exception=_callable_stub,
+            debug=_callable_stub,
+        ),
+    )
+
+if "discord" not in sys.modules:
+    class _DummyHTTPException(Exception):
+        pass
+
+    class _DummyWebhook:
+        @classmethod
+        def from_url(cls, *args, **kwargs):
+            return cls()
+
+        async def send(self, *args, **kwargs):
+            return types.SimpleNamespace()
+
+    class _DummyFile:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    class _DummyColor:
+        def __init__(self, *args, **kwargs):
+            self.value = args[0] if args else None
+
+    class _DummyEmbed:
+        def __init__(self, *args, **kwargs):
+            self._data = {}
+            description = kwargs.get("description")
+            if description is not None:
+                self._data["description"] = description
+            timestamp = kwargs.get("timestamp")
+            if timestamp is not None:
+                self._data["timestamp"] = timestamp
+            color = kwargs.get("color") or kwargs.get("colour")
+            if color is not None:
+                value = getattr(color, "value", color)
+                self._data["color"] = value
+
+        def set_footer(self, **kwargs):
+            self._data.setdefault("footer", {}).update(kwargs)
+
+        def set_author(self, **kwargs):
+            self._data.setdefault("author", {}).update(kwargs)
+
+        def set_image(self, **kwargs):
+            self._data.setdefault("image", {}).update(kwargs)
+
+        def to_dict(self):
+            return self._data.copy()
+
+    discord_module = types.ModuleType("discord")
+    discord_module.HTTPException = _DummyHTTPException
+    discord_module.Webhook = _DummyWebhook
+    discord_module.File = _DummyFile
+    discord_module.Color = _DummyColor
+    discord_module.Embed = _DummyEmbed
+    discord_module.abc = types.SimpleNamespace(Messageable=object)
+    discord_module.errors = types.SimpleNamespace(Forbidden=_DummyHTTPException)
+    sys.modules["discord"] = discord_module
+
+if "sqlalchemy" not in sys.modules:
+    def _select_stub(*args, **kwargs):
+        return None
+
+    sqlalchemy_module = types.ModuleType("sqlalchemy")
+    sqlalchemy_module.select = _select_stub
+    sys.modules["sqlalchemy"] = sqlalchemy_module
+
+if "sqlalchemy.orm" not in sys.modules:
+    sqlalchemy_orm_module = types.ModuleType("sqlalchemy.orm")
+    sqlalchemy_orm_module.DeclarativeBase = type("DeclarativeBase", (), {})
+    sys.modules["sqlalchemy.orm"] = sqlalchemy_orm_module
+
+if "demibot.db.models" not in sys.modules:
+    from dataclasses import dataclass
+
+    class ChannelKind:
+        OFFICER_CHAT = "officer"
+        FC_CHAT = "fc"
+
+    @dataclass
+    class Membership:
+        id: int
+        guild_id: int
+        user_id: int
+        nickname: str
+        avatar_url: str | None = None
+
+    @dataclass
+    class User:
+        id: int
+        discord_user_id: int
+        global_name: str | None = None
+        character_name: str | None = None
+        world: str | None = None
+
+    @dataclass
+    class GuildChannel:
+        channel_id: int | None = None
+        guild_id: int | None = None
+        kind: str | None = None
+
+    @dataclass
+    class Guild:
+        id: int | None = None
+
+    sys.modules["demibot.db.models"] = types.SimpleNamespace(
+        ChannelKind=ChannelKind,
+        Membership=Membership,
+        User=User,
+        GuildChannel=GuildChannel,
+        Guild=Guild,
+    )
+
 
 from demibot.bridge import (
     BRIDGE_MARKER,
@@ -78,6 +215,28 @@ def test_build_bridge_message_populates_embed_footer(sample_user, sample_members
     assert upload.data == b"bytes"
 
     payload = {"embeds": [embed_dict]}
+    assert extract_bridge_nonce_from_payload(payload) == nonce
+
+
+@pytest.mark.parametrize(
+    "provider_path",
+    [
+        pytest.param(("provider", "name"), id="nested-provider"),
+        pytest.param(("providerName",), id="camel-provider"),
+        pytest.param(("provider_name",), id="snake-provider"),
+    ],
+)
+def test_extract_bridge_nonce_from_provider_fields(provider_path):
+    nonce = "abc123"
+    embed: dict[str, object] = {}
+
+    if provider_path[0] == "provider":
+        embed["provider"] = {provider_path[1]: f"Source • {BRIDGE_MARKER}{nonce}"}
+    else:
+        embed[provider_path[0]] = f"Source • {BRIDGE_MARKER}{nonce}"
+
+    payload = {"embeds": [embed]}
+
     assert extract_bridge_nonce_from_payload(payload) == nonce
 
 
