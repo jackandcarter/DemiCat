@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -44,6 +46,7 @@ public class ChannelService
                 foreach (var channel in channels)
                 {
                     channel.EnsureKind(kind);
+                    channel.Name = DecodeJsonUnicodeEscapes(channel.Name);
                 }
                 return ChannelDtoExtensions.SortForDisplay(channels);
             }
@@ -134,6 +137,48 @@ public class ChannelService
         }
 
         return null;
+    }
+
+    private static string DecodeJsonUnicodeEscapes(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return value;
+        }
+
+        var sb = new StringBuilder(value.Length);
+        for (var i = 0; i < value.Length;)
+        {
+            if (value[i] == '\\' && i + 1 < value.Length && value[i + 1] == 'u' && i + 5 < value.Length)
+            {
+                var hexSpan = value.AsSpan(i + 2, 4);
+                if (ushort.TryParse(hexSpan, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var codeUnit))
+                {
+                    i += 6;
+
+                    if (char.IsHighSurrogate((char)codeUnit)
+                        && i + 5 < value.Length
+                        && value[i] == '\\'
+                        && value[i + 1] == 'u'
+                        && ushort.TryParse(value.AsSpan(i + 2, 4), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var lowCodeUnit)
+                        && char.IsLowSurrogate((char)lowCodeUnit))
+                    {
+                        var rune = char.ConvertToUtf32((char)codeUnit, (char)lowCodeUnit);
+                        sb.Append(char.ConvertFromUtf32(rune));
+                        i += 6;
+                        continue;
+                    }
+
+                    sb.Append((char)codeUnit);
+                    continue;
+                }
+            }
+
+            sb.Append(value[i]);
+            i++;
+        }
+
+        return sb.ToString();
     }
 }
 
