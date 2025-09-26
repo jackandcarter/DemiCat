@@ -67,9 +67,8 @@ public class SignupOptionEditor
             ImGui.InputText(
                 "Emoji",
                 emojiBuf,
-                (uint)emojiBuf.Length,
                 ImGuiInputTextFlags.CallbackAlways,
-                new ImGui.ImGuiInputTextCallbackDelegate(OnEmojiEdited)
+                OnEmojiEdited
             );
             var emoji = ImGuiTextUtil.ReadUtf8Buffer(emojiBuf);
             if (_working.Emoji != emoji)
@@ -178,7 +177,7 @@ public class SignupOptionEditor
         _focusEmojiNextFrame = true;
     }
 
-    private int OnEmojiEdited(ref ImGuiInputTextCallbackData data)
+    private int OnEmojiEdited(scoped ref ImGuiInputTextCallbackData data)
     {
         _emojiSelectionStart = data.SelectionStart;
         _emojiSelectionEnd = data.SelectionEnd;
