@@ -437,7 +437,19 @@ public class ChatWindow : IDisposable
         const float ScrollTolerance = 1f;
         ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), true);
 
-        var shouldAutoScroll = _pendingInitialScroll || _wasAtBottomLastFrame;
+        var io = ImGui.GetIO();
+        var hoverFlags = ImGuiHoveredFlags.AllowWhenBlockedByPopup | ImGuiHoveredFlags.AllowWhenBlockedByActiveItem;
+        var chatHovered = ImGui.IsWindowHovered(hoverFlags);
+        var userWheelScrolling = chatHovered && Math.Abs(io.MouseWheel) > float.Epsilon;
+        var userDragging = chatHovered && ImGui.IsMouseDragging(ImGuiMouseButton.Left);
+        var userInteractingWithScroll = userWheelScrolling || userDragging;
+
+        if (userInteractingWithScroll && _pendingInitialScroll)
+        {
+            _pendingInitialScroll = false;
+        }
+
+        var shouldAutoScroll = (_pendingInitialScroll || _wasAtBottomLastFrame) && !userInteractingWithScroll;
         if (shouldAutoScroll && _messages.Count == 0)
         {
             shouldAutoScroll = false;
