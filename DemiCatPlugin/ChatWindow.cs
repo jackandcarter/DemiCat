@@ -669,8 +669,11 @@ public class ChatWindow : IDisposable
 
         if (shouldAutoScroll)
         {
-            ImGui.Dummy(Vector2.Zero);
-            ImGui.SetScrollHereY(1f);
+            var maxScrollY = ImGui.GetScrollMaxY();
+            if (maxScrollY > 0f)
+            {
+                ImGui.SetScrollY(maxScrollY);
+            }
             _pendingInitialScroll = false;
         }
 
