@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Numerics;
 using System.Text;
@@ -23,8 +24,13 @@ public class SyncshellWindow : IDisposable
 {
     public static SyncshellWindow? Instance { get; private set; }
 
+    private static readonly TimeSpan DefaultPairingLifetime = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan PairingRefreshSkew = TimeSpan.FromSeconds(15);
+    private static readonly string[] PairingLifetimeProperties = { "expiresIn", "expires_in", "ttl" };
+
     private readonly Config _config;
     private readonly HttpClient _httpClient;
+    private readonly TokenManager _tokenManager;
     private readonly List<Asset> _assets = new();
     private readonly Dictionary<string, Installation> _installations = new();
     private readonly HashSet<string> _updatesAvailable = new();
@@ -35,9 +41,11 @@ public class SyncshellWindow : IDisposable
     private readonly Resolver _resolver;
     private readonly SyncClient _syncClient;
     private readonly ProgressOverlay _progressOverlay;
+    private readonly Config.CategoryState _syncshellState;
     private readonly ConcurrentQueue<Action> _uiThreadActions = new();
     private readonly Dictionary<string, PeerInventory> _peerInventories = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _inventoryLock = new();
+    private readonly SemaphoreSlim _pairingLock = new(1, 1);
     private CancellationTokenSource? _refreshCts;
     private DateTimeOffset? _lastPullAt;
     private DateTimeOffset _lastRefresh;
@@ -46,6 +54,8 @@ public class SyncshellWindow : IDisposable
     private volatile bool _needsRefresh = true;
     private PenumbraConflict? _penumbraConflict;
     private static DateTimeOffset _lastRedraw;
+    private DateTimeOffset? _pairingExpiresAt;
+    private TimeSpan _pairingLifetime = DefaultPairingLifetime;
 
     private bool _autoSyncAllUsers;
     private bool _manualSyncAllUsers;
@@ -84,10 +94,10 @@ public class SyncshellWindow : IDisposable
             _blobStore = new FileBlobStore(Path.Combine(configDir, ".syncshell", "cache"));
         }
 
-        var tokenManager = TokenManager.Instance ?? throw new InvalidOperationException("Token manager unavailable");
+        _tokenManager = TokenManager.Instance ?? throw new InvalidOperationException("Token manager unavailable");
         var log = services?.Log ?? new NullPluginLog();
         _resolver = new Resolver(_blobStore, log, services?.PluginInterface);
-        _syncClient = new SyncClient(_config, tokenManager, _resolver, _blobStore);
+        _syncClient = new SyncClient(_config, _tokenManager, _resolver, _blobStore);
         _syncClient.TransferProgress += HandleTransferProgress;
         _syncClient.ApplyCompleted += HandleApplyCompleted;
         _syncClient.PeerManifestReceived += HandlePeerManifestReceived;
@@ -106,10 +116,12 @@ public class SyncshellWindow : IDisposable
             state = new Config.CategoryState();
             _config.Categories["syncshell"] = state;
         }
+        _syncshellState = state;
         _lastPullAt = state.LastPullAt;
         _seenAssetIds = state.SeenAssets;
         _syncPaused = state.Paused;
         _lastResyncAt = state.LastResyncAt;
+        _pairingExpiresAt = state.PairingExpiresAt;
 
         _assetsFile = Path.Combine(configDir, "assets.json");
         _installedFile = Path.Combine(configDir, "installed.json");
@@ -119,7 +131,7 @@ public class SyncshellWindow : IDisposable
 
         Instance = this;
 
-        TokenManager.Instance?.RegisterWatcher(HandleTokenLinked, HandleTokenUnlinked);
+        _tokenManager.RegisterWatcher(HandleTokenLinked, HandleTokenUnlinked);
     }
 
     public void Draw()
@@ -340,18 +352,14 @@ public class SyncshellWindow : IDisposable
     {
         if (!_config.FCSyncShell || _loading || _syncPaused)
             return;
-        if (TokenManager.Instance?.IsReady() != true)
+        if (!_tokenManager.IsReady())
             return;
 
         try
         {
             _loading = true;
 
-            if (!_config.Categories.TryGetValue("syncshell", out var state))
-            {
-                state = new Config.CategoryState();
-                _config.Categories["syncshell"] = state;
-            }
+            var state = _syncshellState;
 
             List<Asset> snapshot;
             lock (_inventoryLock)
@@ -569,12 +577,27 @@ public class SyncshellWindow : IDisposable
                 : $"{baseUrl}{asset.DownloadUrl}";
 
             var tmp = Path.GetTempFileName();
-            using var req = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
-            using var resp = await _httpClient.SendAsync(req);
+            var response = await SendWithPairingRetryAsync(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
+                return request;
+            }).ConfigureAwait(false);
+
+            if (response == null)
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            using var resp = response;
+            if (resp.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                throw new HttpRequestException("Unauthorized", null, resp.StatusCode);
+            }
+
             resp.EnsureSuccessStatusCode();
             await using var fs = File.Create(tmp);
-            await resp.Content.CopyToAsync(fs);
+            await resp.Content.CopyToAsync(fs).ConfigureAwait(false);
 
             await UpdateInstallationStatus(asset.Id, "DOWNLOADED");
 
@@ -727,7 +750,7 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
-            if (!TokenManager.Instance!.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/installations";
@@ -736,7 +759,7 @@ public class SyncshellWindow : IDisposable
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json")
             };
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             await _httpClient.SendAsync(request);
 
             _installations[assetId] = new Installation { AssetId = assetId, Status = status, UpdatedAt = DateTimeOffset.UtcNow };
@@ -845,20 +868,238 @@ public class SyncshellWindow : IDisposable
         _needsRefresh = true;
     }
 
+    private async Task<bool> EnsurePairingAsync(bool force = false, CancellationToken cancellationToken = default)
+    {
+        if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return false;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = _pairingExpiresAt;
+        if (!force && expiresAt.HasValue && expiresAt.Value - PairingRefreshSkew > now)
+        {
+            return true;
+        }
+
+        await _pairingLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            now = DateTimeOffset.UtcNow;
+            expiresAt = _pairingExpiresAt;
+            if (!force && expiresAt.HasValue && expiresAt.Value - PairingRefreshSkew > now)
+            {
+                return true;
+            }
+
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/syncshell/pair";
+            using var request = new HttpRequestMessage(HttpMethod.Post, url);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
+            using var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+
+            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                PluginServices.Instance?.Log.Warning("SyncShell pairing request was unauthorized; authentication may be invalid.");
+                return false;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                var detail = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+                throw new HttpRequestException($"Pairing failed with status {(int)response.StatusCode}: {detail}", null, response.StatusCode);
+            }
+
+            var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+            var lifetime = DeterminePairingLifetime(payload, now);
+            if (lifetime <= TimeSpan.Zero)
+            {
+                lifetime = DefaultPairingLifetime;
+            }
+
+            var newExpiry = now + lifetime;
+            _pairingLifetime = lifetime;
+            _pairingExpiresAt = newExpiry;
+
+            if (_syncshellState.PairingExpiresAt != newExpiry)
+            {
+                _syncshellState.PairingExpiresAt = newExpiry;
+                PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Error(ex, "Failed to refresh SyncShell pairing token");
+            return false;
+        }
+        finally
+        {
+            _pairingLock.Release();
+        }
+    }
+
+    private async Task<HttpResponseMessage?> SendWithPairingRetryAsync(Func<HttpRequestMessage> requestFactory, CancellationToken cancellationToken = default)
+    {
+        if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return null;
+        }
+
+        HttpResponseMessage? response = null;
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            var paired = await EnsurePairingAsync(force: attempt > 0, cancellationToken).ConfigureAwait(false);
+            if (!paired)
+            {
+                break;
+            }
+
+            using var request = requestFactory();
+            response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.Unauthorized)
+            {
+                return response;
+            }
+
+            PluginServices.Instance?.Log.Warning("SyncShell request returned 401; attempting to refresh pairing token.");
+
+            if (attempt == 0)
+            {
+                response.Dispose();
+                response = null;
+                continue;
+            }
+
+            return response;
+        }
+
+        return response;
+    }
+
+    private TimeSpan DeterminePairingLifetime(string? payload, DateTimeOffset now)
+    {
+        if (!string.IsNullOrWhiteSpace(payload))
+        {
+            try
+            {
+                using var document = JsonDocument.Parse(payload);
+                var root = document.RootElement;
+
+                if (TryExtractExpiration(root, "expiresAt", now, out var expiresAt) ||
+                    TryExtractExpiration(root, "expires_at", now, out expiresAt))
+                {
+                    var lifetime = expiresAt - now;
+                    if (lifetime > TimeSpan.Zero)
+                    {
+                        return lifetime;
+                    }
+                }
+
+                if (TryExtractLifetimeSeconds(root, out var seconds) && seconds > 0)
+                {
+                    return TimeSpan.FromSeconds(seconds);
+                }
+            }
+            catch (JsonException ex)
+            {
+                PluginServices.Instance?.Log.Debug("Failed to parse SyncShell pairing response payload", ex);
+            }
+            catch (FormatException ex)
+            {
+                PluginServices.Instance?.Log.Debug("Failed to parse SyncShell pairing response timestamp", ex);
+            }
+        }
+
+        return _pairingLifetime > TimeSpan.Zero ? _pairingLifetime : DefaultPairingLifetime;
+    }
+
+    private static bool TryExtractExpiration(JsonElement root, string propertyName, DateTimeOffset now, out DateTimeOffset expiresAt)
+    {
+        expiresAt = default;
+        if (!root.TryGetProperty(propertyName, out var element))
+        {
+            return false;
+        }
+
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.String when DateTimeOffset.TryParse(
+                     element.GetString(),
+                     CultureInfo.InvariantCulture,
+                     DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+                     out var parsed):
+                expiresAt = parsed;
+                return expiresAt > now;
+            case JsonValueKind.Number when element.TryGetInt64(out var seconds):
+                expiresAt = DateTimeOffset.FromUnixTimeSeconds(seconds);
+                return expiresAt > now;
+            case JsonValueKind.Number when element.TryGetDouble(out var secondsDouble):
+                expiresAt = DateTimeOffset.FromUnixTimeSeconds((long)Math.Floor(secondsDouble));
+                return expiresAt > now;
+            default:
+                return false;
+        }
+    }
+
+    private static bool TryExtractLifetimeSeconds(JsonElement root, out double seconds)
+    {
+        foreach (var propertyName in PairingLifetimeProperties)
+        {
+            if (!root.TryGetProperty(propertyName, out var element))
+            {
+                continue;
+            }
+
+            switch (element.ValueKind)
+            {
+                case JsonValueKind.Number when element.TryGetDouble(out seconds) && seconds > 0:
+                    return true;
+                case JsonValueKind.String when double.TryParse(element.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out seconds) && seconds > 0:
+                    return true;
+            }
+        }
+
+        seconds = 0;
+        return false;
+    }
+
     private async Task PostAsync(string path)
     {
         try
         {
-            if (!TokenManager.Instance!.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
-                return;
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{path}";
-            var req = new HttpRequestMessage(HttpMethod.Post, url);
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
-            await _httpClient.SendAsync(req);
+            var response = await SendWithPairingRetryAsync(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, url);
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
+                return request;
+            }).ConfigureAwait(false);
+
+            if (response == null)
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            using var resp = response;
+            if (resp.StatusCode == HttpStatusCode.Unauthorized)
+            {
+                throw new HttpRequestException("Unauthorized", null, resp.StatusCode);
+            }
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                var detail = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                throw new HttpRequestException($"Request failed with status {(int)resp.StatusCode}: {detail}", null, resp.StatusCode);
+            }
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            var services = PluginServices.Instance;
+            services?.Log.Error(ex, $"Failed to call SyncShell endpoint {path}");
+
+            var action = path.Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault() ?? path;
+            _uiThreadActions.Enqueue(() => services?.ToastGui.ShowError($"SyncShell {action} failed – check logs."));
         }
     }
 
@@ -867,11 +1108,12 @@ public class SyncshellWindow : IDisposable
         if (!_peerSyncEnabled)
             return;
 
-        if (TokenManager.Instance?.IsReady() != true)
+        if (!_tokenManager.IsReady())
             return;
 
         try
         {
+            await EnsurePairingAsync().ConfigureAwait(false);
             await _syncClient.PushManifestAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -903,12 +1145,12 @@ public class SyncshellWindow : IDisposable
     {
         try
         {
-            if (!TokenManager.Instance!.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+            if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
                 return;
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/installations";
             var req = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, _tokenManager);
             var resp = await _httpClient.SendAsync(req);
             if (!resp.IsSuccessStatusCode)
                 return;
@@ -979,6 +1221,7 @@ public class SyncshellWindow : IDisposable
 
     private void HandleTokenLinked()
     {
+        _ = EnsurePairingAsync();
         StartPeriodicRefresh();
         UpdateSyncClientState();
     }
@@ -987,11 +1230,17 @@ public class SyncshellWindow : IDisposable
     {
         _ = StopSyncClientAsync();
         StopPeriodicRefresh();
+        _pairingExpiresAt = null;
+        if (_syncshellState.PairingExpiresAt != null)
+        {
+            _syncshellState.PairingExpiresAt = null;
+            PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+        }
     }
 
     private void UpdateSyncClientState()
     {
-        if (TokenManager.Instance?.IsReady() == true && _config.FCSyncShell && !_syncPaused && _peerSyncEnabled)
+        if (_tokenManager.IsReady() && _config.FCSyncShell && !_syncPaused && _peerSyncEnabled)
         {
             _syncClient.Start();
             return;
@@ -1053,6 +1302,7 @@ public class SyncshellWindow : IDisposable
         _syncClient.Dispose();
         if (PluginServices.Instance?.ProgressOverlay == _progressOverlay)
             PluginServices.Instance.ProgressOverlay = null;
+        _pairingLock.Dispose();
         if (Instance == this)
             Instance = null;
     }
