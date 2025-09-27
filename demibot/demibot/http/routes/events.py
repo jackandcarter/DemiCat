@@ -93,7 +93,21 @@ class CreateEventBody(BaseModel):
     description: str
     url: Optional[str] = None
     image_url: Optional[str] = Field(default=None, alias="imageUrl")
+    image_id: Optional[str] = Field(default=None, alias="imageId")
+    image_filename: Optional[str] = Field(default=None, alias="imageFilename")
+    image_content_type: Optional[str] = Field(
+        default=None, alias="imageContentType"
+    )
+    image_size: Optional[int] = Field(default=None, alias="imageSize")
     thumbnail_url: Optional[str] = Field(default=None, alias="thumbnailUrl")
+    thumbnail_id: Optional[str] = Field(default=None, alias="thumbnailId")
+    thumbnail_filename: Optional[str] = Field(
+        default=None, alias="thumbnailFilename"
+    )
+    thumbnail_content_type: Optional[str] = Field(
+        default=None, alias="thumbnailContentType"
+    )
+    thumbnail_size: Optional[int] = Field(default=None, alias="thumbnailSize")
     color: Optional[int] = None
     fields: List[FieldBody] | None = None
     buttons: List[EmbedButtonDto] | None = None
@@ -437,6 +451,7 @@ async def create_event(
                         "url": a.url,
                         "filename": a.filename,
                         "contentType": a.content_type,
+                        "size": getattr(a, "size", None),
                     }
                     for a in sent.attachments
                 ]

@@ -35,6 +35,7 @@ def attachment_to_dto(attachment: discord.Attachment) -> AttachmentDto:
         url=attachment.url,
         filename=attachment.filename,
         content_type=attachment.content_type,
+        size=getattr(attachment, "size", None),
     )
 
 

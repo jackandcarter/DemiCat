@@ -83,6 +83,7 @@ class AttachmentDto(CamelModel):
     url: str
     filename: Optional[str] = None
     content_type: Optional[str] = Field(default=None, alias="contentType")
+    size: Optional[int] = None
 
 
 class ButtonComponentDto(CamelModel):
@@ -151,7 +152,21 @@ class TemplatePayload(CamelModel):
     description: str
     url: str | None = None
     image_url: str | None = Field(default=None, alias="imageUrl")
+    image_id: str | None = Field(default=None, alias="imageId")
+    image_filename: str | None = Field(default=None, alias="imageFilename")
+    image_content_type: str | None = Field(
+        default=None, alias="imageContentType"
+    )
+    image_size: int | None = Field(default=None, alias="imageSize")
     thumbnail_url: str | None = Field(default=None, alias="thumbnailUrl")
+    thumbnail_id: str | None = Field(default=None, alias="thumbnailId")
+    thumbnail_filename: str | None = Field(
+        default=None, alias="thumbnailFilename"
+    )
+    thumbnail_content_type: str | None = Field(
+        default=None, alias="thumbnailContentType"
+    )
+    thumbnail_size: int | None = Field(default=None, alias="thumbnailSize")
     color: int | None = None
     fields: List[EmbedFieldDto] | None = None
     buttons: List[EmbedButtonDto] | None = None

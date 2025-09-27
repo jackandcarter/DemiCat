@@ -971,6 +971,7 @@ async def _send_via_webhook(
                 url=a.url,
                 filename=a.filename,
                 content_type=a.content_type,
+                size=getattr(a, "size", None),
             )
             for a in sent.attachments
         ]
@@ -1391,6 +1392,7 @@ async def save_message(
                             url=a.url,
                             filename=a.filename,
                             content_type=a.content_type,
+                            size=getattr(a, "size", None),
                         )
                         for a in sent.attachments
                     ]
@@ -1501,6 +1503,7 @@ async def save_message(
                                 content_type=(
                                     a.get("content_type") or a.get("contentType")
                                 ),
+                                size=a.get("size"),
                             )
                             for a in attachments_data
                             if isinstance(a, dict)
@@ -1612,7 +1615,10 @@ async def save_message(
             types.SimpleNamespace(
                 url=a.url,
                 filename=a.filename,
-                content_type=getattr(a, "content_type", getattr(a, "contentType", None)),
+                content_type=getattr(
+                    a, "content_type", getattr(a, "contentType", None)
+                ),
+                size=getattr(a, "size", None),
             )
             for a in (attachments or [])
         ],
