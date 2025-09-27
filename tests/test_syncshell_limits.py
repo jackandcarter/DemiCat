@@ -1,8 +1,4 @@
 import asyncio
-import asyncio
-import importlib.util
-import sys
-from pathlib import Path
 
 import pytest
 
@@ -11,18 +7,11 @@ import demibot.db.session as db_session
 from demibot.db.models import User
 from demibot.http.deps import RequestContext
 
-syncshell_path = (
-    Path(__file__).resolve().parents[1] / "demibot" / "demibot" / "http" / "routes" / "syncshell.py"
-)
-spec = importlib.util.spec_from_file_location(
-    "demibot.http.routes.syncshell", syncshell_path
-)
-syncshell = importlib.util.module_from_spec(spec)
-sys.modules["demibot.http.routes.syncshell"] = syncshell
-spec.loader.exec_module(syncshell)
+from .syncshell_import import syncshell
+from .syncshell_test_utils import build_manifest_payload
 
 
-def test_token_expiry():
+def test_token_expiry(tmp_path):
     async def _run():
         db_session._engine = None
         db_session._Session = None
@@ -33,15 +22,18 @@ def test_token_expiry():
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
             syncshell.TOKEN_TTL = 1
             await syncshell.pair(ctx=ctx, db=db)
+            manifest, _ = build_manifest_payload(tmp_path)
+            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             await asyncio.sleep(1.1)
             with pytest.raises(syncshell.HTTPException):
-                await syncshell.upload_manifest([], ctx=ctx, db=db)
+                await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
     asyncio.run(_run())
 
 
-def test_rate_limit_hits():
+def test_rate_limit_hits(tmp_path):
     async def _run():
         db_session._engine = None
         db_session._Session = None
@@ -52,9 +44,11 @@ def test_rate_limit_hits():
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
             syncshell.RATE_LIMIT = 2
             await syncshell.pair(ctx=ctx, db=db)
-            await syncshell.upload_manifest([], ctx=ctx, db=db)
+            manifest, _ = build_manifest_payload(tmp_path)
+            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             with pytest.raises(syncshell.HTTPException):
                 await syncshell.resync(ctx=ctx, db=db)
     asyncio.run(_run())

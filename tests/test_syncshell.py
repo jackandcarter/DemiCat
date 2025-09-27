@@ -1,41 +1,14 @@
 import asyncio
+
 import pytest
-
-import importlib.util
-import sys
-from pathlib import Path
-import types
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "demibot"))
-
-structlog_stub = types.SimpleNamespace(
-    processors=types.SimpleNamespace(
-        TimeStamper=lambda fmt=None: None,
-        add_log_level=lambda *a, **k: None,
-        EventRenamer=lambda *a, **k: None,
-        JSONRenderer=lambda *a, **k: None,
-    ),
-    make_filtering_bound_logger=lambda *a, **k: None,
-    stdlib=types.SimpleNamespace(LoggerFactory=lambda: None),
-    configure=lambda *a, **k: None,
-    get_logger=lambda *a, **k: None,
-)
-sys.modules.setdefault("structlog", structlog_stub)
 
 from demibot.db.session import init_db, get_session
 import demibot.db.session as db_session
 from demibot.db.models import User, SyncshellPairing
 from demibot.http.deps import RequestContext
 
-syncshell_path = (
-    Path(__file__).resolve().parents[1] / "demibot" / "demibot" / "http" / "routes" / "syncshell.py"
-)
-spec = importlib.util.spec_from_file_location(
-    "demibot.http.routes.syncshell", syncshell_path
-)
-syncshell = importlib.util.module_from_spec(spec)
-sys.modules["demibot.http.routes.syncshell"] = syncshell
-spec.loader.exec_module(syncshell)
+from .syncshell_import import syncshell
+from .syncshell_test_utils import build_manifest_payload
 
 
 async def _prepare_db():
@@ -45,7 +18,7 @@ async def _prepare_db():
     return get_session()
 
 
-def test_pair_token_persistence_and_expiry():
+def test_pair_token_persistence_and_expiry(tmp_path):
     async def _run():
         session_factory = await _prepare_db()
         async with session_factory as db:
@@ -54,20 +27,24 @@ def test_pair_token_persistence_and_expiry():
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
             syncshell.TOKEN_TTL = 1
             resp = await syncshell.pair(ctx=ctx, db=db)
             token = resp["token"]
             pairing = await db.get(SyncshellPairing, user.id)
             assert pairing and pairing.token == token
 
+            manifest, _ = build_manifest_payload(tmp_path)
+            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+
             await asyncio.sleep(1.1)
             with pytest.raises(syncshell.HTTPException) as exc:
-                await syncshell.upload_manifest([], ctx=ctx, db=db)
+                await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert exc.value.status_code == 401
     asyncio.run(_run())
 
 
-def test_manifest_rate_limit():
+def test_manifest_rate_limit(tmp_path):
     async def _run():
         session_factory = await _prepare_db()
         async with session_factory as db:
@@ -76,16 +53,18 @@ def test_manifest_rate_limit():
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
             syncshell.RATE_LIMIT = 2
             await syncshell.pair(ctx=ctx, db=db)
-            await syncshell.upload_manifest([], ctx=ctx, db=db)
+            manifest, _ = build_manifest_payload(tmp_path)
+            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             with pytest.raises(syncshell.HTTPException) as exc:
-                await syncshell.upload_manifest([], ctx=ctx, db=db)
+                await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert exc.value.status_code == 429
     asyncio.run(_run())
 
 
-def test_manifest_too_large():
+def test_manifest_too_large(tmp_path):
     async def _run():
         session_factory = await _prepare_db()
         async with session_factory as db:
@@ -96,14 +75,15 @@ def test_manifest_too_large():
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
             syncshell.MAX_MANIFEST_BYTES = 10
             await syncshell.pair(ctx=ctx, db=db)
-            big_manifest = [{"id": "a" * 20}]
+            big_manifest, _ = build_manifest_payload(tmp_path)
+            big_manifest.setdefault("meta", []).append({"key": "x", "value": "y" * 50})
             with pytest.raises(syncshell.HTTPException) as exc:
                 await syncshell.upload_manifest(big_manifest, ctx=ctx, db=db)
             assert exc.value.status_code == 413
     asyncio.run(_run())
 
 
-def test_asset_upload_download_and_rate_limit():
+def test_asset_upload_download_and_rate_limit(tmp_path):
     async def _run():
         session_factory = await _prepare_db()
         async with session_factory as db:
@@ -112,7 +92,8 @@ def test_asset_upload_download_and_rate_limit():
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
-            syncshell.RATE_LIMIT = 3
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
+            syncshell.RATE_LIMIT = 4
 
             async def fake_upload():
                 return "upload-url"
@@ -124,6 +105,8 @@ def test_asset_upload_download_and_rate_limit():
             syncshell.presign_download = fake_download
 
             await syncshell.pair(ctx=ctx, db=db)
+            manifest, _ = build_manifest_payload(tmp_path)
+            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             up = await syncshell.request_asset_upload(ctx=ctx, db=db)
             assert up["url"] == "upload-url"
             down = await syncshell.request_asset_download("x", ctx=ctx, db=db)
