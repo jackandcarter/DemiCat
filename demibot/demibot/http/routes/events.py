@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, NamedTuple
+from typing import Any, Dict, List, Optional, NamedTuple, Sequence
+
+import io
+import mimetypes
 
 import copy
 import re
@@ -35,6 +39,7 @@ from ...db.models import (
 from ._user_display import compute_creator_base_name, build_creator_label
 from ..discord_allowed_mentions import ALLOWED_MENTIONS
 from ._messages_common import _send_via_webhook, _role_set
+from ..event_images import event_image_library
 from models.event import Event
 
 router = APIRouter(prefix="/api")
@@ -147,6 +152,127 @@ class CreateEventBody(BaseModel):
         return dt
 
 
+@dataclass
+class PreparedEventImageUpload:
+    kind: str
+    filename: str
+    data: bytes
+    content_type: str | None = None
+
+
+def _normalize_filename(
+    name: str | None,
+    *,
+    fallback: str,
+    content_type: str | None,
+) -> str:
+    base = (name or fallback).strip() or fallback
+    if "." not in base:
+        guessed = mimetypes.guess_extension(content_type or "") or ".png"
+        base = f"{base}{guessed}"
+    return base
+
+
+def _unique_filename(name: str, used: set[str]) -> str:
+    candidate = name
+    counter = 1
+    while candidate in used:
+        if "." in name:
+            stem, ext = name.rsplit(".", 1)
+            candidate = f"{stem}_{counter}.{ext}"
+        else:
+            candidate = f"{name}_{counter}"
+        counter += 1
+    used.add(candidate)
+    return candidate
+
+
+async def _prepare_event_image_uploads(
+    body: "CreateEventBody",
+) -> tuple[list[PreparedEventImageUpload], dict[str, str]]:
+    uploads: list[PreparedEventImageUpload] = []
+    overrides: dict[str, str] = {}
+    used_names: set[str] = set()
+    specs = [
+        ("image_id", "image_url", "image_filename", "image_content_type", "image"),
+        (
+            "thumbnail_id",
+            "thumbnail_url",
+            "thumbnail_filename",
+            "thumbnail_content_type",
+            "thumbnail",
+        ),
+    ]
+
+    for id_attr, url_attr, filename_attr, content_type_attr, kind in specs:
+        image_id = getattr(body, id_attr)
+        if not image_id:
+            continue
+        image = await event_image_library.resolve(image_id)
+        if image is None:
+            logger.warning(
+                "Event image missing",
+                extra={"image_id": image_id, "image_kind": kind, "channel_id": body.channel_id},
+            )
+            continue
+        try:
+            data = image.read()
+        except Exception:  # pragma: no cover - defensive logging
+            logger.exception(
+                "Failed to read event image",
+                extra={"image_id": image_id, "image_kind": kind, "channel_id": body.channel_id},
+            )
+            continue
+        if not data:
+            logger.warning(
+                "Event image empty",
+                extra={"image_id": image_id, "image_kind": kind, "channel_id": body.channel_id},
+            )
+            continue
+
+        content_type = getattr(body, content_type_attr) or image.content_type
+        fallback_name = f"{kind}-{image_id}"
+        candidate_name = _normalize_filename(
+            getattr(body, filename_attr) or image.filename,
+            fallback=fallback_name,
+            content_type=content_type,
+        )
+        filename = _unique_filename(candidate_name, used_names)
+        uploads.append(
+            PreparedEventImageUpload(
+                kind=kind,
+                filename=filename,
+                data=data,
+                content_type=content_type,
+            )
+        )
+        overrides[url_attr] = f"attachment://{filename}"
+
+    return uploads, overrides
+
+
+def _uploads_to_discord_files(
+    uploads: Sequence[PreparedEventImageUpload],
+) -> list[discord.File]:
+    files: list[discord.File] = []
+    for upload in uploads:
+        buffer = io.BytesIO(upload.data)
+        discord_file = discord.File(buffer, filename=upload.filename)
+        if upload.content_type:
+            discord_file.content_type = upload.content_type
+        files.append(discord_file)
+    return files
+
+
+def _attachments_to_dicts(
+    attachments: Sequence[AttachmentDto],
+) -> list[dict[str, Any]]:
+    return [
+        att.model_dump(mode="json", by_alias=True, exclude_none=True)
+        for att in attachments
+    ]
+
+
 class FormattedEvent(NamedTuple):
     embed: discord.Embed
     content: str | None
@@ -189,7 +315,7 @@ async def create_event(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
-    eid = str(int(datetime.utcnow().timestamp() * 1000))
+    eid = str(int(datetime.now(timezone.utc).timestamp() * 1000))
     channel_id = int(body.channel_id)
     roles = _role_set(ctx)
     logger.debug(
@@ -217,7 +343,14 @@ async def create_event(
         mention_ids = [m for m in mention_ids if m in allowed]
 
     creator_label = await _resolve_creator_label(ctx, db)
+    uploads, overrides = await _prepare_event_image_uploads(body)
     formatted = format_event_embed(body, timestamp=ts, mention_ids=mention_ids)
+    image_override = overrides.get("image_url")
+    thumbnail_override = overrides.get("thumbnail_url")
+    if image_override:
+        formatted.embed.set_image(url=image_override)
+    if thumbnail_override:
+        formatted.embed.set_thumbnail(url=thumbnail_override)
     buttons = formatted.buttons
 
     if creator_label:
@@ -273,7 +406,8 @@ async def create_event(
     )
 
     discord_msg_id: int | None = None
-    sent: discord.Message | None = None
+    sent_message: discord.Message | None = None
+    webhook_attachments: list[AttachmentDto] | None = None
     if discord_client:
         channel = discord_client.get_channel(channel_id)
         if channel is None:
@@ -376,7 +510,7 @@ async def create_event(
                     },
                 )
                 if thread_obj:
-                    msg_id, _, _, _ = await _send_via_webhook(
+                    msg_id, webhook_attachments, _, _, webhook_message = await _send_via_webhook(
                         channel=base_channel,
                         channel_id=base_channel.id,
                         guild_id=ctx.guild.id,
@@ -384,33 +518,42 @@ async def create_event(
                         content=content or "",
                         username="DemiCat",
                         avatar=None,
-                        files=None,
-                        embed=emb,
+                        files=_uploads_to_discord_files(uploads)
+                        if uploads
+                        else None,
+                        embeds=[emb],
                         view=view,
                         db=db,
                         thread=thread_obj,
                     )
                     if msg_id is None:
-                        sent = await api_call_with_retries(
+                        sent_message = await api_call_with_retries(
                             base_channel.send,
                             content=content,
                             embed=emb,
                             view=view,
                             allowed_mentions=ALLOWED_MENTIONS,
                             thread=thread_obj,
+                            files=_uploads_to_discord_files(uploads)
+                            if uploads
+                            else None,
                         )
-                        discord_msg_id = sent.id
+                        discord_msg_id = sent_message.id
                     else:
                         discord_msg_id = msg_id
+                        sent_message = webhook_message
                 else:
-                    sent = await api_call_with_retries(
+                    sent_message = await api_call_with_retries(
                         base_channel.send,
                         content=content,
                         embed=emb,
                         view=view,
                         allowed_mentions=ALLOWED_MENTIONS,
+                        files=_uploads_to_discord_files(uploads)
+                        if uploads
+                        else None,
                     )
-                    discord_msg_id = sent.id
+                    discord_msg_id = sent_message.id
                 logger.info(
                     "Discord API response received",
                     extra={
@@ -441,23 +584,35 @@ async def create_event(
                         status_code=502,
                     )
                 raise
-            if sent and sent.embeds:
-                stored_embeds = [e.to_dict() for e in sent.embeds]
+            if sent_message and sent_message.embeds:
+                stored_embeds = [e.to_dict() for e in sent_message.embeds]
             elif stored_embeds is None and discord_msg_id:
                 stored_embeds = [emb.to_dict()]
-            if sent and sent.attachments and stored_attachments is None:
-                stored_attachments = [
-                    {
-                        "url": a.url,
-                        "filename": a.filename,
-                        "contentType": a.content_type,
-                        "size": getattr(a, "size", None),
-                    }
-                    for a in sent.attachments
-                ]
+            if sent_message and sent_message.attachments:
+                stored_attachments = _attachments_to_dicts(
+                    [
+                        AttachmentDto(
+                            url=a.url,
+                            filename=a.filename,
+                            content_type=a.content_type,
+                            size=getattr(a, "size", None),
+                        )
+                        for a in sent_message.attachments
+                    ]
+                )
+            elif webhook_attachments:
+                stored_attachments = _attachments_to_dicts(webhook_attachments)
 
     if stored_embeds:
         stored_embeds = _apply_footer_to_embeds(stored_embeds, creator_label)
+        first_embed = stored_embeds[0] if stored_embeds else None
+        if isinstance(first_embed, dict):
+            image_data = first_embed.get("image")
+            if isinstance(image_data, dict):
+                dto.image_url = image_data.get("url") or dto.image_url
+            thumbnail_data = first_embed.get("thumbnail")
+            if isinstance(thumbnail_data, dict):
+                dto.thumbnail_url = thumbnail_data.get("url") or dto.thumbnail_url
 
     if discord_msg_id is not None:
         eid = str(discord_msg_id)
@@ -578,7 +733,10 @@ async def create_event(
             },
         )
     await emit_event({"channel": channel_id, "op": "ec", "d": payload})
-    return {"ok": True, "id": eid}
+    response: dict[str, Any] = {"ok": True, "id": eid}
+    if stored_attachments:
+        response["attachments"] = stored_attachments
+    return response
 
 
 @router.get("/events")
@@ -672,7 +830,7 @@ async def rsvp_event(
                 if count >= limit:
                     return JSONResponse({"error": "Full"}, status_code=400)
             row.choice = tag
-            row.created_at = datetime.utcnow()
+            row.created_at = datetime.now(timezone.utc)
         elif row is None:
             limit = limits.get(tag)
             if limit is not None:
@@ -688,7 +846,7 @@ async def rsvp_event(
                     discord_message_id=message_id,
                     user_id=ctx.user.id,
                     choice=tag,
-                    created_at=datetime.utcnow(),
+                    created_at=datetime.now(timezone.utc),
                 )
             )
     await db.commit()

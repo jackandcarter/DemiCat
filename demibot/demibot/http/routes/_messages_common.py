@@ -649,7 +649,13 @@ async def _send_via_webhook(
     view: discord.ui.View | None = None,
     db: AsyncSession,
     thread: discord.abc.Snowflake | None = None,
-) -> tuple[int | None, list[AttachmentDto] | None, list[str], str | None]:
+) -> tuple[
+    int | None,
+    list[AttachmentDto] | None,
+    list[str],
+    str | None,
+    discord.Message | None,
+]:
     """Send a message via a channel webhook.
 
     ``channel`` should be the channel owning the webhook.  When ``thread`` is
@@ -976,7 +982,7 @@ async def _send_via_webhook(
             for a in sent.attachments
         ]
 
-    return discord_msg_id, attachments, errors, webhook_url
+    return discord_msg_id, attachments, errors, webhook_url, sent
 
 
 class PostBody(BaseModel):
@@ -1308,7 +1314,13 @@ async def save_message(
         username = f"{username_base} / {ctx.user.character_name}@FFXIV FC"
     username = username[:80]
 
-    discord_msg_id, attachments, webhook_errors, webhook_url = await _send_via_webhook(
+    (
+        discord_msg_id,
+        attachments,
+        webhook_errors,
+        webhook_url,
+        _,
+    ) = await _send_via_webhook(
         channel=base_channel,
         channel_id=getattr(base_channel, "id", cid),
         guild_id=ctx.guild.id,
