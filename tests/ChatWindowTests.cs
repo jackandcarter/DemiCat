@@ -68,4 +68,43 @@ public class ChatWindowTests
 
         Assert.Equal("Hello @​Admin", result);
     }
+
+    [Fact]
+    public void MentionResolver_RecognizesExistingMentionTokens()
+    {
+        var presences = new[] { new PresenceDto { Id = "1", Name = "Alice" } };
+        var roles = new[] { new RoleDto { Id = "2", Name = "Admin" } };
+        var input = "Hello <@1> and <@&2> and <@1>";
+
+        var result = MentionResolver.ResolveDetailed(input, presences, roles);
+
+        Assert.Equal(input, result.Content);
+        Assert.Collection(result.Mentions,
+            mention =>
+            {
+                Assert.Equal("1", mention.Id);
+                Assert.Equal("user", mention.Type);
+            },
+            mention =>
+            {
+                Assert.Equal("2", mention.Id);
+                Assert.Equal("role", mention.Type);
+            });
+    }
+
+    [Fact]
+    public void MentionResolver_UsesMetadataWhenPresent()
+    {
+        var presences = new[] { new PresenceDto { Id = "1", Name = "Alice" } };
+        var roles = new[] { new RoleDto { Id = "2", Name = "Admin" } };
+        const char metadata = '\u2063';
+        var input = $"Hello @Alice{metadata}<@1> and @Admin{metadata}<@&2>.";
+
+        var result = MentionResolver.ResolveDetailed(input, presences, roles);
+
+        Assert.Equal("Hello <@1> and <@&2>.", result.Content);
+        Assert.Collection(result.Mentions,
+            mention => Assert.Equal("1", mention.Id),
+            mention => Assert.Equal("2", mention.Id));
+    }
 }
