@@ -1835,9 +1835,10 @@ public class ChatWindow : IDisposable
         _selectionEnd = end;
         InsertTextAtSelection(mentionText);
 
-        if (!needsSpace && _selectionEnd < _input.Length && char.IsWhiteSpace(_input[_selectionEnd]))
+        var updatedInput = _input ?? string.Empty;
+        if (!needsSpace && _selectionEnd < updatedInput.Length && char.IsWhiteSpace(updatedInput[_selectionEnd]))
         {
-            var caret = Math.Min(_input.Length, _selectionEnd + 1);
+            var caret = Math.Min(updatedInput.Length, _selectionEnd + 1);
             _selectionStart = _selectionEnd = caret;
         }
 
