@@ -270,6 +270,48 @@ public class SettingsWindow : IDisposable
     {
         var fadeOutEnabled = _config.ChatFadeOutEnabled;
 
+        ImGui.TextUnformatted("Chat Options");
+        ImGui.Spacing();
+
+        var chatFontScale = _config.ChatFontScale;
+        if (ImGui.SliderFloat("Chat Font Scale", ref chatFontScale, Config.MinChatFontScale, Config.MaxChatFontScale, "%.2fx"))
+        {
+            chatFontScale = Math.Clamp(chatFontScale, Config.MinChatFontScale, Config.MaxChatFontScale);
+            if (Math.Abs(chatFontScale - _config.ChatFontScale) > 0.0001f)
+            {
+                _config.ChatFontScale = chatFontScale;
+                SaveConfig();
+                RefreshChatWindows();
+            }
+        }
+
+        var autoStretch = _config.ChatImageAutoStretch;
+        if (ImGui.Checkbox("Auto-stretch chat images", ref autoStretch))
+        {
+            _config.ChatImageAutoStretch = autoStretch;
+            SaveConfig();
+            RefreshChatWindows();
+        }
+
+        var manualImageScale = _config.ChatImageManualScale;
+        ImGui.BeginDisabled(autoStretch);
+        var manualScaleChanged = ImGui.SliderFloat("Manual Image Scale", ref manualImageScale, Config.MinChatImageScale, Config.MaxChatImageScale, "%.2fx");
+        ImGui.EndDisabled();
+        if (autoStretch && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+            ImGui.SetTooltip("Disable auto-stretch to adjust manual image scale.");
+        if (manualScaleChanged)
+        {
+            manualImageScale = Math.Clamp(manualImageScale, Config.MinChatImageScale, Config.MaxChatImageScale);
+            if (Math.Abs(manualImageScale - _config.ChatImageManualScale) > 0.0001f)
+            {
+                _config.ChatImageManualScale = manualImageScale;
+                SaveConfig();
+                RefreshChatWindows();
+            }
+        }
+
+        ImGui.Spacing();
+
         ImGui.BeginDisabled(fadeOutEnabled);
         var fcOpacity = _config.FcChatOpacity * 100f;
         if (ImGui.SliderFloat("FC Chat Opacity", ref fcOpacity, 0f, 100f, "%.0f%%"))
@@ -294,6 +336,7 @@ public class SettingsWindow : IDisposable
         if (fadeOutEnabled && ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
             ImGui.SetTooltip("Disable fade-out to adjust per-tab opacity.");
 
+        ImGui.NewLine();
         ImGui.Separator();
 
         if (ImGui.Checkbox("Enable fade-out", ref fadeOutEnabled))
@@ -342,6 +385,12 @@ public class SettingsWindow : IDisposable
         ImGui.SameLine();
         DrawFadePreview("##fadePreview", _config.ChatFadeOutMinimumAlpha);
         ImGui.EndDisabled();
+    }
+
+    private void RefreshChatWindows()
+    {
+        ChatWindow?.OnAppearanceSettingsChanged();
+        OfficerChatWindow?.OnAppearanceSettingsChanged();
     }
 
     private static void DrawFadePreview(string id, float alpha)
