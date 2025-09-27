@@ -16,6 +16,7 @@ public class ConfigDefaultsTests
         Assert.True(cfg.Officer);
         Assert.False(cfg.IsOfficerToken);
         Assert.False(cfg.FCSyncShell);
+        Assert.True(cfg.ShowSyncshellProgressOverlay);
     }
 
     [Fact]

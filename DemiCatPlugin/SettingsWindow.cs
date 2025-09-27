@@ -183,6 +183,22 @@ public class SettingsWindow : IDisposable
                 ImGui.SetTooltip("Link DemiCat to enable Syncshell.");
         }
 
+        var overlayVisible = _config.ShowSyncshellProgressOverlay;
+        var overlayDisabled = !_config.FCSyncShell;
+        if (overlayDisabled)
+            ImGui.BeginDisabled();
+        if (ImGui.Checkbox("Show Sync Progress Overlay", ref overlayVisible))
+        {
+            _config.ShowSyncshellProgressOverlay = overlayVisible;
+            SaveConfig();
+        }
+        if (overlayDisabled)
+        {
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Enable Syncshell to display transfer progress overlay.");
+        }
+
         var paused = !_config.Enabled;
         if (ImGui.Checkbox("Pause", ref paused))
         {

@@ -379,6 +379,7 @@ public sealed class SyncClient : IDisposable
 
         var download = new PeerDownloadState(peerId, manifest, missing);
         _downloads[peerId] = download;
+        PluginServices.Instance?.ProgressOverlay?.Update(peerId, download.ReceivedCount, download.TotalCount);
         TransferProgress?.Invoke(this, new TransferProgressEventArgs(peerId, download.ReceivedCount, download.TotalCount, TransferKind.Download));
 
         await SendWantBatchesAsync(socket, peerId, missing, token).ConfigureAwait(false);
@@ -400,6 +401,7 @@ public sealed class SyncClient : IDisposable
 
         var upload = _uploads.GetOrAdd(peerId, static _ => new PeerUploadState());
         upload.AddRequests(want);
+        PluginServices.Instance?.ProgressOverlay?.Update(peerId, upload.Completed, upload.Total);
         TransferProgress?.Invoke(this, new TransferProgressEventArgs(peerId, upload.Completed, upload.Total, TransferKind.Upload));
 
         foreach (var blob in want.Blobs)
@@ -451,6 +453,7 @@ public sealed class SyncClient : IDisposable
         if (_downloads.TryGetValue(peerId, out var download))
         {
             download.MarkReceived(hash!);
+            PluginServices.Instance?.ProgressOverlay?.Update(peerId, download.ReceivedCount, download.TotalCount);
             TransferProgress?.Invoke(this, new TransferProgressEventArgs(peerId, download.ReceivedCount, download.TotalCount, TransferKind.Download));
             if (download.IsComplete)
             {
@@ -467,6 +470,7 @@ public sealed class SyncClient : IDisposable
         var peerId = element.GetProperty("peerId").GetString() ?? "unknown";
         var received = element.TryGetProperty("received", out var recvElement) ? recvElement.GetInt32() : 0;
         var total = element.TryGetProperty("total", out var totalElement) ? totalElement.GetInt32() : 0;
+        PluginServices.Instance?.ProgressOverlay?.Update(peerId, received, total);
         TransferProgress?.Invoke(this, new TransferProgressEventArgs(peerId, received, total, TransferKind.Remote));
     }
 
@@ -616,6 +620,7 @@ public sealed class SyncClient : IDisposable
                 if (_uploads.TryGetValue(request.PeerId, out var uploadState))
                 {
                     uploadState.MarkSent(request.Hash, request.Chunk);
+                    PluginServices.Instance?.ProgressOverlay?.Update(request.PeerId, uploadState.Completed, uploadState.Total);
                     TransferProgress?.Invoke(this, new TransferProgressEventArgs(request.PeerId, uploadState.Completed, uploadState.Total, TransferKind.Upload));
                     if (uploadState.IsComplete)
                     {

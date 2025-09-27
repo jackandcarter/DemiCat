@@ -68,6 +68,8 @@ public class Config : IPluginConfiguration
     public bool IsOfficerToken { get; set; }
     [JsonPropertyName("fcSyncShell")]
     public bool FCSyncShell { get; set; } = false;
+    [JsonPropertyName("showSyncshellProgressOverlay")]
+    public bool ShowSyncshellProgressOverlay { get; set; } = true;
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
     [JsonPropertyName("mentionRoleIds")]
