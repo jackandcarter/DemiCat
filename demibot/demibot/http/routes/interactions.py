@@ -28,7 +28,13 @@ def summarize(att: Dict[str, List[str]], labels: Dict[str, str], order: List[str
     for key in order:
         people = att.get(key, [])
         label = labels.get(key, key.capitalize())
-        fields.append({"name": label, "value": ", ".join(people) if people else "—"})
+        fields.append(
+            {
+                "name": label,
+                "value": ", ".join(people) if people else "—",
+                "inline": True,
+            }
+        )
     return fields
 
 
