@@ -19,6 +19,8 @@ public class MainWindow : IDisposable
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
     private bool _templatesTabActive;
+    private bool _fcChatTabActive;
+    private bool _officerTabActive;
     private readonly HttpClient _httpClient;
     private const float FadeAlphaTolerance = 0.001f;
     private const float MinimumFadeDuration = 0.001f;
@@ -92,26 +94,43 @@ public class MainWindow : IDisposable
         var fadeAlpha = GetCurrentFadeAlpha();
         var fadeActive = _config.ChatFadeOutEnabled && fadeAlpha < 1f - FadeAlphaTolerance;
 
+        var fcTabPreviouslyActive = _fcChatTabActive && _chat is FcChatWindow;
+        var officerTabPreviouslyActive = _officerTabActive && HasOfficerAccess;
+
+        var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
+        var childBaseColor = AdjustBrightness(primaryColor, 0.9f);
+        var tabBaseColor = AdjustBrightness(primaryColor, 1.05f);
+        var tabActiveBaseColor = AdjustBrightness(primaryColor, 1.15f);
+        var tabHoveredBaseColor = AdjustBrightness(primaryColor, 1.25f);
+
+        var previousOpacityOverrideActive = !_config.ChatFadeOutEnabled && (fcTabPreviouslyActive || officerTabPreviouslyActive);
+
+        var styleAlpha = fadeAlpha;
+        if (!_config.ChatFadeOutEnabled)
+        {
+            styleAlpha = 1f;
+            if (fcTabPreviouslyActive)
+            {
+                styleAlpha = Math.Clamp(_config.FcChatOpacity, 0f, 1f);
+            }
+            else if (officerTabPreviouslyActive)
+            {
+                styleAlpha = Math.Clamp(_config.OfficerChatOpacity, 0f, 1f);
+            }
+        }
+
+        _fcChatTabActive = false;
+        _officerTabActive = false;
+
         if (_styleNeedsUpdate)
         {
             ApplyAccentColors();
             _styleNeedsUpdate = false;
         }
 
-        var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
-        var windowColor = WithAlpha(primaryColor, fadeAlpha);
-        var childColor = WithAlpha(AdjustBrightness(primaryColor, 0.9f), fadeAlpha);
-        var tabColor = WithAlpha(AdjustBrightness(primaryColor, 1.05f), fadeAlpha);
-        var tabActiveColor = WithAlpha(AdjustBrightness(primaryColor, 1.15f), fadeAlpha);
-        var tabHoveredColor = WithAlpha(AdjustBrightness(primaryColor, 1.25f), fadeAlpha);
-
         ImGui.SetNextWindowSize(new Vector2(800, 600), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(600, 400), new Vector2(float.MaxValue, float.MaxValue));
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, windowColor);
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, childColor);
-        ImGui.PushStyleColor(ImGuiCol.Tab, tabColor);
-        ImGui.PushStyleColor(ImGuiCol.TabActive, tabActiveColor);
-        ImGui.PushStyleColor(ImGuiCol.TabHovered, tabHoveredColor);
+        PushWindowOpacityStyles(primaryColor, childBaseColor, tabBaseColor, tabActiveBaseColor, tabHoveredBaseColor, styleAlpha);
 
         var styleAlphaPushed = false;
         if (fadeActive)
@@ -160,10 +179,24 @@ public class MainWindow : IDisposable
                 }
                 else if (ImGui.BeginTabItem("Events"))
                 {
+                    var resetStylesApplied = TryPushWindowOpacityOverride(
+                        previousOpacityOverrideActive,
+                        primaryColor,
+                        childBaseColor,
+                        tabBaseColor,
+                        tabActiveBaseColor,
+                        tabHoveredBaseColor,
+                        1f);
+
                     ImGui.BeginChild("##eventsArea", ImGui.GetContentRegionAvail(), false);
                     _ui.Draw();
                     ImGui.EndChild();
                     ImGui.EndTabItem();
+
+                    if (resetStylesApplied)
+                    {
+                        ImGui.PopStyleColor(5);
+                    }
                 }
 
                 if (!linked)
@@ -176,8 +209,22 @@ public class MainWindow : IDisposable
                 }
                 else if (ImGui.BeginTabItem("Create"))
                 {
+                    var resetStylesApplied = TryPushWindowOpacityOverride(
+                        previousOpacityOverrideActive,
+                        primaryColor,
+                        childBaseColor,
+                        tabBaseColor,
+                        tabActiveBaseColor,
+                        tabHoveredBaseColor,
+                        1f);
+
                     _create.Draw();
                     ImGui.EndTabItem();
+
+                    if (resetStylesApplied)
+                    {
+                        ImGui.PopStyleColor(5);
+                    }
                 }
 
                 if (!linked)
@@ -194,6 +241,15 @@ public class MainWindow : IDisposable
                     var templatesOpen = ImGui.BeginTabItem("Templates");
                     if (templatesOpen)
                     {
+                        var resetStylesApplied = TryPushWindowOpacityOverride(
+                            previousOpacityOverrideActive,
+                            primaryColor,
+                            childBaseColor,
+                            tabBaseColor,
+                            tabActiveBaseColor,
+                            tabHoveredBaseColor,
+                            1f);
+
                         if (!_templatesTabActive)
                         {
                             _templates.OnTabActivated();
@@ -201,6 +257,11 @@ public class MainWindow : IDisposable
                         _templatesTabActive = true;
                         _templates.Draw();
                         ImGui.EndTabItem();
+
+                        if (resetStylesApplied)
+                        {
+                            ImGui.PopStyleColor(5);
+                        }
                     }
                     else
                     {
@@ -218,8 +279,22 @@ public class MainWindow : IDisposable
                 }
                 else if (ImGui.BeginTabItem("Request Board"))
                 {
+                    var resetStylesApplied = TryPushWindowOpacityOverride(
+                        previousOpacityOverrideActive,
+                        primaryColor,
+                        childBaseColor,
+                        tabBaseColor,
+                        tabActiveBaseColor,
+                        tabHoveredBaseColor,
+                        1f);
+
                     _requestBoard.Draw();
                     ImGui.EndTabItem();
+
+                    if (resetStylesApplied)
+                    {
+                        ImGui.PopStyleColor(5);
+                    }
                 }
 
                 if (!linked)
@@ -235,8 +310,22 @@ public class MainWindow : IDisposable
                 }
                 else if (_config.FCSyncShell && _syncshell != null && ImGui.BeginTabItem("Syncshell"))
                 {
+                    var resetStylesApplied = TryPushWindowOpacityOverride(
+                        previousOpacityOverrideActive,
+                        primaryColor,
+                        childBaseColor,
+                        tabBaseColor,
+                        tabActiveBaseColor,
+                        tabHoveredBaseColor,
+                        1f);
+
                     _syncshell.Draw();
                     ImGui.EndTabItem();
+
+                    if (resetStylesApplied)
+                    {
+                        ImGui.PopStyleColor(5);
+                    }
                 }
 
                 if (_chat != null)
@@ -253,11 +342,30 @@ public class MainWindow : IDisposable
                     }
                     else if (ImGui.BeginTabItem(chatLabel))
                     {
-                        var applyChatOpacity = !_config.ChatFadeOutEnabled && _chat is FcChatWindow;
-                        if (applyChatOpacity)
+                        var overrideStylesApplied = false;
+                        if (_chat is FcChatWindow)
                         {
-                            var tabAlpha = Math.Clamp(_config.FcChatOpacity, 0f, 1f);
-                            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, tabAlpha);
+                            _fcChatTabActive = true;
+
+                            overrideStylesApplied = TryPushWindowOpacityOverride(
+                                !_config.ChatFadeOutEnabled,
+                                primaryColor,
+                                childBaseColor,
+                                tabBaseColor,
+                                tabActiveBaseColor,
+                                tabHoveredBaseColor,
+                                Math.Clamp(_config.FcChatOpacity, 0f, 1f));
+                        }
+                        else
+                        {
+                            overrideStylesApplied = TryPushWindowOpacityOverride(
+                                previousOpacityOverrideActive,
+                                primaryColor,
+                                childBaseColor,
+                                tabBaseColor,
+                                tabActiveBaseColor,
+                                tabHoveredBaseColor,
+                                1f);
                         }
 
                         ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
@@ -265,9 +373,9 @@ public class MainWindow : IDisposable
                         ImGui.EndChild();
                         ImGui.EndTabItem();
 
-                        if (applyChatOpacity)
+                        if (overrideStylesApplied)
                         {
-                            ImGui.PopStyleVar();
+                            ImGui.PopStyleColor(5);
                         }
                     }
                 }
@@ -287,21 +395,26 @@ public class MainWindow : IDisposable
                         var officerOpen = ImGui.BeginTabItem("Officer");
                         if (officerOpen)
                         {
-                            var applyOfficerOpacity = !_config.ChatFadeOutEnabled;
-                            if (applyOfficerOpacity)
-                            {
-                                var officerAlpha = Math.Clamp(_config.OfficerChatOpacity, 0f, 1f);
-                                ImGui.PushStyleVar(ImGuiStyleVar.Alpha, officerAlpha);
-                            }
+                            _officerTabActive = true;
+
+                            var overrideStylesApplied = false;
+                            overrideStylesApplied = TryPushWindowOpacityOverride(
+                                !_config.ChatFadeOutEnabled,
+                                primaryColor,
+                                childBaseColor,
+                                tabBaseColor,
+                                tabActiveBaseColor,
+                                tabHoveredBaseColor,
+                                Math.Clamp(_config.OfficerChatOpacity, 0f, 1f));
 
                             ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
                             _officer.Draw();
                             ImGui.EndChild();
                             ImGui.EndTabItem();
 
-                            if (applyOfficerOpacity)
+                            if (overrideStylesApplied)
                             {
-                                ImGui.PopStyleVar();
+                                ImGui.PopStyleColor(5);
                             }
                         }
                     }
@@ -422,6 +535,39 @@ public class MainWindow : IDisposable
         style.Colors[(int)ImGuiCol.Separator] = accent;
         style.Colors[(int)ImGuiCol.SeparatorHovered] = accentHovered;
         style.Colors[(int)ImGuiCol.SeparatorActive] = accentActive;
+    }
+
+    private static void PushWindowOpacityStyles(
+        Vector4 primaryColor,
+        Vector4 childBaseColor,
+        Vector4 tabBaseColor,
+        Vector4 tabActiveBaseColor,
+        Vector4 tabHoveredBaseColor,
+        float alpha)
+    {
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, WithAlpha(primaryColor, alpha));
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, WithAlpha(childBaseColor, alpha));
+        ImGui.PushStyleColor(ImGuiCol.Tab, WithAlpha(tabBaseColor, alpha));
+        ImGui.PushStyleColor(ImGuiCol.TabActive, WithAlpha(tabActiveBaseColor, alpha));
+        ImGui.PushStyleColor(ImGuiCol.TabHovered, WithAlpha(tabHoveredBaseColor, alpha));
+    }
+
+    private static bool TryPushWindowOpacityOverride(
+        bool condition,
+        Vector4 primaryColor,
+        Vector4 childBaseColor,
+        Vector4 tabBaseColor,
+        Vector4 tabActiveBaseColor,
+        Vector4 tabHoveredBaseColor,
+        float alpha)
+    {
+        if (!condition)
+        {
+            return false;
+        }
+
+        PushWindowOpacityStyles(primaryColor, childBaseColor, tabBaseColor, tabActiveBaseColor, tabHoveredBaseColor, alpha);
+        return true;
     }
 
     private static Vector4 AdjustBrightness(Vector4 color, float factor)
