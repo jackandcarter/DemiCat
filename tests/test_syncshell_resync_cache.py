@@ -4,22 +4,12 @@ from demibot.db.session import init_db, get_session
 import demibot.db.session as db_session
 from demibot.db.models import User, SyncshellManifest
 from demibot.http.deps import RequestContext
-import importlib.util
-import sys
-from pathlib import Path
 
-syncshell_path = (
-    Path(__file__).resolve().parents[1] / "demibot" / "demibot" / "http" / "routes" / "syncshell.py"
-)
-spec = importlib.util.spec_from_file_location(
-    "demibot.http.routes.syncshell", syncshell_path
-)
-syncshell = importlib.util.module_from_spec(spec)
-sys.modules["demibot.http.routes.syncshell"] = syncshell
-spec.loader.exec_module(syncshell)
+from .syncshell_import import syncshell
+from .syncshell_test_utils import build_manifest_payload
 
 
-def test_resync_and_cache_clear():
+def test_resync_and_cache_clear(tmp_path):
     async def _run():
         db_session._engine = None
         db_session._Session = None
@@ -30,7 +20,9 @@ def test_resync_and_cache_clear():
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
-            manifest = [{"id": "a"}]
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
+            syncshell.RATE_LIMIT = 5
+            manifest, _ = build_manifest_payload(tmp_path)
             await syncshell.pair(ctx=ctx, db=db)
             await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert await db.get(SyncshellManifest, 1) is not None
@@ -38,7 +30,8 @@ def test_resync_and_cache_clear():
             await syncshell.clear_cache(ctx=ctx, db=db)
             assert await db.get(SyncshellManifest, 1) is None
 
-            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            manifest2, _ = build_manifest_payload(tmp_path / "second")
+            await syncshell.upload_manifest(manifest2, ctx=ctx, db=db)
             assert await db.get(SyncshellManifest, 1) is not None
 
             await syncshell.resync(ctx=ctx, db=db)
