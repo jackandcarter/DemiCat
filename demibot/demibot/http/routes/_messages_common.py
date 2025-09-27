@@ -68,6 +68,7 @@ from ..schemas import (
     MessageReferenceDto,
 )
 from ..discord_allowed_mentions import ALLOWED_MENTIONS
+from ..upload_validation import is_allowed_image_upload
 from ..discord_helpers import serialize_message
 from ...bridge import BridgeUpload, build_bridge_message
 
@@ -1292,10 +1293,21 @@ async def save_message(
         if len(files) > MAX_ATTACHMENTS:
             raise HTTPException(status_code=400, detail="Too many attachments")
         for f in files:
+            filename = f.filename or "file"
+            content_type = getattr(f, "content_type", None)
+            if not is_allowed_image_upload(filename, content_type):
+                raise HTTPException(
+                    status_code=415,
+                    detail={
+                        "error": "unsupported_media_type",
+                        "filename": filename,
+                        "contentType": content_type or None,
+                    },
+                )
             data = await f.read()
             if len(data) > MAX_ATTACHMENT_SIZE:
-                raise HTTPException(status_code=400, detail=f"{f.filename} too large")
-            uploads_data.append((f.filename or "file", data, getattr(f, "content_type", None)))
+                raise HTTPException(status_code=400, detail=f"{filename} too large")
+            uploads_data.append((filename, data, content_type))
 
     bridge_content, embeds, uploads, nonce = build_bridge_message(
         content=body.content,

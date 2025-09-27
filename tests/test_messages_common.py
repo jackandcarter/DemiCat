@@ -332,7 +332,7 @@ def test_save_message_private_thread(monkeypatch):
                     return thread
 
             async def fake_send_via_webhook(**kwargs):
-                return None, None, ["webhook unavailable"], None
+                return None, None, ["webhook unavailable"], None, None
 
             monkeypatch.setattr(mc, "discord_client", DummyClient())
             monkeypatch.setattr(mc.discord, "Thread", DummyThread, raising=False)
@@ -1440,7 +1440,7 @@ def test_send_via_webhook_reuses_existing_url(monkeypatch):
 
                 monkeypatch.setattr(mc.discord, "Webhook", DummyWebhookCls)
 
-                msg_id, attachments, errors, used_url = await mc._send_via_webhook(
+                msg_id, attachments, errors, used_url, _ = await mc._send_via_webhook(
                     channel=None,
                     channel_id=channel_id,
                     guild_id=guild_id,
@@ -1657,7 +1657,7 @@ def test_webhook_recreation_on_404(monkeypatch):
 
             monkeypatch.setattr(mc, "create_webhook_for_channel", fake_create_webhook_for_channel)
 
-            msg_id, attachments, errors, used_url = await mc._send_via_webhook(
+            msg_id, attachments, errors, used_url, _ = await mc._send_via_webhook(
                 channel=None,
                 channel_id=channel_id,
                 guild_id=guild_id,
@@ -1752,7 +1752,7 @@ def test_send_via_webhook_thread_reuses_cached_url(monkeypatch):
 
                 monkeypatch.setattr(mc.discord, "Webhook", DummyWebhookCls)
 
-                msg_id, attachments, errors, used_url = await mc._send_via_webhook(
+                msg_id, attachments, errors, used_url, _ = await mc._send_via_webhook(
                     channel=None,
                     channel_id=parent_channel_id,
                     guild_id=guild_id,
@@ -1882,7 +1882,7 @@ def test_message_too_long(monkeypatch):
                 return None
 
             async def fake_webhook(**kwargs):
-                return 777, None, [], "https://webhook.example"
+                return 777, None, [], "https://webhook.example", None
 
             monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
             monkeypatch.setattr(mc, "_send_via_webhook", fake_webhook)
@@ -2064,7 +2064,7 @@ def test_multipart_message(monkeypatch):
                         types.SimpleNamespace(
                             url=f"http://example.com/{f.filename}",
                             filename=f.filename,
-                            content_type="text/plain",
+                            content_type="image/png",
                         )
                         for f in files
                     ]
@@ -2087,15 +2087,20 @@ def test_multipart_message(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             from fastapi import UploadFile
+            from starlette.datastructures import Headers
             import io
 
-            upload = UploadFile(filename="a.txt", file=io.BytesIO(b"hi"))
+            upload = UploadFile(
+                filename="a.png",
+                file=io.BytesIO(b"hi"),
+                headers=Headers({"content-type": "image/png"}),
+            )
             body = mc.PostBody(channel_id="123", content="hello")
             res = await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT, files=[upload])
             assert res["ok"] is True
 
             msg = (await db.execute(select(Message))).scalar_one()
-            assert "a.txt" in (msg.attachments_json or "")
+            assert "a.png" in (msg.attachments_json or "")
 
     asyncio.run(_run())
 
@@ -2292,7 +2297,7 @@ def test_save_message_http_fallback_failure(monkeypatch):
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
 
             async def failing_webhook(*args, **kwargs):
-                return None, None, ["Webhook boom"], None
+                return None, None, ["Webhook boom"], None, None
 
             class DummyHttp:
                 def __init__(self) -> None:
@@ -2413,7 +2418,7 @@ def test_channel_not_found_returns_error_details(monkeypatch):
             ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
 
             async def failing_webhook(*args, **kwargs):
-                return None, None, ["Webhook boom"], None
+                return None, None, ["Webhook boom"], None, None
 
             monkeypatch.setattr(mc, "_send_via_webhook", failing_webhook)
             monkeypatch.setattr(mc, "discord_client", None)
@@ -2478,17 +2483,61 @@ def test_attachment_validation(monkeypatch):
             monkeypatch.setattr(mc, "_channel_webhooks", {})
 
             from fastapi import UploadFile
+            from starlette.datastructures import Headers
             import io
 
             body = mc.PostBody(channel_id="123", content="hello")
 
-            uploads = [UploadFile(filename=f"{i}.txt", file=io.BytesIO(b"hi")) for i in range(11)]
+            uploads = []
+            for i in range(11):
+                upload = UploadFile(
+                    filename=f"{i}.png",
+                    file=io.BytesIO(b"hi"),
+                    headers=Headers({"content-type": "image/png"}),
+                )
+                uploads.append(upload)
             with pytest.raises(HTTPException):
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT, files=uploads)
 
-            big = UploadFile(filename="big.txt", file=io.BytesIO(b"x" * (25 * 1024 * 1024 + 1)))
+            big = UploadFile(
+                filename="big.png",
+                file=io.BytesIO(b"x" * (25 * 1024 * 1024 + 1)),
+                headers=Headers({"content-type": "image/png"}),
+            )
             with pytest.raises(HTTPException):
                 await mc.save_message(body, ctx, db, channel_kind=ChannelKind.FC_CHAT, files=[big])
+
+            invalid_type = UploadFile(
+                filename="note.txt",
+                file=io.BytesIO(b"hi"),
+                headers=Headers({"content-type": "text/plain"}),
+            )
+            with pytest.raises(HTTPException) as excinfo:
+                await mc.save_message(
+                    body,
+                    ctx,
+                    db,
+                    channel_kind=ChannelKind.FC_CHAT,
+                    files=[invalid_type],
+                )
+            assert excinfo.value.status_code == 415
+            assert excinfo.value.detail == {
+                "error": "unsupported_media_type",
+                "filename": "note.txt",
+                "contentType": "text/plain",
+            }
+
+            missing_type = UploadFile(
+                filename="fallback.png", file=io.BytesIO(b"hi")
+            )
+            result = await mc.save_message(
+                body,
+                ctx,
+                db,
+                channel_kind=ChannelKind.FC_CHAT,
+                files=[missing_type],
+            )
+            assert result["ok"] is True
 
     asyncio.run(_run())
 
@@ -2901,7 +2950,7 @@ def test_posted_message_mapping_and_webhook_usage(monkeypatch):
                 return None
 
             async def fake_webhook(**kwargs):
-                return 555, None, [], "http://webhook.example"
+                return 555, None, [], "http://webhook.example", None
 
             class DummyChannel:
                 id = 123
@@ -3032,7 +3081,7 @@ def test_bridge_nonce_persisted_and_reused(monkeypatch):
 
             async def fake_webhook(**kwargs):
                 webhook_calls.append(kwargs)
-                return 888, None, [], "https://webhook.example"
+                return 888, None, [], "https://webhook.example", None
 
             monkeypatch.setattr(mc, "discord_client", None)
             monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
