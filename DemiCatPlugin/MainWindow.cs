@@ -24,6 +24,7 @@ public class MainWindow : IDisposable
     private const float MinimumFadeDuration = 0.001f;
     private float _timeSinceLastInteraction;
     private float _fadeAlpha = 1f;
+    private bool _styleNeedsUpdate = true;
 
     public bool IsOpen;
     public bool HasOfficerAccess { get; set; }
@@ -91,13 +92,26 @@ public class MainWindow : IDisposable
         var fadeAlpha = GetCurrentFadeAlpha();
         var fadeActive = _config.ChatFadeOutEnabled && fadeAlpha < 1f - FadeAlphaTolerance;
 
+        if (_styleNeedsUpdate)
+        {
+            ApplyAccentColors();
+            _styleNeedsUpdate = false;
+        }
+
+        var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
+        var windowColor = WithAlpha(primaryColor, fadeAlpha);
+        var childColor = WithAlpha(AdjustBrightness(primaryColor, 0.9f), fadeAlpha);
+        var tabColor = WithAlpha(AdjustBrightness(primaryColor, 1.05f), fadeAlpha);
+        var tabActiveColor = WithAlpha(AdjustBrightness(primaryColor, 1.15f), fadeAlpha);
+        var tabHoveredColor = WithAlpha(AdjustBrightness(primaryColor, 1.25f), fadeAlpha);
+
         ImGui.SetNextWindowSize(new Vector2(800, 600), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(600, 400), new Vector2(float.MaxValue, float.MaxValue));
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, new Vector4(0.11f, 0.11f, 0.12f, fadeAlpha));
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, new Vector4(0.09f, 0.09f, 0.1f, fadeAlpha));
-        ImGui.PushStyleColor(ImGuiCol.Tab, new Vector4(0.15f, 0.15f, 0.16f, fadeAlpha));
-        ImGui.PushStyleColor(ImGuiCol.TabActive, new Vector4(0.2f, 0.2f, 0.21f, fadeAlpha));
-        ImGui.PushStyleColor(ImGuiCol.TabHovered, new Vector4(0.25f, 0.25f, 0.26f, fadeAlpha));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, windowColor);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, childColor);
+        ImGui.PushStyleColor(ImGuiCol.Tab, tabColor);
+        ImGui.PushStyleColor(ImGuiCol.TabActive, tabActiveColor);
+        ImGui.PushStyleColor(ImGuiCol.TabHovered, tabHoveredColor);
 
         var styleAlphaPushed = false;
         if (fadeActive)
@@ -309,6 +323,11 @@ public class MainWindow : IDisposable
         UpdateFadeState(interacted, deltaTime);
     }
 
+    public void OnAppearanceSettingsChanged()
+    {
+        _styleNeedsUpdate = true;
+    }
+
     public void ResetEventCreateRoles()
     {
         _create.ResetRoles();
@@ -388,5 +407,34 @@ public class MainWindow : IDisposable
         {
             Instance = null;
         }
+    }
+
+    private void ApplyAccentColors()
+    {
+        var style = ImGui.GetStyle();
+        var accent = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
+        var accentHovered = AdjustBrightness(accent, 1.1f);
+        var accentActive = AdjustBrightness(accent, 1.2f);
+
+        style.Colors[(int)ImGuiCol.ScrollbarGrab] = accent;
+        style.Colors[(int)ImGuiCol.ScrollbarGrabHovered] = accentHovered;
+        style.Colors[(int)ImGuiCol.ScrollbarGrabActive] = accentActive;
+        style.Colors[(int)ImGuiCol.Separator] = accent;
+        style.Colors[(int)ImGuiCol.SeparatorHovered] = accentHovered;
+        style.Colors[(int)ImGuiCol.SeparatorActive] = accentActive;
+    }
+
+    private static Vector4 AdjustBrightness(Vector4 color, float factor)
+    {
+        return new Vector4(
+            Math.Clamp(color.X * factor, 0f, 1f),
+            Math.Clamp(color.Y * factor, 0f, 1f),
+            Math.Clamp(color.Z * factor, 0f, 1f),
+            color.W);
+    }
+
+    private static Vector4 WithAlpha(Vector4 color, float alphaMultiplier)
+    {
+        return new Vector4(color.X, color.Y, color.Z, Math.Clamp(color.W * alphaMultiplier, 0f, 1f));
     }
 }

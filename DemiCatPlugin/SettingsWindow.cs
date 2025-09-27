@@ -312,6 +312,37 @@ public class SettingsWindow : IDisposable
 
         ImGui.Spacing();
 
+        ImGui.TextUnformatted("Theme");
+        ImGui.Spacing();
+
+        var primaryColor = _config.PrimaryWindowColor;
+        if (ImGui.ColorEdit4("Primary window color", ref primaryColor))
+        {
+            var sanitized = Config.SanitizeColor(primaryColor, Config.DefaultPrimaryWindowColor);
+            if (!ColorsAlmostEqual(sanitized, _config.PrimaryWindowColor))
+            {
+                _config.PrimaryWindowColor = sanitized;
+                SaveConfig();
+                RefreshChatWindows();
+                MainWindow?.OnAppearanceSettingsChanged();
+            }
+        }
+
+        var secondaryColor = _config.SecondaryAccentColor;
+        if (ImGui.ColorEdit4("Secondary accent color", ref secondaryColor))
+        {
+            var sanitized = Config.SanitizeColor(secondaryColor, Config.DefaultSecondaryAccentColor);
+            if (!ColorsAlmostEqual(sanitized, _config.SecondaryAccentColor))
+            {
+                _config.SecondaryAccentColor = sanitized;
+                SaveConfig();
+                RefreshChatWindows();
+                MainWindow?.OnAppearanceSettingsChanged();
+            }
+        }
+
+        ImGui.Spacing();
+
         ImGui.BeginDisabled(fadeOutEnabled);
         var fcOpacity = _config.FcChatOpacity * 100f;
         if (ImGui.SliderFloat("FC Chat Opacity", ref fcOpacity, 0f, 100f, "%.0f%%"))
@@ -391,6 +422,11 @@ public class SettingsWindow : IDisposable
     {
         ChatWindow?.OnAppearanceSettingsChanged();
         OfficerChatWindow?.OnAppearanceSettingsChanged();
+    }
+
+    private static bool ColorsAlmostEqual(Vector4 a, Vector4 b)
+    {
+        return Vector4.DistanceSquared(a, b) <= 0.0001f;
     }
 
     private static void DrawFadePreview(string id, float alpha)
