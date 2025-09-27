@@ -21,6 +21,7 @@ import structlog
 
 from .ws import websocket_endpoint
 from .ws_chat import websocket_endpoint_chat
+from .ws_syncshell import websocket_endpoint_syncshell
 
 
 logger = structlog.get_logger()
@@ -71,6 +72,7 @@ def create_app() -> FastAPI:
     app.add_api_websocket_route("/ws/channels", websocket_endpoint)
     app.add_api_websocket_route("/ws/requests", websocket_endpoint)
     app.add_api_websocket_route("/ws/chat", websocket_endpoint_chat)
+    app.add_api_websocket_route("/ws/syncshell", websocket_endpoint_syncshell)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
