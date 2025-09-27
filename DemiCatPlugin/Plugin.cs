@@ -43,6 +43,7 @@ public class Plugin : IDalamudPlugin
     private readonly RequestWatcher _requestWatcher;
     private readonly ChannelSelectionService _channelSelection;
     private readonly EmojiManager _emojiManager;
+    private readonly ProgressOverlay _progressOverlay;
 
     private Config _config = null!;
     private readonly HttpClient _httpClient;
@@ -91,6 +92,9 @@ public class Plugin : IDalamudPlugin
         _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
 
+        _progressOverlay = new ProgressOverlay();
+        _services.ProgressOverlay = _progressOverlay;
+
         _presenceService = _config.SyncedChat && _config.EnableFcChat
             ? new DiscordPresenceService(_config, _httpClient)
             : null;
@@ -131,6 +135,7 @@ public class Plugin : IDalamudPlugin
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
+        _services.PluginInterface.UiBuilder.Draw += DrawOverlay;
 
         _openMainUi = () => _mainWindow.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
@@ -166,6 +171,7 @@ public class Plugin : IDalamudPlugin
         // Unsubscribe UI draw handlers
         _services.PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw -= _settings.Draw;
+        _services.PluginInterface.UiBuilder.Draw -= DrawOverlay;
 
         // Unsubscribe UI open handlers
         _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
@@ -189,6 +195,16 @@ public class Plugin : IDalamudPlugin
         _avatarCache.Dispose();
         _emojiManager.Dispose();
         _httpClient.Dispose();
+        if (PluginServices.Instance != null)
+        {
+            PluginServices.Instance.ProgressOverlay = null;
+        }
+    }
+
+    private void DrawOverlay()
+    {
+        _progressOverlay.IsVisible = _config.FCSyncShell && _config.ShowSyncshellProgressOverlay;
+        _progressOverlay.Draw();
     }
 
     private object? FetchWebTexture(string url, Action<ISharedImmediateTexture?> onReady)

@@ -37,6 +37,8 @@ internal class PluginServices
     [PluginService]
     internal IChatGui ChatGui { get; private set; } = null!;
 
+    internal ProgressOverlay? ProgressOverlay { get; set; }
+
     public PluginServices()
     {
         Instance = this;
