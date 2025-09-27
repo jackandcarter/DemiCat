@@ -87,6 +87,11 @@ public class ChatWindow : IDisposable
     private string _previewKey = string.Empty;
     private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
     private const string OldestRestCursorSuffix = ":oldest";
+    private const int MentionResultLimit = 20;
+    private const float MentionDrawerAnimationSpeed = 12f;
+    private const float MentionDrawerBaseOffset = 4f;
+    private const float MentionDrawerTravelDistance = 10f;
+    private MentionDrawerState? _mentionDrawerState;
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKind => _channelKind;
@@ -130,6 +135,53 @@ public class ChatWindow : IDisposable
         public string ImageUrl => $"https://cdn.discordapp.com/emojis/{Id}.{(Animated ? "gif" : "png")}";
     }
 
+    private sealed class MentionDrawerState
+    {
+        public bool Active;
+        public int TokenStart;
+        public int TokenEnd;
+        public string Query = string.Empty;
+        public List<MentionCandidate> Candidates { get; } = new();
+        public int HighlightedIndex = -1;
+        public float AnimationProgress;
+        public Vector2 AnchorMin;
+        public Vector2 AnchorMax;
+        public int SuppressedStart = -1;
+        public int SuppressedEnd = -1;
+        public string? SuppressedQuery;
+
+        public void ClearCandidates()
+        {
+            Candidates.Clear();
+            HighlightedIndex = -1;
+        }
+    }
+
+    private sealed class MentionCandidate
+    {
+        public MentionCandidate(MentionCandidateType type, string id, string name)
+        {
+            Type = type;
+            Id = id;
+            Name = name;
+        }
+
+        public MentionCandidateType Type { get; }
+        public string Id { get; }
+        public string Name { get; }
+        public string? Subtitle { get; set; }
+        public Vector4? AccentColor { get; set; }
+        public PresenceDto? Presence { get; set; }
+        public RoleDto? Role { get; set; }
+        public bool AvatarRequested { get; set; }
+    }
+
+    private enum MentionCandidateType
+    {
+        User,
+        Role
+    }
+
     public bool ChannelsLoaded
     {
         get => _channelsLoaded;
@@ -150,6 +202,7 @@ public class ChatWindow : IDisposable
     public Action<string?, Action<ISharedImmediateTexture?>> TextureLoader => LoadTexture;
 
     protected virtual string MessagesPath => "/api/messages";
+    protected virtual bool MentionsEnabled => false;
 
     public ChatWindow(
         Config config,
@@ -900,13 +953,33 @@ public class ChatWindow : IDisposable
             ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
             new ImGui.ImGuiInputTextCallbackDelegate(OnInputEdited)
         );
+        if (MentionsEnabled)
+        {
+            var mentionState = EnsureMentionDrawerState();
+            mentionState.AnchorMin = ImGui.GetItemRectMin();
+            mentionState.AnchorMax = ImGui.GetItemRectMax();
+        }
         _input = ImGuiTextUtil.ReadUtf8Buffer(inputBuf);
 
-        io = ImGui.GetIO();
-        var send = false;
-        if (ImGui.IsItemActive() && ImGui.IsKeyPressed(ImGuiKey.Enter))
+        var composerActive = ImGui.IsItemActive();
+        var inputEdited = ImGui.IsItemEdited();
+        if (MentionsEnabled)
         {
-            if (io.KeyShift)
+            UpdateMentionState(composerActive, inputEdited);
+        }
+
+        io = ImGui.GetIO();
+        var mentionHandledSubmit = MentionsEnabled && composerActive
+            ? HandleMentionKeys(io, composerActive)
+            : false;
+        var send = false;
+        if (composerActive && ImGui.IsKeyPressed(ImGuiKey.Enter))
+        {
+            if (mentionHandledSubmit)
+            {
+                // handled by mention drawer
+            }
+            else if (io.KeyShift)
             {
                 var start = Math.Min(_selectionStart, _selectionEnd);
                 var end = Math.Max(_selectionStart, _selectionEnd);
@@ -951,7 +1024,16 @@ public class ChatWindow : IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Send") || send)
         {
+            if (MentionsEnabled)
+            {
+                DismissMentionDrawer(immediate: true);
+            }
             _ = SendMessage();
+        }
+
+        if (MentionsEnabled)
+        {
+            DrawMentionDrawer();
         }
 
         if (!string.IsNullOrEmpty(_input) || _attachments.Count > 0)
@@ -1257,6 +1339,519 @@ public class ChatWindow : IDisposable
         _selectionStart = data.SelectionStart;
         _selectionEnd = data.SelectionEnd;
         return 0;
+    }
+
+    private MentionDrawerState EnsureMentionDrawerState()
+        => _mentionDrawerState ??= new MentionDrawerState();
+
+    private void UpdateMentionState(bool composerActive, bool inputEdited)
+    {
+        var input = _input ?? string.Empty;
+        var caret = Math.Clamp(Math.Min(_selectionStart, _selectionEnd), 0, input.Length);
+
+        if (!composerActive || _selectionStart != _selectionEnd)
+        {
+            DismissMentionDrawer();
+            return;
+        }
+
+        var token = FindMentionToken(input, caret);
+        if (!token.HasValue)
+        {
+            DismissMentionDrawer();
+            return;
+        }
+
+        var state = EnsureMentionDrawerState();
+        if (state.SuppressedQuery != null)
+        {
+            if (token.Value.Start == state.SuppressedStart &&
+                token.Value.End == state.SuppressedEnd &&
+                string.Equals(token.Value.Query, state.SuppressedQuery, StringComparison.Ordinal))
+            {
+                state.HighlightedIndex = -1;
+                state.Active = false;
+                return;
+            }
+
+            state.SuppressedStart = -1;
+            state.SuppressedEnd = -1;
+            state.SuppressedQuery = null;
+        }
+        var previousStart = state.TokenStart;
+        var previousEnd = state.TokenEnd;
+        var previousQuery = state.Query;
+
+        state.TokenStart = token.Value.Start;
+        state.TokenEnd = token.Value.End;
+        state.Query = token.Value.Query;
+
+        var shouldRefresh = inputEdited ||
+            state.Candidates.Count == 0 ||
+            previousStart != token.Value.Start ||
+            previousEnd != token.Value.End ||
+            !string.Equals(previousQuery, token.Value.Query, StringComparison.Ordinal);
+
+        if (shouldRefresh)
+        {
+            var matches = BuildMentionCandidates(token.Value.Query);
+            state.ClearCandidates();
+            state.Candidates.AddRange(matches);
+            state.HighlightedIndex = state.Candidates.Count > 0 ? 0 : -1;
+        }
+        else if (state.HighlightedIndex >= state.Candidates.Count)
+        {
+            state.HighlightedIndex = state.Candidates.Count - 1;
+        }
+
+        if (state.Candidates.Count == 0)
+        {
+            state.HighlightedIndex = -1;
+        }
+
+        state.Active = state.Candidates.Count > 0;
+    }
+
+    private bool HandleMentionKeys(ImGuiIOPtr io, bool composerActive)
+    {
+        var state = _mentionDrawerState;
+        if (state == null)
+        {
+            return false;
+        }
+
+        var hasCandidates = state.Active && state.Candidates.Count > 0;
+        if (!composerActive)
+        {
+            if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+            {
+                DismissMentionDrawer();
+                return true;
+            }
+
+            return false;
+        }
+
+        if (hasCandidates)
+        {
+            if (ImGui.IsKeyPressed(ImGuiKey.DownArrow))
+            {
+                var next = state.HighlightedIndex + 1;
+                if (next >= state.Candidates.Count)
+                {
+                    next = 0;
+                }
+                state.HighlightedIndex = Math.Max(0, next);
+            }
+            else if (ImGui.IsKeyPressed(ImGuiKey.UpArrow))
+            {
+                var prev = state.HighlightedIndex - 1;
+                if (prev < 0)
+                {
+                    prev = state.Candidates.Count - 1;
+                }
+                state.HighlightedIndex = Math.Max(0, prev);
+            }
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+        {
+            DismissMentionDrawer(suppress: true);
+            return true;
+        }
+
+        var inserted = false;
+        if (hasCandidates && ImGui.IsKeyPressed(ImGuiKey.Tab, repeat: false))
+        {
+            inserted = TryInsertHighlightedMention();
+        }
+        else if (hasCandidates && ImGui.IsKeyPressed(ImGuiKey.Enter) && !io.KeyShift)
+        {
+            inserted = TryInsertHighlightedMention();
+        }
+
+        return inserted;
+    }
+
+    private void DrawMentionDrawer()
+    {
+        var state = _mentionDrawerState;
+        if (state == null)
+        {
+            return;
+        }
+
+        var width = state.AnchorMax.X - state.AnchorMin.X;
+        if (width <= 0f)
+        {
+            return;
+        }
+
+        var target = state.Active && state.Candidates.Count > 0 ? 1f : 0f;
+        var delta = ImGui.GetIO().DeltaTime;
+        if (target > state.AnimationProgress)
+        {
+            state.AnimationProgress = Math.Min(1f, state.AnimationProgress + delta * MentionDrawerAnimationSpeed);
+        }
+        else
+        {
+            state.AnimationProgress = Math.Max(0f, state.AnimationProgress - delta * MentionDrawerAnimationSpeed);
+        }
+
+        if (state.AnimationProgress <= 0f)
+        {
+            if (!state.Active)
+            {
+                state.ClearCandidates();
+            }
+            return;
+        }
+
+        if (state.Candidates.Count == 0)
+        {
+            return;
+        }
+
+        var scale = ImGuiHelpers.GlobalScale;
+        var style = ImGui.GetStyle();
+        var position = new Vector2(state.AnchorMin.X, state.AnchorMax.Y + MentionDrawerBaseOffset * scale);
+        position.Y += (1f - state.AnimationProgress) * MentionDrawerTravelDistance * scale;
+
+        var flags = ImGuiWindowFlags.NoDecoration |
+                    ImGuiWindowFlags.NoMove |
+                    ImGuiWindowFlags.AlwaysAutoResize |
+                    ImGuiWindowFlags.NoSavedSettings |
+                    ImGuiWindowFlags.NoFocusOnAppearing |
+                    ImGuiWindowFlags.NoNavInputs |
+                    ImGuiWindowFlags.NoNav;
+
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(8f, 6f) * scale);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 6f * scale);
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, style.Colors[(int)ImGuiCol.PopupBg]);
+        ImGui.SetNextWindowPos(position);
+        ImGui.SetNextWindowSize(new Vector2(width, 0f));
+        ImGui.SetNextWindowBgAlpha(style.Alpha);
+        if (ImGui.Begin("##dc_mention_drawer", flags))
+        {
+            DrawMentionDrawerContents(state);
+        }
+        ImGui.End();
+        ImGui.PopStyleColor();
+        ImGui.PopStyleVar(2);
+    }
+
+    private void DrawMentionDrawerContents(MentionDrawerState state)
+    {
+        if (state.Candidates.Count == 0)
+        {
+            return;
+        }
+
+        MentionCandidateType? currentGroup = null;
+        var style = ImGui.GetStyle();
+
+        for (var i = 0; i < state.Candidates.Count; i++)
+        {
+            var candidate = state.Candidates[i];
+            if (currentGroup != candidate.Type)
+            {
+                if (i > 0)
+                {
+                    ImGui.Separator();
+                }
+
+                var header = candidate.Type == MentionCandidateType.User ? "Members" : "Roles";
+                ImGui.PushStyleColor(ImGuiCol.Text, style.Colors[(int)ImGuiCol.TextDisabled]);
+                ImGui.TextUnformatted(header);
+                ImGui.PopStyleColor();
+                currentGroup = candidate.Type;
+            }
+
+            DrawMentionCandidateRow(state, candidate, i);
+        }
+    }
+
+    private void DrawMentionCandidateRow(MentionDrawerState state, MentionCandidate candidate, int index)
+    {
+        var style = ImGui.GetStyle();
+        var avatarSize = ImGui.GetTextLineHeight() + style.FramePadding.Y;
+        var rowHeight = Math.Max(avatarSize + style.FramePadding.Y, ImGui.GetFrameHeight());
+
+        ImGui.PushID(index);
+        var selected = state.HighlightedIndex == index;
+        if (ImGui.Selectable("##mention_row", selected, ImGuiSelectableFlags.None, new Vector2(0f, rowHeight)))
+        {
+            state.HighlightedIndex = index;
+            InsertMentionCandidate(state, candidate);
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            state.HighlightedIndex = index;
+        }
+
+        var min = ImGui.GetItemRectMin();
+        var max = ImGui.GetItemRectMax();
+        var avatarPos = new Vector2(min.X + style.FramePadding.X, min.Y + style.FramePadding.Y);
+        var textPos = new Vector2(avatarPos.X + avatarSize + style.ItemSpacing.X, min.Y + style.FramePadding.Y);
+
+        DrawMentionAvatar(candidate, avatarPos, avatarSize);
+
+        ImGui.SetCursorScreenPos(textPos);
+        ImGui.BeginGroup();
+        if (candidate.AccentColor.HasValue)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, candidate.AccentColor.Value);
+            ImGui.TextUnformatted(candidate.Name);
+            ImGui.PopStyleColor();
+        }
+        else
+        {
+            ImGui.TextUnformatted(candidate.Name);
+        }
+
+        if (!string.IsNullOrEmpty(candidate.Subtitle))
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, style.Colors[(int)ImGuiCol.TextDisabled]);
+            ImGui.TextUnformatted(candidate.Subtitle);
+            ImGui.PopStyleColor();
+        }
+        ImGui.EndGroup();
+
+        ImGui.PopID();
+        ImGui.SetCursorScreenPos(new Vector2(min.X, max.Y));
+    }
+
+    private void DrawMentionAvatar(MentionCandidate candidate, Vector2 position, float size)
+    {
+        var textureSize = new Vector2(size, size);
+        var drawList = ImGui.GetWindowDrawList();
+        var style = ImGui.GetStyle();
+
+        if (candidate.Type == MentionCandidateType.User && candidate.Presence != null)
+        {
+            var presence = candidate.Presence;
+            if (!candidate.AvatarRequested && presence.AvatarTexture == null && !string.IsNullOrEmpty(presence.AvatarUrl))
+            {
+                candidate.AvatarRequested = true;
+                LoadTexture(presence.AvatarUrl, t => presence.AvatarTexture = t);
+            }
+
+            var wrap = presence.AvatarTexture?.GetWrapOrEmpty();
+            if (wrap != null && wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+            {
+                ImGui.SetCursorScreenPos(position);
+                ImGui.Image(wrap.Handle, textureSize);
+                return;
+            }
+        }
+
+        var accent = candidate.AccentColor ?? style.Colors[(int)ImGuiCol.FrameBgActive];
+        var color = ImGui.ColorConvertFloat4ToU32(accent);
+        var center = position + new Vector2(size * 0.5f, size * 0.5f);
+        drawList.AddCircleFilled(center, size * 0.5f, color);
+    }
+
+    private bool TryInsertHighlightedMention()
+    {
+        var state = _mentionDrawerState;
+        if (state == null)
+        {
+            return false;
+        }
+
+        if (state.HighlightedIndex < 0 || state.HighlightedIndex >= state.Candidates.Count)
+        {
+            return false;
+        }
+
+        InsertMentionCandidate(state, state.Candidates[state.HighlightedIndex]);
+        return true;
+    }
+
+    private void InsertMentionCandidate(MentionDrawerState state, MentionCandidate candidate)
+    {
+        var input = _input ?? string.Empty;
+        var start = Math.Clamp(state.TokenStart, 0, input.Length);
+        var end = Math.Clamp(state.TokenEnd, start, input.Length);
+        var needsSpace = end >= input.Length || !char.IsWhiteSpace(input[end]);
+        var mentionText = $"@{candidate.Name}" + (needsSpace ? " " : string.Empty);
+
+        _selectionStart = start;
+        _selectionEnd = end;
+        InsertTextAtSelection(mentionText);
+
+        if (!needsSpace && _selectionEnd < _input.Length && char.IsWhiteSpace(_input[_selectionEnd]))
+        {
+            var caret = Math.Min(_input.Length, _selectionEnd + 1);
+            _selectionStart = _selectionEnd = caret;
+        }
+
+        DismissMentionDrawer();
+    }
+
+    private void DismissMentionDrawer(bool immediate = false, bool suppress = false)
+    {
+        if (_mentionDrawerState == null)
+        {
+            return;
+        }
+
+        var state = _mentionDrawerState;
+        var lastStart = state.TokenStart;
+        var lastEnd = state.TokenEnd;
+        var lastQuery = state.Query;
+
+        state.Active = false;
+        state.Query = string.Empty;
+        state.TokenStart = 0;
+        state.TokenEnd = 0;
+        state.HighlightedIndex = -1;
+
+        if (suppress)
+        {
+            state.SuppressedStart = lastStart;
+            state.SuppressedEnd = lastEnd;
+            state.SuppressedQuery = lastQuery;
+        }
+        else
+        {
+            state.SuppressedStart = -1;
+            state.SuppressedEnd = -1;
+            state.SuppressedQuery = null;
+        }
+
+        if (immediate)
+        {
+            state.ClearCandidates();
+            state.AnimationProgress = 0f;
+        }
+    }
+
+    private List<MentionCandidate> BuildMentionCandidates(string query)
+    {
+        var filter = query?.Trim() ?? string.Empty;
+        var presences = _presence?.Presences ?? Array.Empty<PresenceDto>();
+        var users = new List<MentionCandidate>();
+
+        foreach (var presence in presences)
+        {
+            if (presence == null || string.IsNullOrWhiteSpace(presence.Name))
+                continue;
+
+            if (!IsMentionMatch(presence.Name, filter))
+                continue;
+
+            var candidate = new MentionCandidate(MentionCandidateType.User, presence.Id, presence.Name)
+            {
+                Presence = presence,
+                AccentColor = presence.AccentColor,
+                Subtitle = string.IsNullOrWhiteSpace(presence.StatusText) ? presence.Status : presence.StatusText
+            };
+            users.Add(candidate);
+        }
+
+        users.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+
+        var results = new List<MentionCandidate>();
+        foreach (var candidate in users)
+        {
+            results.Add(candidate);
+            if (results.Count >= MentionResultLimit)
+            {
+                return results;
+            }
+        }
+
+        if (_config.MentionRoleIds.Count > 0 && results.Count < MentionResultLimit)
+        {
+            var allowed = new HashSet<string>(_config.MentionRoleIds);
+            var roles = new List<MentionCandidate>();
+            foreach (var role in RoleCache.Roles)
+            {
+                if (!allowed.Contains(role.Id) || string.IsNullOrWhiteSpace(role.Name))
+                    continue;
+
+                if (!IsMentionMatch(role.Name, filter))
+                    continue;
+
+                roles.Add(new MentionCandidate(MentionCandidateType.Role, role.Id, role.Name) { Role = role });
+            }
+
+            roles.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+
+            foreach (var candidate in roles)
+            {
+                results.Add(candidate);
+                if (results.Count >= MentionResultLimit)
+                {
+                    break;
+                }
+            }
+        }
+
+        return results;
+    }
+
+    private static bool IsMentionMatch(string name, string query)
+    {
+        if (string.IsNullOrEmpty(query))
+        {
+            return true;
+        }
+
+        return name.Contains(query, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static MentionToken? FindMentionToken(string text, int caret)
+    {
+        if (string.IsNullOrEmpty(text) || caret <= 0 || caret > text.Length)
+        {
+            return null;
+        }
+
+        var index = caret - 1;
+        while (index >= 0)
+        {
+            var c = text[index];
+            if (c == '@')
+            {
+                if (index > 0 && !IsMentionBoundary(text[index - 1]))
+                {
+                    return null;
+                }
+
+                var query = text.Substring(index + 1, caret - (index + 1));
+                return new MentionToken(index, caret, query);
+            }
+
+            if (char.IsWhiteSpace(c) || c == '\r' || c == '\n')
+            {
+                break;
+            }
+
+            index--;
+        }
+
+        return null;
+    }
+
+    private static bool IsMentionBoundary(char c)
+        => char.IsWhiteSpace(c) ||
+           c is '(' or '[' or '{' or ')' or ']' or '}' or ',' or '.' or '!' or '?' or ':' or ';' or '"' or '\'' or '/' or '\\' or '>';
+
+    private readonly struct MentionToken
+    {
+        public MentionToken(int start, int end, string query)
+        {
+            Start = start;
+            End = end;
+            Query = query;
+        }
+
+        public int Start { get; }
+        public int End { get; }
+        public string Query { get; }
     }
 
     private void WrapSelection(string prefix, string suffix)

@@ -24,6 +24,8 @@ public class OfficerChatWindow : ChatWindow
     private readonly PresenceSidebar? _presenceSidebar;
     private float _presenceWidth = 200f;
 
+    protected override bool MentionsEnabled => true;
+
     public OfficerChatWindow(
         Config config,
         HttpClient httpClient,
