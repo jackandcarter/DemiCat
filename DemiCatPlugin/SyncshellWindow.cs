@@ -71,6 +71,13 @@ public class SyncshellWindow : IDisposable
     private DateTimeOffset? _lastManualChangeAt;
     private bool _disposed;
     private float _fileSizeLimitMb = 100f;
+    private long _sessionBytesDownloaded;
+    private long _sessionBytesReserved;
+    private readonly object _budgetLock = new();
+    private readonly Dictionary<string, string> _budgetReasons = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Queue<PendingDownload> _budgetQueue = new();
+    private readonly HashSet<string> _budgetQueueKeys = new(StringComparer.OrdinalIgnoreCase);
+    private string? _budgetStatusMessage;
     private bool _syncPaused;
     private DateTimeOffset? _lastResyncAt;
     private bool _peerSyncEnabled;
@@ -233,7 +240,32 @@ public class SyncshellWindow : IDisposable
             ImGui.SameLine();
             ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), GetManualPendingLabel());
         }
-        ImGui.SliderFloat("File-size limit (MB)", ref _fileSizeLimitMb, 100f, 5120f, "%.0f MB");
+        var limitChanged = ImGui.SliderFloat("File-size limit (MB)", ref _fileSizeLimitMb, 100f, 5120f, "%.0f MB");
+        long sessionBytes;
+        long reservedBytes;
+        long limitBytes;
+        string? budgetStatus;
+        lock (_budgetLock)
+        {
+            sessionBytes = _sessionBytesDownloaded;
+            reservedBytes = _sessionBytesReserved;
+            limitBytes = GetFileSizeLimitBytes();
+            budgetStatus = _budgetStatusMessage;
+        }
+
+        var usageLabel = reservedBytes > 0
+            ? $"Session usage: {FormatSize(sessionBytes)} / {FormatSize(limitBytes)} ({FormatSize(reservedBytes)} pending)"
+            : $"Session usage: {FormatSize(sessionBytes)} / {FormatSize(limitBytes)}";
+        ImGui.TextUnformatted(usageLabel);
+        if (!string.IsNullOrEmpty(budgetStatus))
+        {
+            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), budgetStatus);
+        }
+
+        if (limitChanged)
+        {
+            OnFileSizeLimitChanged();
+        }
         var peerSync = _peerSyncEnabled;
         if (ImGui.Checkbox("Enable Peer Sync", ref peerSync))
         {
@@ -322,6 +354,10 @@ public class SyncshellWindow : IDisposable
                         }
                     }
                 }
+            }
+            if (TryGetBudgetReason(asset.Id, out var budgetReason))
+            {
+                ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), budgetReason);
             }
             if (asset.Kind == "BUNDLE" && asset.Items != null)
             {
@@ -860,13 +896,25 @@ public class SyncshellWindow : IDisposable
         if (bundle.Items == null || bundle.Items.Count == 0)
             return;
 
+        if (!HasBudgetForBundle(bundle, out var bundleReason))
+        {
+            QueueBudgetDeferred(bundle, true, bundleReason ?? $"Deferred bundle {bundle.Name} due to download limit.");
+            return;
+        }
+
+        ClearBudgetReason(bundle.Id);
+
         var ordered = SortByDependencies(bundle.Items);
         var errors = new List<string>();
         foreach (var item in ordered)
         {
             var (ok, err) = await InstallAsset(item);
             if (!ok && err != null)
+            {
+                if (TryGetBudgetReason(item.Id, out _))
+                    continue;
                 errors.Add($"{item.Name}: {err}");
+            }
         }
 
         if (errors.Count > 0)
@@ -902,13 +950,22 @@ public class SyncshellWindow : IDisposable
 
     private async Task<(bool Success, string? Error)> InstallAsset(Asset asset)
     {
+        if (!_config.FCSyncShell)
+            return (false, "Sync disabled");
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+            return (false, "Invalid API URL");
+
+        var reservedBytes = GetAssetSize(asset);
+        if (!TryReserveBudget(asset, reservedBytes, out var budgetReason))
+        {
+            var message = budgetReason ?? $"Deferred {asset.Name} due to download limit.";
+            QueueBudgetDeferred(asset, false, message);
+            return (false, message);
+        }
+
+        var committed = false;
         try
         {
-            if (!_config.FCSyncShell)
-                return (false, "Sync disabled");
-            if (!ApiHelpers.ValidateApiBaseUrl(_config))
-                return (false, "Invalid API URL");
-
             var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
             var url = asset.DownloadUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
                 ? asset.DownloadUrl
@@ -936,6 +993,9 @@ public class SyncshellWindow : IDisposable
             resp.EnsureSuccessStatusCode();
             await using var fs = File.Create(tmp);
             await resp.Content.CopyToAsync(fs).ConfigureAwait(false);
+
+            CommitReservedBytes(reservedBytes);
+            committed = true;
 
             await UpdateInstallationStatus(asset.Id, "DOWNLOADED");
 
@@ -968,9 +1028,215 @@ public class SyncshellWindow : IDisposable
         }
         catch (Exception ex)
         {
+            if (!committed)
+                ReleaseReservedBytes(reservedBytes);
             PluginServices.Instance?.Log.Error(ex, $"Failed to install asset {asset.Id}");
             await UpdateInstallationStatus(asset.Id, "FAILED");
             return (false, ex.Message);
+        }
+    }
+
+    private static long GetAssetSize(Asset asset)
+        => asset.Size < 0 ? 0 : asset.Size;
+
+    private bool TryReserveBudget(Asset asset, long bytes, out string? reason)
+    {
+        if (bytes <= 0)
+        {
+            ClearBudgetReason(asset.Id);
+            reason = null;
+            return true;
+        }
+
+        lock (_budgetLock)
+        {
+            var limit = GetFileSizeLimitBytes();
+            if (bytes > limit)
+            {
+                reason = $"{asset.Name} is {FormatSize(bytes)}, exceeding the {FormatSize(limit)} download cap. Increase the file-size limit to download it.";
+                return false;
+            }
+
+            var used = _sessionBytesDownloaded + _sessionBytesReserved;
+            if (used + bytes > limit)
+            {
+                var remaining = Math.Max(0, limit - used);
+                var limitLabel = FormatSize(limit);
+                var usedLabel = FormatSize(used);
+                reason = remaining == 0
+                    ? $"Deferred {asset.Name}: download budget reached ({usedLabel} of {limitLabel} used). Increase the file-size limit to resume."
+                    : $"Deferred {asset.Name}: requires {FormatSize(bytes)} but only {FormatSize(remaining)} remains in the session budget. Increase the file-size limit to continue.";
+                return false;
+            }
+
+            _sessionBytesReserved += bytes;
+            _budgetReasons.Remove(asset.Id);
+            UpdateBudgetStatusMessageLocked();
+        }
+
+        reason = null;
+        return true;
+    }
+
+    private void QueueBudgetDeferred(Asset asset, bool isBundle, string reason)
+    {
+        var key = MakeBudgetQueueKey(asset.Id, isBundle);
+        lock (_budgetLock)
+        {
+            _budgetReasons[asset.Id] = reason;
+            if (_budgetQueueKeys.Add(key))
+                _budgetQueue.Enqueue(new PendingDownload(key, asset, isBundle));
+            _budgetStatusMessage = reason;
+        }
+    }
+
+    private void ClearBudgetReason(string assetId)
+    {
+        lock (_budgetLock)
+        {
+            if (_budgetReasons.Remove(assetId))
+                UpdateBudgetStatusMessageLocked();
+        }
+    }
+
+    private bool TryGetBudgetReason(string assetId, out string reason)
+    {
+        lock (_budgetLock)
+        {
+            return _budgetReasons.TryGetValue(assetId, out reason);
+        }
+    }
+
+    private void CommitReservedBytes(long bytes)
+    {
+        if (bytes <= 0)
+            return;
+
+        lock (_budgetLock)
+        {
+            _sessionBytesReserved = Math.Max(0, _sessionBytesReserved - bytes);
+            _sessionBytesDownloaded += bytes;
+            UpdateBudgetStatusMessageLocked();
+        }
+    }
+
+    private void ReleaseReservedBytes(long bytes)
+    {
+        if (bytes <= 0)
+            return;
+
+        var shouldProcess = false;
+        lock (_budgetLock)
+        {
+            _sessionBytesReserved = Math.Max(0, _sessionBytesReserved - bytes);
+            UpdateBudgetStatusMessageLocked();
+            shouldProcess = _budgetQueue.Count > 0;
+        }
+
+        if (shouldProcess)
+            ProcessBudgetQueue();
+    }
+
+    private bool HasBudgetForBundle(Asset bundle, out string? reason)
+    {
+        var bundleSize = GetAssetSize(bundle);
+        if (bundleSize <= 0 && bundle.Items != null)
+            bundleSize = bundle.Items.Sum(GetAssetSize);
+
+        if (bundleSize <= 0)
+        {
+            reason = null;
+            return true;
+        }
+
+        lock (_budgetLock)
+        {
+            var limit = GetFileSizeLimitBytes();
+            if (bundleSize > limit)
+            {
+                reason = $"Bundle {bundle.Name} is {FormatSize(bundleSize)}, exceeding the {FormatSize(limit)} download cap. Increase the file-size limit to download it.";
+                return false;
+            }
+
+            var used = _sessionBytesDownloaded + _sessionBytesReserved;
+            if (used + bundleSize > limit)
+            {
+                var remaining = Math.Max(0, limit - used);
+                var limitLabel = FormatSize(limit);
+                var usedLabel = FormatSize(used);
+                reason = remaining == 0
+                    ? $"Deferred bundle {bundle.Name}: download budget reached ({usedLabel} of {limitLabel} used). Increase the file-size limit to resume."
+                    : $"Deferred bundle {bundle.Name}: requires {FormatSize(bundleSize)} but only {FormatSize(remaining)} remains in the session budget. Increase the file-size limit to continue.";
+                return false;
+            }
+        }
+
+        reason = null;
+        return true;
+    }
+
+    private long GetFileSizeLimitBytes()
+        => (long)Math.Round(Math.Max(0f, _fileSizeLimitMb) * 1024f * 1024f);
+
+    private static string MakeBudgetQueueKey(string assetId, bool isBundle)
+        => isBundle ? $"bundle::{assetId}" : assetId;
+
+    private void OnFileSizeLimitChanged()
+    {
+        lock (_budgetLock)
+        {
+            UpdateBudgetStatusMessageLocked();
+        }
+        ProcessBudgetQueue();
+    }
+
+    private void ProcessBudgetQueue()
+    {
+        PendingDownload[] pending;
+        lock (_budgetLock)
+        {
+            if (_budgetQueue.Count == 0)
+            {
+                UpdateBudgetStatusMessageLocked();
+                return;
+            }
+
+            pending = _budgetQueue.ToArray();
+            _budgetQueue.Clear();
+            _budgetQueueKeys.Clear();
+            UpdateBudgetStatusMessageLocked();
+        }
+
+        foreach (var item in pending)
+        {
+            if (item.IsBundle)
+                _ = InstallBundle(item.Asset);
+            else
+                _ = InstallAsset(item.Asset);
+        }
+    }
+
+    private void UpdateBudgetStatusMessageLocked()
+    {
+        var limit = GetFileSizeLimitBytes();
+        var used = _sessionBytesDownloaded + _sessionBytesReserved;
+
+        if (_budgetQueue.Count > 0)
+            return;
+
+        if (limit <= 0)
+        {
+            _budgetStatusMessage = null;
+            return;
+        }
+
+        if (used >= limit)
+        {
+            _budgetStatusMessage = $"Download budget reached ({FormatSize(used)} of {FormatSize(limit)} used). Increase the file-size limit to resume.";
+        }
+        else
+        {
+            _budgetStatusMessage = null;
         }
     }
 
@@ -1722,6 +1988,8 @@ public class SyncshellWindow : IDisposable
         public string ModName { get; set; } = string.Empty;
         public TaskCompletionSource<bool> Tcs { get; set; } = new();
     }
+
+    private readonly record struct PendingDownload(string Key, Asset Asset, bool IsBundle);
 
     private class Asset
     {
