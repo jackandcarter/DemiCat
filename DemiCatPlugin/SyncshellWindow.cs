@@ -17,6 +17,8 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.SyncShell;
+using Glamourer.Api.IpcSubscribers;
+using Penumbra.Api.Enums;
 
 namespace DemiCatPlugin;
 
@@ -60,6 +62,14 @@ public class SyncshellWindow : IDisposable
     private bool _autoSyncAllUsers;
     private bool _manualSyncAllUsers;
     private bool _manualSyncCustom;
+    private readonly List<Action> _ipcUnsubscribers = new();
+    private readonly SemaphoreSlim _manifestPushLock = new(1, 1);
+    private readonly object _manualSyncStateLock = new();
+    private int _autoSyncPendingRequests;
+    private int _manualSyncPendingFlag;
+    private LocalStateChangeSource? _lastManualChangeSource;
+    private DateTimeOffset? _lastManualChangeAt;
+    private bool _disposed;
     private float _fileSizeLimitMb = 100f;
     private bool _syncPaused;
     private DateTimeOffset? _lastResyncAt;
@@ -123,6 +133,11 @@ public class SyncshellWindow : IDisposable
         _lastResyncAt = state.LastResyncAt;
         _pairingExpiresAt = state.PairingExpiresAt;
 
+        _autoSyncAllUsers = _config.SyncshellAutoSyncAllUsers;
+        _manualSyncAllUsers = _config.SyncshellManualSyncAllUsers;
+        _manualSyncCustom = _config.SyncshellManualSyncCustom;
+        EnforceSyncPreferenceInvariant(saveIfChanged: true);
+
         _assetsFile = Path.Combine(configDir, "assets.json");
         _installedFile = Path.Combine(configDir, "installed.json");
         LoadCaches();
@@ -131,6 +146,7 @@ public class SyncshellWindow : IDisposable
 
         Instance = this;
 
+        SubscribeToStateChanges();
         _tokenManager.RegisterWatcher(HandleTokenLinked, HandleTokenUnlinked);
     }
 
@@ -184,9 +200,39 @@ public class SyncshellWindow : IDisposable
 
         ImGui.BeginChild("sync-settings", new Vector2(-1, 170), true);
         ImGui.TextUnformatted("Sync Settings");
-        ImGui.Checkbox("Auto Sync to all Connected Users", ref _autoSyncAllUsers);
-        ImGui.Checkbox("Manual Sync (All Users)", ref _manualSyncAllUsers);
-        ImGui.Checkbox("Manual Sync (Custom)", ref _manualSyncCustom);
+        var autoSync = _autoSyncAllUsers;
+        if (ImGui.Checkbox("Auto Sync to all Connected Users", ref autoSync))
+        {
+            SetSyncPreferences(autoSync, _manualSyncAllUsers, _manualSyncCustom);
+        }
+
+        var manualAll = _manualSyncAllUsers;
+        if (ImGui.Checkbox("Manual Sync (All Users)", ref manualAll))
+        {
+            SetSyncPreferences(manualAll ? false : _autoSyncAllUsers, manualAll, _manualSyncCustom);
+        }
+
+        var manualCustom = _manualSyncCustom;
+        if (ImGui.Checkbox("Manual Sync (Custom)", ref manualCustom))
+        {
+            SetSyncPreferences(manualCustom ? false : _autoSyncAllUsers, _manualSyncAllUsers, manualCustom);
+        }
+
+        var manualModeActive = IsManualModeActive;
+        ImGui.BeginDisabled(!manualModeActive);
+        if (ImGui.Button("Sync now"))
+        {
+            _ = RunManualSyncAsync();
+        }
+        ImGui.EndDisabled();
+        if (!manualModeActive && ImGui.IsItemHovered())
+            ImGui.SetTooltip("Enable a manual sync mode to push pending changes.");
+
+        if (ManualSyncPending)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), GetManualPendingLabel());
+        }
         ImGui.SliderFloat("File-size limit (MB)", ref _fileSizeLimitMb, 100f, 5120f, "%.0f MB");
         var peerSync = _peerSyncEnabled;
         if (ImGui.Checkbox("Enable Peer Sync", ref peerSync))
@@ -296,6 +342,298 @@ public class SyncshellWindow : IDisposable
 
         if (saveSeen)
             PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private bool IsManualModeActive
+        => !_autoSyncAllUsers && (_manualSyncAllUsers || _manualSyncCustom);
+
+    private bool ManualSyncPending
+        => Volatile.Read(ref _manualSyncPendingFlag) == 1;
+
+    private void SetSyncPreferences(bool auto, bool manualAll, bool manualCustom)
+    {
+        var previousAuto = _autoSyncAllUsers;
+        var previousManualAll = _manualSyncAllUsers;
+        var previousManualCustom = _manualSyncCustom;
+        var hadPending = ManualSyncPending;
+
+        _autoSyncAllUsers = auto;
+        _manualSyncAllUsers = manualAll;
+        _manualSyncCustom = manualCustom;
+
+        var changedByInvariant = EnforceSyncPreferenceInvariant(saveIfChanged: false);
+        if (changedByInvariant ||
+            previousAuto != _autoSyncAllUsers ||
+            previousManualAll != _manualSyncAllUsers ||
+            previousManualCustom != _manualSyncCustom)
+        {
+            SaveSyncPreferences();
+        }
+
+        if (_autoSyncAllUsers && !previousAuto && hadPending)
+        {
+            ScheduleManifestPush();
+        }
+    }
+
+    private bool EnforceSyncPreferenceInvariant(bool saveIfChanged)
+    {
+        var initialAuto = _autoSyncAllUsers;
+        var initialManualAll = _manualSyncAllUsers;
+        var initialManualCustom = _manualSyncCustom;
+
+        if (_autoSyncAllUsers)
+        {
+            _manualSyncAllUsers = false;
+            _manualSyncCustom = false;
+        }
+        else if (!_manualSyncAllUsers && !_manualSyncCustom)
+        {
+            _autoSyncAllUsers = true;
+        }
+
+        var changed = initialAuto != _autoSyncAllUsers ||
+                      initialManualAll != _manualSyncAllUsers ||
+                      initialManualCustom != _manualSyncCustom;
+
+        if (changed && saveIfChanged)
+        {
+            SaveSyncPreferences();
+        }
+
+        return changed;
+    }
+
+    private void SaveSyncPreferences()
+    {
+        _config.SyncshellAutoSyncAllUsers = _autoSyncAllUsers;
+        _config.SyncshellManualSyncAllUsers = _manualSyncAllUsers;
+        _config.SyncshellManualSyncCustom = _manualSyncCustom;
+        PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+    }
+
+    private string GetManualPendingLabel()
+    {
+        LocalStateChangeSource? source;
+        DateTimeOffset? changedAt;
+        lock (_manualSyncStateLock)
+        {
+            source = _lastManualChangeSource;
+            changedAt = _lastManualChangeAt;
+        }
+
+        var parts = new List<string>();
+        if (source.HasValue)
+        {
+            parts.Add(source.Value switch
+            {
+                LocalStateChangeSource.Penumbra => "Penumbra",
+                LocalStateChangeSource.Glamourer => "Glamourer",
+                _ => source.Value.ToString() ?? string.Empty,
+            });
+        }
+
+        if (changedAt.HasValue)
+        {
+            parts.Add(FormatRelativeTime(changedAt.Value));
+        }
+
+        return parts.Count switch
+        {
+            0 => "Pending changes",
+            _ => $"Pending changes ({string.Join(" • ", parts)})",
+        };
+    }
+
+    private Task RunManualSyncAsync()
+    {
+        if (_disposed || !IsManualModeActive)
+        {
+            return Task.CompletedTask;
+        }
+
+        return Task.Run(async () =>
+        {
+            var success = await PushManifestWithLockAsync().ConfigureAwait(false);
+            if (success)
+            {
+                ClearManualPending();
+                _uiThreadActions.Enqueue(() => PluginServices.Instance?.ToastGui.ShowNormal("SyncShell manifest uploaded."));
+            }
+            else
+            {
+                _uiThreadActions.Enqueue(() => PluginServices.Instance?.ToastGui.ShowError("SyncShell manual sync failed – check logs."));
+            }
+        });
+    }
+
+    private void HandleLocalStateChanged(LocalStateChangeSource source)
+    {
+        if (_disposed || !_config.FCSyncShell)
+        {
+            return;
+        }
+
+        if (_autoSyncAllUsers && !_syncPaused && _peerSyncEnabled)
+        {
+            ScheduleManifestPush();
+            return;
+        }
+
+        if (IsManualModeActive)
+        {
+            MarkManualPending(source);
+        }
+        else if (_autoSyncAllUsers)
+        {
+            MarkManualPending(source);
+        }
+    }
+
+    private void MarkManualPending(LocalStateChangeSource source)
+    {
+        Interlocked.Exchange(ref _manualSyncPendingFlag, 1);
+        lock (_manualSyncStateLock)
+        {
+            _lastManualChangeSource = source;
+            _lastManualChangeAt = DateTimeOffset.UtcNow;
+        }
+    }
+
+    private void ClearManualPending()
+    {
+        Interlocked.Exchange(ref _manualSyncPendingFlag, 0);
+        lock (_manualSyncStateLock)
+        {
+            _lastManualChangeSource = null;
+            _lastManualChangeAt = null;
+        }
+    }
+
+    private void ScheduleManifestPush()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (Interlocked.Increment(ref _autoSyncPendingRequests) > 1)
+        {
+            return;
+        }
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                while (true)
+                {
+                    var success = await PushManifestWithLockAsync().ConfigureAwait(false);
+                    if (success && !IsManualModeActive && ManualSyncPending)
+                    {
+                        ClearManualPending();
+                    }
+
+                    if (Interlocked.Decrement(ref _autoSyncPendingRequests) <= 0)
+                    {
+                        break;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                PluginServices.Instance?.Log.Warning(ex, "Failed to push SyncShell manifest automatically");
+                Interlocked.Exchange(ref _autoSyncPendingRequests, 0);
+            }
+        });
+    }
+
+    private async Task<bool> PushManifestWithLockAsync()
+    {
+        await _manifestPushLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            return await UploadManifestAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            _manifestPushLock.Release();
+        }
+    }
+
+    private void SubscribeToStateChanges()
+    {
+        var pi = PluginServices.Instance?.PluginInterface;
+        if (pi == null)
+        {
+            return;
+        }
+
+        TrySubscribe(() =>
+        {
+            var subscriber = pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(Penumbra.Api.IpcSubscribers.ModSettings.ModSettingChanged.Label);
+            void Handler(ModSettingChange _, Guid __, string ___, bool ____) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
+            subscriber.Subscribe(Handler);
+            _ipcUnsubscribers.Add(() =>
+            {
+                try
+                {
+                    subscriber.Unsubscribe(Handler);
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Debug(ex, "Failed to unsubscribe from Penumbra.ModSettingChanged");
+                }
+            });
+        }, "Penumbra.ModSettingChanged");
+
+        TrySubscribe(() =>
+        {
+            var subscriber = pi.GetIpcSubscriber<bool, object?>(Penumbra.Api.IpcSubscribers.PluginState.EnabledChange.Label);
+            void Handler(bool _) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
+            subscriber.Subscribe(Handler);
+            _ipcUnsubscribers.Add(() =>
+            {
+                try
+                {
+                    subscriber.Unsubscribe(Handler);
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Debug(ex, "Failed to unsubscribe from Penumbra.EnabledChange");
+                }
+            });
+        }, "Penumbra.EnabledChange");
+
+        TrySubscribe(() =>
+        {
+            var subscriber = pi.GetIpcSubscriber<nint, object?>(State.StateChanged.Label);
+            void Handler(nint _) => HandleLocalStateChanged(LocalStateChangeSource.Glamourer);
+            subscriber.Subscribe(Handler);
+            _ipcUnsubscribers.Add(() =>
+            {
+                try
+                {
+                    subscriber.Unsubscribe(Handler);
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Debug(ex, "Failed to unsubscribe from Glamourer.StateChanged");
+                }
+            });
+        }, "Glamourer.StateChanged");
+    }
+
+    private void TrySubscribe(Action subscribe, string description)
+    {
+        try
+        {
+            subscribe();
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Debug(ex, $"Failed to subscribe to {description} IPC event.");
+        }
     }
 
     internal void PumpClientEvents()
@@ -1103,22 +1441,27 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private async Task UploadManifest()
+    private async Task<bool> UploadManifestAsync()
     {
         if (!_peerSyncEnabled)
-            return;
+            return false;
 
         if (!_tokenManager.IsReady())
-            return;
+            return false;
 
         try
         {
-            await EnsurePairingAsync().ConfigureAwait(false);
+            var paired = await EnsurePairingAsync().ConfigureAwait(false);
+            if (!paired)
+                return false;
+
             await _syncClient.PushManifestAsync().ConfigureAwait(false);
+            return true;
         }
         catch (Exception ex)
         {
             PluginServices.Instance?.Log.Warning("Failed to push SyncShell manifest", ex);
+            return false;
         }
     }
 
@@ -1126,7 +1469,9 @@ public class SyncshellWindow : IDisposable
     {
         ClearCaches();
         await PostAsync("/api/syncshell/resync");
-        await UploadManifest();
+        var manifestUploaded = await UploadManifestAsync().ConfigureAwait(false);
+        if (manifestUploaded)
+            ClearManualPending();
         _lastResyncAt = DateTimeOffset.UtcNow;
         if (_config.Categories.TryGetValue("syncshell", out var st))
         {
@@ -1286,7 +1631,20 @@ public class SyncshellWindow : IDisposable
 
     public void Dispose()
     {
+        _disposed = true;
         StopPeriodicRefresh();
+        foreach (var unsubscribe in _ipcUnsubscribers)
+        {
+            try
+            {
+                unsubscribe();
+            }
+            catch (Exception ex)
+            {
+                PluginServices.Instance?.Log.Debug(ex, "Failed to unsubscribe SyncShell IPC listener");
+            }
+        }
+        _ipcUnsubscribers.Clear();
         _syncClient.TransferProgress -= HandleTransferProgress;
         _syncClient.ApplyCompleted -= HandleApplyCompleted;
         _syncClient.PeerManifestReceived -= HandlePeerManifestReceived;
@@ -1302,6 +1660,7 @@ public class SyncshellWindow : IDisposable
         _syncClient.Dispose();
         if (PluginServices.Instance?.ProgressOverlay == _progressOverlay)
             PluginServices.Instance.ProgressOverlay = null;
+        _manifestPushLock.Dispose();
         _pairingLock.Dispose();
         if (Instance == this)
             Instance = null;
@@ -1327,6 +1686,12 @@ public class SyncshellWindow : IDisposable
         if (span.TotalMinutes < 60) return $"{span.TotalMinutes:0}m ago";
         if (span.TotalHours < 24) return $"{span.TotalHours:0}h ago";
         return $"{span.TotalDays:0}d ago";
+    }
+
+    private enum LocalStateChangeSource
+    {
+        Penumbra,
+        Glamourer,
     }
 
     private sealed class PeerInventory

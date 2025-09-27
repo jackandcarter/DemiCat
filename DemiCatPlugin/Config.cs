@@ -76,6 +76,15 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("syncshellCacheLimitMb")]
     public int SyncshellCacheLimitMb { get; set; } = 4096;
+
+    [JsonPropertyName("syncshellAutoSyncAllUsers")]
+    public bool SyncshellAutoSyncAllUsers { get; set; } = true;
+
+    [JsonPropertyName("syncshellManualSyncAllUsers")]
+    public bool SyncshellManualSyncAllUsers { get; set; }
+
+    [JsonPropertyName("syncshellManualSyncCustom")]
+    public bool SyncshellManualSyncCustom { get; set; }
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
     [JsonPropertyName("mentionRoleIds")]
