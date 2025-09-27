@@ -118,6 +118,9 @@ public class Config : IPluginConfiguration
         [JsonPropertyName("lastResyncAt")]
         public DateTimeOffset? LastResyncAt { get; set; }
 
+        [JsonPropertyName("pairingExpiresAt")]
+        public DateTimeOffset? PairingExpiresAt { get; set; }
+
         [JsonExtensionData]
         public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     }
