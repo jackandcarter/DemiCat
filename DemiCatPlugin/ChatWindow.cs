@@ -108,6 +108,69 @@ public class ChatWindow : IDisposable
         }
     }
 
+    private float GetManualImageScale()
+    {
+        var manualScale = _config.ChatImageManualScale;
+        if (!float.IsFinite(manualScale) || manualScale <= 0f)
+        {
+            manualScale = 1f;
+        }
+
+        return Math.Clamp(manualScale, Config.MinChatImageScale, Config.MaxChatImageScale);
+    }
+
+    protected float GetFontScale()
+    {
+        var fontScale = _config.ChatFontScale;
+        if (!float.IsFinite(fontScale) || fontScale <= 0f)
+        {
+            fontScale = 1f;
+        }
+
+        return Math.Clamp(fontScale, Config.MinChatFontScale, Config.MaxChatFontScale);
+    }
+
+    protected Vector2 GetAttachmentBounds(Vector2 baseBounds, bool allowAutoStretch = true)
+    {
+        var width = MathF.Max(1f, baseBounds.X);
+        var height = MathF.Max(1f, baseBounds.Y);
+
+        if (allowAutoStretch && _config.ChatImageAutoStretch)
+        {
+            var availableWidth = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
+            width = availableWidth;
+        }
+
+        return new Vector2(width, height);
+    }
+
+    private readonly struct WindowFontScaleScope : IDisposable
+    {
+        private readonly bool _active;
+
+        public WindowFontScaleScope(float scale)
+        {
+            if (!float.IsFinite(scale) || Math.Abs(scale - 1f) < 0.0001f)
+            {
+                _active = false;
+                return;
+            }
+
+            ImGui.SetWindowFontScale(scale);
+            _active = true;
+        }
+
+        public void Dispose()
+        {
+            if (_active)
+            {
+                ImGui.SetWindowFontScale(1f);
+            }
+        }
+    }
+
+    private WindowFontScaleScope PushWindowFontScale(float scale) => new(scale);
+
     private class TypingUser
     {
         public string Name;
@@ -490,13 +553,8 @@ public class ChatWindow : IDisposable
         const float ScrollTolerance = 1f;
         ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), true);
 
-        var fontScale = _config.ChatFontScale;
-        if (!float.IsFinite(fontScale) || fontScale <= 0f)
-        {
-            fontScale = 1f;
-        }
-        fontScale = Math.Clamp(fontScale, Config.MinChatFontScale, Config.MaxChatFontScale);
-        ImGui.SetWindowFontScale(fontScale);
+        var fontScale = GetFontScale();
+        var chatFontScope = PushWindowFontScale(fontScale);
 
         var io = ImGui.GetIO();
         var hoverFlags = ImGuiHoveredFlags.AllowWhenBlockedByPopup | ImGuiHoveredFlags.AllowWhenBlockedByActiveItem;
@@ -591,9 +649,6 @@ public class ChatWindow : IDisposable
                 if (msg.Attachments != null)
                 {
                     var attachmentCap = new Vector2(480f, 360f) * ImGuiHelpers.GlobalScale;
-                    var availableForAttachments = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
-                    var maxAttachmentBounds = new Vector2(MathF.Max(1f, MathF.Min(availableForAttachments, attachmentCap.X)), MathF.Max(1f, attachmentCap.Y));
-
                     foreach (var att in msg.Attachments)
                     {
                         if (att.ContentType != null && att.ContentType.StartsWith("image"))
@@ -606,7 +661,8 @@ public class ChatWindow : IDisposable
                             {
                                 var wrapAtt = att.Texture.GetWrapOrEmpty();
                                 var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
-                                var displaySize = CalculateAttachmentDisplaySize(originalSize, maxAttachmentBounds);
+                                var bounds = GetAttachmentBounds(attachmentCap);
+                                var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
                                 ImGui.Image(wrapAtt.Handle, displaySize);
                                 if (ImGui.IsItemHovered())
                                 {
@@ -774,6 +830,7 @@ public class ChatWindow : IDisposable
         var newScrollY = ImGui.GetScrollY();
         _wasAtBottomLastFrame = newScrollMaxY <= 0f || newScrollY >= newScrollMaxY - ScrollTolerance;
 
+        chatFontScope.Dispose();
         ImGui.EndChild();
 
         var style = ImGui.GetStyle();
@@ -817,6 +874,8 @@ public class ChatWindow : IDisposable
 
         _bridge.Ack(CurrentChannelId, _config.GuildId, _channelKind);
         SaveConfig();
+
+        var composerFontScope = PushWindowFontScale(fontScale);
 
         if (_replyToId != null)
         {
@@ -1096,6 +1155,8 @@ public class ChatWindow : IDisposable
         {
             ImGui.TextUnformatted(_statusMessage);
         }
+
+        composerFontScope.Dispose();
     }
 
     protected List<ChannelDto> PrepareChannelsForDisplay(IEnumerable<ChannelDto> channels)
@@ -1203,29 +1264,28 @@ public class ChatWindow : IDisposable
         return ImGuiMouseCursor.ResizeAll;
     }
 
-    private Vector2 CalculateAttachmentDisplaySize(Vector2 originalSize, Vector2 maxSize)
+    private Vector2 CalculateAttachmentDisplaySize(Vector2 originalSize, Vector2 maxSize, bool allowAutoStretch = true)
     {
         var width = MathF.Max(1f, originalSize.X);
         var height = MathF.Max(1f, originalSize.Y);
         var maxWidth = MathF.Max(1f, maxSize.X);
         var maxHeight = MathF.Max(1f, maxSize.Y);
 
-        if (_config.ChatImageAutoStretch)
+        if (allowAutoStretch && _config.ChatImageAutoStretch)
         {
             var widthScale = maxWidth / width;
             var heightScale = maxHeight / height;
-            var scale = MathF.Min(1f, MathF.Min(widthScale, heightScale));
+            var scale = MathF.Min(widthScale, heightScale);
+
+            if (!float.IsFinite(scale) || scale <= 0f)
+            {
+                scale = 1f;
+            }
 
             return new Vector2(width * scale, height * scale);
         }
 
-        var manualScale = _config.ChatImageManualScale;
-        if (!float.IsFinite(manualScale) || manualScale <= 0f)
-        {
-            manualScale = 1f;
-        }
-
-        manualScale = Math.Clamp(manualScale, Config.MinChatImageScale, Config.MaxChatImageScale);
+        var manualScale = GetManualImageScale();
 
         var scaledWidth = width * manualScale;
         var scaledHeight = height * manualScale;
@@ -1246,6 +1306,7 @@ public class ChatWindow : IDisposable
     public virtual void OnAppearanceSettingsChanged()
     {
         _pendingInitialScroll = true;
+        InvalidatePreview();
     }
 
     protected void FormatContent(DiscordMessageDto msg)
@@ -2020,7 +2081,8 @@ public class ChatWindow : IDisposable
                 if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
                 {
                     var maxThumbnail = new Vector2(40f, 40f) * scale;
-                    var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), maxThumbnail);
+                    var bounds = GetAttachmentBounds(maxThumbnail, allowAutoStretch: false);
+                    var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds, allowAutoStretch: false);
                     ImGui.Image(wrap.Handle, size);
                     renderedPreview = true;
                 }
@@ -2321,9 +2383,9 @@ public class ChatWindow : IDisposable
             var wrap = texture.GetWrapOrEmpty();
             if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
             {
-                var maxWidth = Math.Max(1f, ImGui.GetContentRegionAvail().X);
-                var scale = Math.Min(1f, maxWidth / wrap.Width);
-                var size = new Vector2(wrap.Width * scale, wrap.Height * scale);
+                var attachmentCap = new Vector2(480f, 360f) * ImGuiHelpers.GlobalScale;
+                var bounds = GetAttachmentBounds(attachmentCap);
+                var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds);
                 ImGui.Image(wrap.Handle, size);
             }
         }
