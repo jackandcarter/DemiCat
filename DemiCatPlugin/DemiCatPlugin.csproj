@@ -40,6 +40,10 @@
     <EmbeddedResource Include="icon.png" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="SyncShell\**\*.cs" />
+  </ItemGroup>
+
   <ItemGroup Condition="Exists('Emoji/NotoColorEmoji.ttf')">
     <None Include="Emoji/NotoColorEmoji.ttf" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
