@@ -45,6 +45,7 @@ public class TemplatesWindow
     private readonly HashSet<string> _mentions = new();
     private bool _rolesLoaded;
     private bool _rolesLoading;
+    private readonly DateTimePicker _timePicker;
     private ButtonRows _buttonRows = new(new()
     {
         new() { new ButtonData { Label = "RSVP: Yes" }, new ButtonData { Label = "RSVP: Maybe" } },
@@ -61,6 +62,7 @@ public class TemplatesWindow
         _channelService = channelService;
         _emojiManager = emojiManager;
         _channelSelection = channelSelection;
+        _timePicker = new DateTimePicker(DateTimePicker.GetDefaultTime());
         var token = TokenManager.Instance;
         if (token != null)
         {
@@ -183,6 +185,12 @@ public class TemplatesWindow
         if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)
         {
             var tmpl = _templates[_selectedIndex].Template;
+            ImGui.TextUnformatted("Event Time");
+            if (_timePicker.Draw("TemplateTime", out var selectedTime))
+            {
+                ApplyTime(tmpl, selectedTime);
+            }
+            ImGui.Spacing();
             if (ImGui.Button("Preview"))
             {
                 OpenPreview(tmpl);
@@ -289,6 +297,7 @@ public class TemplatesWindow
             {
                 var tmpl = _templates[_selectedIndex].Template;
                 var embedId = $"template-preview-{_templates[_selectedIndex].Id}";
+                SyncTemplateTimeFromPicker(tmpl);
                 var preview = BuildPreview(tmpl, embedId);
                 _previewEvent.Update(preview.Embed, preview.Content, preview.Warnings);
             }
@@ -354,10 +363,37 @@ public class TemplatesWindow
                     new() { new ButtonData { Label = "RSVP: Yes" }, new ButtonData { Label = "RSVP: Maybe" } },
                     new() { new ButtonData { Label = "RSVP: No" } }
                 });
+
+        SetPickerFromTemplate(tmplItem);
+    }
+
+    private void ApplyTime(Template tmpl, DateTimeOffset value)
+    {
+        _timePicker.SetValue(value);
+        tmpl.Time = value.ToUniversalTime().ToString("O");
+    }
+
+    private void SetPickerFromTemplate(Template tmpl)
+    {
+        if (!string.IsNullOrWhiteSpace(tmpl.Time) &&
+            DateTimeOffset.TryParse(tmpl.Time, null, DateTimeStyles.AdjustToUniversal, out var parsed))
+        {
+            ApplyTime(tmpl, parsed);
+        }
+        else
+        {
+            ApplyTime(tmpl, DateTimePicker.GetDefaultTime());
+        }
+    }
+
+    private void SyncTemplateTimeFromPicker(Template tmpl)
+    {
+        tmpl.Time = _timePicker.Value.ToUniversalTime().ToString("O");
     }
 
     internal void OpenPreview(Template tmpl)
     {
+        SyncTemplateTimeFromPicker(tmpl);
         _previewEvent?.Dispose();
         var embedId = "template-preview";
         if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)
@@ -611,6 +647,7 @@ public class TemplatesWindow
 
     private async Task PostTemplate(Template tmpl)
     {
+        SyncTemplateTimeFromPicker(tmpl);
         var channelId = ChannelId;
         if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrWhiteSpace(channelId))
         {
