@@ -1,6 +1,7 @@
 using Dalamud.Configuration;
 using System;
 using System.Collections.Generic;
+using System.Numerics;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -12,9 +13,11 @@ public class Config : IPluginConfiguration
     public const float MaxChatFontScale = 1.5f;
     public const float MinChatImageScale = 0.5f;
     public const float MaxChatImageScale = 3f;
+    public static readonly Vector4 DefaultPrimaryWindowColor = new(0.11f, 0.11f, 0.12f, 1f);
+    public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
 
     // Required by Dalamud
-    public int Version { get; set; } = 10;
+    public int Version { get; set; } = 11;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -41,6 +44,12 @@ public class Config : IPluginConfiguration
     public float ChatFontScale { get; set; } = 1f;
     public bool ChatImageAutoStretch { get; set; } = true;
     public float ChatImageManualScale { get; set; } = 1f;
+
+    [JsonPropertyName("primaryWindowColor")]
+    public Vector4 PrimaryWindowColor { get; set; } = DefaultPrimaryWindowColor;
+
+    [JsonPropertyName("secondaryAccentColor")]
+    public Vector4 SecondaryAccentColor { get; set; } = DefaultSecondaryAccentColor;
 
     [JsonPropertyName("chatInputSplitRatio")]
     public float ChatInputSplitRatio { get; set; } = 0.35f;
@@ -286,5 +295,27 @@ public class Config : IPluginConfiguration
             Version = 10;
             ExtensionData = null;
         }
+        if (Version < 11)
+        {
+            PrimaryWindowColor = SanitizeColor(PrimaryWindowColor, DefaultPrimaryWindowColor);
+            SecondaryAccentColor = SanitizeColor(SecondaryAccentColor, DefaultSecondaryAccentColor);
+
+            Version = 11;
+            ExtensionData = null;
+        }
+    }
+
+    internal static Vector4 SanitizeColor(Vector4 color, Vector4 fallback)
+    {
+        if (!float.IsFinite(color.X) || !float.IsFinite(color.Y) || !float.IsFinite(color.Z) || !float.IsFinite(color.W))
+        {
+            return fallback;
+        }
+
+        return new Vector4(
+            Math.Clamp(color.X, 0f, 1f),
+            Math.Clamp(color.Y, 0f, 1f),
+            Math.Clamp(color.Z, 0f, 1f),
+            Math.Clamp(color.W, 0f, 1f));
     }
 }
