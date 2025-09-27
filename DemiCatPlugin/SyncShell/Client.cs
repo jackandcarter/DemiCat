@@ -2,6 +2,7 @@ using System;
 using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -28,6 +29,7 @@ public sealed class SyncClient : IDisposable
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        PropertyNameCaseInsensitive = true,
         WriteIndented = false,
     };
 
@@ -71,6 +73,16 @@ public sealed class SyncClient : IDisposable
     /// Raised when a peer offers a manifest.
     /// </summary>
     public event EventHandler<ManifestOfferedEventArgs>? ManifestOffered;
+
+    /// <summary>
+    /// Raised when the service publishes a peer discovery manifest snapshot.
+    /// </summary>
+    public event EventHandler<PeerManifestEventArgs>? PeerManifestReceived;
+
+    /// <summary>
+    /// Raised when the service publishes incremental discovery changes for a peer.
+    /// </summary>
+    public event EventHandler<PeerDeltaEventArgs>? PeerDeltaReceived;
 
     /// <summary>
     /// Raised when a peer requests blobs from this client.
@@ -307,6 +319,15 @@ public sealed class SyncClient : IDisposable
             case "manifest":
                 await HandleManifestAsync(socket, payload, token).ConfigureAwait(false);
                 break;
+            case "peerManifest":
+            case "peer-manifest":
+                await HandlePeerManifestAsync(payload).ConfigureAwait(false);
+                break;
+            case "peerDelta":
+            case "peer-delta":
+            case "manifestDelta":
+                await HandlePeerDeltaAsync(payload).ConfigureAwait(false);
+                break;
             case "want":
                 await HandleWantAsync(payload, token).ConfigureAwait(false);
                 break;
@@ -382,6 +403,63 @@ public sealed class SyncClient : IDisposable
         TransferProgress?.Invoke(this, new TransferProgressEventArgs(peerId, download.ReceivedCount, download.TotalCount, TransferKind.Download));
 
         await SendWantBatchesAsync(socket, peerId, missing, token).ConfigureAwait(false);
+    }
+
+    private Task HandlePeerManifestAsync(JsonElement element)
+    {
+        var peerId = TryGetStringProperty(element, "peerId", "peer_id") ?? "unknown";
+        var timestamp = TryGetTimestamp(element, "timestamp", "updatedAt", "updated_at") ?? DateTimeOffset.UtcNow;
+
+        var assets = new List<DiscoveryAsset>();
+        if (TryGetProperty(element, out var manifestsElement, "assets", "manifest", "items") &&
+            manifestsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in manifestsElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object)
+                {
+                    assets.Add(ParseDiscoveryAsset(item));
+                }
+            }
+        }
+
+        PeerManifestReceived?.Invoke(this, new PeerManifestEventArgs(peerId, assets, timestamp));
+        return Task.CompletedTask;
+    }
+
+    private Task HandlePeerDeltaAsync(JsonElement element)
+    {
+        var peerId = TryGetStringProperty(element, "peerId", "peer_id") ?? "unknown";
+        var timestamp = TryGetTimestamp(element, "timestamp", "updatedAt", "updated_at") ?? DateTimeOffset.UtcNow;
+
+        var updated = new List<DiscoveryAsset>();
+        if (TryGetProperty(element, out var updatedElement, "updated", "assets", "items", "added") &&
+            updatedElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in updatedElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object)
+                {
+                    updated.Add(ParseDiscoveryAsset(item));
+                }
+            }
+        }
+
+        var removed = new List<string>();
+        if (TryGetProperty(element, out var removedElement, "removed", "deleted", "removedIds", "removed_ids") &&
+            removedElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in removedElement.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.String)
+                {
+                    removed.Add(item.GetString() ?? string.Empty);
+                }
+            }
+        }
+
+        PeerDeltaReceived?.Invoke(this, new PeerDeltaEventArgs(peerId, updated, removed, timestamp));
+        return Task.CompletedTask;
     }
 
     private async Task HandleWantAsync(JsonElement element, CancellationToken token)
@@ -482,6 +560,87 @@ public sealed class SyncClient : IDisposable
             PluginServices.Instance?.Log.Error(ex, "Failed to apply manifest for peer {Peer}", peerId);
             ApplyCompleted?.Invoke(this, new ApplyResultEventArgs(peerId, false, ex));
         }
+    }
+
+    private static DiscoveryAsset ParseDiscoveryAsset(JsonElement element)
+    {
+        var asset = new DiscoveryAsset();
+
+        asset.Id = TryGetStringProperty(element, "id", "assetId", "asset_id") ?? string.Empty;
+        asset.Name = TryGetStringProperty(element, "name") ?? asset.Id;
+        asset.Kind = TryGetStringProperty(element, "kind", "type") ?? string.Empty;
+        asset.Uploader = TryGetStringProperty(element, "uploader", "owner", "peer") ?? string.Empty;
+        asset.DownloadUrl = TryGetStringProperty(element, "downloadUrl", "download_url", "url");
+
+        if (TryGetProperty(element, out var sizeElement, "size") && sizeElement.TryGetInt64(out var size))
+        {
+            asset.Size = size;
+        }
+
+        asset.CreatedAt = TryGetTimestamp(element, "created_at", "createdAt");
+        asset.UpdatedAt = TryGetTimestamp(element, "updated_at", "updatedAt");
+
+        if (TryGetProperty(element, out var depsElement, "dependencies", "deps") && depsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var dep in depsElement.EnumerateArray())
+            {
+                if (dep.ValueKind == JsonValueKind.String)
+                {
+                    asset.Dependencies.Add(dep.GetString() ?? string.Empty);
+                }
+            }
+        }
+
+        if (TryGetProperty(element, out var itemsElement, "items", "children") && itemsElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in itemsElement.EnumerateArray())
+            {
+                if (child.ValueKind == JsonValueKind.Object)
+                {
+                    asset.Items.Add(ParseDiscoveryAsset(child));
+                }
+            }
+        }
+
+        return asset;
+    }
+
+    private static DateTimeOffset? TryGetTimestamp(JsonElement element, params string[] propertyNames)
+    {
+        if (TryGetProperty(element, out var property, propertyNames) && property.ValueKind == JsonValueKind.String)
+        {
+            var value = property.GetString();
+            if (!string.IsNullOrWhiteSpace(value) && DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+            {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? TryGetStringProperty(JsonElement element, params string[] propertyNames)
+    {
+        if (TryGetProperty(element, out var property, propertyNames) && property.ValueKind == JsonValueKind.String)
+        {
+            return property.GetString();
+        }
+
+        return null;
+    }
+
+    private static bool TryGetProperty(JsonElement element, out JsonElement property, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (element.TryGetProperty(name, out property))
+            {
+                return true;
+            }
+        }
+
+        property = default;
+        return false;
     }
 
     private async Task SendHelloAsync(ClientWebSocket socket, CancellationToken token)
@@ -904,6 +1063,62 @@ internal sealed class BlobPayload
 }
 
 /// <summary>
+/// Lightweight representation of discovery assets transmitted via SyncShell discovery channels.
+/// </summary>
+public sealed class DiscoveryAsset
+{
+    /// <summary>
+    /// Gets or sets the asset identifier.
+    /// </summary>
+    public string Id { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the asset display name.
+    /// </summary>
+    public string Name { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the asset kind/category.
+    /// </summary>
+    public string Kind { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the asset size in bytes.
+    /// </summary>
+    public long Size { get; set; }
+
+    /// <summary>
+    /// Gets or sets the uploader/owner label.
+    /// </summary>
+    public string? Uploader { get; set; }
+
+    /// <summary>
+    /// Gets or sets the optional download URL.
+    /// </summary>
+    public string? DownloadUrl { get; set; }
+
+    /// <summary>
+    /// Gets or sets when the asset was originally created.
+    /// </summary>
+    public DateTimeOffset? CreatedAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets when the asset was last updated.
+    /// </summary>
+    public DateTimeOffset? UpdatedAt { get; set; }
+
+    /// <summary>
+    /// Gets the dependency identifiers declared for this asset.
+    /// </summary>
+    public List<string> Dependencies { get; } = new();
+
+    /// <summary>
+    /// Gets the child assets in bundle hierarchies.
+    /// </summary>
+    public List<DiscoveryAsset> Items { get; } = new();
+}
+
+/// <summary>
 /// Event arguments for manifest offers.
 /// </summary>
 public sealed class ManifestOfferedEventArgs : EventArgs
@@ -917,6 +1132,68 @@ public sealed class ManifestOfferedEventArgs : EventArgs
     public string PeerId { get; }
 
     public SyncManifest Manifest { get; }
+}
+
+/// <summary>
+/// Event arguments published when a peer discovery manifest snapshot is received.
+/// </summary>
+public sealed class PeerManifestEventArgs : EventArgs
+{
+    internal PeerManifestEventArgs(string peerId, IReadOnlyList<DiscoveryAsset> assets, DateTimeOffset timestamp)
+    {
+        PeerId = peerId;
+        Assets = assets;
+        Timestamp = timestamp;
+    }
+
+    /// <summary>
+    /// Gets the originating peer identifier.
+    /// </summary>
+    public string PeerId { get; }
+
+    /// <summary>
+    /// Gets the discovered assets for the peer.
+    /// </summary>
+    public IReadOnlyList<DiscoveryAsset> Assets { get; }
+
+    /// <summary>
+    /// Gets the timestamp associated with the snapshot.
+    /// </summary>
+    public DateTimeOffset Timestamp { get; }
+}
+
+/// <summary>
+/// Event arguments published when a peer discovery delta arrives.
+/// </summary>
+public sealed class PeerDeltaEventArgs : EventArgs
+{
+    internal PeerDeltaEventArgs(string peerId, IReadOnlyList<DiscoveryAsset> updated, IReadOnlyList<string> removed, DateTimeOffset timestamp)
+    {
+        PeerId = peerId;
+        Updated = updated;
+        Removed = removed;
+        Timestamp = timestamp;
+    }
+
+    /// <summary>
+    /// Gets the peer associated with the delta.
+    /// </summary>
+    public string PeerId { get; }
+
+    /// <summary>
+    /// Gets the assets updated or added by the delta.
+    /// </summary>
+    public IReadOnlyList<DiscoveryAsset> Updated { get; }
+
+    /// <summary>
+    /// Gets the asset identifiers removed by the delta.
+    /// </summary>
+    public IReadOnlyList<string> Removed { get; }
+
+    /// <summary>
+    /// Gets when the delta was issued.
+    /// </summary>
+    public DateTimeOffset Timestamp { get; }
 }
 
 /// <summary>

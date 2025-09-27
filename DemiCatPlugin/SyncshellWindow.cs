@@ -5,9 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.IO.Compression;
 using System.Linq;
-using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Numerics;
 using System.Text;
 using System.Text.Json;
@@ -38,6 +36,8 @@ public class SyncshellWindow : IDisposable
     private readonly SyncClient _syncClient;
     private readonly ProgressOverlay _progressOverlay;
     private readonly ConcurrentQueue<Action> _uiThreadActions = new();
+    private readonly Dictionary<string, PeerInventory> _peerInventories = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _inventoryLock = new();
     private CancellationTokenSource? _refreshCts;
     private DateTimeOffset? _lastPullAt;
     private DateTimeOffset _lastRefresh;
@@ -90,6 +90,8 @@ public class SyncshellWindow : IDisposable
         _syncClient = new SyncClient(_config, tokenManager, _resolver, _blobStore);
         _syncClient.TransferProgress += HandleTransferProgress;
         _syncClient.ApplyCompleted += HandleApplyCompleted;
+        _syncClient.PeerManifestReceived += HandlePeerManifestReceived;
+        _syncClient.PeerDeltaReceived += HandlePeerDeltaReceived;
 
         _peerSyncEnabled = _config.SyncshellPeerSyncEnabled;
         _cacheSizeLimitMb = Math.Clamp(_config.SyncshellCacheLimitMb, 256, 16384);
@@ -224,7 +226,7 @@ public class SyncshellWindow : IDisposable
             ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"{_updatesAvailable.Count} update(s) available");
         foreach (var asset in _assets)
         {
-            ImGui.PushID(asset.Id);
+            ImGui.PushID($"{asset.PeerId}:{asset.Id}");
             var childHeight = 70f;
             if (asset.Kind == "BUNDLE" && asset.Items != null)
                 childHeight += ImGui.GetTextLineHeightWithSpacing() * asset.Items.Count;
@@ -351,46 +353,22 @@ public class SyncshellWindow : IDisposable
                 _config.Categories["syncshell"] = state;
             }
 
-            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
-            var url = $"{baseUrl}/api/fc/{_config.FcChannelId}/assets";
-            if (state.LastPullAt.HasValue)
-                url += $"?since={Uri.EscapeDataString(state.LastPullAt.Value.ToString("O"))}";
-
-            var req = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
-            if (!string.IsNullOrEmpty(_etag))
-                req.Headers.IfNoneMatch.Add(new EntityTagHeaderValue(_etag));
-
-            var resp = await _httpClient.SendAsync(req);
-            if (resp.StatusCode == HttpStatusCode.NotModified)
+            List<Asset> snapshot;
+            lock (_inventoryLock)
             {
-                state.LastPullAt = DateTimeOffset.UtcNow;
-                _lastPullAt = state.LastPullAt;
-                _lastRefresh = DateTimeOffset.UtcNow;
-                PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
-                _needsRefresh = false;
-                return;
-            }
-            if (!resp.IsSuccessStatusCode)
-                return;
-
-            var json = await resp.Content.ReadAsStringAsync();
-            var assetsResp = JsonSerializer.Deserialize<AssetResponse>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-            if (assetsResp?.Items != null)
-            {
-                MergeAssets(assetsResp.Items);
-                _etag = resp.Headers.ETag?.Tag;
-                foreach (var a in assetsResp.Items)
-                    _ = TryAutoApply(a);
+                snapshot = _peerInventories.Values
+                    .SelectMany(static inv => inv.Assets.Values)
+                    .Select(CloneAsset)
+                    .ToList();
             }
 
-            var bundles = await FetchBundles(baseUrl, state.LastPullAt);
-            if (bundles != null)
-                MergeAssets(bundles);
+            _assets.Clear();
+            _assets.AddRange(snapshot.OrderByDescending(static a => a.CreatedAt));
 
+            foreach (var asset in _assets)
+                _ = TryAutoApply(asset);
+
+            _etag = null;
             SaveAssetsCache();
 
             await FetchInstallations();
@@ -408,57 +386,117 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private void MergeAssets(IEnumerable<Asset> newAssets)
+    private void HandlePeerManifestReceived(object? sender, PeerManifestEventArgs e)
     {
-        var map = _assets.ToDictionary(a => a.Id);
-        foreach (var asset in newAssets)
-            map[asset.Id] = asset;
-        _assets.Clear();
-        _assets.AddRange(map.Values.OrderByDescending(a => a.CreatedAt));
+        _uiThreadActions.Enqueue(() => ApplyPeerManifest(e));
     }
 
-    private async Task<List<Asset>?> FetchBundles(string baseUrl, DateTimeOffset? since)
+    private void HandlePeerDeltaReceived(object? sender, PeerDeltaEventArgs e)
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-            return null;
+        _uiThreadActions.Enqueue(() => ApplyPeerDelta(e));
+    }
 
-        var url = $"{baseUrl}/api/fc/{_config.FcChannelId}/bundles";
-        if (since.HasValue)
-            url += $"?since={Uri.EscapeDataString(since.Value.ToString("O"))}";
-
-        var req = new HttpRequestMessage(HttpMethod.Get, url);
-        ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
-
-        var resp = await _httpClient.SendAsync(req);
-        if (!resp.IsSuccessStatusCode)
-            return null;
-
-        var json = await resp.Content.ReadAsStringAsync();
-        var bundles = JsonSerializer.Deserialize<BundleResponse>(json, new JsonSerializerOptions
+    private void ApplyPeerManifest(PeerManifestEventArgs e)
+    {
+        lock (_inventoryLock)
         {
-            PropertyNameCaseInsensitive = true
-        });
-        if (bundles?.Items == null)
-            return null;
-
-        var list = new List<Asset>();
-        foreach (var b in bundles.Items)
-        {
-            list.Add(new Asset
+            if (!_peerInventories.TryGetValue(e.PeerId, out var inventory))
             {
-                Id = b.Id,
-                Name = b.Name,
-                Kind = "BUNDLE",
-                CreatedAt = b.UpdatedAt ?? DateTimeOffset.UtcNow,
-                UpdatedAt = b.UpdatedAt ?? DateTimeOffset.UtcNow,
-                Size = b.Assets.Sum(a => a.Size),
-                Items = b.Assets,
-                DownloadUrl = string.Empty,
-                Uploader = string.Empty
-            });
+                inventory = new PeerInventory();
+                _peerInventories[e.PeerId] = inventory;
+            }
+
+            inventory.Assets.Clear();
+            foreach (var asset in e.Assets)
+            {
+                var converted = ConvertDiscoveryAsset(asset, e.PeerId, e.Timestamp);
+                inventory.Assets[MakeAssetKey(e.PeerId, converted.Id)] = converted;
+            }
+
+            inventory.LastUpdated = e.Timestamp;
         }
-        return list;
+
+        Volatile.Write(ref _needsRefresh, true);
     }
+
+    private void ApplyPeerDelta(PeerDeltaEventArgs e)
+    {
+        lock (_inventoryLock)
+        {
+            if (!_peerInventories.TryGetValue(e.PeerId, out var inventory))
+            {
+                inventory = new PeerInventory();
+                _peerInventories[e.PeerId] = inventory;
+            }
+
+            foreach (var id in e.Removed)
+            {
+                var key = MakeAssetKey(e.PeerId, id);
+                inventory.Assets.Remove(key);
+            }
+
+            foreach (var updated in e.Updated)
+            {
+                var converted = ConvertDiscoveryAsset(updated, e.PeerId, e.Timestamp);
+                inventory.Assets[MakeAssetKey(e.PeerId, converted.Id)] = converted;
+            }
+
+            inventory.LastUpdated = e.Timestamp;
+        }
+
+        Volatile.Write(ref _needsRefresh, true);
+    }
+
+    private static Asset ConvertDiscoveryAsset(DiscoveryAsset source, string peerId, DateTimeOffset timestamp)
+    {
+        var asset = new Asset
+        {
+            Id = string.IsNullOrWhiteSpace(source.Id) ? Guid.NewGuid().ToString("N") : source.Id,
+            Name = string.IsNullOrWhiteSpace(source.Name) ? source.Id ?? "Untitled" : source.Name!,
+            Kind = string.IsNullOrWhiteSpace(source.Kind) ? "UNKNOWN" : source.Kind!,
+            Size = source.Size,
+            Uploader = string.IsNullOrWhiteSpace(source.Uploader) ? peerId : source.Uploader!,
+            CreatedAt = source.CreatedAt ?? timestamp,
+            UpdatedAt = source.UpdatedAt ?? source.CreatedAt ?? timestamp,
+            DownloadUrl = source.DownloadUrl ?? string.Empty,
+            Dependencies = source.Dependencies.Where(static d => !string.IsNullOrWhiteSpace(d)).Select(static d => d).ToList(),
+            PeerId = peerId,
+        };
+
+        if (source.Items.Count > 0)
+        {
+            asset.Items = source.Items.Select(child => ConvertDiscoveryAsset(child, peerId, timestamp)).ToList();
+        }
+
+        return asset;
+    }
+
+    private static Asset CloneAsset(Asset asset)
+    {
+        var clone = new Asset
+        {
+            Id = asset.Id,
+            Name = asset.Name,
+            Kind = asset.Kind,
+            Size = asset.Size,
+            Uploader = asset.Uploader,
+            CreatedAt = asset.CreatedAt,
+            UpdatedAt = asset.UpdatedAt,
+            DownloadUrl = asset.DownloadUrl,
+            Dependencies = new List<string>(asset.Dependencies),
+            PeerId = asset.PeerId,
+        };
+
+        if (asset.Items != null)
+        {
+            clone.Items = asset.Items.Select(CloneAsset).ToList();
+        }
+
+        return clone;
+    }
+
+    private static string MakeAssetKey(string peerId, string assetId)
+        => string.IsNullOrWhiteSpace(assetId) ? peerId : $"{peerId}::{assetId}";
 
     private async Task TryAutoApply(Asset asset)
     {
@@ -801,6 +839,8 @@ public class SyncshellWindow : IDisposable
         _installations.Clear();
         _updatesAvailable.Clear();
         _seenAssetIds.Clear();
+        lock (_inventoryLock)
+            _peerInventories.Clear();
         _etag = null;
         _needsRefresh = true;
     }
@@ -1000,6 +1040,8 @@ public class SyncshellWindow : IDisposable
         StopPeriodicRefresh();
         _syncClient.TransferProgress -= HandleTransferProgress;
         _syncClient.ApplyCompleted -= HandleApplyCompleted;
+        _syncClient.PeerManifestReceived -= HandlePeerManifestReceived;
+        _syncClient.PeerDeltaReceived -= HandlePeerDeltaReceived;
         try
         {
             _syncClient.StopAsync().GetAwaiter().GetResult();
@@ -1035,6 +1077,13 @@ public class SyncshellWindow : IDisposable
         if (span.TotalMinutes < 60) return $"{span.TotalMinutes:0}m ago";
         if (span.TotalHours < 24) return $"{span.TotalHours:0}h ago";
         return $"{span.TotalDays:0}d ago";
+    }
+
+    private sealed class PeerInventory
+    {
+        public Dictionary<string, Asset> Assets { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+        public DateTimeOffset LastUpdated { get; set; }
     }
 
     private sealed class NullPluginLog : IPluginLog
@@ -1081,6 +1130,8 @@ public class SyncshellWindow : IDisposable
         public List<string> Dependencies { get; set; } = new();
         [JsonPropertyName("items")]
         public List<Asset>? Items { get; set; }
+        [JsonPropertyName("peer_id")]
+        public string PeerId { get; set; } = string.Empty;
     }
 
     private class AssetResponse
@@ -1221,24 +1272,5 @@ public class SyncshellWindow : IDisposable
         public List<Installation> Installations { get; set; } = new();
     }
 
-    private class BundleResponse
-    {
-        [JsonPropertyName("items")]
-        public List<Bundle> Items { get; set; } = new();
-    }
-
-    private class Bundle
-    {
-        [JsonPropertyName("id")]
-        public string Id { get; set; } = string.Empty;
-        [JsonPropertyName("name")]
-        public string Name { get; set; } = string.Empty;
-        [JsonPropertyName("description")]
-        public string? Description { get; set; }
-        [JsonPropertyName("updated_at")]
-        public DateTimeOffset? UpdatedAt { get; set; }
-        [JsonPropertyName("assets")]
-        public List<Asset> Assets { get; set; } = new();
-    }
 }
 
