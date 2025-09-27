@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -15,6 +16,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Services;
+using DemiCatPlugin.SyncShell;
 
 namespace DemiCatPlugin;
 
@@ -30,12 +33,17 @@ public class SyncshellWindow : IDisposable
     private readonly HashSet<string> _seenAssetIds;
     private readonly string _assetsFile;
     private readonly string _installedFile;
+    private readonly FileBlobStore _blobStore;
+    private readonly Resolver _resolver;
+    private readonly SyncClient _syncClient;
+    private readonly ProgressOverlay _progressOverlay;
+    private readonly ConcurrentQueue<Action> _uiThreadActions = new();
     private CancellationTokenSource? _refreshCts;
     private DateTimeOffset? _lastPullAt;
     private DateTimeOffset _lastRefresh;
     private string? _etag;
     private bool _loading;
-    private bool _needsRefresh = true;
+    private volatile bool _needsRefresh = true;
     private PenumbraConflict? _penumbraConflict;
     private static DateTimeOffset _lastRedraw;
 
@@ -45,6 +53,10 @@ public class SyncshellWindow : IDisposable
     private float _fileSizeLimitMb = 100f;
     private bool _syncPaused;
     private DateTimeOffset? _lastResyncAt;
+    private bool _peerSyncEnabled;
+    private int _cacheSizeLimitMb;
+    private int _installationsRefreshRequested;
+    private int _installationsRefreshInProgress;
 
     public SyncshellWindow(Config config, HttpClient httpClient)
     {
@@ -53,6 +65,39 @@ public class SyncshellWindow : IDisposable
 
         _config = config;
         _httpClient = httpClient;
+
+        var services = PluginServices.Instance;
+        _progressOverlay = new ProgressOverlay();
+        if (services != null)
+            services.ProgressOverlay = _progressOverlay;
+
+        string configDir;
+        if (services?.PluginInterface != null)
+        {
+            configDir = services.PluginInterface.GetPluginConfigDirectory();
+            _blobStore = new FileBlobStore();
+        }
+        else
+        {
+            configDir = Path.Combine(Path.GetTempPath(), "DemiCat", "config");
+            Directory.CreateDirectory(configDir);
+            _blobStore = new FileBlobStore(Path.Combine(configDir, ".syncshell", "cache"));
+        }
+
+        var tokenManager = TokenManager.Instance ?? throw new InvalidOperationException("Token manager unavailable");
+        var log = services?.Log ?? new NullPluginLog();
+        _resolver = new Resolver(_blobStore, log, services?.PluginInterface);
+        _syncClient = new SyncClient(_config, tokenManager, _resolver, _blobStore);
+        _syncClient.TransferProgress += HandleTransferProgress;
+        _syncClient.ApplyCompleted += HandleApplyCompleted;
+
+        _peerSyncEnabled = _config.SyncshellPeerSyncEnabled;
+        _cacheSizeLimitMb = Math.Clamp(_config.SyncshellCacheLimitMb, 256, 16384);
+        if (_cacheSizeLimitMb != _config.SyncshellCacheLimitMb)
+        {
+            _config.SyncshellCacheLimitMb = _cacheSizeLimitMb;
+            services?.PluginInterface?.SavePluginConfig(_config);
+        }
 
         if (!_config.Categories.TryGetValue("syncshell", out var state))
         {
@@ -64,18 +109,21 @@ public class SyncshellWindow : IDisposable
         _syncPaused = state.Paused;
         _lastResyncAt = state.LastResyncAt;
 
-        var dir = PluginServices.Instance!.PluginInterface.GetPluginConfigDirectory();
-        _assetsFile = Path.Combine(dir, "assets.json");
-        _installedFile = Path.Combine(dir, "installed.json");
+        _assetsFile = Path.Combine(configDir, "assets.json");
+        _installedFile = Path.Combine(configDir, "installed.json");
         LoadCaches();
+
+        _ = TrimCacheAsync();
 
         Instance = this;
 
-        TokenManager.Instance?.RegisterWatcher(StartPeriodicRefresh, StopPeriodicRefresh);
+        TokenManager.Instance?.RegisterWatcher(HandleTokenLinked, HandleTokenUnlinked);
     }
 
     public void Draw()
     {
+        PumpClientEvents();
+
         if (!_config.FCSyncShell)
         {
             const string message = "SyncShell is under development";
@@ -126,6 +174,27 @@ public class SyncshellWindow : IDisposable
         ImGui.Checkbox("Manual Sync (All Users)", ref _manualSyncAllUsers);
         ImGui.Checkbox("Manual Sync (Custom)", ref _manualSyncCustom);
         ImGui.SliderFloat("File-size limit (MB)", ref _fileSizeLimitMb, 100f, 5120f, "%.0f MB");
+        var peerSync = _peerSyncEnabled;
+        if (ImGui.Checkbox("Enable Peer Sync", ref peerSync))
+        {
+            _peerSyncEnabled = peerSync;
+            _config.SyncshellPeerSyncEnabled = peerSync;
+            PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+            UpdateSyncClientState();
+        }
+
+        var cacheLimit = _cacheSizeLimitMb;
+        if (ImGui.SliderInt("Cache size limit (MB)", ref cacheLimit, 256, 16384))
+        {
+            cacheLimit = Math.Clamp(cacheLimit, 256, 16384);
+            if (cacheLimit != _cacheSizeLimitMb)
+            {
+                _cacheSizeLimitMb = cacheLimit;
+                _config.SyncshellCacheLimitMb = cacheLimit;
+                PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+                _ = TrimCacheAsync();
+            }
+        }
         if (ImGui.Button("Resync All"))
         {
             _ = ResyncAll();
@@ -145,6 +214,7 @@ public class SyncshellWindow : IDisposable
                 st.Paused = _syncPaused;
                 PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
             }
+            UpdateSyncClientState();
         }
         ImGui.EndChild();
         ImGui.Separator();
@@ -212,6 +282,56 @@ public class SyncshellWindow : IDisposable
 
         if (saveSeen)
             PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+    }
+
+    internal void PumpClientEvents()
+    {
+        while (_uiThreadActions.TryDequeue(out var action))
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                PluginServices.Instance?.Log.Error(ex, "Failed to process SyncShell UI action");
+            }
+        }
+
+        if (Interlocked.CompareExchange(ref _installationsRefreshRequested, 0, 1) == 1)
+        {
+            _ = RefreshInstallationsAsync();
+        }
+    }
+
+    private async Task RefreshInstallationsAsync()
+    {
+        if (Interlocked.Exchange(ref _installationsRefreshInProgress, 1) == 1)
+        {
+            Interlocked.Exchange(ref _installationsRefreshRequested, 1);
+            return;
+        }
+
+        try
+        {
+            do
+            {
+                try
+                {
+                    await FetchInstallations().ConfigureAwait(false);
+                    ComputeUpdates();
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Warning("Failed to refresh SyncShell installations", ex);
+                }
+            }
+            while (Interlocked.CompareExchange(ref _installationsRefreshRequested, 0, 1) == 1);
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _installationsRefreshInProgress, 0);
+        }
     }
 
     private async Task Refresh()
@@ -704,21 +824,19 @@ public class SyncshellWindow : IDisposable
 
     private async Task UploadManifest()
     {
+        if (!_peerSyncEnabled)
+            return;
+
+        if (TokenManager.Instance?.IsReady() != true)
+            return;
+
         try
         {
-            if (!TokenManager.Instance!.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
-                return;
-            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/syncshell/manifest";
-            var req = new HttpRequestMessage(HttpMethod.Post, url)
-            {
-                Content = new StringContent("[]", Encoding.UTF8, "application/json")
-            };
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
-            await _httpClient.SendAsync(req);
+            await _syncClient.PushManifestAsync().ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            PluginServices.Instance?.Log.Warning("Failed to push SyncShell manifest", ex);
         }
     }
 
@@ -788,6 +906,63 @@ public class SyncshellWindow : IDisposable
         }
     }
 
+    private async Task TrimCacheAsync()
+    {
+        try
+        {
+            var limitBytes = Math.Max(0, _cacheSizeLimitMb) * 1024L * 1024L;
+            await _blobStore.TrimTo(limitBytes).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Warning("Failed to trim SyncShell cache", ex);
+        }
+    }
+
+    private void HandleTransferProgress(object? sender, TransferProgressEventArgs e)
+    {
+        _uiThreadActions.Enqueue(() => _progressOverlay.Update(e.PeerId, e.Completed, e.Total));
+    }
+
+    private void HandleApplyCompleted(object? sender, ApplyResultEventArgs e)
+    {
+        if (e.Success)
+        {
+            Volatile.Write(ref _needsRefresh, true);
+            Interlocked.Exchange(ref _installationsRefreshRequested, 1);
+        }
+        else if (e.Error != null)
+        {
+            PluginServices.Instance?.Log.Error(e.Error, $"Failed to apply SyncShell manifest from {e.PeerId}");
+        }
+    }
+
+    private void HandleTokenLinked()
+    {
+        StartPeriodicRefresh();
+        UpdateSyncClientState();
+    }
+
+    private void HandleTokenUnlinked()
+    {
+        _ = StopSyncClientAsync();
+        StopPeriodicRefresh();
+    }
+
+    private void UpdateSyncClientState()
+    {
+        if (TokenManager.Instance?.IsReady() == true && _config.FCSyncShell && !_syncPaused && _peerSyncEnabled)
+        {
+            _syncClient.Start();
+            return;
+        }
+
+        _ = StopSyncClientAsync();
+    }
+
+    private Task StopSyncClientAsync()
+        => _syncClient.StopAsync();
+
     private void StartPeriodicRefresh()
     {
         StopPeriodicRefresh();
@@ -823,6 +998,19 @@ public class SyncshellWindow : IDisposable
     public void Dispose()
     {
         StopPeriodicRefresh();
+        _syncClient.TransferProgress -= HandleTransferProgress;
+        _syncClient.ApplyCompleted -= HandleApplyCompleted;
+        try
+        {
+            _syncClient.StopAsync().GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Warning("Failed to stop SyncShell client", ex);
+        }
+        _syncClient.Dispose();
+        if (PluginServices.Instance?.ProgressOverlay == _progressOverlay)
+            PluginServices.Instance.ProgressOverlay = null;
         if (Instance == this)
             Instance = null;
     }
@@ -847,6 +1035,22 @@ public class SyncshellWindow : IDisposable
         if (span.TotalMinutes < 60) return $"{span.TotalMinutes:0}m ago";
         if (span.TotalHours < 24) return $"{span.TotalHours:0}h ago";
         return $"{span.TotalDays:0}d ago";
+    }
+
+    private sealed class NullPluginLog : IPluginLog
+    {
+        public void Verbose(string message) { }
+        public void Verbose(string message, Exception exception) { }
+        public void Debug(string message) { }
+        public void Debug(string message, Exception exception) { }
+        public void Info(string message) { }
+        public void Info(string message, Exception exception) { }
+        public void Warning(string message) { }
+        public void Warning(string message, Exception exception) { }
+        public void Error(string message) { }
+        public void Error(Exception exception, string message) { }
+        public void Fatal(string message) { }
+        public void Fatal(string message, Exception exception) { }
     }
 
     private class PenumbraConflict
