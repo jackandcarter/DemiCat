@@ -902,7 +902,7 @@ public class ChatWindow : IDisposable
         );
         _input = ImGuiTextUtil.ReadUtf8Buffer(inputBuf);
 
-        var io = ImGui.GetIO();
+        io = ImGui.GetIO();
         var send = false;
         if (ImGui.IsItemActive() && ImGui.IsKeyPressed(ImGuiKey.Enter))
         {
