@@ -17,6 +17,8 @@ public class ConfigDefaultsTests
         Assert.False(cfg.IsOfficerToken);
         Assert.False(cfg.FCSyncShell);
         Assert.True(cfg.ShowSyncshellProgressOverlay);
+        Assert.True(cfg.SyncshellPeerSyncEnabled);
+        Assert.Equal(4096, cfg.SyncshellCacheLimitMb);
     }
 
     [Fact]

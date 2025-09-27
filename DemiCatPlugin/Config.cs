@@ -70,6 +70,12 @@ public class Config : IPluginConfiguration
     public bool FCSyncShell { get; set; } = false;
     [JsonPropertyName("showSyncshellProgressOverlay")]
     public bool ShowSyncshellProgressOverlay { get; set; } = true;
+
+    [JsonPropertyName("syncshellPeerSyncEnabled")]
+    public bool SyncshellPeerSyncEnabled { get; set; } = true;
+
+    [JsonPropertyName("syncshellCacheLimitMb")]
+    public int SyncshellCacheLimitMb { get; set; } = 4096;
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
     [JsonPropertyName("mentionRoleIds")]

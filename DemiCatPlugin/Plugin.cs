@@ -43,7 +43,6 @@ public class Plugin : IDalamudPlugin
     private readonly RequestWatcher _requestWatcher;
     private readonly ChannelSelectionService _channelSelection;
     private readonly EmojiManager _emojiManager;
-    private readonly ProgressOverlay _progressOverlay;
 
     private Config _config = null!;
     private readonly HttpClient _httpClient;
@@ -91,9 +90,6 @@ public class Plugin : IDalamudPlugin
         _emojiManager.EmojiFontHandle = _emojiFontHandle;
         _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
-
-        _progressOverlay = new ProgressOverlay();
-        _services.ProgressOverlay = _progressOverlay;
 
         _presenceService = _config.SyncedChat && _config.EnableFcChat
             ? new DiscordPresenceService(_config, _httpClient)
@@ -203,8 +199,13 @@ public class Plugin : IDalamudPlugin
 
     private void DrawOverlay()
     {
-        _progressOverlay.IsVisible = _config.FCSyncShell && _config.ShowSyncshellProgressOverlay;
-        _progressOverlay.Draw();
+        SyncshellWindow.Instance?.PumpClientEvents();
+        var overlay = PluginServices.Instance?.ProgressOverlay;
+        if (overlay == null)
+            return;
+
+        overlay.IsVisible = _config.FCSyncShell && _config.ShowSyncshellProgressOverlay;
+        overlay.Draw();
     }
 
     private object? FetchWebTexture(string url, Action<ISharedImmediateTexture?> onReady)
