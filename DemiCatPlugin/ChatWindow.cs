@@ -490,6 +490,14 @@ public class ChatWindow : IDisposable
         const float ScrollTolerance = 1f;
         ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), true);
 
+        var fontScale = _config.ChatFontScale;
+        if (!float.IsFinite(fontScale) || fontScale <= 0f)
+        {
+            fontScale = 1f;
+        }
+        fontScale = Math.Clamp(fontScale, Config.MinChatFontScale, Config.MaxChatFontScale);
+        ImGui.SetWindowFontScale(fontScale);
+
         var io = ImGui.GetIO();
         var hoverFlags = ImGuiHoveredFlags.AllowWhenBlockedByPopup | ImGuiHoveredFlags.AllowWhenBlockedByActiveItem;
         var chatHovered = ImGui.IsWindowHovered(hoverFlags);
@@ -1195,18 +1203,49 @@ public class ChatWindow : IDisposable
         return ImGuiMouseCursor.ResizeAll;
     }
 
-    private static Vector2 CalculateAttachmentDisplaySize(Vector2 originalSize, Vector2 maxSize)
+    private Vector2 CalculateAttachmentDisplaySize(Vector2 originalSize, Vector2 maxSize)
     {
         var width = MathF.Max(1f, originalSize.X);
         var height = MathF.Max(1f, originalSize.Y);
         var maxWidth = MathF.Max(1f, maxSize.X);
         var maxHeight = MathF.Max(1f, maxSize.Y);
 
-        var widthScale = maxWidth / width;
-        var heightScale = maxHeight / height;
-        var scale = MathF.Min(1f, MathF.Min(widthScale, heightScale));
+        if (_config.ChatImageAutoStretch)
+        {
+            var widthScale = maxWidth / width;
+            var heightScale = maxHeight / height;
+            var scale = MathF.Min(1f, MathF.Min(widthScale, heightScale));
 
-        return new Vector2(width * scale, height * scale);
+            return new Vector2(width * scale, height * scale);
+        }
+
+        var manualScale = _config.ChatImageManualScale;
+        if (!float.IsFinite(manualScale) || manualScale <= 0f)
+        {
+            manualScale = 1f;
+        }
+
+        manualScale = Math.Clamp(manualScale, Config.MinChatImageScale, Config.MaxChatImageScale);
+
+        var scaledWidth = width * manualScale;
+        var scaledHeight = height * manualScale;
+
+        var widthClamp = maxWidth / MathF.Max(1f, scaledWidth);
+        var heightClamp = maxHeight / MathF.Max(1f, scaledHeight);
+        var clampScale = MathF.Min(1f, MathF.Min(widthClamp, heightClamp));
+
+        if (clampScale < 1f)
+        {
+            scaledWidth *= clampScale;
+            scaledHeight *= clampScale;
+        }
+
+        return new Vector2(scaledWidth, scaledHeight);
+    }
+
+    public virtual void OnAppearanceSettingsChanged()
+    {
+        _pendingInitialScroll = true;
     }
 
     protected void FormatContent(DiscordMessageDto msg)

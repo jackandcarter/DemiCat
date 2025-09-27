@@ -8,8 +8,13 @@ namespace DemiCatPlugin;
 
 public class Config : IPluginConfiguration
 {
+    public const float MinChatFontScale = 0.75f;
+    public const float MaxChatFontScale = 1.5f;
+    public const float MinChatImageScale = 0.5f;
+    public const float MaxChatImageScale = 3f;
+
     // Required by Dalamud
-    public int Version { get; set; } = 9;
+    public int Version { get; set; } = 10;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -32,6 +37,10 @@ public class Config : IPluginConfiguration
     public bool ChatFadeOutEnabled { get; set; } = false;
     public int ChatFadeOutDelaySeconds { get; set; } = 10;
     public float ChatFadeOutMinimumAlpha { get; set; } = 0.3f;
+
+    public float ChatFontScale { get; set; } = 1f;
+    public bool ChatImageAutoStretch { get; set; } = true;
+    public float ChatImageManualScale { get; set; } = 1f;
 
     [JsonPropertyName("chatInputSplitRatio")]
     public float ChatInputSplitRatio { get; set; } = 0.35f;
@@ -256,6 +265,25 @@ public class Config : IPluginConfiguration
         {
             IsOfficerToken = false;
             Version = 9;
+            ExtensionData = null;
+        }
+        if (Version < 10)
+        {
+            if (!float.IsFinite(ChatFontScale) || ChatFontScale <= 0f)
+            {
+                ChatFontScale = 1f;
+            }
+            ChatFontScale = Math.Clamp(ChatFontScale, MinChatFontScale, MaxChatFontScale);
+
+            ChatImageAutoStretch = true;
+
+            if (!float.IsFinite(ChatImageManualScale) || ChatImageManualScale <= 0f)
+            {
+                ChatImageManualScale = 1f;
+            }
+            ChatImageManualScale = Math.Clamp(ChatImageManualScale, MinChatImageScale, MaxChatImageScale);
+
+            Version = 10;
             ExtensionData = null;
         }
     }
