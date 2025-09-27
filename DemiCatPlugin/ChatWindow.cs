@@ -73,6 +73,10 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
     private readonly Dictionary<string, TypingUser> _typingUsers = new();
+    private static readonly Vector4 MessageHoverBgColor = new(0.24f, 0.33f, 0.53f, 0.22f);
+    private static readonly Vector4 MessageIdleBgColor = new(1f, 1f, 1f, 0.03f);
+    private const float MessageHoverTextBlend = 0.2f;
+    private readonly Dictionary<string, bool> _messageHoverStates = new();
     private bool _networkingActive;
     private string? _lastSubscribedChannelId;
     private string? _lastSubscribedGuildId;
@@ -595,6 +599,20 @@ public class ChatWindow : IDisposable
                 var msg = _messages[i];
                 ImGui.PushID(msg.Id);
                 using var emojiFont = _emojiManager.PushEmojiFont();
+                var drawList = ImGui.GetWindowDrawList();
+                drawList.ChannelsSplit(2);
+                drawList.ChannelsSetCurrent(1);
+                var hoveredLastFrame = _messageHoverStates.TryGetValue(msg.Id, out var wasHovered) && wasHovered;
+                var styleForRow = ImGui.GetStyle();
+                var pushedHoverText = false;
+                if (hoveredLastFrame)
+                {
+                    var baseTextColor = styleForRow.Colors[(int)ImGuiCol.Text];
+                    var hoverTextColor = Vector4.Lerp(baseTextColor, Vector4.One, MessageHoverTextBlend);
+                    ImGui.PushStyleColor(ImGuiCol.Text, hoverTextColor);
+                    pushedHoverText = true;
+                }
+
                 ImGui.BeginGroup();
                 if (msg.Author != null && msg.AvatarTexture == null && _avatarCache != null)
                 {
@@ -631,7 +649,7 @@ public class ChatWindow : IDisposable
                     }
                 }
 
-                FormatContent(msg);
+                FormatContent(msg, hoveredLastFrame);
                 if (msg.EditedTimestamp != null)
                 {
                     ImGui.SameLine();
@@ -771,6 +789,16 @@ public class ChatWindow : IDisposable
                 }
                 ImGui.EndGroup();
 
+                if (pushedHoverText)
+                {
+                    ImGui.PopStyleColor();
+                }
+
+                var rowMin = ImGui.GetItemRectMin();
+                var rowMax = ImGui.GetItemRectMax();
+                var rowHovered = ImGui.IsItemHovered(hoverFlags);
+                _messageHoverStates[msg.Id] = rowHovered;
+
                 if (ImGui.BeginPopupContextItem("messageContext"))
                 {
                     if (ImGui.MenuItem("Reply"))
@@ -791,15 +819,40 @@ public class ChatWindow : IDisposable
                     ImGui.EndPopup();
                 }
 
+                drawList.ChannelsSetCurrent(0);
+                var bgColor = rowHovered ? MessageHoverBgColor : MessageIdleBgColor;
+                if (bgColor.W > 0f)
+                {
+                    var rounding = styleForRow.FrameRounding > 0f ? styleForRow.FrameRounding : 4f * ImGuiHelpers.GlobalScale;
+                    drawList.AddRectFilled(rowMin, rowMax, ImGui.ColorConvertFloat4ToU32(bgColor), rounding);
+                }
+                drawList.ChannelsMerge();
+
                 if (i < _messages.Count - 1)
                 {
-                    ImGui.Separator();
+                    var spacingY = styleForRow.ItemSpacing.Y * 0.5f;
+                    if (spacingY > 0f)
+                    {
+                        ImGui.Dummy(new Vector2(0f, spacingY));
+                    }
                 }
 
                 ImGui.PopID();
             }
         }
         clipper.End();
+
+        if (_messageHoverStates.Count > _messages.Count)
+        {
+            var validIds = new HashSet<string>(_messages.Select(m => m.Id));
+            foreach (var key in _messageHoverStates.Keys.ToList())
+            {
+                if (!validIds.Contains(key))
+                {
+                    _messageHoverStates.Remove(key);
+                }
+            }
+        }
 
         if (shouldAutoScroll)
         {
@@ -1309,8 +1362,9 @@ public class ChatWindow : IDisposable
         InvalidatePreview();
     }
 
-    protected void FormatContent(DiscordMessageDto msg)
+    protected void FormatContent(DiscordMessageDto msg, bool isHovered)
     {
+        _ = isHovered;
         using var emojiFont = _emojiManager.PushEmojiFont();
         var text = msg.Content ?? string.Empty;
         text = ReplaceMentionTokens(text, msg.Mentions);
