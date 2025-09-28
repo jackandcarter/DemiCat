@@ -1029,16 +1029,17 @@ public class SyncshellWindow : IDisposable
 
         var belowPosition = new Vector2(_inviteSuggestionAnchorMin.X, _inviteSuggestionAnchorMax.Y);
         var viewport = ImGui.GetWindowViewport();
-        var workRect = viewport.WorkRect;
-        var spaceBelow = MathF.Max(0f, workRect.Max.Y - _inviteSuggestionAnchorMax.Y);
+        var min = viewport.WorkPos;
+        var max = min + viewport.WorkSize;
+        var spaceBelow = MathF.Max(0f, max.Y - _inviteSuggestionAnchorMax.Y);
         var desiredPosition = belowPosition;
 
         if (_inviteSuggestionWindowSize.Y > 0f)
         {
             if (_inviteSuggestionWindowSize.Y > spaceBelow)
             {
-                var minY = workRect.Min.Y;
-                var maxY = workRect.Max.Y - _inviteSuggestionWindowSize.Y;
+                var minY = min.Y;
+                var maxY = max.Y - _inviteSuggestionWindowSize.Y;
                 var aboveY = maxY < minY
                     ? minY
                     : Math.Clamp(_inviteSuggestionAnchorMin.Y - _inviteSuggestionWindowSize.Y, minY, maxY);
@@ -1046,8 +1047,8 @@ public class SyncshellWindow : IDisposable
             }
             else
             {
-                var minY = workRect.Min.Y;
-                var maxY = workRect.Max.Y - _inviteSuggestionWindowSize.Y;
+                var minY = min.Y;
+                var maxY = max.Y - _inviteSuggestionWindowSize.Y;
                 var clampedY = maxY < minY ? minY : Math.Clamp(belowPosition.Y, minY, maxY);
                 desiredPosition = new Vector2(belowPosition.X, clampedY);
             }
@@ -1061,21 +1062,21 @@ public class SyncshellWindow : IDisposable
         {
             var windowSize = ImGui.GetWindowSize();
             _inviteSuggestionWindowSize = windowSize;
-            spaceBelow = MathF.Max(0f, workRect.Max.Y - _inviteSuggestionAnchorMax.Y);
+            spaceBelow = MathF.Max(0f, max.Y - _inviteSuggestionAnchorMax.Y);
 
             if (windowSize.Y > 0f)
             {
                 if (windowSize.Y > spaceBelow)
                 {
-                    var minY = workRect.Min.Y;
-                    var maxY = workRect.Max.Y - windowSize.Y;
+                    var minY = min.Y;
+                    var maxY = max.Y - windowSize.Y;
                     var aboveY = maxY < minY ? minY : Math.Clamp(_inviteSuggestionAnchorMin.Y - windowSize.Y, minY, maxY);
                     desiredPosition = new Vector2(belowPosition.X, aboveY);
                 }
                 else
                 {
-                    var minY = workRect.Min.Y;
-                    var maxY = workRect.Max.Y - windowSize.Y;
+                    var minY = min.Y;
+                    var maxY = max.Y - windowSize.Y;
                     var clampedY = maxY < minY ? minY : Math.Clamp(belowPosition.Y, minY, maxY);
                     desiredPosition = new Vector2(belowPosition.X, clampedY);
                 }
