@@ -78,11 +78,13 @@ def test_syncshell_invite_acceptance_and_members():
             assert overview_a_final["members"][0]["id"] == str(user_b.id)
             assert overview_a_final["members"][0]["presence"] == "offline"
             assert overview_a_final["members"][0]["syncStatus"] is None
+            assert overview_a_final["members"][0]["tokenLinked"] is False
             assert overview_a_final["invites"][0]["status"] == "accepted"
 
             overview_b_final = await syncshell.list_memberships(ctx=ctx_b, db=db)
             assert overview_b_final["members"][0]["id"] == str(user_a.id)
             assert overview_b_final["members"][0]["presence"] == "offline"
+            assert overview_b_final["members"][0]["tokenLinked"] is False
             assert overview_b_final["pendingApprovals"] == []
 
             pending_after = await syncshell.list_pending(ctx=ctx_b, db=db)
@@ -167,7 +169,9 @@ def test_syncshell_presence_updates():
             assert overview_syncing["currentlySynced"][0]["presence"] == "online"
             assert overview_syncing["currentlySynced"][0]["syncStatus"] == "syncing"
             assert overview_syncing["currentlySynced"][0]["syncedAt"].endswith("Z")
+            assert overview_syncing["currentlySynced"][0]["tokenLinked"] is True
             assert overview_syncing["members"][0]["presence"] == "online"
+            assert overview_syncing["members"][0]["tokenLinked"] is True
 
             await syncshell.update_presence(
                 payload=syncshell.PresenceUpdateRequest(active_member_ids=[]),
@@ -181,5 +185,6 @@ def test_syncshell_presence_updates():
             assert overview_offline["currentlySynced"] == []
             assert overview_offline["members"][0]["presence"] == "offline"
             assert overview_offline["members"][0]["lastSeen"].endswith("Z")
+            assert overview_offline["members"][0]["tokenLinked"] is True
 
     asyncio.run(_run())

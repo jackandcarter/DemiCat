@@ -135,6 +135,7 @@ public class SyncshellWindow : IDisposable
     private Vector2 _inviteSuggestionAnchorMin;
     private Vector2 _inviteSuggestionAnchorMax;
     private Vector2 _inviteSuggestionWindowSize;
+    private bool _inviteSuggestionFiltered;
     private bool _focusInviteInputNextFrame;
     private readonly ImGui.ImGuiInputTextCallbackDelegate _inviteInputCallback;
     private int _inviteInFlight;
@@ -843,6 +844,12 @@ public class SyncshellWindow : IDisposable
                 ImGui.SameLine();
                 ImGui.TextDisabled($"[{member.SyncStatus}]");
             }
+
+            if (!member.TokenLinked)
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled("[Token not linked]");
+            }
         }
     }
 
@@ -904,6 +911,11 @@ public class SyncshellWindow : IDisposable
             ImGui.EndDisabled();
         }
 
+        if (_inviteSuggestionFiltered && !_inviteSuggestionsOpen)
+        {
+            ImGui.TextDisabled("Matching members must link their SyncShell token before they can receive invites.");
+        }
+
         ImGui.Separator();
 
         var invites = _syncshellState.Invites
@@ -944,6 +956,7 @@ public class SyncshellWindow : IDisposable
         if (!inputActive)
         {
             CloseInviteSuggestions();
+            _inviteSuggestionFiltered = false;
             _inviteSuggestionsDirty = false;
             return;
         }
@@ -957,6 +970,7 @@ public class SyncshellWindow : IDisposable
         }
 
         _inviteSuggestionsDirty = false;
+        _inviteSuggestionFiltered = false;
         var query = GetInviteSuggestionQuery(_inviteTarget);
         if (string.IsNullOrEmpty(query))
         {
@@ -965,6 +979,7 @@ public class SyncshellWindow : IDisposable
         }
 
         _inviteSuggestions.Clear();
+        var filteredDueToToken = false;
         foreach (var member in _memberPresence)
         {
             if (string.IsNullOrWhiteSpace(member.DisplayName))
@@ -977,6 +992,12 @@ public class SyncshellWindow : IDisposable
                 continue;
             }
 
+            if (!member.TokenLinked)
+            {
+                filteredDueToToken = true;
+                continue;
+            }
+
             _inviteSuggestions.Add(member);
             if (_inviteSuggestions.Count >= InviteSuggestionLimit)
             {
@@ -984,9 +1005,11 @@ public class SyncshellWindow : IDisposable
             }
         }
 
+        _inviteSuggestionFiltered = filteredDueToToken;
+
         if (_inviteSuggestions.Count == 0)
         {
-            CloseInviteSuggestions();
+            CloseInviteSuggestions(filteredDueToToken);
             return;
         }
 
@@ -1078,6 +1101,15 @@ public class SyncshellWindow : IDisposable
                 {
                     _inviteSuggestionIndex = i;
                 }
+            }
+
+            if (_inviteSuggestionFiltered)
+            {
+                ImGui.Separator();
+                var wrap = ImGui.GetCursorPosX() + 280f;
+                ImGui.PushTextWrapPos(wrap);
+                ImGui.TextDisabled("Some members must link their SyncShell token before they can receive invites.");
+                ImGui.PopTextWrapPos();
             }
         }
         ImGui.End();
@@ -1198,12 +1230,16 @@ public class SyncshellWindow : IDisposable
     private static bool IsInviteSuggestionMatch(string name, string query)
         => name?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
 
-    private void CloseInviteSuggestions()
+    private void CloseInviteSuggestions(bool preserveFilterNotice = false)
     {
         _inviteSuggestionsOpen = false;
         _inviteSuggestionIndex = -1;
         _inviteSuggestions.Clear();
         _inviteSuggestionsDirty = false;
+        if (!preserveFilterNotice)
+        {
+            _inviteSuggestionFiltered = false;
+        }
     }
 
     private int OnInviteInputEdited(ref ImGuiInputTextCallbackData data)
@@ -1750,6 +1786,7 @@ public class SyncshellWindow : IDisposable
             SyncStatus = GetString(element, "syncStatus", "state"),
             LastSeen = GetDateTime(element, "lastSeen", "last_seen"),
             SyncedAt = GetDateTime(element, "syncedAt", "since", "synced_at"),
+            TokenLinked = GetBoolean(element, "tokenLinked", "token_linked"),
         };
     }
 
@@ -1900,6 +1937,66 @@ public class SyncshellWindow : IDisposable
         }
 
         return string.Empty;
+    }
+
+    private static bool GetBoolean(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (!TryGetProperty(element, name, out var value))
+            {
+                continue;
+            }
+
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.True:
+                    return true;
+                case JsonValueKind.False:
+                    return false;
+                case JsonValueKind.String:
+                {
+                    var text = value.GetString();
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        return false;
+                    }
+
+                    if (bool.TryParse(text, out var boolResult))
+                    {
+                        return boolResult;
+                    }
+
+                    if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var longValue))
+                    {
+                        return longValue != 0;
+                    }
+
+                    if (double.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out var doubleValue))
+                    {
+                        return Math.Abs(doubleValue) > double.Epsilon;
+                    }
+
+                    break;
+                }
+                case JsonValueKind.Number:
+                {
+                    if (value.TryGetInt64(out var longValue))
+                    {
+                        return longValue != 0;
+                    }
+
+                    if (value.TryGetDouble(out var doubleValue))
+                    {
+                        return Math.Abs(doubleValue) > double.Epsilon;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        return false;
     }
 
     private static DateTimeOffset? GetDateTime(JsonElement element, params string[] propertyNames)
@@ -4316,6 +4413,9 @@ public class SyncshellWindow : IDisposable
 
         public DateTimeOffset? SyncedAt { get; set; }
             = null;
+
+        public bool TokenLinked { get; set; }
+            = false;
     }
 
     private sealed class PendingApprovalEntry
