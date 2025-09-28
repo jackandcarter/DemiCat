@@ -54,14 +54,26 @@ async def _handle_manifest_message(
     if not peer_id:
         peer_id = str(ctx.user.discord_user_id or ctx.user.id)
 
+    need_entries = diff.get("need", [])
+    blobs: list[str] = []
+    size_hints: list[dict[str, Any]] = []
+    for entry in need_entries:
+        blob_hash = entry.get("hash")
+        if not blob_hash:
+            continue
+        blobs.append(blob_hash)
+        size = entry.get("size")
+        if isinstance(size, int) and size > 0:
+            size_hints.append({"hash": blob_hash, "size": size})
+
     want_message = {
         "type": "want",
         "payload": {
             "peerId": peer_id,
             "want": {
-                "blobs": [entry["hash"] for entry in diff.get("need", []) if entry.get("hash")],
+                "blobs": blobs,
                 "chunks": [],
-                "sizeHints": [],
+                "sizeHints": size_hints,
             },
             "diff": diff,
             "limits": limits,
