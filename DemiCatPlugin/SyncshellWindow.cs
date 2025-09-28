@@ -3689,6 +3689,14 @@ public class SyncshellWindow : IDisposable
         {
         }
 
+        public void Information(string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Information(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
         public void Warning(string messageTemplate, params object[] propertyValues)
         {
         }
@@ -3710,6 +3718,10 @@ public class SyncshellWindow : IDisposable
         }
 
         public void Fatal(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Write(LogEventLevel level, Exception? exception, string messageTemplate, params object[] propertyValues)
         {
         }
     }
