@@ -18,7 +18,6 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.SyncShell;
-using Glamourer.Api.IpcSubscribers;
 using Penumbra.Api.Enums;
 using Serilog;
 using Serilog.Events;
@@ -1575,7 +1574,7 @@ public class SyncshellWindow : IDisposable
 
         TrySubscribe(() =>
         {
-            var subscriber = pi.GetIpcSubscriber<nint, object?>(State.StateChanged.Label);
+            var subscriber = pi.GetIpcSubscriber<nint, object?>(Glamourer.Api.IpcSubscribers.StateChanged.Label);
             void Handler(nint _) => HandleLocalStateChanged(LocalStateChangeSource.Glamourer);
             subscriber.Subscribe(Handler);
             _ipcUnsubscribers.Add(() =>
