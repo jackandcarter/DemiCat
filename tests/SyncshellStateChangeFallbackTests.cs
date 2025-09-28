@@ -29,14 +29,21 @@ public class SyncshellStateChangeFallbackTests
             pluginInterface.Setup(pi => pi.GetPluginConfigDirectory()).Returns(tempDir);
             pluginInterface.Setup(pi => pi.SavePluginConfig(It.IsAny<Config>()));
 
-            var modSettingLegacy = new Mock<IIpcSubscriber<ModSettingChange, Guid, string, bool, object?>>();
-            modSettingLegacy.Setup(sub => sub.Subscribe(It.IsAny<Action<ModSettingChange, Guid, string, bool>>()));
-            modSettingLegacy.Setup(sub => sub.Unsubscribe(It.IsAny<Action<ModSettingChange, Guid, string, bool>>()));
+            var modSettingLegacy = new Mock<IIpcSubscriber<Guid, string, bool, object?>>();
+            modSettingLegacy
+                .Setup(sub => sub.Subscribe(It.IsAny<Action<Guid, string, bool>>()))
+                .Verifiable();
+            modSettingLegacy
+                .Setup(sub => sub.Unsubscribe(It.IsAny<Action<Guid, string, bool>>()))
+                .Verifiable();
             pluginInterface
                 .Setup(pi => pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(It.Is<string>(c => c == Penumbra.Api.IpcSubscribers.ModSettingChanged.Label)))
                 .Throws(new InvalidOperationException("typed gate unavailable"));
             pluginInterface
                 .Setup(pi => pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(It.Is<string>(c => c == "Penumbra.ModSettingChanged")))
+                .Throws(new InvalidOperationException("legacy gate used wrong signature"));
+            pluginInterface
+                .Setup(pi => pi.GetIpcSubscriber<Guid, string, bool, object?>(It.Is<string>(c => c == "Penumbra.ModSettingChanged")))
                 .Returns(modSettingLegacy.Object);
 
             var enabledLegacy = new Mock<IIpcSubscriber<bool, object?>>();
@@ -95,6 +102,8 @@ public class SyncshellStateChangeFallbackTests
             Assert.Equal(1, (int)pendingField.GetValue(window)!);
 
             window.Dispose();
+            modSettingLegacy.Verify(sub => sub.Subscribe(It.IsAny<Action<Guid, string, bool>>()), Times.Once());
+            modSettingLegacy.Verify(sub => sub.Unsubscribe(It.IsAny<Action<Guid, string, bool>>()), Times.Once());
             glamourerLegacyInt.Verify(sub => sub.Unsubscribe(It.IsAny<Action<int>>()), Times.Once());
             window = null;
         }

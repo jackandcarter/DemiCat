@@ -1537,6 +1537,7 @@ public class SyncshellWindow : IDisposable
         }
 
         void HandlePenumbraModSetting(ModSettingChange _, Guid __, string ___, bool ____) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
+        void HandlePenumbraLegacyModSetting(Guid __, string ___, bool ____) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
         TrySubscribeAny(
             "Penumbra.ModSettingChanged",
             () =>
@@ -1547,9 +1548,9 @@ public class SyncshellWindow : IDisposable
             },
             () =>
             {
-                var subscriber = pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>("Penumbra.ModSettingChanged");
-                subscriber.Subscribe(HandlePenumbraModSetting);
-                return () => subscriber.Unsubscribe(HandlePenumbraModSetting);
+                var subscriber = pi.GetIpcSubscriber<Guid, string, bool, object?>("Penumbra.ModSettingChanged");
+                subscriber.Subscribe(HandlePenumbraLegacyModSetting);
+                return () => subscriber.Unsubscribe(HandlePenumbraLegacyModSetting);
             });
 
         void HandlePenumbraEnabled(bool _) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
