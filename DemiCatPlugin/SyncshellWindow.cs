@@ -622,7 +622,7 @@ public class SyncshellWindow : IDisposable
         var minUpper = MinMembershipPanelHeight;
         var minLower = MinMembershipPanelHeight;
         var maxUpper = MathF.Max(minUpper, pairTotal - minLower);
-        var newUpper = Math.Clamp(upper - delta, minUpper, maxUpper);
+        var newUpper = Math.Clamp(upper + delta, minUpper, maxUpper);
         var newLower = pairTotal - newUpper;
         if (newLower < minLower)
         {
