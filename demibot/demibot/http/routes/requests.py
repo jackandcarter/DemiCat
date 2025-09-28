@@ -106,10 +106,12 @@ async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> N
     await manager.broadcast_text(payload, guild_id, path="/ws/requests")
 
 
-async def _requests_channel(guild_id: int) -> discord.abc.Messageable | None:
-    if not discord_client:
+async def _requests_channel(
+    discord_guild_id: int | None,
+) -> discord.abc.Messageable | None:
+    if not discord_client or discord_guild_id is None:
         return None
-    guild = discord_client.get_guild(guild_id)
+    guild = discord_client.get_guild(discord_guild_id)
     if not guild:
         return None
     for channel in guild.text_channels:
@@ -129,13 +131,13 @@ async def _send_dm(discord_id: int, message: str) -> None:
 
 
 async def _notify(
-    guild_id: int,
+    discord_guild_id: int | None,
     req: DbRequest,
     action: str,
     db: AsyncSession,
     ctx_user: User,
 ) -> None:
-    channel = await _requests_channel(guild_id)
+    channel = await _requests_channel(discord_guild_id)
     if channel:
         cfg = load_config()
         url = f"http://{cfg.server.host}:{cfg.server.port}/board/requests/{req.id}"
@@ -220,7 +222,7 @@ async def create_request(
     if req is None:
         raise HTTPException(status_code=500)
     await _broadcast(ctx.guild.id, req.id, _dto(req))
-    await _notify(ctx.guild.id, req, "created", db, ctx.user)
+    await _notify(ctx.guild.discord_guild_id, req, "created", db, ctx.user)
     return {"id": str(req.id)}
 
 
@@ -334,7 +336,7 @@ async def accept_request(
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
-    await _notify(ctx.guild.id, req, "claimed", db, ctx.user)
+    await _notify(ctx.guild.discord_guild_id, req, "claimed", db, ctx.user)
     return delta
 
 
@@ -385,7 +387,7 @@ async def complete_request(
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
-    await _notify(ctx.guild.id, req, "completed", db, ctx.user)
+    await _notify(ctx.guild.discord_guild_id, req, "completed", db, ctx.user)
     return delta
 
 
