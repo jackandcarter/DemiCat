@@ -20,6 +20,8 @@ using Dalamud.Plugin.Services;
 using DemiCatPlugin.SyncShell;
 using Glamourer.Api.IpcSubscribers;
 using Penumbra.Api.Enums;
+using Serilog;
+using Serilog.Events;
 
 namespace DemiCatPlugin;
 
@@ -3659,18 +3661,57 @@ public class SyncshellWindow : IDisposable
 
     private sealed class NullPluginLog : IPluginLog
     {
-        public void Verbose(string message) { }
-        public void Verbose(string message, Exception exception) { }
-        public void Debug(string message) { }
-        public void Debug(string message, Exception exception) { }
-        public void Info(string message) { }
-        public void Info(string message, Exception exception) { }
-        public void Warning(string message) { }
-        public void Warning(string message, Exception exception) { }
-        public void Error(string message) { }
-        public void Error(Exception exception, string message) { }
-        public void Fatal(string message) { }
-        public void Fatal(string message, Exception exception) { }
+        public ILogger Logger { get; } = new LoggerConfiguration().CreateLogger();
+
+        public LogEventLevel MinimumLogLevel { get; set; }
+
+        public void Verbose(string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Verbose(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Debug(string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Debug(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Info(string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Info(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Warning(string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Warning(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Error(string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Error(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Fatal(string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Fatal(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
     }
 
     private sealed class DownloadDeferredException : Exception
