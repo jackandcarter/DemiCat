@@ -1,10 +1,11 @@
 import asyncio
+import logging
 
 import pytest
 
 from demibot.db.session import init_db, get_session
 import demibot.db.session as db_session
-from demibot.db.models import User, SyncshellPairing
+from demibot.db.models import User, SyncshellPairing, SyncshellManifest
 from demibot.http.deps import RequestContext
 
 from .syncshell_import import syncshell
@@ -124,3 +125,35 @@ def test_asset_upload_download_and_rate_limit(tmp_path):
                 await syncshell.request_asset_upload(ctx=ctx, db=db)
             assert exc.value.status_code == 429
     asyncio.run(_run())
+
+
+def test_manifest_corrupt_previous_logs_warning(tmp_path, caplog):
+    async def _run():
+        session_factory = await _prepare_db()
+        async with session_factory as db:
+            user = User(id=1, discord_user_id=1, global_name="Test")
+            db.add(user)
+            await db.commit()
+
+            ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
+            syncshell.RATE_LIMIT = 5
+
+            await syncshell.pair(ctx=ctx, db=db)
+
+            corrupted = SyncshellManifest(user_id=user.id, manifest_json="{invalid}")
+            db.add(corrupted)
+            await db.commit()
+
+            manifest, _ = build_manifest_payload(tmp_path)
+            syncshell._transfer_budgets.clear()
+
+            caplog.set_level(logging.WARNING, logger="demibot.http.routes.syncshell")
+            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            assert response["status"] == "ok"
+
+    asyncio.run(_run())
+    assert any(
+        "syncshell.manifest.previous.decode_failed" in record.getMessage()
+        for record in caplog.records
+    )

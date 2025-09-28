@@ -6,6 +6,7 @@ from typing import Any, Optional
 from datetime import datetime, timedelta, timezone
 from dataclasses import dataclass
 import json
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -23,6 +24,9 @@ from ...db.models import (
     User,
 )
 from ..vault import presign_upload, presign_download
+
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/api/syncshell", tags=["syncshell"])
@@ -282,7 +286,12 @@ async def handle_manifest_upload(
     if record:
         try:
             previous_manifest = json.loads(record.manifest_json)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "syncshell.manifest.previous.decode_failed user_id=%s",
+                ctx.user.id,
+                exc_info=exc,
+            )
             previous_manifest = None
 
     diff = _compute_manifest_diff(previous_manifest, manifest)
