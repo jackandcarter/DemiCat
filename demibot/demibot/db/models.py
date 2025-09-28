@@ -233,6 +233,20 @@ class SyncshellRateLimit(Base):
 
 class SyncshellInvite(Base):
     __tablename__ = "syncshell_invites"
+    __table_args__ = (
+        Index(
+            "ix_syncshell_invites_inviter_target_user_status",
+            "inviter_id",
+            "target_user_id",
+            "status",
+        ),
+        Index(
+            "ix_syncshell_invites_inviter_target_display_name_status",
+            "inviter_id",
+            "target_display_name",
+            "status",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     inviter_id: Mapped[int] = mapped_column(
