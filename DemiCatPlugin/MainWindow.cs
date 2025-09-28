@@ -27,6 +27,7 @@ public class MainWindow : IDisposable
     private float _timeSinceLastInteraction;
     private float _fadeAlpha = 1f;
     private bool _styleNeedsUpdate = true;
+    private bool _closeSyncshellTab;
 
     public bool IsOpen;
     public bool HasOfficerAccess { get; set; }
@@ -75,7 +76,7 @@ public class MainWindow : IDisposable
         {
             _syncshell?.Dispose();
             _syncshell = null;
-            PluginServices.Instance?.Framework.RunOnTick(() => ImGui.SetTabItemClosed("Syncshell"));
+            _closeSyncshellTab = true;
         }
     }
 
@@ -169,6 +170,12 @@ public class MainWindow : IDisposable
 
             if (ImGui.BeginTabBar("MainTabs"))
             {
+                if (_closeSyncshellTab)
+                {
+                    ImGui.SetTabItemClosed("Syncshell");
+                    _closeSyncshellTab = false;
+                }
+
                 if (!linked)
                 {
                     ImGui.BeginDisabled();
