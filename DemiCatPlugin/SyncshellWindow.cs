@@ -40,6 +40,7 @@ public class SyncshellWindow : IDisposable
     private readonly HashSet<string> _seenAssetIds;
     private readonly string _assetsFile;
     private readonly string _installedFile;
+    private readonly string _bundlesFile;
     private readonly FileBlobStore _blobStore;
     private readonly Resolver _resolver;
     private readonly SyncClient _syncClient;
@@ -53,6 +54,7 @@ public class SyncshellWindow : IDisposable
     private DateTimeOffset? _lastPullAt;
     private DateTimeOffset _lastRefresh;
     private string? _etag;
+    private string? _bundleEtag;
     private bool _loading;
     private volatile bool _needsRefresh = true;
     private PenumbraConflict? _penumbraConflict;
@@ -88,6 +90,9 @@ public class SyncshellWindow : IDisposable
     private int _cacheSizeLimitMb;
     private int _installationsRefreshRequested;
     private int _installationsRefreshInProgress;
+    private readonly Dictionary<string, BundleCacheEntry> _bundleCache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _bundleCacheLock = new();
+    private readonly SemaphoreSlim _bundleFetchLock = new(1, 1);
 
     public SyncshellWindow(Config config, HttpClient httpClient)
     {
@@ -151,6 +156,7 @@ public class SyncshellWindow : IDisposable
 
         _assetsFile = Path.Combine(configDir, "assets.json");
         _installedFile = Path.Combine(configDir, "installed.json");
+        _bundlesFile = Path.Combine(configDir, "bundles.json");
         LoadCaches();
 
         _ = TrimCacheAsync();
@@ -891,6 +897,9 @@ public class SyncshellWindow : IDisposable
 
     private async Task InstallBundle(Asset bundle)
     {
+        if (!await EnsureBundleItemsAsync(bundle).ConfigureAwait(false))
+            return;
+
         if (bundle.Items == null || bundle.Items.Count == 0)
             return;
 
@@ -1639,6 +1648,9 @@ public class SyncshellWindow : IDisposable
             {
                 SaveInstalledCache();
             }
+
+            LoadBundleCache();
+            ApplyBundleCacheToAssets();
         }
         catch (Exception ex)
         {
@@ -1676,6 +1688,309 @@ public class SyncshellWindow : IDisposable
         }
     }
 
+    private void LoadBundleCache()
+    {
+        try
+        {
+            if (!File.Exists(_bundlesFile))
+            {
+                return;
+            }
+
+            var json = File.ReadAllText(_bundlesFile);
+            var wrapper = JsonSerializer.Deserialize<BundlesCache>(json);
+            if (wrapper == null)
+            {
+                return;
+            }
+
+            _bundleEtag = wrapper.Etag;
+
+            lock (_bundleCacheLock)
+            {
+                _bundleCache.Clear();
+                if (wrapper.Bundles != null)
+                {
+                    foreach (var entry in wrapper.Bundles)
+                    {
+                        if (entry == null || string.IsNullOrEmpty(entry.Id))
+                        {
+                            continue;
+                        }
+
+                        entry.Items ??= new List<Asset>();
+                        _bundleCache[entry.Id] = CloneBundleCacheEntry(entry);
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Error(ex, "Failed to load bundles cache");
+        }
+    }
+
+    private void SaveBundleCache()
+    {
+        try
+        {
+            List<BundleCacheEntry> snapshot;
+            lock (_bundleCacheLock)
+            {
+                snapshot = _bundleCache.Values.Select(CloneBundleCacheEntry).ToList();
+            }
+
+            var wrapper = new BundlesCache
+            {
+                Etag = _bundleEtag,
+                Bundles = snapshot,
+            };
+
+            var json = JsonSerializer.Serialize(wrapper);
+            File.WriteAllText(_bundlesFile, json);
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Error(ex, "Failed to save bundles cache");
+        }
+    }
+
+    private void ApplyBundleCacheToAssets()
+    {
+        lock (_bundleCacheLock)
+        {
+            if (_bundleCache.Count == 0)
+            {
+                return;
+            }
+
+            foreach (var asset in _assets.Where(static a => string.Equals(a.Kind, "BUNDLE", StringComparison.OrdinalIgnoreCase)))
+            {
+                if (asset.Items != null && asset.Items.Count > 0)
+                {
+                    continue;
+                }
+
+                if (_bundleCache.TryGetValue(asset.Id, out var entry) && entry.Items.Count > 0)
+                {
+                    asset.Items = entry.Items.Select(CloneAsset).ToList();
+                }
+            }
+        }
+    }
+
+    private async Task<bool> EnsureBundleItemsAsync(Asset bundle)
+    {
+        if (bundle.Items != null && bundle.Items.Count > 0)
+        {
+            return true;
+        }
+
+        BundleCacheEntry? cached;
+        lock (_bundleCacheLock)
+        {
+            _bundleCache.TryGetValue(bundle.Id, out cached);
+        }
+
+        if (cached != null && cached.Items.Count > 0)
+        {
+            bundle.Items = cached.Items.Select(CloneAsset).ToList();
+            return true;
+        }
+
+        var fetched = await FetchBundlesAsync().ConfigureAwait(false);
+        if (!fetched)
+        {
+            return false;
+        }
+
+        lock (_bundleCacheLock)
+        {
+            _bundleCache.TryGetValue(bundle.Id, out cached);
+        }
+
+        if (cached != null && cached.Items.Count > 0)
+        {
+            bundle.Items = cached.Items.Select(CloneAsset).ToList();
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task<bool> FetchBundlesAsync()
+    {
+        if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            return false;
+        }
+
+        await _bundleFetchLock.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
+            var url = $"{baseUrl}/api/syncshell/bundles";
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+            if (!string.IsNullOrEmpty(_bundleEtag))
+            {
+                request.Headers.TryAddWithoutValidation("If-None-Match", _bundleEtag);
+            }
+
+            using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+
+            if (response.StatusCode == HttpStatusCode.NotModified)
+            {
+                if (UpdateBundleEtag(response))
+                {
+                    SaveBundleCache();
+                }
+
+                return true;
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                PluginServices.Instance?.Log.Warning($"Failed to fetch SyncShell bundles: {(int)response.StatusCode} {response.ReasonPhrase}");
+                return false;
+            }
+
+            UpdateBundleEtag(response);
+            var json = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            BundlesResponse? payload = null;
+
+            try
+            {
+                payload = JsonSerializer.Deserialize<BundlesResponse>(json, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true,
+                });
+            }
+            catch (JsonException ex)
+            {
+                PluginServices.Instance?.Log.Error(ex, "Failed to deserialize SyncShell bundles response");
+                return false;
+            }
+
+            if (payload == null)
+            {
+                return false;
+            }
+
+            var map = new Dictionary<string, BundleCacheEntry>(StringComparer.OrdinalIgnoreCase);
+            foreach (var bundle in payload.Items)
+            {
+                if (bundle == null || string.IsNullOrWhiteSpace(bundle.Id))
+                {
+                    continue;
+                }
+
+                var entry = new BundleCacheEntry
+                {
+                    Id = bundle.Id!,
+                    Name = bundle.Name ?? string.Empty,
+                    Description = bundle.Description ?? string.Empty,
+                    UpdatedAt = bundle.UpdatedAt,
+                };
+
+                if (bundle.Assets != null)
+                {
+                    foreach (var asset in bundle.Assets)
+                    {
+                        if (asset == null)
+                        {
+                            continue;
+                        }
+
+                        entry.Items.Add(CreateBundleAsset(asset));
+                    }
+                }
+
+                map[entry.Id] = entry;
+            }
+
+            lock (_bundleCacheLock)
+            {
+                _bundleCache.Clear();
+                foreach (var pair in map)
+                {
+                    _bundleCache[pair.Key] = pair.Value;
+                }
+            }
+
+            ApplyBundleCacheToAssets();
+            SaveBundleCache();
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log.Error(ex, "Failed to fetch SyncShell bundles");
+            return false;
+        }
+        finally
+        {
+            _bundleFetchLock.Release();
+        }
+    }
+
+    private static Asset CreateBundleAsset(BundleAssetResponse asset)
+    {
+        var createdAt = asset.CreatedAt ?? DateTimeOffset.UtcNow;
+        var updatedAt = asset.UpdatedAt ?? createdAt;
+        var dependencies = asset.Dependencies?.Where(static d => !string.IsNullOrWhiteSpace(d)).Select(static d => d).ToList() ?? new List<string>();
+
+        return new Asset
+        {
+            Id = asset.Id ?? string.Empty,
+            Name = string.IsNullOrWhiteSpace(asset.Name) ? asset.Id ?? string.Empty : asset.Name!,
+            Kind = string.IsNullOrWhiteSpace(asset.Kind) ? "UNKNOWN" : asset.Kind!,
+            Size = asset.Size,
+            Uploader = string.Empty,
+            CreatedAt = createdAt,
+            UpdatedAt = updatedAt,
+            DownloadUrl = asset.DownloadUrl ?? string.Empty,
+            Dependencies = dependencies,
+            PeerId = string.Empty,
+        };
+    }
+
+    private static BundleCacheEntry CloneBundleCacheEntry(BundleCacheEntry entry)
+    {
+        var items = entry.Items ?? new List<Asset>();
+        return new BundleCacheEntry
+        {
+            Id = entry.Id,
+            Name = entry.Name,
+            Description = entry.Description,
+            UpdatedAt = entry.UpdatedAt,
+            Items = items.Select(CloneAsset).ToList(),
+        };
+    }
+
+    private bool UpdateBundleEtag(HttpResponseMessage response)
+    {
+        string? newTag = null;
+        if (response.Headers.TryGetValues("ETag", out var etags))
+        {
+            newTag = etags.LastOrDefault();
+        }
+
+        if (string.IsNullOrEmpty(newTag) && response.Content?.Headers?.LastModified is DateTimeOffset lastModified)
+        {
+            newTag = lastModified.ToString("R");
+        }
+
+        if (string.Equals(_bundleEtag, newTag, StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        _bundleEtag = newTag;
+        return true;
+    }
+
     public void ClearCaches()
     {
         try
@@ -1684,6 +1999,8 @@ public class SyncshellWindow : IDisposable
                 File.Delete(_assetsFile);
             if (File.Exists(_installedFile))
                 File.Delete(_installedFile);
+            if (File.Exists(_bundlesFile))
+                File.Delete(_bundlesFile);
         }
         catch (Exception ex)
         {
@@ -1694,9 +2011,14 @@ public class SyncshellWindow : IDisposable
         _installations.Clear();
         _updatesAvailable.Clear();
         _seenAssetIds.Clear();
+        lock (_bundleCacheLock)
+        {
+            _bundleCache.Clear();
+        }
         lock (_inventoryLock)
             _peerInventories.Clear();
         _etag = null;
+        _bundleEtag = null;
         _needsRefresh = true;
     }
 
@@ -2186,6 +2508,7 @@ public class SyncshellWindow : IDisposable
             PluginServices.Instance.ProgressOverlay = null;
         _manifestPushLock.Dispose();
         _pairingLock.Dispose();
+        _bundleFetchLock.Dispose();
         if (Instance == this)
             Instance = null;
     }
@@ -2298,6 +2621,87 @@ public class SyncshellWindow : IDisposable
         public string? Etag { get; set; }
         [JsonPropertyName("assets")]
         public List<Asset> Assets { get; set; } = new();
+    }
+
+    private class BundlesResponse
+    {
+        [JsonPropertyName("items")]
+        public List<BundleResponseItem> Items { get; set; } = new();
+    }
+
+    private class BundleResponseItem
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("description")]
+        public string? Description { get; set; }
+
+        [JsonPropertyName("updated_at")]
+        public DateTimeOffset? UpdatedAt { get; set; }
+
+        [JsonPropertyName("assets")]
+        public List<BundleAssetResponse> Assets { get; set; } = new();
+    }
+
+    private class BundleAssetResponse
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; set; }
+
+        [JsonPropertyName("name")]
+        public string? Name { get; set; }
+
+        [JsonPropertyName("kind")]
+        public string? Kind { get; set; }
+
+        [JsonPropertyName("download_url")]
+        public string? DownloadUrl { get; set; }
+
+        [JsonPropertyName("size")]
+        public long Size { get; set; }
+
+        [JsonPropertyName("dependencies")]
+        public List<string>? Dependencies { get; set; }
+
+        [JsonPropertyName("created_at")]
+        public DateTimeOffset? CreatedAt { get; set; }
+
+        [JsonPropertyName("updated_at")]
+        public DateTimeOffset? UpdatedAt { get; set; }
+
+        [JsonPropertyName("quantity")]
+        public int? Quantity { get; set; }
+    }
+
+    private class BundlesCache
+    {
+        [JsonPropertyName("etag")]
+        public string? Etag { get; set; }
+
+        [JsonPropertyName("bundles")]
+        public List<BundleCacheEntry> Bundles { get; set; } = new();
+    }
+
+    private class BundleCacheEntry
+    {
+        [JsonPropertyName("id")]
+        public string Id { get; set; } = string.Empty;
+
+        [JsonPropertyName("name")]
+        public string Name { get; set; } = string.Empty;
+
+        [JsonPropertyName("description")]
+        public string Description { get; set; } = string.Empty;
+
+        [JsonPropertyName("updated_at")]
+        public DateTimeOffset? UpdatedAt { get; set; }
+
+        [JsonPropertyName("items")]
+        public List<Asset> Items { get; set; } = new();
     }
 
     [JsonConverter(typeof(InstallationConverter))]
