@@ -1734,9 +1734,10 @@ public class ChatWindow : IDisposable
         var style = ImGui.GetStyle();
         var drawerHeight = CalculateMentionDrawerHeight(state, scale);
         var viewport = ImGui.GetMainViewport();
-        var workRect = viewport.WorkRect;
-        var availableBelow = MathF.Max(0f, workRect.Max.Y - state.AnchorMax.Y);
-        var availableAbove = MathF.Max(0f, state.AnchorMin.Y - workRect.Min.Y);
+        var min = viewport.WorkPos;
+        var max = min + viewport.WorkSize;
+        var availableBelow = MathF.Max(0f, max.Y - state.AnchorMax.Y);
+        var availableAbove = MathF.Max(0f, state.AnchorMin.Y - min.Y);
         var anchorAbove = false;
 
         if (drawerHeight > availableBelow)
