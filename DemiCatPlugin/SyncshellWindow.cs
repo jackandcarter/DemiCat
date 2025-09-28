@@ -513,7 +513,7 @@ public class SyncshellWindow : IDisposable
         var trimmed = invite?.Trim() ?? string.Empty;
         ImGui.SetNextItemWidth(-150f);
         var submitted = ImGui.InputTextWithHint("##syncshell-invite", "Character name", ref invite, 64, ImGuiInputTextFlags.EnterReturnsTrue);
-        _inviteTarget = invite;
+        _inviteTarget = invite ?? string.Empty;
         if (submitted && !string.IsNullOrWhiteSpace(trimmed))
         {
             TrySendInvite(trimmed);
