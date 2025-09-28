@@ -246,6 +246,11 @@ class SyncshellInvite(Base):
             "target_display_name",
             "status",
         ),
+        Index(
+            "ix_syncshell_invites_target_status",
+            "target_user_id",
+            "status",
+        ),
     )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
