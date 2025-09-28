@@ -509,9 +509,11 @@ public class SyncshellWindow : IDisposable
     {
         ImGui.TextWrapped("Send a SyncShell invite to another member by character name.");
 
-        var trimmed = _inviteTarget?.Trim() ?? string.Empty;
+        var invite = _inviteTarget;
+        var trimmed = invite?.Trim() ?? string.Empty;
         ImGui.SetNextItemWidth(-150f);
-        var submitted = ImGui.InputTextWithHint("##syncshell-invite", "Character name", ref _inviteTarget, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+        var submitted = ImGui.InputTextWithHint("##syncshell-invite", "Character name", ref invite, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+        _inviteTarget = invite;
         if (submitted && !string.IsNullOrWhiteSpace(trimmed))
         {
             TrySendInvite(trimmed);
@@ -2251,7 +2253,7 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private bool TryGetBudgetReason(string assetId, out string reason)
+    private bool TryGetBudgetReason(string assetId, out string? reason)
     {
         lock (_budgetLock)
         {
