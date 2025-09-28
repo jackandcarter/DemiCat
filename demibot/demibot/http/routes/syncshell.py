@@ -404,6 +404,19 @@ def _serialize_invite(invite: SyncshellInvite, direction: str) -> dict[str, Any]
     }
 
 
+def _presence_payload(
+    presence: SyncshellPresence | None,
+) -> tuple[str, str | None, str | None, str | None]:
+    if not presence:
+        return "offline", None, None, None
+
+    presence_value = "online" if presence.active else "offline"
+    last_seen = _to_iso(presence.last_seen)
+    sync_status = "syncing" if presence.active else None
+    synced_at = last_seen if presence.active else None
+    return presence_value, sync_status, last_seen, synced_at
+
+
 @router.get("/invites")
 async def list_invites(
     ctx: RequestContext = Depends(api_key_auth),
@@ -613,6 +626,115 @@ async def list_members(
         )
     members.sort(key=lambda entry: entry["displayName"].lower())
     return {"members": members}
+
+
+@router.get("/memberships")
+async def list_memberships(
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
+
+    member_result = await db.execute(
+        select(SyncshellMember.member_user_id).where(
+            SyncshellMember.user_id == ctx.user.id
+        )
+    )
+    member_ids = list(member_result.scalars().all())
+
+    presence_map: dict[int, SyncshellPresence] = {}
+    if member_ids:
+        presence_result = await db.execute(
+            select(SyncshellPresence).where(
+                SyncshellPresence.user_id == ctx.user.id,
+                SyncshellPresence.member_user_id.in_(member_ids),
+            )
+        )
+        presence_map = {
+            record.member_user_id: record for record in presence_result.scalars().all()
+        }
+
+    users: dict[int, User] = {}
+    if member_ids:
+        user_result = await db.execute(select(User).where(User.id.in_(member_ids)))
+        users = {user.id: user for user in user_result.scalars().all()}
+
+    members: list[dict[str, Any]] = []
+    currently_synced: list[dict[str, Any]] = []
+    for member_id in member_ids:
+        user = users.get(member_id)
+        presence = presence_map.get(member_id)
+        presence_value, sync_status, last_seen, synced_at = _presence_payload(presence)
+        entry: dict[str, Any] = {
+            "id": str(member_id),
+            "displayName": _display_name(user),
+            "presence": presence_value,
+            "syncStatus": sync_status,
+            "lastSeen": last_seen,
+        }
+        if synced_at:
+            entry["syncedAt"] = synced_at
+        members.append(entry)
+
+        if presence and presence.active:
+            active_entry = {
+                "id": entry["id"],
+                "displayName": entry["displayName"],
+                "presence": presence_value,
+                "syncStatus": sync_status,
+                "lastSeen": last_seen,
+            }
+            if synced_at:
+                active_entry["syncedAt"] = synced_at
+            currently_synced.append(active_entry)
+
+    members.sort(key=lambda entry: entry["displayName"].lower())
+    currently_synced.sort(key=lambda entry: entry["displayName"].lower())
+
+    invites_result = await db.execute(
+        select(SyncshellInvite)
+        .where(SyncshellInvite.inviter_id == ctx.user.id)
+        .order_by(SyncshellInvite.updated_at.desc())
+    )
+    invites = [
+        _serialize_invite(invite, "outgoing") for invite in invites_result.scalars().all()
+    ]
+
+    pending_result = await db.execute(
+        select(SyncshellInvite)
+        .where(
+            SyncshellInvite.target_user_id == ctx.user.id,
+            SyncshellInvite.status == "pending",
+        )
+        .order_by(SyncshellInvite.created_at.desc())
+    )
+    pending_invites = pending_result.scalars().all()
+    inviter_ids = {invite.inviter_id for invite in pending_invites}
+    inviters: dict[int, User] = {}
+    if inviter_ids:
+        inviter_result = await db.execute(select(User).where(User.id.in_(inviter_ids)))
+        inviters = {user.id: user for user in inviter_result.scalars().all()}
+
+    pending_approvals: list[dict[str, Any]] = []
+    for invite in pending_invites:
+        inviter = inviters.get(invite.inviter_id)
+        pending_approvals.append(
+            {
+                "id": invite.id,
+                "requesterId": invite.inviter_id,
+                "displayName": _display_name(inviter),
+                "requestedAt": _to_iso(invite.created_at),
+                "direction": "incoming",
+            }
+        )
+
+    return {
+        "members": members,
+        "currentlySynced": currently_synced,
+        "pendingApprovals": pending_approvals,
+        "invites": invites,
+    }
 
 
 @router.post("/presence")
