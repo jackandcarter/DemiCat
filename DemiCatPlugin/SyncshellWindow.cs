@@ -1539,7 +1539,7 @@ public class SyncshellWindow : IDisposable
 
         TrySubscribe(() =>
         {
-            var subscriber = pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(Penumbra.Api.IpcSubscribers.ModSettings.ModSettingChanged.Label);
+            var subscriber = pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(Penumbra.Api.IpcSubscribers.ModSettingChanged.Label);
             void Handler(ModSettingChange _, Guid __, string ___, bool ____) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
             subscriber.Subscribe(Handler);
             _ipcUnsubscribers.Add(() =>
@@ -1557,7 +1557,7 @@ public class SyncshellWindow : IDisposable
 
         TrySubscribe(() =>
         {
-            var subscriber = pi.GetIpcSubscriber<bool, object?>(Penumbra.Api.IpcSubscribers.PluginState.EnabledChange.Label);
+            var subscriber = pi.GetIpcSubscriber<bool, object?>(Penumbra.Api.IpcSubscribers.EnabledChange.Label);
             void Handler(bool _) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
             subscriber.Subscribe(Handler);
             _ipcUnsubscribers.Add(() =>
