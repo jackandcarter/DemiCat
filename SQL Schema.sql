@@ -1232,6 +1232,7 @@ CREATE TABLE `user_installation` (
   `user_id` bigint unsigned NOT NULL,
   `asset_id` int NOT NULL,
   `status` enum('DOWNLOADED','INSTALLED','APPLIED','FAILED') NOT NULL,
+  `asset_hash` varchar(64) DEFAULT NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   `version` int NOT NULL DEFAULT '1',

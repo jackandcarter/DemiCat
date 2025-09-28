@@ -839,6 +839,7 @@ public class SyncshellWindow : IDisposable
         {
             Id = string.IsNullOrWhiteSpace(source.Id) ? Guid.NewGuid().ToString("N") : source.Id,
             Name = string.IsNullOrWhiteSpace(source.Name) ? source.Id ?? "Untitled" : source.Name!,
+            Hash = string.Empty,
             Kind = string.IsNullOrWhiteSpace(source.Kind) ? "UNKNOWN" : source.Kind!,
             Size = source.Size,
             Uploader = string.IsNullOrWhiteSpace(source.Uploader) ? peerId : source.Uploader!,
@@ -863,6 +864,7 @@ public class SyncshellWindow : IDisposable
         {
             Id = asset.Id,
             Name = asset.Name,
+            Hash = asset.Hash,
             Kind = asset.Kind,
             Size = asset.Size,
             Uploader = asset.Uploader,
@@ -1058,7 +1060,7 @@ public class SyncshellWindow : IDisposable
             CommitReservedBytes(reservation);
             committed = true;
 
-            await UpdateInstallationStatus(asset.Id, "DOWNLOADED");
+            await UpdateInstallationStatus(asset.Id, "DOWNLOADED", asset.Hash);
 
             switch (asset.Kind)
             {
@@ -1069,19 +1071,19 @@ public class SyncshellWindow : IDisposable
                     var design = await File.ReadAllTextAsync(tmp);
                     using (JsonDocument.Parse(design)) { }
                     ApplyIpc("Glamourer.Design.Apply", design);
-                    await UpdateInstallationStatus(asset.Id, "APPLIED");
+                    await UpdateInstallationStatus(asset.Id, "APPLIED", asset.Hash);
                     break;
                 case "CUSTOMIZE_PROFILE":
                     var profile = await File.ReadAllTextAsync(tmp);
                     using (JsonDocument.Parse(profile)) { }
                     ApplyIpc("Customize.ApplyProfile", profile);
-                    await UpdateInstallationStatus(asset.Id, "APPLIED");
+                    await UpdateInstallationStatus(asset.Id, "APPLIED", asset.Hash);
                     break;
                 case "SIMPLEHEELS_PROFILE":
                     var heels = await File.ReadAllTextAsync(tmp);
                     using (JsonDocument.Parse(heels)) { }
                     ApplyIpc("SimpleHeels.ApplyProfile", heels);
-                    await UpdateInstallationStatus(asset.Id, "APPLIED");
+                    await UpdateInstallationStatus(asset.Id, "APPLIED", asset.Hash);
                     break;
             }
 
@@ -1111,7 +1113,7 @@ public class SyncshellWindow : IDisposable
             if (!committed)
                 ReleaseReservedBytes(reservation);
             PluginServices.Instance?.Log.Error(ex, $"Failed to install asset {asset.Id}");
-            await UpdateInstallationStatus(asset.Id, "FAILED");
+            await UpdateInstallationStatus(asset.Id, "FAILED", asset.Hash);
             return (false, ex.Message);
         }
         finally
@@ -1491,7 +1493,7 @@ public class SyncshellWindow : IDisposable
                 var proceed = await ResolvePenumbraConflict(asset.Name, dest);
                 if (!proceed)
                 {
-                    await UpdateInstallationStatus(asset.Id, "SKIPPED");
+                    await UpdateInstallationStatus(asset.Id, "SKIPPED", asset.Hash);
                     return;
                 }
             }
@@ -1528,7 +1530,7 @@ public class SyncshellWindow : IDisposable
 
         if (success)
         {
-            await UpdateInstallationStatus(asset.Id, "INSTALLED");
+            await UpdateInstallationStatus(asset.Id, "INSTALLED", asset.Hash);
             if (DateTimeOffset.UtcNow - _lastRedraw > TimeSpan.FromSeconds(5))
             {
                 try
@@ -1541,11 +1543,11 @@ public class SyncshellWindow : IDisposable
                 }
                 _lastRedraw = DateTimeOffset.UtcNow;
             }
-            await UpdateInstallationStatus(asset.Id, "APPLIED");
+            await UpdateInstallationStatus(asset.Id, "APPLIED", asset.Hash);
         }
         else
         {
-            await UpdateInstallationStatus(asset.Id, "FAILED");
+            await UpdateInstallationStatus(asset.Id, "FAILED", asset.Hash);
         }
     }
 
@@ -1587,7 +1589,7 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private async Task UpdateInstallationStatus(string assetId, string status)
+    private async Task UpdateInstallationStatus(string assetId, string status, string? assetHash = null)
     {
         try
         {
@@ -1595,7 +1597,13 @@ public class SyncshellWindow : IDisposable
                 return;
 
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users/me/installations";
-            var payload = new { assetId, status };
+            assetHash ??= GetAssetHash(assetId);
+            if (assetHash == null && _installations.TryGetValue(assetId, out var existing) && !string.IsNullOrEmpty(existing.AssetHash))
+            {
+                assetHash = existing.AssetHash;
+            }
+
+            var payload = new { assetId, status, assetHash };
             var request = new HttpRequestMessage(HttpMethod.Post, url)
             {
                 Content = new StringContent(JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json")
@@ -1603,7 +1611,13 @@ public class SyncshellWindow : IDisposable
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             await _httpClient.SendAsync(request);
 
-            _installations[assetId] = new Installation { AssetId = assetId, Status = status, UpdatedAt = DateTimeOffset.UtcNow };
+            _installations[assetId] = new Installation
+            {
+                AssetId = assetId,
+                Status = status,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                AssetHash = assetHash,
+            };
             SaveInstalledCache();
             ComputeUpdates();
         }
@@ -1611,6 +1625,49 @@ public class SyncshellWindow : IDisposable
         {
             PluginServices.Instance?.Log.Error(ex, "Failed to update installation status");
         }
+    }
+
+    private string? GetAssetHash(string assetId)
+    {
+        var asset = _assets.FirstOrDefault(a => string.Equals(a.Id, assetId, StringComparison.Ordinal));
+        if (asset != null && !string.IsNullOrEmpty(asset.Hash))
+        {
+            return asset.Hash;
+        }
+
+        return null;
+    }
+
+    private bool EnsureInstallationHashesFromAssets()
+    {
+        var updated = false;
+        var missing = false;
+
+        foreach (var pair in _installations)
+        {
+            if (!string.IsNullOrEmpty(pair.Value.AssetHash))
+            {
+                continue;
+            }
+
+            var hash = GetAssetHash(pair.Key);
+            if (!string.IsNullOrEmpty(hash))
+            {
+                pair.Value.AssetHash = hash;
+                updated = true;
+            }
+            else
+            {
+                missing = true;
+            }
+        }
+
+        if (missing)
+        {
+            Interlocked.Exchange(ref _installationsRefreshRequested, 1);
+        }
+
+        return updated;
     }
 
     private void LoadCaches()
@@ -1645,6 +1702,12 @@ public class SyncshellWindow : IDisposable
                 }
             }
             else
+            {
+                SaveInstalledCache();
+            }
+
+            var hashesBackfilled = EnsureInstallationHashesFromAssets();
+            if (hashesBackfilled)
             {
                 SaveInstalledCache();
             }
@@ -1945,6 +2008,7 @@ public class SyncshellWindow : IDisposable
         {
             Id = asset.Id ?? string.Empty,
             Name = string.IsNullOrWhiteSpace(asset.Name) ? asset.Id ?? string.Empty : asset.Name!,
+            Hash = asset.Hash ?? string.Empty,
             Kind = string.IsNullOrWhiteSpace(asset.Kind) ? "UNKNOWN" : asset.Kind!,
             Size = asset.Size,
             Uploader = string.Empty,
@@ -2334,6 +2398,7 @@ public class SyncshellWindow : IDisposable
                     continue;
                 _installations[inst.AssetId] = inst;
             }
+            EnsureInstallationHashesFromAssets();
             SaveInstalledCache();
         }
         catch
@@ -2347,8 +2412,22 @@ public class SyncshellWindow : IDisposable
         _updatesAvailable.Clear();
         foreach (var asset in _assets)
         {
-            if (_installations.TryGetValue(asset.Id, out var inst) && asset.UpdatedAt > inst.UpdatedAt)
+            if (!_installations.TryGetValue(asset.Id, out var inst))
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrEmpty(asset.Hash))
+            {
+                if (!string.Equals(asset.Hash, inst.AssetHash, StringComparison.Ordinal))
+                {
+                    _updatesAvailable.Add(asset.Id);
+                }
+            }
+            else if (asset.UpdatedAt > inst.UpdatedAt)
+            {
                 _updatesAvailable.Add(asset.Id);
+            }
         }
     }
 
@@ -2589,6 +2668,8 @@ public class SyncshellWindow : IDisposable
         public string Id { get; set; } = string.Empty;
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
+        [JsonPropertyName("hash")]
+        public string Hash { get; set; } = string.Empty;
         [JsonPropertyName("kind")]
         public string Kind { get; set; } = string.Empty;
         [JsonPropertyName("size")]
@@ -2655,6 +2736,9 @@ public class SyncshellWindow : IDisposable
         [JsonPropertyName("name")]
         public string? Name { get; set; }
 
+        [JsonPropertyName("hash")]
+        public string? Hash { get; set; }
+
         [JsonPropertyName("kind")]
         public string? Kind { get; set; }
 
@@ -2713,6 +2797,8 @@ public class SyncshellWindow : IDisposable
         public string Status { get; set; } = string.Empty;
         [JsonPropertyName("updatedAt")]
         public DateTimeOffset UpdatedAt { get; set; }
+        [JsonPropertyName("assetHash")]
+        public string? AssetHash { get; set; }
     }
 
     private sealed class InstallationConverter : JsonConverter<Installation>
@@ -2757,6 +2843,12 @@ public class SyncshellWindow : IDisposable
                     continue;
                 }
 
+                if (PropertyMatches(propertyName, "assetHash"))
+                {
+                    installation.AssetHash = ReadStringValue(ref reader);
+                    continue;
+                }
+
                 reader.Skip();
             }
 
@@ -2769,6 +2861,15 @@ public class SyncshellWindow : IDisposable
             writer.WriteString("assetId", value.AssetId ?? string.Empty);
             writer.WriteString("status", value.Status ?? string.Empty);
             writer.WriteString("updatedAt", value.UpdatedAt);
+            writer.WritePropertyName("assetHash");
+            if (!string.IsNullOrEmpty(value.AssetHash))
+            {
+                writer.WriteStringValue(value.AssetHash);
+            }
+            else
+            {
+                writer.WriteNullValue();
+            }
             writer.WriteEndObject();
         }
 

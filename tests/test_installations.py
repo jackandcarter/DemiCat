@@ -41,18 +41,21 @@ def test_installations_flow():
             await post_my_installations(payload, ctx=ctx, db=db)
             items = await get_my_installations(ctx=ctx, db=db)
             assert items[0]["status"] == "DOWNLOADED"
+            assert items[0]["assetHash"] == "h"
 
             # install
             payload = InstallationPayload(assetId=1, status=InstallStatus.INSTALLED)
             await post_my_installations(payload, ctx=ctx, db=db)
             items = await get_my_installations(ctx=ctx, db=db)
             assert items[0]["status"] == "INSTALLED"
+            assert items[0]["assetHash"] == "h"
 
             # apply
             payload = InstallationPayload(assetId=1, status=InstallStatus.APPLIED)
             await post_my_installations(payload, ctx=ctx, db=db)
             items = await get_my_installations(ctx=ctx, db=db)
             assert items[0]["status"] == "APPLIED"
+            assert items[0]["assetHash"] == "h"
 
             # only one row exists
             rows = (await db.execute(select(UserInstallation))).scalars().all()
