@@ -704,6 +704,7 @@ async def list_members(
                 "displayName": _display_name(users.get(member_id)),
                 "active": bool(presence.active) if presence else False,
                 "lastSeen": _to_iso(presence.last_seen) if presence else None,
+                "tokenLinked": presence is not None,
             }
         )
     members.sort(key=lambda entry: entry["displayName"].lower())
@@ -754,6 +755,7 @@ async def list_memberships(
             "presence": presence_value,
             "syncStatus": sync_status,
             "lastSeen": last_seen,
+            "tokenLinked": presence is not None,
         }
         if synced_at:
             entry["syncedAt"] = synced_at
@@ -766,6 +768,7 @@ async def list_memberships(
                 "presence": presence_value,
                 "syncStatus": sync_status,
                 "lastSeen": last_seen,
+                "tokenLinked": True,
             }
             if synced_at:
                 active_entry["syncedAt"] = synced_at
