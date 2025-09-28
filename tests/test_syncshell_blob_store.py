@@ -26,7 +26,10 @@ def test_manifest_blob_hashes_persist(tmp_path):
             await syncshell.pair(ctx=ctx, db=db)
 
             manifest, blob_hash = build_manifest_payload(tmp_path)
-            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            syncshell._transfer_budgets.clear()
+            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            need_hashes = {entry["hash"] for entry in response["diff"]["need"]}
+            assert blob_hash in need_hashes
             record = await db.get(SyncshellManifest, user.id)
             assert record is not None
             stored = json.loads(record.manifest_json)
@@ -36,7 +39,13 @@ def test_manifest_blob_hashes_persist(tmp_path):
 
             # Updating the manifest replaces the stored payload.
             newer_manifest, newer_hash = build_manifest_payload(tmp_path / "second")
-            await syncshell.upload_manifest(newer_manifest, ctx=ctx, db=db)
+            response = await syncshell.upload_manifest(newer_manifest, ctx=ctx, db=db)
+            diff = response["diff"]
+            need_hashes = {entry["hash"] for entry in diff["need"]}
+            remove_hashes = {entry["hash"] for entry in diff["remove"]}
+            assert newer_hash in need_hashes
+            assert blob_hash in remove_hashes
+            assert diff["conflicts"]
             updated = await db.get(SyncshellManifest, user.id)
             assert updated is not None
             updated_payload = json.loads(updated.manifest_json)

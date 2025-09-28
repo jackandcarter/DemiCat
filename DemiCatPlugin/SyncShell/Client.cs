@@ -467,13 +467,94 @@ public sealed class SyncClient : IDisposable
         var peerId = element.TryGetProperty("peerId", out var peerProperty)
             ? peerProperty.GetString() ?? "unknown"
             : "unknown";
-        if (!element.TryGetProperty("want", out var wantElement))
+        var want = element.TryGetProperty("want", out var wantElement)
+            ? wantElement.Deserialize<WantBlobs>(JsonOptions) ?? new WantBlobs()
+            : new WantBlobs();
+
+        if (element.TryGetProperty("limits", out var limitsElement) && limitsElement.ValueKind == JsonValueKind.Object)
         {
-            PluginServices.Instance?.Log.Warning("Received want message without payload");
-            return;
+            if (limitsElement.TryGetProperty("transfer", out var transferElement) && transferElement.ValueKind == JsonValueKind.Object)
+            {
+                var remoteLimits = transferElement.Deserialize<SyncLimits>(JsonOptions);
+                if (remoteLimits != null)
+                {
+                    _negotiatedLimits = SyncLimits.Negotiate(_localLimits, remoteLimits);
+                    _sendBucket = new TokenBucket(_negotiatedLimits.BytesPerSecond, _negotiatedLimits.BytesPerSecond);
+                }
+            }
+
+            if (limitsElement.TryGetProperty("budget", out var budgetElement) && budgetElement.ValueKind == JsonValueKind.Object)
+            {
+                if (budgetElement.TryGetProperty("throttleAfterBytes", out var throttleElement) && throttleElement.ValueKind == JsonValueKind.Number)
+                {
+                    var remaining = throttleElement.GetInt64();
+                    if (remaining <= 0)
+                    {
+                        PluginServices.Instance?.Log.Warning("SyncShell upload budget exhausted; awaiting reset before sending more blobs.");
+                    }
+                }
+            }
         }
 
-        var want = wantElement.Deserialize<WantBlobs>(JsonOptions) ?? new WantBlobs();
+        var diffHashes = new List<string>();
+        var diffChunks = new List<BlobChunk>();
+        if (element.TryGetProperty("diff", out var diffElement) && diffElement.ValueKind == JsonValueKind.Object)
+        {
+            if (diffElement.TryGetProperty("need", out var needElement) && needElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in needElement.EnumerateArray())
+                {
+                    if (item.ValueKind != JsonValueKind.Object)
+                    {
+                        continue;
+                    }
+
+                    if (item.TryGetProperty("chunk", out var chunkElement) && chunkElement.ValueKind == JsonValueKind.Object)
+                    {
+                        var chunk = chunkElement.Deserialize<BlobChunk>(JsonOptions);
+                        if (chunk != null)
+                        {
+                            diffChunks.Add(chunk);
+                            continue;
+                        }
+                    }
+
+                    if (item.TryGetProperty("hash", out var hashElement) && hashElement.ValueKind == JsonValueKind.String)
+                    {
+                        var hash = hashElement.GetString();
+                        if (!string.IsNullOrEmpty(hash))
+                        {
+                            diffHashes.Add(hash!);
+                        }
+                    }
+                }
+            }
+
+            if (diffElement.TryGetProperty("conflicts", out var conflictsElement) && conflictsElement.ValueKind == JsonValueKind.Array && conflictsElement.GetArrayLength() > 0)
+            {
+                PluginServices.Instance?.Log.Information($"SyncShell diff reported {conflictsElement.GetArrayLength()} conflicts for peer {peerId}");
+            }
+        }
+
+        foreach (var hash in diffHashes)
+        {
+            if (!want.Blobs.Contains(hash))
+            {
+                want.Blobs.Add(hash);
+            }
+        }
+
+        foreach (var chunk in diffChunks)
+        {
+            if (!want.Chunks.Any(existing =>
+                    existing.Blob.Equals(chunk.Blob, StringComparison.OrdinalIgnoreCase) &&
+                    existing.Offset == chunk.Offset &&
+                    existing.Length == chunk.Length))
+            {
+                want.Chunks.Add(chunk);
+            }
+        }
+
         WantsReceived?.Invoke(this, new WantsReceivedEventArgs(peerId, want));
 
         var upload = _uploads.GetOrAdd(peerId, static _ => new PeerUploadState());

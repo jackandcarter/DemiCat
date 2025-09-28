@@ -26,7 +26,9 @@ def test_token_expiry(tmp_path):
             syncshell.TOKEN_TTL = 1
             await syncshell.pair(ctx=ctx, db=db)
             manifest, _ = build_manifest_payload(tmp_path)
-            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            syncshell._transfer_budgets.clear()
+            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            assert response["diff"]["need"]
             await asyncio.sleep(1.1)
             with pytest.raises(syncshell.HTTPException):
                 await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
@@ -48,7 +50,9 @@ def test_rate_limit_hits(tmp_path):
             syncshell.RATE_LIMIT = 2
             await syncshell.pair(ctx=ctx, db=db)
             manifest, _ = build_manifest_payload(tmp_path)
-            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            syncshell._transfer_budgets.clear()
+            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            assert response["diff"]["need"]
             with pytest.raises(syncshell.HTTPException):
                 await syncshell.resync(ctx=ctx, db=db)
     asyncio.run(_run())

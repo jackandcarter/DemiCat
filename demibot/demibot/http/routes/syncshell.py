@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 from uuid import uuid4
-from typing import Any
-from datetime import datetime, timedelta
+from typing import Any, Optional
+from datetime import datetime, timedelta, timezone
+from dataclasses import dataclass
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,6 +30,276 @@ router = APIRouter(prefix="/api/syncshell", tags=["syncshell"])
 RATE_LIMIT = int(os.getenv("SYNC_SHELL_MAX_REQUESTS_PER_MINUTE", "30"))
 TOKEN_TTL = int(os.getenv("SYNC_SHELL_TOKEN_TTL", "300"))  # seconds
 MAX_MANIFEST_BYTES = 1024 * 1024  # 1 MiB manifest payload cap
+
+DEFAULT_TRANSFER_LIMITS: dict[str, int] = {
+    "bytesPerSecond": int(os.getenv("SYNC_SHELL_BYTES_PER_SECOND", str(512 * 1024))),
+    "chunkSizeBytes": int(os.getenv("SYNC_SHELL_CHUNK_SIZE", str(64 * 1024))),
+    "maxOutstandingWants": int(os.getenv("SYNC_SHELL_MAX_OUTSTANDING_WANTS", "64")),
+}
+
+TRANSFER_BUDGET_BYTES = int(
+    os.getenv("SYNC_SHELL_TRANSFER_BUDGET_BYTES", str(512 * 1024 * 1024))
+)
+TRANSFER_BUDGET_WINDOW_SECONDS = int(
+    os.getenv("SYNC_SHELL_TRANSFER_BUDGET_WINDOW", str(60 * 60))
+)
+
+
+@dataclass
+class _TransferBudget:
+    window_start: datetime
+    used_bytes: int = 0
+
+
+_transfer_budgets: dict[int, _TransferBudget] = {}
+
+
+def _now_utc() -> datetime:
+    return datetime.utcnow()
+
+
+def _normalise_size(value: Any) -> int:
+    try:
+        if value is None:
+            return 0
+        if isinstance(value, (int, float)):
+            return int(value)
+        if isinstance(value, str) and value.strip():
+            return int(float(value))
+    except (ValueError, TypeError):
+        return 0
+    return 0
+
+
+def _extract_manifest_assets(manifest: Any) -> dict[tuple[Any, ...], dict[str, Any]]:
+    assets: dict[tuple[Any, ...], dict[str, Any]] = {}
+    if not isinstance(manifest, dict):
+        return assets
+
+    collections = manifest.get("collections") or []
+    for collection in collections:
+        if not isinstance(collection, dict):
+            continue
+        collection_id = collection.get("collectionId") or "default"
+
+        mods = collection.get("mods") or []
+        for mod in mods:
+            if not isinstance(mod, dict):
+                continue
+            mod_id = mod.get("modId") or ""
+            mod_key = ("mod", collection_id, mod_id)
+            assets[mod_key] = {
+                "kind": "mod",
+                "collectionId": collection_id,
+                "modId": mod_id,
+                "hash": mod.get("hash"),
+                "size": _normalise_size(mod.get("size")),
+                "transferable": False,
+            }
+
+            files = mod.get("files") or []
+            for file_entry in files:
+                if not isinstance(file_entry, dict):
+                    continue
+                path = file_entry.get("path") or ""
+                file_key = ("file", collection_id, mod_id, path)
+                assets[file_key] = {
+                    "kind": "file",
+                    "collectionId": collection_id,
+                    "modId": mod_id,
+                    "path": path,
+                    "hash": file_entry.get("hash"),
+                    "size": _normalise_size(file_entry.get("size")),
+                    "transferable": True,
+                }
+
+            patches = mod.get("patches") or []
+            for patch in patches:
+                if not isinstance(patch, dict):
+                    continue
+                path = patch.get("path") or ""
+                patch_key = ("mod_patch", collection_id, mod_id, path)
+                assets[patch_key] = {
+                    "kind": "mod_patch",
+                    "collectionId": collection_id,
+                    "modId": mod_id,
+                    "path": path,
+                    "hash": patch.get("hash"),
+                    "size": _normalise_size(patch.get("size")),
+                    "transferable": True,
+                }
+
+        collection_patches = collection.get("patches") or []
+        for patch in collection_patches:
+            if not isinstance(patch, dict):\n+                continue
+            path = patch.get("path") or ""
+            patch_key = ("patch", collection_id, path)
+            assets[patch_key] = {
+                "kind": "patch",
+                "collectionId": collection_id,
+                "path": path,
+                "hash": patch.get("hash"),
+                "size": _normalise_size(patch.get("size")),
+                "transferable": True,
+            }
+
+    return assets
+
+
+def _serialise_asset(asset: dict[str, Any]) -> dict[str, Any]:
+    payload: dict[str, Any] = {"kind": asset.get("kind"), "hash": asset.get("hash")}
+    if asset.get("collectionId"):
+        payload["collectionId"] = asset.get("collectionId")
+    if asset.get("modId"):
+        payload["modId"] = asset.get("modId")
+    if asset.get("path"):
+        payload["path"] = asset.get("path")
+    size = asset.get("size")
+    if isinstance(size, int) and size > 0:
+        payload["size"] = size
+    return payload
+
+
+def _serialise_conflict(
+    current: dict[str, Any], previous: dict[str, Any]
+) -> dict[str, Any]:
+    payload = {
+        "kind": current.get("kind") or previous.get("kind"),
+        "hash": current.get("hash"),
+        "expected": previous.get("hash"),
+    }
+    if current.get("collectionId") or previous.get("collectionId"):
+        payload["collectionId"] = current.get("collectionId") or previous.get("collectionId")
+    if current.get("modId") or previous.get("modId"):
+        payload["modId"] = current.get("modId") or previous.get("modId")
+    if current.get("path") or previous.get("path"):
+        payload["path"] = current.get("path") or previous.get("path")
+
+    current_size = current.get("size")
+    if isinstance(current_size, int) and current_size >= 0:
+        payload["size"] = current_size
+    previous_size = previous.get("size")
+    if isinstance(previous_size, int) and previous_size >= 0:
+        payload["previousSize"] = previous_size
+    return payload
+
+
+def _compute_manifest_diff(
+    previous: Optional[dict[str, Any]], current: dict[str, Any]
+) -> dict[str, list[dict[str, Any]]]:
+    previous_assets = _extract_manifest_assets(previous or {})
+    current_assets = _extract_manifest_assets(current)
+
+    need: dict[tuple[Any, ...], dict[str, Any]] = {}
+    remove: dict[tuple[Any, ...], dict[str, Any]] = {}
+    conflicts: list[dict[str, Any]] = []
+
+    previous_keys = set(previous_assets)
+    current_keys = set(current_assets)
+
+    for key in current_keys - previous_keys:
+        asset = current_assets[key]
+        if asset.get("transferable") and asset.get("hash"):
+            need[key] = _serialise_asset(asset)
+
+    for key in previous_keys - current_keys:
+        asset = previous_assets[key]
+        if asset.get("transferable") and asset.get("hash"):
+            remove[key] = _serialise_asset(asset)
+
+    for key in current_keys & previous_keys:
+        current_asset = current_assets[key]
+        previous_asset = previous_assets[key]
+        if (current_asset.get("hash") or "") != (previous_asset.get("hash") or ""):
+            conflicts.append(_serialise_conflict(current_asset, previous_asset))
+            if current_asset.get("transferable") and current_asset.get("hash"):
+                need[key] = _serialise_asset(current_asset)
+            if previous_asset.get("transferable") and previous_asset.get("hash"):
+                remove[key] = _serialise_asset(previous_asset)
+
+    need_list = sorted(need.values(), key=lambda item: item.get("hash", ""))
+    remove_list = sorted(remove.values(), key=lambda item: item.get("hash", ""))
+    conflicts.sort(
+        key=lambda item: (
+            item.get("collectionId", ""),
+            item.get("modId", ""),
+            item.get("path", ""),
+            item.get("kind", ""),
+        )
+    )
+
+    return {"need": need_list, "remove": remove_list, "conflicts": conflicts}
+
+
+def _update_transfer_budget(
+    user_id: int, diff: dict[str, list[dict[str, Any]]]
+) -> dict[str, Any]:
+    limit = max(0, TRANSFER_BUDGET_BYTES)
+    window = timedelta(seconds=max(1, TRANSFER_BUDGET_WINDOW_SECONDS))
+    now = _now_utc()
+
+    budget = _transfer_budgets.get(user_id)
+    if not budget or now - budget.window_start >= window:
+        budget = _TransferBudget(window_start=now, used_bytes=0)
+        _transfer_budgets[user_id] = budget
+
+    incremental = 0
+    for entry in diff.get("need", []):
+        size = entry.get("size")
+        if isinstance(size, int) and size > 0:
+            incremental += size
+
+    budget.used_bytes += incremental
+    if budget.used_bytes < 0:
+        budget.used_bytes = 0
+
+    remaining = max(0, limit - budget.used_bytes)
+    window_end = budget.window_start + window
+    if window_end.tzinfo is None:
+        window_end = window_end.replace(tzinfo=timezone.utc)
+    return {
+        "limitBytes": limit,
+        "usedBytes": budget.used_bytes,
+        "throttleAfterBytes": remaining,
+        "windowEndsAt": window_end.isoformat(),
+    }
+
+
+async def handle_manifest_upload(
+    manifest: dict[str, Any], ctx: RequestContext, db: AsyncSession
+) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
+
+    manifest_json = json.dumps(manifest)
+    payload_size = len(manifest_json.encode())
+    if payload_size > MAX_MANIFEST_BYTES:
+        raise HTTPException(status_code=413, detail="manifest too large")
+
+    record = await db.get(SyncshellManifest, ctx.user.id)
+    previous_manifest: Optional[dict[str, Any]] = None
+    if record:
+        try:
+            previous_manifest = json.loads(record.manifest_json)
+        except json.JSONDecodeError:
+            previous_manifest = None
+
+    diff = _compute_manifest_diff(previous_manifest, manifest)
+
+    if record:
+        record.manifest_json = manifest_json
+        record.updated_at = datetime.utcnow()
+    else:
+        record = SyncshellManifest(user_id=ctx.user.id, manifest_json=manifest_json)
+        db.add(record)
+
+    await db.commit()
+
+    limits_payload = {
+        "budget": _update_transfer_budget(ctx.user.id, diff),
+        "transfer": dict(DEFAULT_TRANSFER_LIMITS),
+    }
+    return diff, limits_payload
 
 
 async def _check_rate_limit(user_id: int, db: AsyncSession) -> None:
@@ -458,7 +729,7 @@ async def pair(
 
 @router.post("/manifest")
 async def upload_manifest(
-    manifest: list[dict[str, Any]],
+    manifest: dict[str, Any],
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
@@ -467,21 +738,8 @@ async def upload_manifest(
     The manifest is capped in size to prevent excessive memory usage and
     naive clients from overwhelming the API.
     """
-    await _require_pairing(ctx, db)
-    await _check_rate_limit(ctx.user.id, db)
-    payload_size = len(str(manifest).encode())
-    if payload_size > MAX_MANIFEST_BYTES:
-        raise HTTPException(status_code=413, detail="manifest too large")
-    manifest_json = json.dumps(manifest)
-    record = await db.get(SyncshellManifest, ctx.user.id)
-    if record:
-        record.manifest_json = manifest_json
-        record.updated_at = datetime.utcnow()
-    else:
-        record = SyncshellManifest(user_id=ctx.user.id, manifest_json=manifest_json)
-        db.add(record)
-    await db.commit()
-    return {"status": "ok"}
+    diff, limits = await handle_manifest_upload(manifest, ctx, db)
+    return {"status": "ok", "diff": diff, "limits": limits}
 
 
 @router.post("/asset/upload")
