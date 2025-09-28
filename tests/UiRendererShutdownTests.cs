@@ -301,6 +301,14 @@ public class UiRendererShutdownTests
         {
         }
 
+        public void Information(string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Information(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
         public void Warning(string messageTemplate, params object[] propertyValues)
         {
         }
@@ -322,6 +330,10 @@ public class UiRendererShutdownTests
         }
 
         public void Fatal(Exception? exception, string messageTemplate, params object[] propertyValues)
+        {
+        }
+
+        public void Write(LogEventLevel level, Exception? exception, string messageTemplate, params object[] propertyValues)
         {
         }
     }
