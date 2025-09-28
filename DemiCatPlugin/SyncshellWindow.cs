@@ -1483,15 +1483,17 @@ public class SyncshellWindow : IDisposable
     {
         var pi = PluginServices.Instance?.PluginInterface;
         var success = false;
+        string? dest = null;
+        string? backupPath = null;
         if (pi != null)
         {
-            string? dest = null;
             try
             {
                 var modsDir = pi.GetIpcSubscriber<string>("Penumbra.GetModsDirectory").InvokeFunc();
                 dest = Path.Combine(modsDir, asset.Name);
-                var proceed = await ResolvePenumbraConflict(asset.Name, dest);
-                if (!proceed)
+                var conflict = await ResolvePenumbraConflict(asset.Name, dest);
+                backupPath = conflict.BackupPath;
+                if (!conflict.Proceed)
                 {
                     await UpdateInstallationStatus(asset.Id, "SKIPPED", asset.Hash);
                     return;
@@ -1528,6 +1530,49 @@ public class SyncshellWindow : IDisposable
             }
         }
 
+        if (backupPath != null)
+        {
+            if (success)
+            {
+                try
+                {
+                    Directory.Delete(backupPath, true);
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Warning(ex, $"Failed to remove Penumbra backup for '{asset.Name}' at '{backupPath}'. Manual cleanup may be required.");
+                }
+            }
+            else if (dest != null)
+            {
+                PluginServices.Instance?.Log.Information($"Restoring original Penumbra mod '{asset.Name}' after failed install.");
+                try
+                {
+                    if (Directory.Exists(dest))
+                    {
+                        Directory.Delete(dest, true);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Warning(ex, $"Failed to remove incomplete Penumbra install at '{dest}' before restoring backup for '{asset.Name}'. Manual cleanup may be required.");
+                }
+
+                try
+                {
+                    Directory.Move(backupPath, dest);
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Error(ex, $"Failed to restore Penumbra mod '{asset.Name}' from backup at '{backupPath}'. Manual cleanup may be required.");
+                }
+            }
+            else
+            {
+                PluginServices.Instance?.Log.Warning($"Unable to restore Penumbra backup for '{asset.Name}' because the destination path is unknown. Backup remains at '{backupPath}'.");
+            }
+        }
+
         if (success)
         {
             await UpdateInstallationStatus(asset.Id, "INSTALLED", asset.Hash);
@@ -1551,26 +1596,51 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private async Task<bool> ResolvePenumbraConflict(string modName, string dest)
+    private async Task<(bool Proceed, string? BackupPath)> ResolvePenumbraConflict(string modName, string dest)
     {
         if (!Directory.Exists(dest))
-            return true;
+            return (true, null);
+        var log = PluginServices.Instance?.Log;
         if (_config.PenumbraChoices.TryGetValue(modName, out var useVault))
         {
             if (!useVault)
-                return false;
-            Directory.Delete(dest, true);
-            return true;
+                return (false, null);
         }
-        var tcs = new TaskCompletionSource<bool>();
-        _penumbraConflict = new PenumbraConflict { ModName = modName, Tcs = tcs };
-        var result = await tcs.Task;
-        _config.PenumbraChoices[modName] = result;
-        PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
-        if (!result)
-            return false;
-        Directory.Delete(dest, true);
-        return true;
+        else
+        {
+            var tcs = new TaskCompletionSource<bool>();
+            _penumbraConflict = new PenumbraConflict { ModName = modName, Tcs = tcs };
+            var result = await tcs.Task;
+            _config.PenumbraChoices[modName] = result;
+            PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+            if (!result)
+                return (false, null);
+        }
+
+        var backupPath = GetBackupDirectoryPath(dest);
+        try
+        {
+            Directory.Move(dest, backupPath);
+            return (true, backupPath);
+        }
+        catch (Exception ex)
+        {
+            log?.Error(ex, $"Failed to move existing Penumbra mod '{modName}' to backup location '{backupPath}'.");
+            return (false, null);
+        }
+    }
+
+    private static string GetBackupDirectoryPath(string dest)
+    {
+        var basePath = dest + "_backup";
+        var candidate = basePath;
+        var counter = 1;
+        while (Directory.Exists(candidate))
+        {
+            candidate = $"{basePath}_{counter++}";
+        }
+
+        return candidate;
     }
 
     private void ApplyIpc(string channel, string payload)
