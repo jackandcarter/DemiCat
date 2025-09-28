@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using ImGuiMouseCursor = Dalamud.Bindings.ImGui.ImGuiMouseCursor;
@@ -39,6 +40,11 @@ public class PresenceSidebar : IDisposable
     };
 
     private const string PresenceUnavailableMessage = "Presence unavailable";
+    private static readonly TimeSpan RefreshCooldown = TimeSpan.FromSeconds(1);
+
+    private Task? _refreshTask;
+    private bool _refreshInFlight;
+    private DateTime _nextRefreshAllowed = DateTime.MinValue;
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
 
@@ -69,7 +75,31 @@ public class PresenceSidebar : IDisposable
             }
             else if (!_service.Loaded)
             {
-                _ = _service.Refresh();
+                if (!_refreshInFlight && DateTime.UtcNow >= _nextRefreshAllowed)
+                {
+                    var refreshTask = _service.Refresh();
+                    _refreshTask = refreshTask;
+                    _refreshInFlight = true;
+
+                    void CompleteRefresh()
+                    {
+                        _nextRefreshAllowed = DateTime.UtcNow + RefreshCooldown;
+                        if (ReferenceEquals(_refreshTask, refreshTask))
+                        {
+                            _refreshTask = null;
+                        }
+                        _refreshInFlight = false;
+                    }
+
+                    if (!refreshTask.IsCompleted)
+                    {
+                        _ = refreshTask.ContinueWith(_ => CompleteRefresh(), TaskScheduler.Default);
+                    }
+                    else
+                    {
+                        CompleteRefresh();
+                    }
+                }
                 ShowStatus(_service.StatusMessage);
             }
             else
