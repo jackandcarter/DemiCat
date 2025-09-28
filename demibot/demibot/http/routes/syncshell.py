@@ -9,7 +9,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -328,6 +328,10 @@ def _display_name(user: User | None) -> str:
     return user.global_name or user.character_name or str(user.id)
 
 
+def _normalize_display_name(value: str | None) -> str:
+    return (value or "").strip().casefold()
+
+
 def _to_iso(dt: datetime | None) -> str | None:
     if not dt:
         return None
@@ -445,13 +449,27 @@ async def create_invite(
     await _check_rate_limit(ctx.user.id, db)
 
     target_user: User | None = None
-    display_name = (payload.member or "").strip()
+    normalized_member = _normalize_display_name(payload.member)
+    display_name = normalized_member
     if payload.member_id is not None:
         target_user = await db.get(User, payload.member_id)
         if not target_user:
             raise HTTPException(status_code=404, detail="member not found")
         display_name = _display_name(target_user)
-
+    elif normalized_member:
+        potential_targets = await db.execute(
+            select(User).where(
+                or_(
+                    func.lower(User.global_name) == normalized_member,
+                    func.lower(User.character_name) == normalized_member,
+                )
+            )
+        )
+        matches = potential_targets.scalars().all()
+        if len(matches) == 1:
+            target_user = matches[0]
+            display_name = _display_name(target_user)
+    
     if not display_name:
         raise HTTPException(status_code=422, detail="member is required")
 
@@ -479,10 +497,13 @@ async def create_invite(
         if invite is not None:
             return _serialize_invite(invite, "outgoing")
     else:
+        normalized_display_name = _normalize_display_name(display_name)
         existing_invite = await db.execute(
             select(SyncshellInvite).where(
                 SyncshellInvite.inviter_id == ctx.user.id,
-                SyncshellInvite.target_display_name == display_name,
+                SyncshellInvite.target_user_id.is_(None),
+                func.lower(SyncshellInvite.target_display_name)
+                == normalized_display_name,
                 SyncshellInvite.status == "pending",
             )
         )
@@ -506,13 +527,23 @@ async def create_invite(
 
 
 async def _get_invite_for_target(
-    db: AsyncSession, invite_id: str, target_user_id: int
+    db: AsyncSession, invite_id: str, target_user: User
 ) -> SyncshellInvite:
     invite = await db.get(SyncshellInvite, invite_id)
-    if not invite or invite.target_user_id != target_user_id:
+    if not invite:
         raise HTTPException(status_code=404, detail="invite not found")
     if invite.status != "pending":
         raise HTTPException(status_code=400, detail="invite already processed")
+    if invite.target_user_id is not None:
+        if invite.target_user_id != target_user.id:
+            raise HTTPException(status_code=404, detail="invite not found")
+        return invite
+
+    normalized_target = _normalize_display_name(_display_name(target_user))
+    if not normalized_target:
+        raise HTTPException(status_code=404, detail="invite not found")
+    if _normalize_display_name(invite.target_display_name) != normalized_target:
+        raise HTTPException(status_code=404, detail="invite not found")
     return invite
 
 
@@ -537,7 +568,10 @@ async def accept_invite(
 ) -> dict[str, Any]:
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
-    invite = await _get_invite_for_target(db, invite_id, ctx.user.id)
+    invite = await _get_invite_for_target(db, invite_id, ctx.user)
+    if invite.target_user_id is None:
+        invite.target_user_id = ctx.user.id
+        invite.target_display_name = _display_name(ctx.user)
     await _finalize_invite(db, invite, accepted=True)
     return {"status": "accepted"}
 
@@ -550,7 +584,10 @@ async def deny_invite(
 ) -> dict[str, Any]:
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
-    invite = await _get_invite_for_target(db, invite_id, ctx.user.id)
+    invite = await _get_invite_for_target(db, invite_id, ctx.user)
+    if invite.target_user_id is None:
+        invite.target_user_id = ctx.user.id
+        invite.target_display_name = _display_name(ctx.user)
     await _finalize_invite(db, invite, accepted=False)
     return {"status": "denied"}
 
@@ -582,11 +619,19 @@ async def list_pending(
 ) -> dict[str, Any]:
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
+    normalized_target = _normalize_display_name(_display_name(ctx.user))
     result = await db.execute(
         select(SyncshellInvite)
         .where(
-            SyncshellInvite.target_user_id == ctx.user.id,
             SyncshellInvite.status == "pending",
+            or_(
+                SyncshellInvite.target_user_id == ctx.user.id,
+                and_(
+                    SyncshellInvite.target_user_id.is_(None),
+                    func.lower(SyncshellInvite.target_display_name)
+                    == normalized_target,
+                ),
+            ),
         )
         .order_by(SyncshellInvite.created_at.desc())
     )
@@ -721,11 +766,19 @@ async def list_memberships(
         _serialize_invite(invite, "outgoing") for invite in invites_result.scalars().all()
     ]
 
+    normalized_pending = _normalize_display_name(_display_name(ctx.user))
     pending_result = await db.execute(
         select(SyncshellInvite)
         .where(
-            SyncshellInvite.target_user_id == ctx.user.id,
             SyncshellInvite.status == "pending",
+            or_(
+                SyncshellInvite.target_user_id == ctx.user.id,
+                and_(
+                    SyncshellInvite.target_user_id.is_(None),
+                    func.lower(SyncshellInvite.target_display_name)
+                    == normalized_pending,
+                ),
+            ),
         )
         .order_by(SyncshellInvite.created_at.desc())
     )
