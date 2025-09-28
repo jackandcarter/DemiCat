@@ -34,6 +34,7 @@ public class SyncshellWindow : IDisposable
     private const int MembershipPanelCount = 4;
     private const float MinMembershipPanelHeight = 80f;
     private const float MinMembershipPanelRatio = 0.05f;
+    private const int InviteSuggestionLimit = 10;
     private static readonly float[] DefaultMembershipPanelRatios =
     {
         110f / 560f,
@@ -122,6 +123,14 @@ public class SyncshellWindow : IDisposable
     private readonly Dictionary<string, Config.SyncshellInviteState> _inviteStateByRequestId = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pendingApprovalInFlight = new(StringComparer.OrdinalIgnoreCase);
     private string _inviteTarget = string.Empty;
+    private readonly List<MemberPresenceEntry> _inviteSuggestions = new();
+    private int _inviteSuggestionIndex = -1;
+    private bool _inviteSuggestionsDirty;
+    private bool _inviteSuggestionsOpen;
+    private Vector2 _inviteSuggestionAnchorMin;
+    private Vector2 _inviteSuggestionAnchorMax;
+    private bool _focusInviteInputNextFrame;
+    private readonly ImGui.ImGuiInputTextCallbackDelegate _inviteInputCallback;
     private int _inviteInFlight;
     private DateTimeOffset _lastMembershipFetch;
     private bool _membershipNeedsRefresh = true;
@@ -184,6 +193,8 @@ public class SyncshellWindow : IDisposable
         _lastResyncAt = state.LastResyncAt;
         _pairingExpiresAt = state.PairingExpiresAt;
         InitializeMembershipPanelRatios();
+
+        _inviteInputCallback = new ImGui.ImGuiInputTextCallbackDelegate(OnInviteInputEdited);
 
         foreach (var inviteEntry in state.Invites.ToList())
         {
@@ -763,11 +774,36 @@ public class SyncshellWindow : IDisposable
         ImGui.TextWrapped("Send a SyncShell invite to another member by character name.");
 
         string? invite = _inviteTarget;
+        if (_focusInviteInputNextFrame)
+        {
+            ImGui.SetKeyboardFocusHere();
+            _focusInviteInputNextFrame = false;
+        }
         ImGui.SetNextItemWidth(-150f);
-        var submitted = ImGui.InputTextWithHint("##syncshell-invite", "Character name", ref invite, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+        var submitted = ImGui.InputTextWithHint(
+            "##syncshell-invite",
+            "Character name",
+            ref invite,
+            64,
+            ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
+            _inviteInputCallback
+        );
         invite ??= string.Empty;
         _inviteTarget = invite;
+        var anchorMin = ImGui.GetItemRectMin();
+        var anchorMax = ImGui.GetItemRectMax();
+        var inputActive = ImGui.IsItemActive();
         var trimmed = invite.Trim();
+        var edited = ImGui.IsItemEdited() || _inviteSuggestionsDirty;
+        UpdateInviteSuggestionState(inputActive, anchorMin, anchorMax, edited);
+        var suggestionInserted = inputActive && HandleInviteSuggestionKeys();
+        suggestionInserted |= DrawInviteSuggestionWindow();
+        if (suggestionInserted)
+        {
+            invite = _inviteTarget;
+            trimmed = invite.Trim();
+            submitted = false;
+        }
         if (submitted && !string.IsNullOrWhiteSpace(trimmed))
         {
             TrySendInvite(trimmed);
@@ -826,6 +862,226 @@ public class SyncshellWindow : IDisposable
         }
     }
 
+    private void UpdateInviteSuggestionState(bool inputActive, Vector2 anchorMin, Vector2 anchorMax, bool edited)
+    {
+        if (!inputActive)
+        {
+            CloseInviteSuggestions();
+            _inviteSuggestionsDirty = false;
+            return;
+        }
+
+        _inviteSuggestionAnchorMin = anchorMin;
+        _inviteSuggestionAnchorMax = anchorMax;
+
+        if (!edited && _inviteSuggestionsOpen)
+        {
+            return;
+        }
+
+        _inviteSuggestionsDirty = false;
+        var query = GetInviteSuggestionQuery(_inviteTarget);
+        if (string.IsNullOrEmpty(query))
+        {
+            CloseInviteSuggestions();
+            return;
+        }
+
+        _inviteSuggestions.Clear();
+        foreach (var member in _memberPresence)
+        {
+            if (string.IsNullOrWhiteSpace(member.DisplayName))
+            {
+                continue;
+            }
+
+            if (!IsInviteSuggestionMatch(member.DisplayName, query))
+            {
+                continue;
+            }
+
+            _inviteSuggestions.Add(member);
+            if (_inviteSuggestions.Count >= InviteSuggestionLimit)
+            {
+                break;
+            }
+        }
+
+        if (_inviteSuggestions.Count == 0)
+        {
+            CloseInviteSuggestions();
+            return;
+        }
+
+        _inviteSuggestionsOpen = true;
+        if (_inviteSuggestionIndex < 0 || _inviteSuggestionIndex >= _inviteSuggestions.Count)
+        {
+            _inviteSuggestionIndex = 0;
+        }
+    }
+
+    private bool DrawInviteSuggestionWindow()
+    {
+        if (!_inviteSuggestionsOpen || _inviteSuggestions.Count == 0)
+        {
+            return false;
+        }
+
+        var position = new Vector2(_inviteSuggestionAnchorMin.X, _inviteSuggestionAnchorMax.Y);
+        ImGui.SetNextWindowPos(position, ImGuiCond.Always);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(6f, 6f));
+        var flags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.AlwaysAutoResize;
+        var applied = false;
+        if (ImGui.Begin("##syncshell-invite-suggestions", flags))
+        {
+            for (var i = 0; i < _inviteSuggestions.Count; i++)
+            {
+                var suggestion = _inviteSuggestions[i];
+                var label = string.IsNullOrWhiteSpace(suggestion.DisplayName) ? suggestion.Id : suggestion.DisplayName;
+                var selected = i == _inviteSuggestionIndex;
+                if (ImGui.Selectable(label, selected))
+                {
+                    applied |= ApplyInviteSuggestion(suggestion);
+                }
+
+                if (ImGui.IsItemHovered())
+                {
+                    _inviteSuggestionIndex = i;
+                }
+            }
+        }
+        ImGui.End();
+        ImGui.PopStyleVar();
+
+        return applied;
+    }
+
+    private bool HandleInviteSuggestionKeys()
+    {
+        if (!_inviteSuggestionsOpen || _inviteSuggestions.Count == 0)
+        {
+            return false;
+        }
+
+        var applied = false;
+        if (ImGui.IsKeyPressed(ImGuiKey.DownArrow))
+        {
+            _inviteSuggestionIndex++;
+            if (_inviteSuggestionIndex >= _inviteSuggestions.Count)
+            {
+                _inviteSuggestionIndex = 0;
+            }
+        }
+        else if (ImGui.IsKeyPressed(ImGuiKey.UpArrow))
+        {
+            _inviteSuggestionIndex--;
+            if (_inviteSuggestionIndex < 0)
+            {
+                _inviteSuggestionIndex = _inviteSuggestions.Count - 1;
+            }
+        }
+
+        if (ImGui.IsKeyPressed(ImGuiKey.Escape))
+        {
+            CloseInviteSuggestions();
+        }
+        else if (ImGui.IsKeyPressed(ImGuiKey.Enter) && _inviteSuggestionIndex >= 0 && _inviteSuggestionIndex < _inviteSuggestions.Count)
+        {
+            applied = ApplyInviteSuggestion(_inviteSuggestions[_inviteSuggestionIndex]);
+        }
+
+        return applied;
+    }
+
+    private bool ApplyInviteSuggestion(MemberPresenceEntry suggestion)
+    {
+        var name = NormalizeInviteDisplayName(suggestion.DisplayName);
+        if (string.IsNullOrEmpty(name))
+        {
+            return false;
+        }
+
+        var current = _inviteTarget ?? string.Empty;
+        var includePrefix = current.TrimStart().StartsWith("@", StringComparison.Ordinal);
+        _inviteTarget = includePrefix ? $"@{name}" : name;
+        _focusInviteInputNextFrame = true;
+        CloseInviteSuggestions();
+        return true;
+    }
+
+    private static string NormalizeInviteDisplayName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return string.Empty;
+        }
+
+        var parts = name
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return string.Join(' ', parts);
+    }
+
+    private static string NormalizeInviteTargetForSubmission(string target)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = target.Trim();
+        if (trimmed.StartsWith("@", StringComparison.Ordinal))
+        {
+            trimmed = trimmed[1..];
+        }
+
+        return NormalizeInviteDisplayName(trimmed);
+    }
+
+    private static string? GetInviteSuggestionQuery(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.TrimEnd();
+        var atIndex = trimmed.LastIndexOf('@');
+        if (atIndex < 0)
+        {
+            return null;
+        }
+
+        if (atIndex > 0 && !char.IsWhiteSpace(trimmed[atIndex - 1]))
+        {
+            return null;
+        }
+
+        if (atIndex == trimmed.Length - 1)
+        {
+            return null;
+        }
+
+        var query = trimmed[(atIndex + 1)..];
+        return string.IsNullOrWhiteSpace(query) ? null : query.Trim();
+    }
+
+    private static bool IsInviteSuggestionMatch(string name, string query)
+        => name?.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
+
+    private void CloseInviteSuggestions()
+    {
+        _inviteSuggestionsOpen = false;
+        _inviteSuggestionIndex = -1;
+        _inviteSuggestions.Clear();
+        _inviteSuggestionsDirty = false;
+    }
+
+    private int OnInviteInputEdited(ref ImGuiInputTextCallbackData data)
+    {
+        _inviteSuggestionsDirty = true;
+        return 0;
+    }
+
     private void DrawPendingApprovalsContent()
     {
         if (_pendingApprovals.Count == 0)
@@ -865,13 +1121,8 @@ public class SyncshellWindow : IDisposable
 
     private void TrySendInvite(string target)
     {
-        if (string.IsNullOrWhiteSpace(target))
-        {
-            return;
-        }
-
-        var trimmed = target.Trim();
-        if (trimmed.Length == 0)
+        var normalized = NormalizeInviteTargetForSubmission(target);
+        if (string.IsNullOrEmpty(normalized))
         {
             return;
         }
@@ -881,7 +1132,7 @@ public class SyncshellWindow : IDisposable
             return;
         }
 
-        _ = SendInviteAsync(trimmed);
+        _ = SendInviteAsync(normalized);
     }
 
     private void ProcessPendingApproval(string requestId, bool approve)
@@ -1306,6 +1557,9 @@ public class SyncshellWindow : IDisposable
         _memberPresence.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
         _currentlySyncedMembers.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
         _pendingApprovals.Sort((a, b) => DateTimeOffset.Compare(b.RequestedAt, a.RequestedAt));
+
+        CloseInviteSuggestions();
+        _inviteSuggestionsDirty = true;
 
         if (invitesChanged)
         {
