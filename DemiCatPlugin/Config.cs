@@ -130,8 +130,29 @@ public class Config : IPluginConfiguration
         [JsonPropertyName("pairingExpiresAt")]
         public DateTimeOffset? PairingExpiresAt { get; set; }
 
+        [JsonPropertyName("invites")]
+        public List<SyncshellInviteState> Invites { get; set; } = new();
+
         [JsonExtensionData]
         public Dictionary<string, JsonElement>? ExtensionData { get; set; }
+    }
+
+    public class SyncshellInviteState
+    {
+        [JsonPropertyName("target")]
+        public string Target { get; set; } = string.Empty;
+
+        [JsonPropertyName("status")]
+        public string Status { get; set; } = "pending";
+
+        [JsonPropertyName("updatedAt")]
+        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
+
+        [JsonPropertyName("requestId")]
+        public string? RequestId { get; set; }
+
+        [JsonPropertyName("direction")]
+        public string? Direction { get; set; }
     }
 
     public void Migrate()
