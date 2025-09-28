@@ -1,15 +1,12 @@
 from __future__ import annotations
 
-import json
 import logging
 import os
-from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 
-from ..db.models import SyncshellManifest
 from ..db.session import get_session
 from .deps import RequestContext, api_key_auth
 from .routes import syncshell as syncshell_routes
@@ -17,11 +14,7 @@ from .routes import syncshell as syncshell_routes
 
 LOGGER = logging.getLogger(__name__)
 
-DEFAULT_LIMITS = {
-    "bytesPerSecond": int(os.getenv("SYNC_SHELL_BYTES_PER_SECOND", str(512 * 1024))),
-    "chunkSizeBytes": int(os.getenv("SYNC_SHELL_CHUNK_SIZE", str(64 * 1024))),
-    "maxOutstandingWants": int(os.getenv("SYNC_SHELL_MAX_OUTSTANDING_WANTS", "64")),
-}
+DEFAULT_LIMITS = syncshell_routes.DEFAULT_TRANSFER_LIMITS
 
 HELLO_MESSAGE = {"type": "hello", "payload": {"version": 1, "limits": DEFAULT_LIMITS}}
 
@@ -35,26 +28,6 @@ def _ws_request(ws: WebSocket) -> SimpleNamespace:
     )
 
 
-async def _persist_manifest(ctx: RequestContext, manifest: dict[str, Any]) -> None:
-    manifest_json = json.dumps(manifest)
-    payload_size = len(manifest_json.encode())
-    if payload_size > syncshell_routes.MAX_MANIFEST_BYTES:
-        raise HTTPException(status_code=413, detail="manifest too large")
-
-    async with get_session() as db:
-        await syncshell_routes._require_pairing(ctx, db)
-        await syncshell_routes._check_rate_limit(ctx.user.id, db)
-
-        record = await db.get(SyncshellManifest, ctx.user.id)
-        if record:
-            record.manifest_json = manifest_json
-            record.updated_at = datetime.utcnow()
-        else:
-            record = SyncshellManifest(user_id=ctx.user.id, manifest_json=manifest_json)
-            db.add(record)
-        await db.commit()
-
-
 async def _handle_manifest_message(
     websocket: WebSocket, ctx: RequestContext, payload: dict[str, Any]
 ) -> bool:
@@ -64,7 +37,10 @@ async def _handle_manifest_message(
         return True
 
     try:
-        await _persist_manifest(ctx, manifest_payload)
+        async with get_session() as db:
+            diff, limits = await syncshell_routes.handle_manifest_upload(
+                manifest_payload, ctx, db
+            )
     except HTTPException as exc:
         LOGGER.warning("syncshell manifest rejected: %s", exc.detail)
         await websocket.close(code=1008, reason=exc.detail)
@@ -82,7 +58,13 @@ async def _handle_manifest_message(
         "type": "want",
         "payload": {
             "peerId": peer_id,
-            "want": {"blobs": [], "chunks": [], "sizeHints": []},
+            "want": {
+                "blobs": [entry["hash"] for entry in diff.get("need", []) if entry.get("hash")],
+                "chunks": [],
+                "sizeHints": [],
+            },
+            "diff": diff,
+            "limits": limits,
         },
     }
     await websocket.send_json(want_message)

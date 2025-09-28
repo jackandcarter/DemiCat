@@ -16,6 +16,7 @@ from demibot.db.models import (
 from demibot.db.session import get_session, init_db
 import demibot.db.session as db_session
 
+from .syncshell_import import syncshell
 from .syncshell_test_utils import build_manifest_payload
 
 
@@ -48,9 +49,11 @@ async def _prepare_db() -> None:
 def test_syncshell_websocket_hello_and_manifest(tmp_path):
     asyncio.run(_prepare_db())
 
-    manifest, _ = build_manifest_payload(tmp_path)
+    manifest, blob_hash = build_manifest_payload(tmp_path)
     app = create_app()
     client = TestClient(app)
+
+    syncshell._transfer_budgets.clear()
 
     with client.websocket_connect(
         "/ws/syncshell", headers={"X-Api-Key": "syncshell-token"}
@@ -75,11 +78,10 @@ def test_syncshell_websocket_hello_and_manifest(tmp_path):
         websocket.send_json({"type": "manifest", "payload": {"manifest": manifest}})
         want = websocket.receive_json()
         assert want["type"] == "want"
-        assert want["payload"]["want"] == {
-            "blobs": [],
-            "chunks": [],
-            "sizeHints": [],
-        }
+        payload = want["payload"]
+        assert blob_hash in payload["want"]["blobs"]
+        assert payload["diff"]["need"]
+        assert payload["limits"]["budget"]["limitBytes"] > 0
 
     async def _fetch_manifest() -> dict:
         async with get_session() as db:

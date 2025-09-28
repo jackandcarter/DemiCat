@@ -35,7 +35,12 @@ def test_pair_token_persistence_and_expiry(tmp_path):
             assert pairing and pairing.token == token
 
             manifest, _ = build_manifest_payload(tmp_path)
-            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            syncshell._transfer_budgets.clear()
+            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            assert response["status"] == "ok"
+            assert response["diff"]["need"]
+            assert response["diff"]["remove"] == []
+            assert response["limits"]["budget"]["limitBytes"] > 0
 
             await asyncio.sleep(1.1)
             with pytest.raises(syncshell.HTTPException) as exc:
@@ -57,7 +62,9 @@ def test_manifest_rate_limit(tmp_path):
             syncshell.RATE_LIMIT = 2
             await syncshell.pair(ctx=ctx, db=db)
             manifest, _ = build_manifest_payload(tmp_path)
-            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            syncshell._transfer_budgets.clear()
+            first = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            assert first["diff"]["need"]
             with pytest.raises(syncshell.HTTPException) as exc:
                 await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert exc.value.status_code == 429
@@ -106,7 +113,9 @@ def test_asset_upload_download_and_rate_limit(tmp_path):
 
             await syncshell.pair(ctx=ctx, db=db)
             manifest, _ = build_manifest_payload(tmp_path)
-            await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            syncshell._transfer_budgets.clear()
+            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            assert response["diff"]["need"]
             up = await syncshell.request_asset_upload(ctx=ctx, db=db)
             assert up["url"] == "upload-url"
             down = await syncshell.request_asset_download("x", ctx=ctx, db=db)
