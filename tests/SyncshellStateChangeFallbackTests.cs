@@ -29,7 +29,7 @@ public class SyncshellStateChangeFallbackTests
             pluginInterface.Setup(pi => pi.GetPluginConfigDirectory()).Returns(tempDir);
             pluginInterface.Setup(pi => pi.SavePluginConfig(It.IsAny<Config>()));
 
-            var modSettingLegacy = new Mock<IIpcSubscriber<Guid, string, bool, object?>>();
+            var modSettingLegacy = new Mock<ICallGateSubscriber<Guid, string, bool, object?>>();
             modSettingLegacy
                 .Setup(sub => sub.Subscribe(It.IsAny<Action<Guid, string, bool>>()))
                 .Verifiable();
@@ -46,7 +46,7 @@ public class SyncshellStateChangeFallbackTests
                 .Setup(pi => pi.GetIpcSubscriber<Guid, string, bool, object?>(It.Is<string>(c => c == "Penumbra.ModSettingChanged")))
                 .Returns(modSettingLegacy.Object);
 
-            var enabledLegacy = new Mock<IIpcSubscriber<bool, object?>>();
+            var enabledLegacy = new Mock<ICallGateSubscriber<bool, object?>>();
             enabledLegacy.Setup(sub => sub.Subscribe(It.IsAny<Action<bool>>()));
             enabledLegacy.Setup(sub => sub.Unsubscribe(It.IsAny<Action<bool>>()));
             pluginInterface
@@ -66,7 +66,7 @@ public class SyncshellStateChangeFallbackTests
                 .Setup(pi => pi.GetIpcSubscriber<nint, object?>(It.Is<string>(c => c == "Glamourer.StateChanged")))
                 .Throws(new InvalidOperationException("legacy gate unavailable"));
 
-            var glamourerLegacyInt = new Mock<IIpcSubscriber<int, object?>>();
+            var glamourerLegacyInt = new Mock<ICallGateSubscriber<int, object?>>();
             Action<int>? glamourerHandler = null;
             glamourerLegacyInt
                 .Setup(sub => sub.Subscribe(It.IsAny<Action<int>>()))

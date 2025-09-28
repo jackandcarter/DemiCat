@@ -198,13 +198,13 @@ public class SyncShellResolverTests
         manifest.Appearance.CustomState["glamourer"] = "glam-state";
         manifest.Appearance.CustomState["customize+"] = "custom-state";
 
-        var reloadMock = new Mock<IIpcSubscriber<object>>();
+        var reloadMock = new Mock<ICallGateSubscriber<object>>();
         reloadMock.Setup(sub => sub.InvokeAction());
-        var redrawMock = new Mock<IIpcSubscriber<object>>();
+        var redrawMock = new Mock<ICallGateSubscriber<object>>();
         redrawMock.Setup(sub => sub.InvokeAction());
-        var glamApplyMock = new Mock<IIpcSubscriber<string, object?>>();
+        var glamApplyMock = new Mock<ICallGateSubscriber<string, object?>>();
         glamApplyMock.Setup(sub => sub.InvokeAction(It.IsAny<string>()));
-        var customizeApplyMock = new Mock<IIpcSubscriber<string, object?>>();
+        var customizeApplyMock = new Mock<ICallGateSubscriber<string, object?>>();
         customizeApplyMock.Setup(sub => sub.InvokeAction(It.IsAny<string>()));
 
         var pluginInterface = CreatePluginInterfaceMock(
@@ -273,9 +273,9 @@ public class SyncShellResolverTests
         return pluginInterface;
     }
 
-    private static IIpcSubscriber<T> CreateFuncSubscriber<T>(T value)
+    private static ICallGateSubscriber<T> CreateFuncSubscriber<T>(T value)
     {
-        var subscriber = new Mock<IIpcSubscriber<T>>();
+        var subscriber = new Mock<ICallGateSubscriber<T>>();
         subscriber.Setup(sub => sub.InvokeFunc()).Returns(value);
         return subscriber.Object;
     }
