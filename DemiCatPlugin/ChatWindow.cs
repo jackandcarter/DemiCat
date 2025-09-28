@@ -1627,6 +1627,52 @@ public class ChatWindow : IDisposable
         return inserted;
     }
 
+    private float CalculateMentionDrawerHeight(MentionDrawerState state, float scale)
+    {
+        var style = ImGui.GetStyle();
+        var windowPaddingY = 6f * scale;
+        var totalHeight = windowPaddingY * 2f;
+        var textHeight = ImGui.GetTextLineHeight();
+        var avatarSize = textHeight + style.FramePadding.Y;
+        var rowHeight = Math.Max(avatarSize + style.FramePadding.Y, ImGui.GetFrameHeight());
+        var separatorHeight = style.SeparatorTextBorderSize > 0f
+            ? style.SeparatorTextBorderSize
+            : 1f * scale;
+
+        var firstElement = true;
+
+        void AddElement(float height)
+        {
+            if (!firstElement)
+            {
+                totalHeight += style.ItemSpacing.Y;
+            }
+
+            totalHeight += height;
+            firstElement = false;
+        }
+
+        MentionCandidateType? currentGroup = null;
+        for (var i = 0; i < state.Candidates.Count; i++)
+        {
+            var candidate = state.Candidates[i];
+            if (candidate.Type != currentGroup)
+            {
+                if (currentGroup != null)
+                {
+                    AddElement(separatorHeight);
+                }
+
+                AddElement(textHeight);
+                currentGroup = candidate.Type;
+            }
+
+            AddElement(rowHeight);
+        }
+
+        return totalHeight;
+    }
+
     private void DrawMentionDrawer()
     {
         var state = _mentionDrawerState;
@@ -1668,8 +1714,34 @@ public class ChatWindow : IDisposable
 
         var scale = ImGuiHelpers.GlobalScale;
         var style = ImGui.GetStyle();
-        var position = new Vector2(state.AnchorMin.X, state.AnchorMax.Y + MentionDrawerBaseOffset * scale);
-        position.Y += (1f - state.AnimationProgress) * MentionDrawerTravelDistance * scale;
+        var drawerHeight = CalculateMentionDrawerHeight(state, scale);
+        var viewport = ImGui.GetMainViewport();
+        var workRect = viewport.WorkRect;
+        var availableBelow = MathF.Max(0f, workRect.Max.Y - state.AnchorMax.Y);
+        var availableAbove = MathF.Max(0f, state.AnchorMin.Y - workRect.Min.Y);
+        var anchorAbove = false;
+
+        if (drawerHeight > availableBelow)
+        {
+            if (availableAbove >= drawerHeight || availableAbove > availableBelow)
+            {
+                anchorAbove = true;
+            }
+        }
+
+        var position = anchorAbove
+            ? new Vector2(state.AnchorMin.X, state.AnchorMin.Y - MentionDrawerBaseOffset * scale - drawerHeight)
+            : new Vector2(state.AnchorMin.X, state.AnchorMax.Y + MentionDrawerBaseOffset * scale);
+
+        var animationOffset = (1f - state.AnimationProgress) * MentionDrawerTravelDistance * scale;
+        if (anchorAbove)
+        {
+            position.Y -= animationOffset;
+        }
+        else
+        {
+            position.Y += animationOffset;
+        }
 
         var flags = ImGuiWindowFlags.NoDecoration |
                     ImGuiWindowFlags.NoMove |
