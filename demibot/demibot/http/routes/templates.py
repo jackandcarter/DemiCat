@@ -76,6 +76,43 @@ def _template_to_dto(t: EventTemplate) -> TemplateDto:
     )
 
 
+async def _broadcast_template_update(
+    ctx: RequestContext,
+    channel_id: int | None,
+    payload: dict[str, Any],
+) -> None:
+    try:
+        await manager.broadcast_text(
+            json.dumps(
+                {
+                    "topic": "templates.updated",
+                    "payload": payload,
+                },
+                ensure_ascii=False,
+            ),
+            ctx.guild.id,
+            path="/ws/templates",
+        )
+        logger.info(
+            "Websocket broadcast successful",
+            extra={
+                "event_id": None,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+            },
+        )
+    except Exception as exc:
+        logger.error(
+            "Websocket broadcast failed",
+            extra={
+                "event_id": None,
+                "guild_id": ctx.guild.id,
+                "channel_id": channel_id,
+                "error": str(exc),
+            },
+        )
+
+
 @router.post("/templates")
 async def create_template(
     body: TemplateCreateBody,
@@ -132,38 +169,11 @@ async def create_template(
         return JSONResponse({"error": "duplicate"}, status_code=409)
     await db.refresh(tmpl)
     dto = _template_to_dto(tmpl)
-    try:
-        await manager.broadcast_text(
-            json.dumps(
-                {
-                    "topic": "templates.updated",
-                    "payload": dto.model_dump(
-                        mode="json", by_alias=True, exclude_none=True
-                    ),
-                },
-                ensure_ascii=False,
-            ),
-            ctx.guild.id,
-            path="/ws/templates",
-        )
-        logger.info(
-            "Websocket broadcast successful",
-            extra={
-                "event_id": None,
-                "guild_id": ctx.guild.id,
-                "channel_id": channel_id,
-            },
-        )
-    except Exception as exc:
-        logger.error(
-            "Websocket broadcast failed",
-            extra={
-                "event_id": None,
-                "guild_id": ctx.guild.id,
-                "channel_id": channel_id,
-                "error": str(exc),
-            },
-        )
+    await _broadcast_template_update(
+        ctx,
+        channel_id,
+        dto.model_dump(mode="json", by_alias=True, exclude_none=True),
+    )
     return dto
 
 
@@ -251,38 +261,11 @@ async def update_template(
         return JSONResponse({"error": "duplicate"}, status_code=409)
     await db.refresh(tmpl)
     dto = _template_to_dto(tmpl)
-    try:
-        await manager.broadcast_text(
-            json.dumps(
-                {
-                    "topic": "templates.updated",
-                    "payload": dto.model_dump(
-                        mode="json", by_alias=True, exclude_none=True
-                    ),
-                },
-                ensure_ascii=False,
-            ),
-            ctx.guild.id,
-            path="/ws/templates",
-        )
-        logger.info(
-            "Websocket broadcast successful",
-            extra={
-                "event_id": None,
-                "guild_id": ctx.guild.id,
-                "channel_id": channel_id,
-            },
-        )
-    except Exception as exc:
-        logger.error(
-            "Websocket broadcast failed",
-            extra={
-                "event_id": None,
-                "guild_id": ctx.guild.id,
-                "channel_id": channel_id,
-                "error": str(exc),
-            },
-        )
+    await _broadcast_template_update(
+        ctx,
+        channel_id,
+        dto.model_dump(mode="json", by_alias=True, exclude_none=True),
+    )
     return dto
 
 
@@ -311,36 +294,11 @@ async def delete_template(
     if tmpl and tmpl.guild_id == ctx.guild.id:
         await db.delete(tmpl)
         await db.commit()
-        try:
-            await manager.broadcast_text(
-                json.dumps(
-                    {
-                        "topic": "templates.updated",
-                        "payload": {"id": str(tid), "deleted": True},
-                    },
-                    ensure_ascii=False,
-                ),
-                ctx.guild.id,
-                path="/ws/templates",
-            )
-            logger.info(
-                "Websocket broadcast successful",
-                extra={
-                    "event_id": None,
-                    "guild_id": ctx.guild.id,
-                    "channel_id": channel_id,
-                },
-            )
-        except Exception as exc:
-            logger.error(
-                "Websocket broadcast failed",
-                extra={
-                    "event_id": None,
-                    "guild_id": ctx.guild.id,
-                    "channel_id": channel_id,
-                    "error": str(exc),
-                },
-            )
+        await _broadcast_template_update(
+            ctx,
+            channel_id,
+            {"id": str(tid), "deleted": True},
+        )
     return {"ok": True}
 
 
