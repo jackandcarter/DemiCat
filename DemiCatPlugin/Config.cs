@@ -133,6 +133,9 @@ public class Config : IPluginConfiguration
         [JsonPropertyName("invites")]
         public List<SyncshellInviteState> Invites { get; set; } = new();
 
+        [JsonPropertyName("membershipPanelRatios")]
+        public Dictionary<string, float> MembershipPanelRatios { get; set; } = new();
+
         [JsonExtensionData]
         public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     }

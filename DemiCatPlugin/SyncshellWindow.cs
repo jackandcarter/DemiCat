@@ -31,6 +31,24 @@ public class SyncshellWindow : IDisposable
     private static readonly TimeSpan DefaultPairingLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PairingRefreshSkew = TimeSpan.FromSeconds(15);
     private static readonly string[] PairingLifetimeProperties = { "expiresIn", "expires_in", "ttl" };
+    private const int MembershipPanelCount = 4;
+    private const float MinMembershipPanelHeight = 80f;
+    private const float MinMembershipPanelRatio = 0.05f;
+    private static readonly float[] DefaultMembershipPanelRatios =
+    {
+        110f / 560f,
+        150f / 560f,
+        150f / 560f,
+        150f / 560f,
+    };
+    private static readonly string[] MembershipPanelRatioKeys =
+    {
+        "currentlySynced",
+        "memberPresence",
+        "inviteMember",
+        "pendingApprovals",
+    };
+    private static readonly ImGuiMouseCursor ResizeNsCursor = ResolveResizeNsCursor();
 
     private readonly Config _config;
     private readonly HttpClient _httpClient;
@@ -62,6 +80,9 @@ public class SyncshellWindow : IDisposable
     private static DateTimeOffset _lastRedraw;
     private DateTimeOffset? _pairingExpiresAt;
     private TimeSpan _pairingLifetime = DefaultPairingLifetime;
+    private readonly float[] _membershipPanelRatios = new float[MembershipPanelCount];
+    private readonly float[] _membershipPanelHeights = new float[MembershipPanelCount];
+    private bool _membershipPanelRatiosDirty;
 
     private bool _autoSyncAllUsers;
     private bool _manualSyncAllUsers;
@@ -162,6 +183,7 @@ public class SyncshellWindow : IDisposable
         _syncPaused = state.Paused;
         _lastResyncAt = state.LastResyncAt;
         _pairingExpiresAt = state.PairingExpiresAt;
+        InitializeMembershipPanelRatios();
 
         foreach (var inviteEntry in state.Invites.ToList())
         {
@@ -441,13 +463,244 @@ public class SyncshellWindow : IDisposable
             ImGui.TextUnformatted("Updating membership data...");
         }
 
-        DrawMembershipPanel("Currently synced", 110f, DrawCurrentlySyncedContent);
-        ImGui.Spacing();
-        DrawMembershipPanel("Member presence", 150f, DrawMemberPresenceContent);
-        ImGui.Spacing();
-        DrawMembershipPanel("Invite member", 150f, DrawInviteEntryContent);
-        ImGui.Spacing();
-        DrawMembershipPanel("Pending approvals", 150f, DrawPendingApprovalsContent);
+        var style = ImGui.GetStyle();
+        var splitterHeight = Math.Max(4f, style.FramePadding.Y);
+        var availableHeight = ImGui.GetContentRegionAvail().Y;
+        var totalSplitterHeight = splitterHeight * (MembershipPanelCount - 1);
+        var minTotalHeight = MinMembershipPanelHeight * MembershipPanelCount;
+        var panelAreaHeight = availableHeight > 0f
+            ? MathF.Max(minTotalHeight, availableHeight - totalSplitterHeight)
+            : minTotalHeight;
+
+        UpdateMembershipPanelHeights(panelAreaHeight);
+
+        DrawMembershipPanel("Currently synced", _membershipPanelHeights[0], DrawCurrentlySyncedContent);
+        DrawMembershipSplitter(0, splitterHeight, panelAreaHeight);
+        DrawMembershipPanel("Member presence", _membershipPanelHeights[1], DrawMemberPresenceContent);
+        DrawMembershipSplitter(1, splitterHeight, panelAreaHeight);
+        DrawMembershipPanel("Invite member", _membershipPanelHeights[2], DrawInviteEntryContent);
+        DrawMembershipSplitter(2, splitterHeight, panelAreaHeight);
+        DrawMembershipPanel("Pending approvals", _membershipPanelHeights[3], DrawPendingApprovalsContent);
+
+        if (_membershipPanelRatiosDirty)
+        {
+            SaveMembershipPanelRatios();
+        }
+    }
+
+    private void DrawMembershipSplitter(int index, float splitterHeight, float totalPanelHeight)
+    {
+        if (index >= MembershipPanelCount - 1)
+            return;
+
+        var splitterWidth = ImGui.GetContentRegionAvail().X;
+        if (splitterWidth <= 0f)
+        {
+            ImGui.Dummy(new Vector2(0f, splitterHeight));
+            return;
+        }
+
+        var id = $"##syncshell-membership-splitter-{index}";
+        ImGui.InvisibleButton(id, new Vector2(splitterWidth, splitterHeight));
+        if (ImGui.IsItemHovered() || ImGui.IsItemActive())
+            ImGui.SetMouseCursor(ResizeNsCursor);
+
+        if (ImGui.IsItemActive())
+        {
+            var delta = ImGui.GetIO().MouseDelta.Y;
+            if (Math.Abs(delta) > float.Epsilon)
+                AdjustMembershipPanelHeights(index, delta, totalPanelHeight);
+        }
+
+        var splitterMin = ImGui.GetItemRectMin();
+        var splitterMax = ImGui.GetItemRectMax();
+        var drawList = ImGui.GetWindowDrawList();
+        var separatorColor = ImGui.GetColorU32(ImGuiCol.Separator);
+        var centerY = (splitterMin.Y + splitterMax.Y) * 0.5f;
+        drawList.AddLine(new Vector2(splitterMin.X, centerY), new Vector2(splitterMax.X, centerY), separatorColor);
+    }
+
+    private void AdjustMembershipPanelHeights(int index, float delta, float totalPanelHeight)
+    {
+        if (index < 0 || index >= MembershipPanelCount - 1)
+            return;
+
+        var upper = _membershipPanelHeights[index];
+        var lower = _membershipPanelHeights[index + 1];
+        var pairTotal = upper + lower;
+        if (pairTotal <= 0f)
+            return;
+
+        var minUpper = MinMembershipPanelHeight;
+        var minLower = MinMembershipPanelHeight;
+        var maxUpper = MathF.Max(minUpper, pairTotal - minLower);
+        var newUpper = Math.Clamp(upper - delta, minUpper, maxUpper);
+        var newLower = pairTotal - newUpper;
+        if (newLower < minLower)
+        {
+            newLower = minLower;
+            newUpper = pairTotal - newLower;
+        }
+
+        if (Math.Abs(newUpper - upper) < 0.001f && Math.Abs(newLower - lower) < 0.001f)
+            return;
+
+        _membershipPanelHeights[index] = newUpper;
+        _membershipPanelHeights[index + 1] = newLower;
+        UpdateMembershipRatiosFromHeights(totalPanelHeight);
+    }
+
+    private void UpdateMembershipPanelHeights(float totalPanelHeight)
+    {
+        NormalizeMembershipPanelRatios();
+
+        if (totalPanelHeight <= 0f)
+        {
+            for (var i = 0; i < MembershipPanelCount; i++)
+                _membershipPanelHeights[i] = MinMembershipPanelHeight;
+            return;
+        }
+
+        var remainingHeight = totalPanelHeight;
+        var remainingRatio = 1f;
+        for (var i = 0; i < MembershipPanelCount; i++)
+        {
+            var panelsLeft = MembershipPanelCount - i - 1;
+            var minHeight = MinMembershipPanelHeight;
+            var maxHeight = panelsLeft > 0
+                ? MathF.Max(minHeight, remainingHeight - panelsLeft * MinMembershipPanelHeight)
+                : remainingHeight;
+
+            float desired;
+            if (remainingRatio <= 0f)
+            {
+                desired = panelsLeft >= 0 ? remainingHeight / (panelsLeft + 1) : remainingHeight;
+            }
+            else
+            {
+                desired = remainingHeight * (_membershipPanelRatios[i] / remainingRatio);
+            }
+
+            var clamped = Math.Clamp(desired, minHeight, maxHeight);
+            _membershipPanelHeights[i] = clamped;
+            remainingHeight -= clamped;
+            remainingRatio -= _membershipPanelRatios[i];
+        }
+
+        if (remainingHeight > 0f)
+            _membershipPanelHeights[MembershipPanelCount - 1] += remainingHeight;
+        else if (remainingHeight < 0f)
+            _membershipPanelHeights[MembershipPanelCount - 1] = MathF.Max(MinMembershipPanelHeight, _membershipPanelHeights[MembershipPanelCount - 1] + remainingHeight);
+    }
+
+    private void UpdateMembershipRatiosFromHeights(float totalPanelHeight)
+    {
+        if (totalPanelHeight <= 0f)
+            return;
+
+        var sum = 0f;
+        for (var i = 0; i < MembershipPanelCount; i++)
+            sum += _membershipPanelHeights[i];
+
+        if (sum <= 0f)
+            return;
+
+        for (var i = 0; i < MembershipPanelCount; i++)
+        {
+            var ratio = _membershipPanelHeights[i] / sum;
+            _membershipPanelRatios[i] = Math.Clamp(ratio, MinMembershipPanelRatio, 1f);
+        }
+
+        NormalizeMembershipPanelRatios();
+        _membershipPanelRatiosDirty = true;
+    }
+
+    private void InitializeMembershipPanelRatios()
+    {
+        var ratioState = EnsureMembershipPanelRatioState();
+        for (var i = 0; i < MembershipPanelCount; i++)
+        {
+            var ratio = DefaultMembershipPanelRatios[i];
+            if (ratioState.TryGetValue(MembershipPanelRatioKeys[i], out var stored) && float.IsFinite(stored) && stored > 0f)
+                ratio = stored;
+
+            _membershipPanelRatios[i] = ratio;
+        }
+
+        NormalizeMembershipPanelRatios();
+    }
+
+    private void NormalizeMembershipPanelRatios()
+    {
+        var sum = 0f;
+        for (var i = 0; i < MembershipPanelCount; i++)
+        {
+            var ratio = _membershipPanelRatios[i];
+            if (!float.IsFinite(ratio) || ratio <= 0f)
+                ratio = DefaultMembershipPanelRatios[i];
+
+            ratio = Math.Clamp(ratio, MinMembershipPanelRatio, 1f);
+            _membershipPanelRatios[i] = ratio;
+            sum += ratio;
+        }
+
+        if (sum <= 0f)
+        {
+            sum = 0f;
+            for (var i = 0; i < MembershipPanelCount; i++)
+            {
+                var ratio = DefaultMembershipPanelRatios[i];
+                _membershipPanelRatios[i] = ratio;
+                sum += ratio;
+            }
+        }
+
+        if (sum <= 0f)
+        {
+            var uniform = 1f / MembershipPanelCount;
+            for (var i = 0; i < MembershipPanelCount; i++)
+                _membershipPanelRatios[i] = uniform;
+            return;
+        }
+
+        for (var i = 0; i < MembershipPanelCount; i++)
+            _membershipPanelRatios[i] /= sum;
+    }
+
+    private void SaveMembershipPanelRatios()
+    {
+        NormalizeMembershipPanelRatios();
+
+        var ratioState = EnsureMembershipPanelRatioState();
+        var changed = false;
+        for (var i = 0; i < MembershipPanelCount; i++)
+        {
+            var key = MembershipPanelRatioKeys[i];
+            var ratio = _membershipPanelRatios[i];
+            if (!ratioState.TryGetValue(key, out var existing) || Math.Abs(existing - ratio) > 0.0001f)
+            {
+                ratioState[key] = ratio;
+                changed = true;
+            }
+        }
+
+        if (changed)
+            PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+
+        _membershipPanelRatiosDirty = false;
+    }
+
+    private Dictionary<string, float> EnsureMembershipPanelRatioState()
+    {
+        return _syncshellState.MembershipPanelRatios ??= new Dictionary<string, float>();
+    }
+
+    private static ImGuiMouseCursor ResolveResizeNsCursor()
+    {
+        if (Enum.TryParse("ResizeNS", ignoreCase: true, out ImGuiMouseCursor cursor))
+            return cursor;
+
+        return ImGuiMouseCursor.ResizeAll;
     }
 
     private static void DrawMembershipPanel(string label, float height, Action content)
