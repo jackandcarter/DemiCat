@@ -220,7 +220,7 @@ public sealed class SyncClient : IDisposable
 
     private async Task ConnectAndPumpAsync(CancellationToken token)
     {
-        await using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(token);
         var socket = new ClientWebSocket();
         ApiHelpers.AddAuthHeader(socket, _tokenManager);
         socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
