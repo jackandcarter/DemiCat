@@ -549,25 +549,25 @@ public class SyncshellWindow : IDisposable
             return;
         }
 
-        foreach (var invite in invites)
+        foreach (var inviteEntry in invites)
         {
-            var status = NormalizeStatus(invite.Status);
+            var status = NormalizeStatus(inviteEntry.Status);
             var label = new StringBuilder()
-                .Append(invite.Target)
+                .Append(inviteEntry.Target)
                 .Append(" — ")
                 .Append(GetInviteStatusLabel(status));
 
-            if (invite.UpdatedAt != default)
+            if (inviteEntry.UpdatedAt != default)
             {
-                label.Append(" (").Append(FormatRelativeTime(invite.UpdatedAt)).Append(')');
+                label.Append(" (").Append(FormatRelativeTime(inviteEntry.UpdatedAt)).Append(')');
             }
 
             var color = DetermineInviteColor(status);
             ImGui.TextColored(color, label.ToString());
-            if (!string.IsNullOrWhiteSpace(invite.Direction))
+            if (!string.IsNullOrWhiteSpace(inviteEntry.Direction))
             {
                 ImGui.SameLine();
-                ImGui.TextDisabled($"[{invite.Direction}]");
+                ImGui.TextDisabled($"[{inviteEntry.Direction}]");
             }
         }
     }
