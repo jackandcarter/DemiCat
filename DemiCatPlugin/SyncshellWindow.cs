@@ -1536,71 +1536,107 @@ public class SyncshellWindow : IDisposable
             return;
         }
 
-        TrySubscribe(() =>
-        {
-            var subscriber = pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(Penumbra.Api.IpcSubscribers.ModSettingChanged.Label);
-            void Handler(ModSettingChange _, Guid __, string ___, bool ____) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
-            subscriber.Subscribe(Handler);
-            _ipcUnsubscribers.Add(() =>
+        void HandlePenumbraModSetting(ModSettingChange _, Guid __, string ___, bool ____) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
+        TrySubscribeAny(
+            "Penumbra.ModSettingChanged",
+            () =>
             {
-                try
-                {
-                    subscriber.Unsubscribe(Handler);
-                }
-                catch (Exception ex)
-                {
-                    PluginServices.Instance?.Log.Debug(ex, "Failed to unsubscribe from Penumbra.ModSettingChanged");
-                }
+                var subscriber = pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(Penumbra.Api.IpcSubscribers.ModSettingChanged.Label);
+                subscriber.Subscribe(HandlePenumbraModSetting);
+                return () => subscriber.Unsubscribe(HandlePenumbraModSetting);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>("Penumbra.ModSettingChanged");
+                subscriber.Subscribe(HandlePenumbraModSetting);
+                return () => subscriber.Unsubscribe(HandlePenumbraModSetting);
             });
-        }, "Penumbra.ModSettingChanged");
 
-        TrySubscribe(() =>
-        {
-            var subscriber = pi.GetIpcSubscriber<bool, object?>(Penumbra.Api.IpcSubscribers.EnabledChange.Label);
-            void Handler(bool _) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
-            subscriber.Subscribe(Handler);
-            _ipcUnsubscribers.Add(() =>
+        void HandlePenumbraEnabled(bool _) => HandleLocalStateChanged(LocalStateChangeSource.Penumbra);
+        TrySubscribeAny(
+            "Penumbra.EnabledChange",
+            () =>
             {
-                try
-                {
-                    subscriber.Unsubscribe(Handler);
-                }
-                catch (Exception ex)
-                {
-                    PluginServices.Instance?.Log.Debug(ex, "Failed to unsubscribe from Penumbra.EnabledChange");
-                }
+                var subscriber = pi.GetIpcSubscriber<bool, object?>(Penumbra.Api.IpcSubscribers.EnabledChange.Label);
+                subscriber.Subscribe(HandlePenumbraEnabled);
+                return () => subscriber.Unsubscribe(HandlePenumbraEnabled);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<bool, object?>("Penumbra.EnabledChange");
+                subscriber.Subscribe(HandlePenumbraEnabled);
+                return () => subscriber.Unsubscribe(HandlePenumbraEnabled);
             });
-        }, "Penumbra.EnabledChange");
 
-        TrySubscribe(() =>
-        {
-            var subscriber = pi.GetIpcSubscriber<nint, object?>(Glamourer.Api.IpcSubscribers.StateChanged.Label);
-            void Handler(nint _) => HandleLocalStateChanged(LocalStateChangeSource.Glamourer);
-            subscriber.Subscribe(Handler);
-            _ipcUnsubscribers.Add(() =>
+        void HandleGlamourerState(nint _) => HandleLocalStateChanged(LocalStateChangeSource.Glamourer);
+        void HandleGlamourerStateInt(int _) => HandleLocalStateChanged(LocalStateChangeSource.Glamourer);
+        TrySubscribeAny(
+            "Glamourer.StateChanged",
+            () =>
             {
-                try
-                {
-                    subscriber.Unsubscribe(Handler);
-                }
-                catch (Exception ex)
-                {
-                    PluginServices.Instance?.Log.Debug(ex, "Failed to unsubscribe from Glamourer.StateChanged");
-                }
+                var subscriber = pi.GetIpcSubscriber<nint, object?>(Glamourer.Api.IpcSubscribers.StateChanged.Label);
+                subscriber.Subscribe(HandleGlamourerState);
+                return () => subscriber.Unsubscribe(HandleGlamourerState);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<int, object?>(Glamourer.Api.IpcSubscribers.StateChanged.Label);
+                subscriber.Subscribe(HandleGlamourerStateInt);
+                return () => subscriber.Unsubscribe(HandleGlamourerStateInt);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<nint, object?>("Glamourer.StateChanged");
+                subscriber.Subscribe(HandleGlamourerState);
+                return () => subscriber.Unsubscribe(HandleGlamourerState);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<int, object?>("Glamourer.StateChanged");
+                subscriber.Subscribe(HandleGlamourerStateInt);
+                return () => subscriber.Unsubscribe(HandleGlamourerStateInt);
             });
-        }, "Glamourer.StateChanged");
     }
 
-    private void TrySubscribe(Action subscribe, string description)
+    private void TrySubscribeAny(string description, params Func<Action>[] attempts)
+    {
+        foreach (var attempt in attempts)
+        {
+            if (TrySubscribe(attempt, description))
+            {
+                return;
+            }
+        }
+    }
+
+    private bool TrySubscribe(Func<Action> subscribe, string description)
     {
         try
         {
-            subscribe();
+            var unsubscribe = subscribe();
+            RegisterUnsubscriber(unsubscribe, description);
+            return true;
         }
         catch (Exception ex)
         {
             PluginServices.Instance?.Log.Debug(ex, $"Failed to subscribe to {description} IPC event.");
+            return false;
         }
+    }
+
+    private void RegisterUnsubscriber(Action unsubscribe, string description)
+    {
+        _ipcUnsubscribers.Add(() =>
+        {
+            try
+            {
+                unsubscribe();
+            }
+            catch (Exception ex)
+            {
+                PluginServices.Instance?.Log.Debug(ex, $"Failed to unsubscribe from {description} IPC event.");
+            }
+        });
     }
 
     internal void PumpClientEvents()
