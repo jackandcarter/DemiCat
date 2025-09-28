@@ -131,7 +131,8 @@ def _extract_manifest_assets(manifest: Any) -> dict[tuple[Any, ...], dict[str, A
 
         collection_patches = collection.get("patches") or []
         for patch in collection_patches:
-            if not isinstance(patch, dict):\n+                continue
+            if not isinstance(patch, dict):
+                continue
             path = patch.get("path") or ""
             patch_key = ("patch", collection_id, path)
             assets[patch_key] = {
@@ -169,7 +170,9 @@ def _serialise_conflict(
         "expected": previous.get("hash"),
     }
     if current.get("collectionId") or previous.get("collectionId"):
-        payload["collectionId"] = current.get("collectionId") or previous.get("collectionId")
+        payload["collectionId"] = current.get("collectionId") or previous.get(
+            "collectionId"
+        )
     if current.get("modId") or previous.get("modId"):
         payload["modId"] = current.get("modId") or previous.get("modId")
     if current.get("path") or previous.get("path"):
@@ -413,7 +416,9 @@ async def list_invites(
         .where(SyncshellInvite.inviter_id == ctx.user.id)
         .order_by(SyncshellInvite.updated_at.desc())
     )
-    invites = [_serialize_invite(invite, "outgoing") for invite in result.scalars().all()]
+    invites = [
+        _serialize_invite(invite, "outgoing") for invite in result.scalars().all()
+    ]
     return {"invites": invites}
 
 
@@ -629,7 +634,9 @@ async def update_presence(
     presence_result = await db.execute(
         select(SyncshellPresence).where(SyncshellPresence.user_id == ctx.user.id)
     )
-    existing = {record.member_user_id: record for record in presence_result.scalars().all()}
+    existing = {
+        record.member_user_id: record for record in presence_result.scalars().all()
+    }
     now = datetime.utcnow()
 
     for member_id in valid_members:
