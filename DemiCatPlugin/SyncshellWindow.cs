@@ -129,6 +129,7 @@ public class SyncshellWindow : IDisposable
     private bool _inviteSuggestionsOpen;
     private Vector2 _inviteSuggestionAnchorMin;
     private Vector2 _inviteSuggestionAnchorMax;
+    private Vector2 _inviteSuggestionWindowSize;
     private bool _focusInviteInputNextFrame;
     private readonly ImGui.ImGuiInputTextCallbackDelegate _inviteInputCallback;
     private int _inviteInFlight;
@@ -927,13 +928,66 @@ public class SyncshellWindow : IDisposable
             return false;
         }
 
-        var position = new Vector2(_inviteSuggestionAnchorMin.X, _inviteSuggestionAnchorMax.Y);
-        ImGui.SetNextWindowPos(position, ImGuiCond.Always);
+        var belowPosition = new Vector2(_inviteSuggestionAnchorMin.X, _inviteSuggestionAnchorMax.Y);
+        var viewport = ImGui.GetWindowViewport();
+        var workRect = viewport.WorkRect;
+        var spaceBelow = MathF.Max(0f, workRect.Max.Y - _inviteSuggestionAnchorMax.Y);
+        var desiredPosition = belowPosition;
+
+        if (_inviteSuggestionWindowSize.Y > 0f)
+        {
+            if (_inviteSuggestionWindowSize.Y > spaceBelow)
+            {
+                var minY = workRect.Min.Y;
+                var maxY = workRect.Max.Y - _inviteSuggestionWindowSize.Y;
+                var aboveY = maxY < minY
+                    ? minY
+                    : Math.Clamp(_inviteSuggestionAnchorMin.Y - _inviteSuggestionWindowSize.Y, minY, maxY);
+                desiredPosition = new Vector2(belowPosition.X, aboveY);
+            }
+            else
+            {
+                var minY = workRect.Min.Y;
+                var maxY = workRect.Max.Y - _inviteSuggestionWindowSize.Y;
+                var clampedY = maxY < minY ? minY : Math.Clamp(belowPosition.Y, minY, maxY);
+                desiredPosition = new Vector2(belowPosition.X, clampedY);
+            }
+        }
+
+        ImGui.SetNextWindowPos(desiredPosition, ImGuiCond.Always);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(6f, 6f));
         var flags = ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoSavedSettings | ImGuiWindowFlags.AlwaysAutoResize;
         var applied = false;
         if (ImGui.Begin("##syncshell-invite-suggestions", flags))
         {
+            var windowSize = ImGui.GetWindowSize();
+            _inviteSuggestionWindowSize = windowSize;
+            spaceBelow = MathF.Max(0f, workRect.Max.Y - _inviteSuggestionAnchorMax.Y);
+
+            if (windowSize.Y > 0f)
+            {
+                if (windowSize.Y > spaceBelow)
+                {
+                    var minY = workRect.Min.Y;
+                    var maxY = workRect.Max.Y - windowSize.Y;
+                    var aboveY = maxY < minY ? minY : Math.Clamp(_inviteSuggestionAnchorMin.Y - windowSize.Y, minY, maxY);
+                    desiredPosition = new Vector2(belowPosition.X, aboveY);
+                }
+                else
+                {
+                    var minY = workRect.Min.Y;
+                    var maxY = workRect.Max.Y - windowSize.Y;
+                    var clampedY = maxY < minY ? minY : Math.Clamp(belowPosition.Y, minY, maxY);
+                    desiredPosition = new Vector2(belowPosition.X, clampedY);
+                }
+
+                var currentPos = ImGui.GetWindowPos();
+                if (currentPos != desiredPosition)
+                {
+                    ImGui.SetWindowPos(desiredPosition);
+                }
+            }
+
             for (var i = 0; i < _inviteSuggestions.Count; i++)
             {
                 var suggestion = _inviteSuggestions[i];
