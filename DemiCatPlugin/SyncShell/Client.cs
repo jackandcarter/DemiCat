@@ -462,7 +462,7 @@ public sealed class SyncClient : IDisposable
         return Task.CompletedTask;
     }
 
-    private async Task HandleWantAsync(JsonElement element, CancellationToken token)
+    private Task HandleWantAsync(JsonElement element, CancellationToken token)
     {
         var peerId = element.TryGetProperty("peerId", out var peerProperty)
             ? peerProperty.GetString() ?? "unknown"
@@ -572,7 +572,7 @@ public sealed class SyncClient : IDisposable
 
         if (upload.IsBudgetExhausted)
         {
-            return;
+            return Task.CompletedTask;
         }
 
         upload.AddRequests(want);
@@ -587,6 +587,8 @@ public sealed class SyncClient : IDisposable
         {
             _outgoingBlobs.Writer.TryWrite(new OutgoingBlob(peerId, chunk.Blob, chunk));
         }
+
+        return Task.CompletedTask;
     }
 
     private async Task HandleBlobAsync(JsonElement element, CancellationToken token)
