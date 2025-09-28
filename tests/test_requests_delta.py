@@ -21,14 +21,38 @@ discord_mod = _types.ModuleType("discord")
 abc_mod = _types.ModuleType("discord.abc")
 abc_mod.Messageable = type("Messageable", (), {})
 discord_mod.abc = abc_mod
-sys.modules.setdefault("discord", discord_mod)
-sys.modules.setdefault("discord.abc", abc_mod)
+ 
+
+class _DummyEmbed:
+    def __init__(self, *args, **kwargs):
+        self.args = args
+        self.kwargs = kwargs
+        self.fields = []
+
+    def add_field(self, *args, **kwargs):
+        self.fields.append((args, kwargs))
+
+
+discord_mod.Embed = _DummyEmbed
+discord_mod.ClientException = type("ClientException", (Exception,), {})
+
+
+class _DummyHTTPException(Exception):
+    def __init__(self, status: int = 0, text: str | None = None):
+        super().__init__(text)
+        self.status = status
+        self.text = text
+
+
+discord_mod.HTTPException = _DummyHTTPException
+sys.modules["discord"] = discord_mod
+sys.modules["discord.abc"] = abc_mod
 ext_mod = _types.ModuleType("discord.ext")
 commands_mod = _types.ModuleType("discord.ext.commands")
 ext_mod.commands = commands_mod
 discord_mod.ext = ext_mod
-sys.modules.setdefault("discord.ext", ext_mod)
-sys.modules.setdefault("discord.ext.commands", commands_mod)
+sys.modules["discord.ext"] = ext_mod
+sys.modules["discord.ext.commands"] = commands_mod
 
 from types import SimpleNamespace
 
@@ -42,6 +66,7 @@ from demibot.db.models import (
 )
 from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
+from demibot.http.discord_client import set_discord_client
 import demibot.http.routes.requests as request_routes
 
 async def _setup_db(db_path: str) -> None:
@@ -98,3 +123,66 @@ def test_requests_delta(db_setup):
     assert len(third) == 1
     assert third[0]["deleted"] is True
     assert third[0]["id"] == "1"
+
+
+def test_notify_posts_to_requests_channel_when_discord_guild_id_present(
+    db_setup, monkeypatch
+):
+    async def run():
+        async with get_session() as db:
+            guild = await db.get(Guild, 1)
+            user = await db.get(User, 1)
+            discord_id = 987654321012345678
+            guild.discord_guild_id = discord_id
+            req = DbRequest(
+                id=2,
+                guild_id=guild.id,
+                user_id=user.id,
+                title="Notify",
+                type=RequestType.ITEM,
+                status=RequestStatus.OPEN,
+                urgency=Urgency.LOW,
+            )
+            db.add(req)
+            await db.commit()
+            await db.refresh(req)
+            ctx = RequestContext(user=user, guild=guild, key=SimpleNamespace(), roles=[])
+
+            async def fake_send_dm(*args, **kwargs):
+                return None
+
+            monkeypatch.setattr(request_routes, "_send_dm", fake_send_dm)
+
+            class DummyChannel:
+                def __init__(self) -> None:
+                    self.name = "requests"
+                    self.sent = []
+
+                async def send(self, *args, **kwargs):
+                    self.sent.append((args, kwargs))
+
+            channel = DummyChannel()
+            dummy_guild = SimpleNamespace(text_channels=[channel])
+
+            class DummyClient:
+                def __init__(self) -> None:
+                    self.calls: list[int] = []
+
+                def get_guild(self, guild_id: int):
+                    self.calls.append(guild_id)
+                    return dummy_guild
+
+            dummy_client = DummyClient()
+            set_discord_client(dummy_client)
+            try:
+                await request_routes._notify(
+                    ctx.guild.discord_guild_id, req, "created", db, ctx.user
+                )
+            finally:
+                set_discord_client(None)
+
+            return channel.sent, dummy_client.calls, discord_id
+
+    sent_messages, calls, expected_id = asyncio.run(run())
+    assert calls == [expected_id]
+    assert len(sent_messages) == 1
