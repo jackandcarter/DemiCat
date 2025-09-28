@@ -37,12 +37,24 @@ def test_syncshell_invite_acceptance_and_members():
             await syncshell.pair(ctx=ctx_a, db=db)
             await syncshell.pair(ctx=ctx_b, db=db)
 
+            overview_a_initial = await syncshell.list_memberships(ctx=ctx_a, db=db)
+            assert overview_a_initial["members"] == []
+            assert overview_a_initial["pendingApprovals"] == []
+
             invite = await syncshell.create_invite(
                 payload=syncshell.InviteCreateRequest(member_id=user_b.id),
                 ctx=ctx_a,
                 db=db,
             )
             assert invite["status"] == "pending"
+
+            overview_a_after_invite = await syncshell.list_memberships(ctx=ctx_a, db=db)
+            assert overview_a_after_invite["invites"][0]["status"] == "pending"
+            assert overview_a_after_invite["invites"][0]["direction"] == "outgoing"
+
+            overview_b_pending = await syncshell.list_memberships(ctx=ctx_b, db=db)
+            assert overview_b_pending["pendingApprovals"][0]["displayName"] == "Alpha"
+            assert overview_b_pending["pendingApprovals"][0]["requestedAt"].endswith("Z")
 
             pending = await syncshell.list_pending(ctx=ctx_b, db=db)
             assert len(pending["pending"]) == 1
@@ -58,6 +70,19 @@ def test_syncshell_invite_acceptance_and_members():
 
             assert [m["id"] for m in members_a["members"]] == [str(user_b.id)]
             assert [m["id"] for m in members_b["members"]] == [str(user_a.id)]
+
+            overview_a_final = await syncshell.list_memberships(ctx=ctx_a, db=db)
+            assert overview_a_final["currentlySynced"] == []
+            assert overview_a_final["pendingApprovals"] == []
+            assert overview_a_final["members"][0]["id"] == str(user_b.id)
+            assert overview_a_final["members"][0]["presence"] == "offline"
+            assert overview_a_final["members"][0]["syncStatus"] is None
+            assert overview_a_final["invites"][0]["status"] == "accepted"
+
+            overview_b_final = await syncshell.list_memberships(ctx=ctx_b, db=db)
+            assert overview_b_final["members"][0]["id"] == str(user_a.id)
+            assert overview_b_final["members"][0]["presence"] == "offline"
+            assert overview_b_final["pendingApprovals"] == []
 
             pending_after = await syncshell.list_pending(ctx=ctx_b, db=db)
             assert pending_after["pending"] == []
@@ -97,6 +122,13 @@ def test_syncshell_presence_updates():
             assert presence["currentlySynced"][0]["id"] == str(user_b.id)
             assert presence["presence"][0]["active"] is True
 
+            overview_syncing = await syncshell.list_memberships(ctx=ctx_a, db=db)
+            assert overview_syncing["currentlySynced"][0]["id"] == str(user_b.id)
+            assert overview_syncing["currentlySynced"][0]["presence"] == "online"
+            assert overview_syncing["currentlySynced"][0]["syncStatus"] == "syncing"
+            assert overview_syncing["currentlySynced"][0]["syncedAt"].endswith("Z")
+            assert overview_syncing["members"][0]["presence"] == "online"
+
             await syncshell.update_presence(
                 payload=syncshell.PresenceUpdateRequest(active_member_ids=[]),
                 ctx=ctx_a,
@@ -104,5 +136,10 @@ def test_syncshell_presence_updates():
             )
             presence_after = await syncshell.get_presence(ctx=ctx_a, db=db)
             assert presence_after["presence"][0]["active"] is False
+
+            overview_offline = await syncshell.list_memberships(ctx=ctx_a, db=db)
+            assert overview_offline["currentlySynced"] == []
+            assert overview_offline["members"][0]["presence"] == "offline"
+            assert overview_offline["members"][0]["lastSeen"].endswith("Z")
 
     asyncio.run(_run())
