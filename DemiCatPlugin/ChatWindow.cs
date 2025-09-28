@@ -828,6 +828,8 @@ public class ChatWindow : IDisposable
                 }
                 drawList.ChannelsMerge();
 
+                clipper.IncludeItemByIndex(i);
+
                 if (i < _messages.Count - 1)
                 {
                     var spacingY = styleForRow.ItemSpacing.Y * 0.5f;
