@@ -1635,9 +1635,27 @@ public class ChatWindow : IDisposable
         var textHeight = ImGui.GetTextLineHeight();
         var avatarSize = textHeight + style.FramePadding.Y;
         var rowHeight = Math.Max(avatarSize + style.FramePadding.Y, ImGui.GetFrameHeight());
-        var separatorHeight = style.SeparatorTextBorderSize > 0f
-            ? style.SeparatorTextBorderSize
-            : 1f * scale;
+        var separatorHeight = style.ItemSpacing.Y * 0.5f;
+        if (separatorHeight <= 0f)
+        {
+            separatorHeight = style.FramePadding.Y;
+        }
+
+        if (separatorHeight <= 0f)
+        {
+            var dpiScale = scale;
+            if (!float.IsFinite(dpiScale) || dpiScale <= 0f)
+            {
+                dpiScale = ImGuiHelpers.GlobalScale;
+            }
+
+            if (!float.IsFinite(dpiScale) || dpiScale <= 0f)
+            {
+                dpiScale = 1f;
+            }
+
+            separatorHeight = 1f * dpiScale;
+        }
 
         var firstElement = true;
 
