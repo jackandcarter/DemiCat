@@ -705,6 +705,7 @@ class UserInstallation(Base):
     status: Mapped[InstallStatus] = mapped_column(
         SAEnum(InstallStatus), nullable=False
     )
+    asset_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
