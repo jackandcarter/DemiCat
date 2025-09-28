@@ -9,7 +9,7 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -449,8 +449,9 @@ async def create_invite(
     await _check_rate_limit(ctx.user.id, db)
 
     target_user: User | None = None
-    normalized_member = _normalize_display_name(payload.member)
-    display_name = normalized_member
+    original_member = (payload.member or "").strip()
+    normalized_member = _normalize_display_name(original_member)
+    display_name = original_member
     if payload.member_id is not None:
         target_user = await db.get(User, payload.member_id)
         if not target_user:
@@ -497,7 +498,7 @@ async def create_invite(
         if invite is not None:
             return _serialize_invite(invite, "outgoing")
     else:
-        normalized_display_name = _normalize_display_name(display_name)
+        normalized_display_name = normalized_member
         existing_invite = await db.execute(
             select(SyncshellInvite).where(
                 SyncshellInvite.inviter_id == ctx.user.id,
@@ -542,7 +543,8 @@ async def _get_invite_for_target(
     normalized_target = _normalize_display_name(_display_name(target_user))
     if not normalized_target:
         raise HTTPException(status_code=404, detail="invite not found")
-    if _normalize_display_name(invite.target_display_name) != normalized_target:
+    normalized_invite_target = _normalize_display_name(invite.target_display_name)
+    if normalized_invite_target != normalized_target:
         raise HTTPException(status_code=404, detail="invite not found")
     return invite
 
@@ -626,16 +628,21 @@ async def list_pending(
             SyncshellInvite.status == "pending",
             or_(
                 SyncshellInvite.target_user_id == ctx.user.id,
-                and_(
-                    SyncshellInvite.target_user_id.is_(None),
-                    func.lower(SyncshellInvite.target_display_name)
-                    == normalized_target,
-                ),
+                SyncshellInvite.target_user_id.is_(None),
             ),
         )
         .order_by(SyncshellInvite.created_at.desc())
     )
-    invites = result.scalars().all()
+    invites = [
+        invite
+        for invite in result.scalars().all()
+        if invite.target_user_id == ctx.user.id
+        or (
+            normalized_target
+            and _normalize_display_name(invite.target_display_name)
+            == normalized_target
+        )
+    ]
     pending: list[dict[str, Any]] = []
     for invite in invites:
         inviter = await db.get(User, invite.inviter_id)
@@ -773,16 +780,21 @@ async def list_memberships(
             SyncshellInvite.status == "pending",
             or_(
                 SyncshellInvite.target_user_id == ctx.user.id,
-                and_(
-                    SyncshellInvite.target_user_id.is_(None),
-                    func.lower(SyncshellInvite.target_display_name)
-                    == normalized_pending,
-                ),
+                SyncshellInvite.target_user_id.is_(None),
             ),
         )
         .order_by(SyncshellInvite.created_at.desc())
     )
-    pending_invites = pending_result.scalars().all()
+    pending_invites = [
+        invite
+        for invite in pending_result.scalars().all()
+        if invite.target_user_id == ctx.user.id
+        or (
+            normalized_pending
+            and _normalize_display_name(invite.target_display_name)
+            == normalized_pending
+        )
+    ]
     inviter_ids = {invite.inviter_id for invite in pending_invites}
     inviters: dict[int, User] = {}
     if inviter_ids:

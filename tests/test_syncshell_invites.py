@@ -118,6 +118,40 @@ def test_pending_invite_accept_flow_sets_memberships():
     asyncio.run(_run())
 
 
+def test_create_invite_preserves_display_name_casing_for_ambiguous_match():
+    async def _run():
+        session_factory = await _prepare_db()
+        async with session_factory as db:
+            inviter = User(id=1, discord_user_id=1, global_name="Alpha")
+            target_one = User(id=2, discord_user_id=2, character_name="Echo")
+            target_two = User(id=3, discord_user_id=3, character_name="Echo")
+            db.add_all(
+                [
+                    inviter,
+                    target_one,
+                    target_two,
+                    _pairing(inviter.id, token="token-inviter"),
+                    _pairing(target_one.id, token="token-target-1"),
+                    _pairing(target_two.id, token="token-target-2"),
+                ]
+            )
+            await db.commit()
+
+            ctx_inviter = RequestContext(user=inviter, guild=None, key=object(), roles=[])
+            syncshell.RATE_LIMIT = 100
+
+            response = await syncshell.create_invite(
+                syncshell.InviteCreateRequest(member="  eChO  "), ctx=ctx_inviter, db=db
+            )
+
+            invite = await db.get(SyncshellInvite, response["id"])
+            assert invite is not None
+            assert invite.target_user_id is None
+            assert invite.target_display_name == "eChO"
+
+    asyncio.run(_run())
+
+
 def test_pending_invite_deny_sets_target_user():
     async def _run():
         session_factory = await _prepare_db()
