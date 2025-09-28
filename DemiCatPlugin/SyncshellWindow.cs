@@ -93,6 +93,19 @@ public class SyncshellWindow : IDisposable
     private readonly Dictionary<string, BundleCacheEntry> _bundleCache = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _bundleCacheLock = new();
     private readonly SemaphoreSlim _bundleFetchLock = new(1, 1);
+    private readonly List<MemberPresenceEntry> _memberPresence = new();
+    private readonly List<MemberPresenceEntry> _currentlySyncedMembers = new();
+    private readonly List<PendingApprovalEntry> _pendingApprovals = new();
+    private readonly Dictionary<string, Config.SyncshellInviteState> _inviteStateByTarget = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Config.SyncshellInviteState> _inviteStateByRequestId = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _pendingApprovalInFlight = new(StringComparer.OrdinalIgnoreCase);
+    private string _inviteTarget = string.Empty;
+    private int _inviteInFlight;
+    private DateTimeOffset _lastMembershipFetch;
+    private volatile bool _membershipNeedsRefresh = true;
+    private int _membershipRefreshInProgress;
+    private int _membershipRefreshRequested;
+    private string? _membershipError;
 
     public SyncshellWindow(Config config, HttpClient httpClient)
     {
@@ -149,6 +162,22 @@ public class SyncshellWindow : IDisposable
         _lastResyncAt = state.LastResyncAt;
         _pairingExpiresAt = state.PairingExpiresAt;
 
+        foreach (var invite in state.Invites.ToList())
+        {
+            if (string.IsNullOrWhiteSpace(invite.Target))
+            {
+                state.Invites.Remove(invite);
+                continue;
+            }
+
+            invite.Target = invite.Target.Trim();
+            invite.Status = NormalizeStatus(invite.Status);
+
+            _inviteStateByTarget[invite.Target] = invite;
+            if (!string.IsNullOrWhiteSpace(invite.RequestId))
+                _inviteStateByRequestId[invite.RequestId] = invite;
+        }
+
         _autoSyncAllUsers = _config.SyncshellAutoSyncAllUsers;
         _manualSyncAllUsers = _config.SyncshellManualSyncAllUsers;
         _manualSyncCustom = _config.SyncshellManualSyncCustom;
@@ -165,6 +194,8 @@ public class SyncshellWindow : IDisposable
 
         SubscribeToStateChanges();
         _tokenManager.RegisterWatcher(HandleTokenLinked, HandleTokenUnlinked);
+
+        RequestMembershipRefresh();
     }
 
     public void Draw()
@@ -183,6 +214,15 @@ public class SyncshellWindow : IDisposable
 
         if (!_loading && (_needsRefresh || DateTimeOffset.UtcNow - _lastRefresh > TimeSpan.FromMinutes(5)))
             _ = Refresh();
+
+        if (Volatile.Read(ref _membershipRefreshInProgress) == 0)
+        {
+            var refreshAge = DateTimeOffset.UtcNow - _lastMembershipFetch;
+            if (Volatile.Read(ref _membershipNeedsRefresh) || refreshAge > TimeSpan.FromSeconds(45))
+            {
+                RequestMembershipRefresh();
+            }
+        }
 
         if (_loading)
         {
@@ -315,6 +355,10 @@ public class SyncshellWindow : IDisposable
         ImGui.EndChild();
         ImGui.Separator();
 
+        DrawMembershipPanels();
+
+        ImGui.Separator();
+
         var saveSeen = false;
         if (_updatesAvailable.Count > 0)
             ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), $"{_updatesAvailable.Count} update(s) available");
@@ -382,6 +426,888 @@ public class SyncshellWindow : IDisposable
 
         if (saveSeen)
             PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private void DrawMembershipPanels()
+    {
+        var error = _membershipError;
+        if (!string.IsNullOrEmpty(error))
+        {
+            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), error);
+        }
+        else if (Volatile.Read(ref _membershipRefreshInProgress) == 1)
+        {
+            ImGui.TextUnformatted("Updating membership data...");
+        }
+
+        DrawMembershipPanel("Currently synced", 110f, DrawCurrentlySyncedContent);
+        ImGui.Spacing();
+        DrawMembershipPanel("Member presence", 150f, DrawMemberPresenceContent);
+        ImGui.Spacing();
+        DrawMembershipPanel("Invite member", 150f, DrawInviteEntryContent);
+        ImGui.Spacing();
+        DrawMembershipPanel("Pending approvals", 150f, DrawPendingApprovalsContent);
+    }
+
+    private static void DrawMembershipPanel(string label, float height, Action content)
+    {
+        var id = $"syncshell-panel-{label.Replace(' ', '-').ToLowerInvariant()}";
+        ImGui.BeginChild(id, new Vector2(-1, height), true);
+        ImGui.TextUnformatted(label);
+        ImGui.Separator();
+        content();
+        ImGui.EndChild();
+    }
+
+    private void DrawCurrentlySyncedContent()
+    {
+        if (_currentlySyncedMembers.Count == 0)
+        {
+            ImGui.TextDisabled("No members currently synced.");
+            return;
+        }
+
+        foreach (var member in _currentlySyncedMembers)
+        {
+            var label = new StringBuilder(member.DisplayName);
+            if (!string.IsNullOrWhiteSpace(member.SyncStatus))
+            {
+                label.Append(" [").Append(member.SyncStatus).Append(']');
+            }
+            if (member.SyncedAt.HasValue)
+            {
+                label.Append(" • since ").Append(FormatRelativeTime(member.SyncedAt.Value));
+            }
+
+            ImGui.TextColored(new Vector4(0.6f, 1f, 0.6f, 1f), label.ToString());
+        }
+    }
+
+    private void DrawMemberPresenceContent()
+    {
+        if (_memberPresence.Count == 0)
+        {
+            ImGui.TextDisabled("No members available.");
+            return;
+        }
+
+        foreach (var member in _memberPresence)
+        {
+            var presenceLabel = BuildPresenceLabel(member);
+            var color = DeterminePresenceColor(member.Presence);
+            ImGui.TextColored(color, $"{member.DisplayName} — {presenceLabel}");
+            if (!string.IsNullOrWhiteSpace(member.SyncStatus))
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled($"[{member.SyncStatus}]");
+            }
+        }
+    }
+
+    private void DrawInviteEntryContent()
+    {
+        ImGui.TextWrapped("Send a SyncShell invite to another member by character name.");
+
+        var trimmed = _inviteTarget?.Trim() ?? string.Empty;
+        ImGui.SetNextItemWidth(-150f);
+        var submitted = ImGui.InputTextWithHint("##syncshell-invite", "Character name", ref _inviteTarget, 64, ImGuiInputTextFlags.EnterReturnsTrue);
+        if (submitted && !string.IsNullOrWhiteSpace(trimmed))
+        {
+            TrySendInvite(trimmed);
+        }
+
+        ImGui.SameLine();
+        var inviteInFlight = Volatile.Read(ref _inviteInFlight) == 1;
+        var disabled = string.IsNullOrWhiteSpace(trimmed) || inviteInFlight;
+        if (disabled)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Button("Send invite"))
+        {
+            TrySendInvite(trimmed);
+        }
+
+        if (disabled)
+        {
+            ImGui.EndDisabled();
+        }
+
+        ImGui.Separator();
+
+        var invites = _syncshellState.Invites
+            .OrderByDescending(static i => i.UpdatedAt)
+            .ToList();
+
+        if (invites.Count == 0)
+        {
+            ImGui.TextDisabled("No invites sent yet.");
+            return;
+        }
+
+        foreach (var invite in invites)
+        {
+            var status = NormalizeStatus(invite.Status);
+            var label = new StringBuilder()
+                .Append(invite.Target)
+                .Append(" — ")
+                .Append(GetInviteStatusLabel(status));
+
+            if (invite.UpdatedAt != default)
+            {
+                label.Append(" (").Append(FormatRelativeTime(invite.UpdatedAt)).Append(')');
+            }
+
+            var color = DetermineInviteColor(status);
+            ImGui.TextColored(color, label.ToString());
+            if (!string.IsNullOrWhiteSpace(invite.Direction))
+            {
+                ImGui.SameLine();
+                ImGui.TextDisabled($"[{invite.Direction}]");
+            }
+        }
+    }
+
+    private void DrawPendingApprovalsContent()
+    {
+        if (_pendingApprovals.Count == 0)
+        {
+            ImGui.TextDisabled("No pending approvals.");
+            return;
+        }
+
+        foreach (var pending in _pendingApprovals)
+        {
+            ImGui.PushID(pending.Id);
+            ImGui.TextUnformatted($"{pending.DisplayName} — requested {FormatRelativeTime(pending.RequestedAt)}");
+            var inFlight = _pendingApprovalInFlight.Contains(pending.Id);
+            if (inFlight)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            if (ImGui.Button("Approve"))
+            {
+                ProcessPendingApproval(pending.Id, approve: true);
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Deny"))
+            {
+                ProcessPendingApproval(pending.Id, approve: false);
+            }
+
+            if (inFlight)
+            {
+                ImGui.EndDisabled();
+            }
+
+            ImGui.PopID();
+        }
+    }
+
+    private void TrySendInvite(string target)
+    {
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return;
+        }
+
+        var trimmed = target.Trim();
+        if (trimmed.Length == 0)
+        {
+            return;
+        }
+
+        if (Interlocked.CompareExchange(ref _inviteInFlight, 1, 0) != 0)
+        {
+            return;
+        }
+
+        _ = SendInviteAsync(trimmed);
+    }
+
+    private void ProcessPendingApproval(string requestId, bool approve)
+    {
+        if (string.IsNullOrWhiteSpace(requestId))
+        {
+            return;
+        }
+
+        var trimmed = requestId.Trim();
+        if (!_pendingApprovalInFlight.Add(trimmed))
+        {
+            return;
+        }
+
+        _ = ProcessPendingApprovalAsync(trimmed, approve);
+    }
+
+    private async Task SendInviteAsync(string target)
+    {
+        try
+        {
+            if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
+            var response = await SendWithPairingRetryAsync(() =>
+            {
+                var payload = new { member = target };
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/syncshell/invites")
+                {
+                    Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json"),
+                };
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
+                return request;
+            }).ConfigureAwait(false);
+
+            if (response == null)
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            string? content = null;
+            using (response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    throw new HttpRequestException($"Failed to send invite: {(int)response.StatusCode} {detail}", null, response.StatusCode);
+                }
+
+                content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            }
+
+            string? requestId = null;
+            string? status = null;
+            DateTimeOffset? updatedAt = null;
+
+            if (!string.IsNullOrWhiteSpace(content))
+            {
+                try
+                {
+                    using var document = JsonDocument.Parse(content);
+                    var root = document.RootElement;
+                    requestId = GetString(root, "id", "requestId", "request_id");
+                    status = GetString(root, "status", "state");
+                    updatedAt = GetDateTime(root, "updatedAt", "updated_at", "createdAt", "created_at");
+                }
+                catch (JsonException ex)
+                {
+                    PluginServices.Instance?.Log.Debug(ex, "Failed to parse SyncShell invite response.");
+                }
+            }
+
+            var parsedStatus = NormalizeStatus(status);
+            var parsedUpdatedAt = updatedAt ?? DateTimeOffset.UtcNow;
+            var parsedRequestId = requestId;
+
+            _uiThreadActions.Enqueue(() =>
+            {
+                var entry = GetOrCreateInviteState(parsedRequestId, target, out var created);
+                var changed = created;
+                if (!string.Equals(entry.Status, parsedStatus, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry.Status = parsedStatus;
+                    changed = true;
+                }
+
+                if (entry.UpdatedAt != parsedUpdatedAt)
+                {
+                    entry.UpdatedAt = parsedUpdatedAt;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(entry.Direction))
+                {
+                    entry.Direction = "outgoing";
+                    changed = true;
+                }
+
+                _inviteTarget = string.Empty;
+                PluginServices.Instance?.ToastGui.ShowNormal($"SyncShell invite sent to {target}.");
+                if (changed)
+                {
+                    PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+                }
+
+                RequestMembershipRefresh();
+            });
+        }
+        catch (Exception ex)
+        {
+            var services = PluginServices.Instance;
+            services?.Log.Error(ex, "Failed to send SyncShell invite");
+            _uiThreadActions.Enqueue(() =>
+            {
+                var entry = GetOrCreateInviteState(null, target, out var created);
+                var changed = created;
+                if (!string.Equals(entry.Status, "failed", StringComparison.OrdinalIgnoreCase))
+                {
+                    entry.Status = "failed";
+                    changed = true;
+                }
+                entry.UpdatedAt = DateTimeOffset.UtcNow;
+                if (string.IsNullOrWhiteSpace(entry.Direction))
+                {
+                    entry.Direction = "outgoing";
+                    changed = true;
+                }
+                if (changed)
+                {
+                    services?.PluginInterface?.SavePluginConfig(_config);
+                }
+                services?.ToastGui.ShowError($"SyncShell invite to {target} failed – check logs.");
+            });
+        }
+        finally
+        {
+            Interlocked.Exchange(ref _inviteInFlight, 0);
+        }
+    }
+
+    private async Task ProcessPendingApprovalAsync(string requestId, bool approve)
+    {
+        try
+        {
+            if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
+            var actionSegment = approve ? "approve" : "deny";
+            var response = await SendWithPairingRetryAsync(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/syncshell/requests/{requestId}/{actionSegment}");
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
+                return request;
+            }).ConfigureAwait(false);
+
+            if (response == null)
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            using (response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    throw new HttpRequestException($"Failed to {actionSegment} request {requestId}: {(int)response.StatusCode} {detail}", null, response.StatusCode);
+                }
+            }
+
+            _uiThreadActions.Enqueue(() =>
+            {
+                _pendingApprovalInFlight.Remove(requestId);
+                _pendingApprovals.RemoveAll(p => string.Equals(p.Id, requestId, StringComparison.OrdinalIgnoreCase));
+                PluginServices.Instance?.ToastGui.ShowNormal($"Request {(approve ? "approved" : "denied")}.");
+                RequestMembershipRefresh();
+            });
+        }
+        catch (Exception ex)
+        {
+            var services = PluginServices.Instance;
+            services?.Log.Error(ex, "Failed to process SyncShell approval");
+            _uiThreadActions.Enqueue(() =>
+            {
+                _pendingApprovalInFlight.Remove(requestId);
+                services?.ToastGui.ShowError($"Failed to {(approve ? "approve" : "deny")} request – check logs.");
+            });
+        }
+    }
+
+    private void RequestMembershipRefresh()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        Volatile.Write(ref _membershipNeedsRefresh, true);
+        Interlocked.CompareExchange(ref _membershipRefreshRequested, 1, 0);
+    }
+
+    private async Task RefreshMembershipOverviewAsync(bool force = false)
+    {
+        if (_disposed || !_config.FCSyncShell)
+        {
+            return;
+        }
+
+        if (!force)
+        {
+            var stale = DateTimeOffset.UtcNow - _lastMembershipFetch;
+            if (!Volatile.Read(ref _membershipNeedsRefresh) && stale < TimeSpan.FromSeconds(45))
+            {
+                return;
+            }
+        }
+
+        if (Interlocked.Exchange(ref _membershipRefreshInProgress, 1) == 1)
+        {
+            if (force)
+            {
+                Volatile.Write(ref _membershipNeedsRefresh, true);
+            }
+            return;
+        }
+
+        try
+        {
+            Volatile.Write(ref _membershipNeedsRefresh, false);
+            if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                return;
+            }
+
+            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
+            var response = await SendWithPairingRetryAsync(() =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/api/syncshell/memberships");
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
+                return request;
+            }).ConfigureAwait(false);
+
+            if (response == null)
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            using (response)
+            {
+                if (response.StatusCode == HttpStatusCode.NotFound)
+                {
+                    _uiThreadActions.Enqueue(() => _membershipError = "Server does not support SyncShell membership endpoints yet.");
+                    return;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    throw new HttpRequestException($"Failed to fetch membership data: {(int)response.StatusCode} {detail}", null, response.StatusCode);
+                }
+
+                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(content))
+                {
+                    _uiThreadActions.Enqueue(() => _membershipError = "Membership response was empty.");
+                    return;
+                }
+
+                using var document = JsonDocument.Parse(content);
+                var snapshot = document.RootElement.Clone();
+                _uiThreadActions.Enqueue(() =>
+                {
+                    _membershipError = null;
+                    ApplyMembershipOverview(snapshot);
+                });
+            }
+        }
+        catch (Exception ex)
+        {
+            var services = PluginServices.Instance;
+            services?.Log.Warning(ex, "Failed to refresh SyncShell membership overview");
+            _uiThreadActions.Enqueue(() => _membershipError = ex.Message);
+        }
+        finally
+        {
+            _lastMembershipFetch = DateTimeOffset.UtcNow;
+            Interlocked.Exchange(ref _membershipRefreshInProgress, 0);
+        }
+    }
+
+    private void ApplyMembershipOverview(JsonElement root)
+    {
+        _currentlySyncedMembers.Clear();
+        if (TryGetArray(root, out var syncedArray, "currentlySynced", "currently_synced"))
+        {
+            foreach (var item in syncedArray.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object)
+                {
+                    var entry = ParseMemberEntry(item);
+                    if (string.IsNullOrWhiteSpace(entry.DisplayName))
+                    {
+                        entry.DisplayName = string.IsNullOrWhiteSpace(entry.Id) ? "Unknown" : entry.Id;
+                    }
+                    _currentlySyncedMembers.Add(entry);
+                }
+                else if (item.ValueKind == JsonValueKind.String)
+                {
+                    var name = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        _currentlySyncedMembers.Add(new MemberPresenceEntry { DisplayName = name });
+                    }
+                }
+            }
+        }
+
+        _memberPresence.Clear();
+        if (TryGetArray(root, out var membersArray, "members", "memberPresence", "presence"))
+        {
+            foreach (var item in membersArray.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object)
+                {
+                    var entry = ParseMemberEntry(item);
+                    if (string.IsNullOrWhiteSpace(entry.DisplayName))
+                    {
+                        entry.DisplayName = string.IsNullOrWhiteSpace(entry.Id) ? "Unknown" : entry.Id;
+                    }
+                    _memberPresence.Add(entry);
+                }
+                else if (item.ValueKind == JsonValueKind.String)
+                {
+                    var name = item.GetString();
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        _memberPresence.Add(new MemberPresenceEntry { DisplayName = name });
+                    }
+                }
+            }
+        }
+
+        _pendingApprovals.Clear();
+        if (TryGetArray(root, out var pendingArray, "pendingApprovals", "pending_requests", "pending"))
+        {
+            foreach (var item in pendingArray.EnumerateArray())
+            {
+                if (item.ValueKind == JsonValueKind.Object)
+                {
+                    var entry = ParsePendingApproval(item);
+                    if (!string.IsNullOrWhiteSpace(entry.Id))
+                    {
+                        if (string.IsNullOrWhiteSpace(entry.DisplayName))
+                        {
+                            entry.DisplayName = entry.Id;
+                        }
+                        _pendingApprovals.Add(entry);
+                    }
+                }
+            }
+        }
+
+        var invitesChanged = false;
+        if (TryGetArray(root, out var invitesArray, "invites", "sentInvites"))
+        {
+            foreach (var item in invitesArray.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var target = GetString(item, "displayName", "target", "name", "character");
+                if (string.IsNullOrWhiteSpace(target))
+                {
+                    target = GetString(item, "id", "requestId", "request_id");
+                }
+
+                if (string.IsNullOrWhiteSpace(target))
+                {
+                    continue;
+                }
+
+                var requestId = GetString(item, "id", "requestId", "request_id");
+                var status = NormalizeStatus(GetString(item, "status", "state"));
+                var updatedAt = GetDateTime(item, "updatedAt", "updated_at", "createdAt", "created_at") ?? DateTimeOffset.UtcNow;
+                var direction = GetString(item, "direction");
+
+                var entry = GetOrCreateInviteState(string.IsNullOrWhiteSpace(requestId) ? null : requestId, target, out var created);
+                var changed = created;
+                if (!string.IsNullOrWhiteSpace(status) && !string.Equals(entry.Status, status, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry.Status = status;
+                    changed = true;
+                }
+
+                if (entry.UpdatedAt != updatedAt)
+                {
+                    entry.UpdatedAt = updatedAt;
+                    changed = true;
+                }
+
+                if (!string.IsNullOrWhiteSpace(direction) && !string.Equals(entry.Direction, direction, StringComparison.OrdinalIgnoreCase))
+                {
+                    entry.Direction = direction;
+                    changed = true;
+                }
+
+                if (changed)
+                {
+                    invitesChanged = true;
+                }
+            }
+        }
+
+        _memberPresence.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
+        _currentlySyncedMembers.Sort((a, b) => string.Compare(a.DisplayName, b.DisplayName, StringComparison.OrdinalIgnoreCase));
+        _pendingApprovals.Sort((a, b) => DateTimeOffset.Compare(b.RequestedAt, a.RequestedAt));
+
+        if (invitesChanged)
+        {
+            PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+        }
+    }
+
+    private Config.SyncshellInviteState GetOrCreateInviteState(string? requestId, string target, out bool created)
+    {
+        created = false;
+        var trimmedTarget = target.Trim();
+        Config.SyncshellInviteState? entry = null;
+
+        if (!string.IsNullOrWhiteSpace(requestId))
+        {
+            _inviteStateByRequestId.TryGetValue(requestId, out entry);
+        }
+
+        if (entry == null && !string.IsNullOrWhiteSpace(trimmedTarget))
+        {
+            _inviteStateByTarget.TryGetValue(trimmedTarget, out entry);
+        }
+
+        if (entry == null)
+        {
+            entry = new Config.SyncshellInviteState
+            {
+                Target = trimmedTarget,
+                Status = "pending",
+                UpdatedAt = DateTimeOffset.UtcNow,
+            };
+            _syncshellState.Invites.Add(entry);
+            created = true;
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestId))
+        {
+            entry.RequestId = requestId;
+            _inviteStateByRequestId[requestId] = entry;
+        }
+
+        if (!string.IsNullOrWhiteSpace(trimmedTarget))
+        {
+            entry.Target = trimmedTarget;
+            _inviteStateByTarget[trimmedTarget] = entry;
+        }
+
+        return entry;
+    }
+
+    private static MemberPresenceEntry ParseMemberEntry(JsonElement element)
+    {
+        return new MemberPresenceEntry
+        {
+            Id = GetString(element, "id", "memberId", "userId"),
+            DisplayName = GetString(element, "displayName", "name", "nickname"),
+            Presence = GetString(element, "presence", "status"),
+            SyncStatus = GetString(element, "syncStatus", "state"),
+            LastSeen = GetDateTime(element, "lastSeen", "last_seen"),
+            SyncedAt = GetDateTime(element, "syncedAt", "since", "synced_at"),
+        };
+    }
+
+    private static PendingApprovalEntry ParsePendingApproval(JsonElement element)
+    {
+        return new PendingApprovalEntry
+        {
+            Id = GetString(element, "id", "requestId", "request_id"),
+            DisplayName = GetString(element, "displayName", "name", "character"),
+            RequestedAt = GetDateTime(element, "requestedAt", "createdAt", "created_at") ?? DateTimeOffset.UtcNow,
+        };
+    }
+
+    private static Vector4 DetermineInviteColor(string status)
+    {
+        return status switch
+        {
+            "pending" or "requested" => new Vector4(1f, 0.8f, 0.2f, 1f),
+            "approved" or "accepted" or "joined" => new Vector4(0.6f, 1f, 0.6f, 1f),
+            "denied" or "rejected" or "cancelled" or "expired" or "failed" => new Vector4(1f, 0.6f, 0.6f, 1f),
+            _ => new Vector4(0.8f, 0.8f, 0.8f, 1f),
+        };
+    }
+
+    private static Vector4 DeterminePresenceColor(string? presence)
+    {
+        if (string.IsNullOrWhiteSpace(presence))
+        {
+            return new Vector4(0.8f, 0.8f, 0.8f, 1f);
+        }
+
+        switch (presence.ToLowerInvariant())
+        {
+            case "online":
+                return new Vector4(0.6f, 1f, 0.6f, 1f);
+            case "away":
+            case "idle":
+                return new Vector4(1f, 0.85f, 0.4f, 1f);
+            case "offline":
+                return new Vector4(0.7f, 0.7f, 0.7f, 1f);
+            default:
+                return new Vector4(0.8f, 0.8f, 0.8f, 1f);
+        }
+    }
+
+    private static string BuildPresenceLabel(MemberPresenceEntry entry)
+    {
+        if (string.Equals(entry.Presence, "online", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Online";
+        }
+
+        if (string.Equals(entry.Presence, "away", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(entry.Presence, "idle", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Away";
+        }
+
+        if (string.Equals(entry.Presence, "offline", StringComparison.OrdinalIgnoreCase))
+        {
+            return entry.LastSeen.HasValue
+                ? $"Offline (last seen {FormatRelativeTime(entry.LastSeen.Value)})"
+                : "Offline";
+        }
+
+        if (!string.IsNullOrWhiteSpace(entry.Presence))
+        {
+            var text = entry.Presence.Replace('_', ' ').ToLowerInvariant();
+            return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(text);
+        }
+
+        return "Unknown";
+    }
+
+    private static string GetInviteStatusLabel(string status)
+    {
+        if (string.IsNullOrWhiteSpace(status))
+        {
+            return "Pending";
+        }
+
+        var text = status.Replace('_', ' ').ToLowerInvariant();
+        return CultureInfo.InvariantCulture.TextInfo.ToTitleCase(text);
+    }
+
+    private static string NormalizeStatus(string? status)
+    {
+        return string.IsNullOrWhiteSpace(status) ? "pending" : status.Trim().ToLowerInvariant();
+    }
+
+    private static bool TryGetArray(JsonElement root, out JsonElement array, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (TryGetProperty(root, name, out var value) && value.ValueKind == JsonValueKind.Array)
+            {
+                array = value;
+                return true;
+            }
+        }
+
+        array = default;
+        return false;
+    }
+
+    private static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+    {
+        if (element.ValueKind != JsonValueKind.Object)
+        {
+            value = default;
+            return false;
+        }
+
+        if (element.TryGetProperty(name, out value))
+        {
+            return true;
+        }
+
+        foreach (var property in element.EnumerateObject())
+        {
+            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string GetString(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (TryGetProperty(element, name, out var value))
+            {
+                return value.ValueKind switch
+                {
+                    JsonValueKind.String => value.GetString() ?? string.Empty,
+                    JsonValueKind.Number when value.TryGetInt64(out var longValue) => longValue.ToString(CultureInfo.InvariantCulture),
+                    JsonValueKind.Number when value.TryGetDouble(out var doubleValue) => doubleValue.ToString(CultureInfo.InvariantCulture),
+                    JsonValueKind.True => "true",
+                    JsonValueKind.False => "false",
+                    _ => value.GetRawText(),
+                };
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static DateTimeOffset? GetDateTime(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var name in propertyNames)
+        {
+            if (!TryGetProperty(element, name, out var value))
+            {
+                continue;
+            }
+
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.String:
+                {
+                    var text = value.GetString();
+                    if (string.IsNullOrWhiteSpace(text))
+                    {
+                        continue;
+                    }
+
+                    if (DateTimeOffset.TryParse(text, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var parsed))
+                    {
+                        return parsed;
+                    }
+
+                    if (long.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out var seconds))
+                    {
+                        return DateTimeOffset.FromUnixTimeSeconds(seconds);
+                    }
+                    break;
+                }
+                case JsonValueKind.Number:
+                {
+                    if (value.TryGetInt64(out var seconds))
+                    {
+                        return DateTimeOffset.FromUnixTimeSeconds(seconds);
+                    }
+
+                    if (value.TryGetDouble(out var secondsDouble))
+                    {
+                        return DateTimeOffset.FromUnixTimeSeconds((long)Math.Floor(secondsDouble));
+                    }
+                    break;
+                }
+            }
+        }
+
+        return null;
     }
 
     private bool IsManualModeActive
@@ -693,6 +1619,11 @@ public class SyncshellWindow : IDisposable
         if (Interlocked.CompareExchange(ref _installationsRefreshRequested, 0, 1) == 1)
         {
             _ = RefreshInstallationsAsync();
+        }
+
+        if (Interlocked.CompareExchange(ref _membershipRefreshRequested, 0, 1) == 1)
+        {
+            _ = RefreshMembershipOverviewAsync();
         }
     }
 
@@ -2688,6 +3619,35 @@ public class SyncshellWindow : IDisposable
     {
         Penumbra,
         Glamourer,
+    }
+
+    private sealed class MemberPresenceEntry
+    {
+        public string Id { get; set; } = string.Empty;
+
+        public string DisplayName { get; set; } = string.Empty;
+
+        public string? Presence { get; set; }
+            = null;
+
+        public string? SyncStatus { get; set; }
+            = null;
+
+        public DateTimeOffset? LastSeen { get; set; }
+            = null;
+
+        public DateTimeOffset? SyncedAt { get; set; }
+            = null;
+    }
+
+    private sealed class PendingApprovalEntry
+    {
+        public string Id { get; set; } = string.Empty;
+
+        public string DisplayName { get; set; } = string.Empty;
+
+        public DateTimeOffset RequestedAt { get; set; }
+            = DateTimeOffset.UtcNow;
     }
 
     private sealed class PeerInventory
