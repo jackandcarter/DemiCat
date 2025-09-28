@@ -57,7 +57,7 @@ public class SyncshellWindow : IDisposable
     private string? _etag;
     private string? _bundleEtag;
     private bool _loading;
-    private volatile bool _needsRefresh = true;
+    private bool _needsRefresh = true;
     private PenumbraConflict? _penumbraConflict;
     private static DateTimeOffset _lastRedraw;
     private DateTimeOffset? _pairingExpiresAt;
@@ -103,7 +103,7 @@ public class SyncshellWindow : IDisposable
     private string _inviteTarget = string.Empty;
     private int _inviteInFlight;
     private DateTimeOffset _lastMembershipFetch;
-    private volatile bool _membershipNeedsRefresh = true;
+    private bool _membershipNeedsRefresh = true;
     private int _membershipRefreshInProgress;
     private int _membershipRefreshRequested;
     private string? _membershipError;
@@ -213,7 +213,7 @@ public class SyncshellWindow : IDisposable
             return;
         }
 
-        if (!_loading && (_needsRefresh || DateTimeOffset.UtcNow - _lastRefresh > TimeSpan.FromMinutes(5)))
+        if (!_loading && (Volatile.Read(ref _needsRefresh) || DateTimeOffset.UtcNow - _lastRefresh > TimeSpan.FromMinutes(5)))
             _ = Refresh();
 
         if (Volatile.Read(ref _membershipRefreshInProgress) == 0)
@@ -1737,7 +1737,7 @@ public class SyncshellWindow : IDisposable
         finally
         {
             _loading = false;
-            _needsRefresh = false;
+            Volatile.Write(ref _needsRefresh, false);
         }
     }
 
@@ -3122,7 +3122,7 @@ public class SyncshellWindow : IDisposable
             _peerInventories.Clear();
         _etag = null;
         _bundleEtag = null;
-        _needsRefresh = true;
+        Volatile.Write(ref _needsRefresh, true);
     }
 
     private async Task<bool> EnsurePairingAsync(bool force = false, CancellationToken cancellationToken = default)
