@@ -81,6 +81,12 @@ def test_syncshell_websocket_hello_and_manifest(tmp_path):
         payload = want["payload"]
         assert blob_hash in payload["want"]["blobs"]
         assert payload["diff"]["need"]
+        expected_hints = [
+            {"hash": entry["hash"], "size": entry["size"]}
+            for entry in payload["diff"]["need"]
+            if entry.get("hash") and isinstance(entry.get("size"), int) and entry["size"] > 0
+        ]
+        assert payload["want"]["sizeHints"] == expected_hints
         assert payload["limits"]["budget"]["limitBytes"] > 0
 
     async def _fetch_manifest() -> dict:
