@@ -136,6 +136,9 @@ public class Config : IPluginConfiguration
         [JsonPropertyName("membershipPanelRatios")]
         public Dictionary<string, float> MembershipPanelRatios { get; set; } = new();
 
+        [JsonPropertyName("syncSettingsHeight")]
+        public float? SyncSettingsHeight { get; set; }
+
         [JsonExtensionData]
         public Dictionary<string, JsonElement>? ExtensionData { get; set; }
     }

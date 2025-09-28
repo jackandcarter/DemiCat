@@ -50,6 +50,9 @@ public class SyncshellWindow : IDisposable
         "pendingApprovals",
     };
     private static readonly ImGuiMouseCursor ResizeNsCursor = ResolveResizeNsCursor();
+    private const float DefaultSyncSettingsHeight = 170f;
+    private const float MinSyncSettingsHeight = 120f;
+    private const float MaxSyncSettingsHeight = 400f;
 
     private readonly Config _config;
     private readonly HttpClient _httpClient;
@@ -84,6 +87,8 @@ public class SyncshellWindow : IDisposable
     private readonly float[] _membershipPanelRatios = new float[MembershipPanelCount];
     private readonly float[] _membershipPanelHeights = new float[MembershipPanelCount];
     private bool _membershipPanelRatiosDirty;
+    private float _syncSettingsHeight = DefaultSyncSettingsHeight;
+    private bool _syncSettingsHeightDirty;
 
     private bool _autoSyncAllUsers;
     private bool _manualSyncAllUsers;
@@ -193,6 +198,10 @@ public class SyncshellWindow : IDisposable
         _syncPaused = state.Paused;
         _lastResyncAt = state.LastResyncAt;
         _pairingExpiresAt = state.PairingExpiresAt;
+        if (state.SyncSettingsHeight is { } storedHeight && float.IsFinite(storedHeight) && storedHeight > 0f)
+        {
+            _syncSettingsHeight = Math.Clamp(storedHeight, MinSyncSettingsHeight, MaxSyncSettingsHeight);
+        }
         InitializeMembershipPanelRatios();
 
         _inviteInputCallback = new ImGui.ImGuiInputTextCallbackDelegate(OnInviteInputEdited);
@@ -290,7 +299,15 @@ public class SyncshellWindow : IDisposable
             _penumbraConflict = null;
         }
 
-        ImGui.BeginChild("sync-settings", new Vector2(-1, 170), true);
+        var style = ImGui.GetStyle();
+        var settingsSplitterHeight = Math.Max(4f, style.FramePadding.Y);
+        var totalAvailableHeight = ImGui.GetContentRegionAvail().Y;
+        var maxSettingsHeight = CalculateMaxSyncSettingsHeight(totalAvailableHeight, settingsSplitterHeight);
+        if (!float.IsFinite(_syncSettingsHeight) || _syncSettingsHeight <= 0f)
+            _syncSettingsHeight = DefaultSyncSettingsHeight;
+        maxSettingsHeight = MathF.Max(MinSyncSettingsHeight, maxSettingsHeight);
+        _syncSettingsHeight = Math.Clamp(_syncSettingsHeight, MinSyncSettingsHeight, maxSettingsHeight);
+        ImGui.BeginChild("sync-settings", new Vector2(-1, _syncSettingsHeight), true);
         ImGui.TextUnformatted("Sync Settings");
         var autoSync = _autoSyncAllUsers;
         if (ImGui.Checkbox("Auto Sync to all Connected Users", ref autoSync))
@@ -388,6 +405,45 @@ public class SyncshellWindow : IDisposable
             SetSyncPaused(!_syncPaused);
         }
         ImGui.EndChild();
+
+        var splitterWidth = ImGui.GetContentRegionAvail().X;
+        if (splitterWidth <= 0f)
+        {
+            ImGui.Dummy(new Vector2(0f, settingsSplitterHeight));
+        }
+        else
+        {
+            ImGui.InvisibleButton("##syncshell-settings-splitter", new Vector2(splitterWidth, settingsSplitterHeight));
+            var splitterActive = ImGui.IsItemActive();
+            if (ImGui.IsItemHovered() || splitterActive)
+                ImGui.SetMouseCursor(ResizeNsCursor);
+
+            if (splitterActive)
+            {
+                var delta = ImGui.GetIO().MouseDelta.Y;
+                if (Math.Abs(delta) > float.Epsilon)
+                {
+                    var previous = _syncSettingsHeight;
+                    var adjusted = Math.Clamp(previous + delta, MinSyncSettingsHeight, maxSettingsHeight);
+                    if (Math.Abs(adjusted - previous) > float.Epsilon)
+                    {
+                        _syncSettingsHeight = adjusted;
+                        _syncSettingsHeightDirty = true;
+                    }
+                }
+            }
+            else if (_syncSettingsHeightDirty)
+            {
+                SaveSyncSettingsHeight();
+                _syncSettingsHeightDirty = false;
+            }
+        }
+        if (_syncSettingsHeightDirty && splitterWidth <= 0f)
+        {
+            SaveSyncSettingsHeight();
+            _syncSettingsHeightDirty = false;
+        }
+
         ImGui.Separator();
 
         DrawMembershipPanels();
@@ -461,6 +517,26 @@ public class SyncshellWindow : IDisposable
 
         if (saveSeen)
             PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+    }
+
+    private static float CalculateMaxSyncSettingsHeight(float availableHeight, float splitterHeight)
+    {
+        if (!float.IsFinite(availableHeight) || availableHeight <= 0f)
+            return MinSyncSettingsHeight;
+
+        var membershipSplitterHeight = Math.Max(4f, ImGui.GetStyle().FramePadding.Y);
+        var minRemaining = splitterHeight + MinMembershipPanelHeight * MembershipPanelCount + membershipSplitterHeight * (MembershipPanelCount - 1);
+        var maxHeight = MathF.Max(MinSyncSettingsHeight, availableHeight - minRemaining);
+        maxHeight = MathF.Min(MaxSyncSettingsHeight, maxHeight);
+        return MathF.Max(MinSyncSettingsHeight, maxHeight);
+    }
+
+    private void SaveSyncSettingsHeight()
+    {
+        var clamped = Math.Clamp(_syncSettingsHeight, MinSyncSettingsHeight, MaxSyncSettingsHeight);
+        _syncSettingsHeight = clamped;
+        _syncshellState.SyncSettingsHeight = clamped;
+        PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
     }
 
     private void DrawMembershipPanels()
