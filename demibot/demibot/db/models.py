@@ -231,6 +231,61 @@ class SyncshellRateLimit(Base):
     window_start: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class SyncshellInvite(Base):
+    __tablename__ = "syncshell_invites"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    inviter_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), index=True
+    )
+    target_user_id: Mapped[Optional[int]] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    target_display_name: Mapped[str] = mapped_column(String(255))
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+
+
+class SyncshellMember(Base):
+    __tablename__ = "syncshell_members"
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "member_user_id", name="uq_syncshell_member_pair"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), index=True
+    )
+    member_user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SyncshellPresence(Base):
+    __tablename__ = "syncshell_presence"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id", "member_user_id", name="uq_syncshell_presence_pair"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), index=True
+    )
+    member_user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), index=True
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=False)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
