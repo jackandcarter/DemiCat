@@ -555,6 +555,26 @@ async def deny_invite(
     return {"status": "denied"}
 
 
+@router.post("/requests/{invite_id}/approve")
+async def approve_request(
+    invite_id: str,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    await accept_invite(invite_id, ctx=ctx, db=db)
+    return {"status": "accepted"}
+
+
+@router.post("/requests/{invite_id}/deny")
+async def deny_request(
+    invite_id: str,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    await deny_invite(invite_id, ctx=ctx, db=db)
+    return {"status": "denied"}
+
+
 @router.get("/pending")
 async def list_pending(
     ctx: RequestContext = Depends(api_key_auth),

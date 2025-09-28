@@ -60,7 +60,8 @@ def test_syncshell_invite_acceptance_and_members():
             assert len(pending["pending"]) == 1
             assert pending["pending"][0]["id"] == invite["id"]
 
-            await syncshell.accept_invite(invite["id"], ctx=ctx_b, db=db)
+            approve = await syncshell.approve_request(invite["id"], ctx=ctx_b, db=db)
+            assert approve == {"status": "accepted"}
 
             invites_after = await syncshell.list_invites(ctx=ctx_a, db=db)
             assert invites_after["invites"][0]["status"] == "accepted"
@@ -86,6 +87,45 @@ def test_syncshell_invite_acceptance_and_members():
 
             pending_after = await syncshell.list_pending(ctx=ctx_b, db=db)
             assert pending_after["pending"] == []
+
+    asyncio.run(_run())
+
+
+def test_syncshell_invite_denial():
+    async def _run():
+        session_factory = await _prepare_db()
+        async with session_factory as db:
+            user_a = User(id=101, discord_user_id=1001, global_name="Epsilon")
+            user_b = User(id=102, discord_user_id=1002, global_name="Zeta")
+            db.add_all([user_a, user_b])
+            await db.commit()
+
+            ctx_a = _make_ctx(user_a)
+            ctx_b = _make_ctx(user_b)
+
+            await syncshell.pair(ctx=ctx_a, db=db)
+            await syncshell.pair(ctx=ctx_b, db=db)
+
+            invite = await syncshell.create_invite(
+                payload=syncshell.InviteCreateRequest(member_id=user_b.id),
+                ctx=ctx_a,
+                db=db,
+            )
+
+            deny = await syncshell.deny_request(invite["id"], ctx=ctx_b, db=db)
+            assert deny == {"status": "denied"}
+
+            invites_after = await syncshell.list_invites(ctx=ctx_a, db=db)
+            assert invites_after["invites"][0]["status"] == "denied"
+
+            pending_after = await syncshell.list_pending(ctx=ctx_b, db=db)
+            assert pending_after["pending"] == []
+
+            members_a = await syncshell.list_members(ctx=ctx_a, db=db)
+            members_b = await syncshell.list_members(ctx=ctx_b, db=db)
+
+            assert members_a["members"] == []
+            assert members_b["members"] == []
 
     asyncio.run(_run())
 
