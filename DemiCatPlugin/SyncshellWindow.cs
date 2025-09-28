@@ -163,20 +163,20 @@ public class SyncshellWindow : IDisposable
         _lastResyncAt = state.LastResyncAt;
         _pairingExpiresAt = state.PairingExpiresAt;
 
-        foreach (var invite in state.Invites.ToList())
+        foreach (var inviteEntry in state.Invites.ToList())
         {
-            if (string.IsNullOrWhiteSpace(invite.Target))
+            if (string.IsNullOrWhiteSpace(inviteEntry.Target))
             {
-                state.Invites.Remove(invite);
+                state.Invites.Remove(inviteEntry);
                 continue;
             }
 
-            invite.Target = invite.Target.Trim();
-            invite.Status = NormalizeStatus(invite.Status);
+            inviteEntry.Target = inviteEntry.Target.Trim();
+            inviteEntry.Status = NormalizeStatus(inviteEntry.Status);
 
-            _inviteStateByTarget[invite.Target] = invite;
-            if (!string.IsNullOrWhiteSpace(invite.RequestId))
-                _inviteStateByRequestId[invite.RequestId] = invite;
+            _inviteStateByTarget[inviteEntry.Target] = inviteEntry;
+            if (!string.IsNullOrWhiteSpace(inviteEntry.RequestId))
+                _inviteStateByRequestId[inviteEntry.RequestId] = inviteEntry;
         }
 
         _autoSyncAllUsers = _config.SyncshellAutoSyncAllUsers;
