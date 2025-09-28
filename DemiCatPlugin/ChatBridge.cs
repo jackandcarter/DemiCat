@@ -54,6 +54,10 @@ public class ChatBridge : IDisposable
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
     private const string ForbiddenMessage = "Forbidden – check API key/roles";
     private bool _permissionWarningShown;
+#if TEST
+    internal bool? ForceWebSocketOpen { get; set; }
+    internal Action<string>? SendRawInterceptor { get; set; }
+#endif
 
     public event Action<string>? MessageReceived;
     public event Action<DiscordUserDto>? TypingReceived;
@@ -751,15 +755,37 @@ public class ChatBridge : IDisposable
         }
     }
 
+    private bool IsWebSocketOpen()
+    {
+#if TEST
+        if (ForceWebSocketOpen.HasValue)
+        {
+            return ForceWebSocketOpen.Value;
+        }
+#endif
+        return _ws != null && _ws.State == WebSocketState.Open;
+    }
+
     private async Task SendRaw(string json)
     {
-        if (_ws == null || _ws.State != WebSocketState.Open)
+        var socketOpen = IsWebSocketOpen();
+#if TEST
+        SendRawInterceptor?.Invoke(json);
+        if (ForceWebSocketOpen == true && _ws == null)
+        {
+            return;
+        }
+#endif
+        if (!socketOpen)
+            return;
+        var socket = _ws;
+        if (socket == null)
             return;
         var bytes = Encoding.UTF8.GetBytes(json);
         try
         {
             var sw = Stopwatch.StartNew();
-            await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
+            await socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
             var ms = sw.Elapsed.TotalMilliseconds;
             _sendCount++;
             _sendLatencyTotal += ms;
@@ -801,7 +827,7 @@ public class ChatBridge : IDisposable
 
     private Task SendSubscriptions()
     {
-        if (_ws == null || _ws.State != WebSocketState.Open || _subs.Count == 0)
+        if (!IsWebSocketOpen())
             return Task.CompletedTask;
         var chans = new List<Dictionary<string, object?>>();
         foreach (var kvp in _channelMetadata)
@@ -835,7 +861,6 @@ public class ChatBridge : IDisposable
 
             chans.Add(channel);
         }
-        if (chans.Count == 0) return Task.CompletedTask;
         var json = JsonSerializer.Serialize(new { op = "sub", channels = chans });
         PluginServices.Instance?.Log.Info($"chat.ws subscribe count={chans.Count}");
         return SendRaw(json);
