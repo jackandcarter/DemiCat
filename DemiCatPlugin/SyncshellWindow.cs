@@ -509,11 +509,12 @@ public class SyncshellWindow : IDisposable
     {
         ImGui.TextWrapped("Send a SyncShell invite to another member by character name.");
 
-        var invite = _inviteTarget;
-        var trimmed = invite?.Trim() ?? string.Empty;
+        string? invite = _inviteTarget;
         ImGui.SetNextItemWidth(-150f);
         var submitted = ImGui.InputTextWithHint("##syncshell-invite", "Character name", ref invite, 64, ImGuiInputTextFlags.EnterReturnsTrue);
-        _inviteTarget = invite ?? string.Empty;
+        invite ??= string.Empty;
+        _inviteTarget = invite;
+        var trimmed = invite.Trim();
         if (submitted && !string.IsNullOrWhiteSpace(trimmed))
         {
             TrySendInvite(trimmed);
