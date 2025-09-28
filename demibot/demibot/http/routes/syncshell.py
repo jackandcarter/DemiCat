@@ -258,13 +258,11 @@ def _update_transfer_budget(
 
     remaining = max(0, limit - budget.used_bytes)
     window_end = budget.window_start + window
-    if window_end.tzinfo is None:
-        window_end = window_end.replace(tzinfo=timezone.utc)
     return {
         "limitBytes": limit,
         "usedBytes": budget.used_bytes,
         "throttleAfterBytes": remaining,
-        "windowEndsAt": window_end.isoformat(),
+        "windowEndsAt": _to_iso(window_end),
     }
 
 
@@ -335,7 +333,10 @@ def _normalize_display_name(value: str | None) -> str:
 def _to_iso(dt: datetime | None) -> str | None:
     if not dt:
         return None
-    return dt.replace(microsecond=0).isoformat() + "Z"
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(timezone.utc)
+    dt = dt.replace(tzinfo=None, microsecond=0)
+    return dt.isoformat() + "Z"
 
 
 class InviteCreateRequest(BaseModel):

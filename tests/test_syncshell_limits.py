@@ -53,6 +53,7 @@ def test_rate_limit_hits(tmp_path):
             syncshell._transfer_budgets.clear()
             response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert response["diff"]["need"]
+            assert response["limits"]["budget"]["windowEndsAt"].endswith("Z")
             with pytest.raises(syncshell.HTTPException):
                 await syncshell.resync(ctx=ctx, db=db)
     asyncio.run(_run())
