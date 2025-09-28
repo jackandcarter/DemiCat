@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -76,9 +77,12 @@ public class SyncshellWindow : IDisposable
     private readonly object _budgetLock = new();
     private readonly Dictionary<string, string> _budgetReasons = new(StringComparer.OrdinalIgnoreCase);
     private readonly Queue<PendingDownload> _budgetQueue = new();
+    private readonly Dictionary<string, bool> _budgetAutoResume = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _budgetQueueKeys = new(StringComparer.OrdinalIgnoreCase);
     private string? _budgetStatusMessage;
     private bool _syncPaused;
+    private readonly Dictionary<string, CancellationTokenSource> _activeDownloads = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _downloadLock = new();
     private DateTimeOffset? _lastResyncAt;
     private bool _peerSyncEnabled;
     private int _cacheSizeLimitMb;
@@ -300,13 +304,7 @@ public class SyncshellWindow : IDisposable
         var pauseLabel = _syncPaused ? "Resume Sync" : "Pause Sync";
         if (ImGui.Button(pauseLabel))
         {
-            _syncPaused = !_syncPaused;
-            if (_config.Categories.TryGetValue("syncshell", out var st))
-            {
-                st.Paused = _syncPaused;
-                PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
-            }
-            UpdateSyncClientState();
+            SetSyncPaused(!_syncPaused);
         }
         ImGui.EndChild();
         ImGui.Separator();
@@ -954,6 +952,12 @@ public class SyncshellWindow : IDisposable
             return (false, "Sync disabled");
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
             return (false, "Invalid API URL");
+        if (_syncPaused)
+        {
+            var pausedMessage = GetSyncPausedReason(asset);
+            QueueBudgetDeferred(asset, false, pausedMessage, autoResume: false);
+            return (false, pausedMessage);
+        }
 
         var reservedBytes = GetAssetSize(asset);
         if (!TryReserveBudget(asset, reservedBytes, out var budgetReason))
@@ -963,21 +967,33 @@ public class SyncshellWindow : IDisposable
             return (false, message);
         }
 
+        var reservation = reservedBytes;
         var committed = false;
+        CancellationTokenSource? downloadCts = null;
+        string? tmp = null;
+
         try
         {
+            if (!TryRegisterDownload(asset, out downloadCts, out var downloadToken))
+            {
+                var pausedMessage = GetSyncPausedReason(asset);
+                ReleaseReservedBytes(reservation, processQueue: false);
+                QueueBudgetDeferred(asset, false, pausedMessage, autoResume: false);
+                return (false, pausedMessage);
+            }
+
             var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
             var url = asset.DownloadUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase)
                 ? asset.DownloadUrl
                 : $"{baseUrl}{asset.DownloadUrl}";
 
-            var tmp = Path.GetTempFileName();
+            tmp = Path.GetTempFileName();
             var response = await SendWithPairingRetryAsync(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 ApiHelpers.AddAuthHeader(request, _tokenManager);
                 return request;
-            }).ConfigureAwait(false);
+            }, HttpCompletionOption.ResponseHeadersRead, downloadToken).ConfigureAwait(false);
 
             if (response == null)
             {
@@ -992,9 +1008,45 @@ public class SyncshellWindow : IDisposable
 
             resp.EnsureSuccessStatusCode();
             await using var fs = File.Create(tmp);
-            await resp.Content.CopyToAsync(fs).ConfigureAwait(false);
+            await using var stream = await resp.Content.ReadAsStreamAsync(downloadToken).ConfigureAwait(false);
 
-            CommitReservedBytes(reservedBytes);
+            var buffer = ArrayPool<byte>.Shared.Rent(81920);
+            var totalRead = 0L;
+            var expectedTotal = resp.Content.Headers.ContentLength;
+            ReportDownloadProgress(asset.PeerId, totalRead, expectedTotal);
+            try
+            {
+                while (true)
+                {
+                    var read = await stream.ReadAsync(buffer.AsMemory(0, buffer.Length), downloadToken).ConfigureAwait(false);
+                    if (read == 0)
+                    {
+                        break;
+                    }
+
+                    totalRead += read;
+
+                    if (!TryEnsureDownloadBudget(asset, totalRead, ref reservation, out var throttleReason))
+                    {
+                        throw new DownloadDeferredException(throttleReason ?? $"Paused {asset.Name} due to session limits.");
+                    }
+
+                    await fs.WriteAsync(buffer.AsMemory(0, read), downloadToken).ConfigureAwait(false);
+                    ReportDownloadProgress(asset.PeerId, totalRead, expectedTotal);
+                }
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+
+            reservation = Math.Max(reservation, totalRead);
+            var finalTotal = expectedTotal.HasValue
+                ? Math.Max(expectedTotal.Value, totalRead)
+                : totalRead;
+            ReportDownloadProgress(asset.PeerId, totalRead, finalTotal);
+
+            CommitReservedBytes(reservation);
             committed = true;
 
             await UpdateInstallationStatus(asset.Id, "DOWNLOADED");
@@ -1026,15 +1078,102 @@ public class SyncshellWindow : IDisposable
 
             return (true, null);
         }
+        catch (OperationCanceledException) when (downloadCts?.IsCancellationRequested ?? false)
+        {
+            ReleaseReservedBytes(reservation, processQueue: false);
+            if (_syncPaused)
+            {
+                var pausedMessage = GetSyncPausedReason(asset);
+                QueueBudgetDeferred(asset, false, pausedMessage, autoResume: false);
+                return (false, pausedMessage);
+            }
+
+            const string canceledMessage = "Download canceled.";
+            return (false, canceledMessage);
+        }
+        catch (DownloadDeferredException ex)
+        {
+            ReleaseReservedBytes(reservation);
+            QueueBudgetDeferred(asset, false, ex.Reason, autoResume: false);
+            return (false, ex.Reason);
+        }
         catch (Exception ex)
         {
             if (!committed)
-                ReleaseReservedBytes(reservedBytes);
+                ReleaseReservedBytes(reservation);
             PluginServices.Instance?.Log.Error(ex, $"Failed to install asset {asset.Id}");
             await UpdateInstallationStatus(asset.Id, "FAILED");
             return (false, ex.Message);
         }
+        finally
+        {
+            UnregisterDownload(asset.Id, downloadCts);
+            if (!committed && !string.IsNullOrEmpty(tmp))
+            {
+                try
+                {
+                    File.Delete(tmp);
+                }
+                catch
+                {
+                    // ignored
+                }
+            }
+        }
     }
+
+    private bool TryRegisterDownload(Asset asset, out CancellationTokenSource? cts, out CancellationToken token)
+    {
+        lock (_downloadLock)
+        {
+            if (_syncPaused)
+            {
+                cts = null;
+                token = default;
+                return false;
+            }
+
+            cts = new CancellationTokenSource();
+            _activeDownloads[asset.Id] = cts;
+            token = cts.Token;
+            return true;
+        }
+    }
+
+    private void UnregisterDownload(string assetId, CancellationTokenSource? cts)
+    {
+        CancellationTokenSource? toDispose = null;
+        lock (_downloadLock)
+        {
+            if (cts != null && _activeDownloads.TryGetValue(assetId, out var existing) && ReferenceEquals(existing, cts))
+            {
+                _activeDownloads.Remove(assetId);
+                toDispose = existing;
+            }
+        }
+
+        toDispose?.Dispose();
+    }
+
+    private void ReportDownloadProgress(string peerId, long downloaded, long? total)
+    {
+        if (string.IsNullOrWhiteSpace(peerId))
+        {
+            return;
+        }
+
+        var downloadedInt = ClampToInt(downloaded);
+        var totalInt = total.HasValue ? ClampToInt(total.Value) : 0;
+        var hasTotal = total.HasValue;
+
+        _uiThreadActions.Enqueue(() => _progressOverlay.Update(peerId, downloadedInt, hasTotal ? totalInt : 0));
+    }
+
+    private static int ClampToInt(long value)
+        => value <= 0 ? 0 : value >= int.MaxValue ? int.MaxValue : (int)value;
+
+    private static string GetSyncPausedReason(Asset asset)
+        => $"Paused {asset.Name}. Resume sync to continue downloading.";
 
     private static long GetAssetSize(Asset asset)
         => asset.Size < 0 ? 0 : asset.Size;
@@ -1078,14 +1217,47 @@ public class SyncshellWindow : IDisposable
         return true;
     }
 
-    private void QueueBudgetDeferred(Asset asset, bool isBundle, string reason)
+    private bool TryEnsureDownloadBudget(Asset asset, long downloadedBytes, ref long reservation, out string? reason)
+    {
+        lock (_budgetLock)
+        {
+            var limit = GetFileSizeLimitBytes();
+            var usedWithoutCurrent = _sessionBytesDownloaded + _sessionBytesReserved - reservation;
+            var required = Math.Max(reservation, downloadedBytes);
+
+            if (limit > 0 && usedWithoutCurrent + required > limit)
+            {
+                var remaining = Math.Max(0, limit - usedWithoutCurrent);
+                var limitLabel = FormatSize(limit);
+                var usedWithCurrent = Math.Max(0, Math.Min(limit, usedWithoutCurrent + required));
+                var usedLabel = FormatSize(usedWithCurrent);
+                reason = remaining == 0
+                    ? $"Paused {asset.Name}: download budget reached ({usedLabel} of {limitLabel} used). Increase the file-size limit to resume."
+                    : $"Paused {asset.Name}: requires {FormatSize(required)} but only {FormatSize(remaining)} remains in the session budget. Increase the file-size limit to continue.";
+                return false;
+            }
+
+            if (required > reservation)
+            {
+                _sessionBytesReserved += required - reservation;
+                reservation = required;
+                UpdateBudgetStatusMessageLocked();
+            }
+        }
+
+        reason = null;
+        return true;
+    }
+
+    private void QueueBudgetDeferred(Asset asset, bool isBundle, string reason, bool autoResume = true)
     {
         var key = MakeBudgetQueueKey(asset.Id, isBundle);
         lock (_budgetLock)
         {
             _budgetReasons[asset.Id] = reason;
+            _budgetAutoResume[key] = autoResume;
             if (_budgetQueueKeys.Add(key))
-                _budgetQueue.Enqueue(new PendingDownload(key, asset, isBundle));
+                _budgetQueue.Enqueue(new PendingDownload(key, asset, isBundle, autoResume));
             _budgetStatusMessage = reason;
         }
     }
@@ -1120,7 +1292,7 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private void ReleaseReservedBytes(long bytes)
+    private void ReleaseReservedBytes(long bytes, bool processQueue = true)
     {
         if (bytes <= 0)
             return;
@@ -1133,7 +1305,7 @@ public class SyncshellWindow : IDisposable
             shouldProcess = _budgetQueue.Count > 0;
         }
 
-        if (shouldProcess)
+        if (processQueue && shouldProcess)
             ProcessBudgetQueue();
     }
 
@@ -1187,12 +1359,13 @@ public class SyncshellWindow : IDisposable
         {
             UpdateBudgetStatusMessageLocked();
         }
-        ProcessBudgetQueue();
+        ProcessBudgetQueue(force: true);
     }
 
-    private void ProcessBudgetQueue()
+    private void ProcessBudgetQueue(bool force = false)
     {
         PendingDownload[] pending;
+        Dictionary<string, bool> autoResumeStates;
         lock (_budgetLock)
         {
             if (_budgetQueue.Count == 0)
@@ -1204,15 +1377,70 @@ public class SyncshellWindow : IDisposable
             pending = _budgetQueue.ToArray();
             _budgetQueue.Clear();
             _budgetQueueKeys.Clear();
+            autoResumeStates = new Dictionary<string, bool>(_budgetAutoResume);
+            _budgetAutoResume.Clear();
             UpdateBudgetStatusMessageLocked();
         }
 
+        List<PendingDownload>? deferred = null;
         foreach (var item in pending)
         {
+            var autoResume = autoResumeStates.TryGetValue(item.Key, out var value) ? value : item.AutoResume;
+            if (!force && !autoResume)
+            {
+                deferred ??= new List<PendingDownload>();
+                deferred.Add(new PendingDownload(item.Key, item.Asset, item.IsBundle, autoResume));
+                continue;
+            }
+
             if (item.IsBundle)
                 _ = InstallBundle(item.Asset);
             else
                 _ = InstallAsset(item.Asset);
+        }
+
+        if (deferred is { Count: > 0 })
+        {
+            lock (_budgetLock)
+            {
+                foreach (var item in deferred)
+                {
+                    if (_budgetQueueKeys.Add(item.Key))
+                    {
+                        _budgetQueue.Enqueue(new PendingDownload(item.Key, item.Asset, item.IsBundle, item.AutoResume));
+                    }
+
+                    _budgetAutoResume[item.Key] = item.AutoResume;
+                }
+
+                UpdateBudgetStatusMessageLocked();
+            }
+        }
+    }
+
+    private void CancelActiveDownloads()
+    {
+        CancellationTokenSource[] tokens;
+        lock (_downloadLock)
+        {
+            if (_activeDownloads.Count == 0)
+            {
+                return;
+            }
+
+            tokens = _activeDownloads.Values.ToArray();
+        }
+
+        foreach (var token in tokens)
+        {
+            try
+            {
+                token.Cancel();
+            }
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -1543,7 +1771,10 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private async Task<HttpResponseMessage?> SendWithPairingRetryAsync(Func<HttpRequestMessage> requestFactory, CancellationToken cancellationToken = default)
+    private async Task<HttpResponseMessage?> SendWithPairingRetryAsync(
+        Func<HttpRequestMessage> requestFactory,
+        HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead,
+        CancellationToken cancellationToken = default)
     {
         if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
         {
@@ -1560,7 +1791,7 @@ public class SyncshellWindow : IDisposable
             }
 
             using var request = requestFactory();
-            response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+            response = await _httpClient.SendAsync(request, completionOption, cancellationToken).ConfigureAwait(false);
             if (response.StatusCode != HttpStatusCode.Unauthorized)
             {
                 return response;
@@ -1860,6 +2091,32 @@ public class SyncshellWindow : IDisposable
         _ = StopSyncClientAsync();
     }
 
+    private void SetSyncPaused(bool paused)
+    {
+        if (_syncPaused == paused)
+        {
+            return;
+        }
+
+        _syncPaused = paused;
+        if (_config.Categories.TryGetValue("syncshell", out var st))
+        {
+            st.Paused = paused;
+            PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+        }
+
+        if (paused)
+        {
+            CancelActiveDownloads();
+        }
+        else
+        {
+            ProcessBudgetQueue(force: true);
+        }
+
+        UpdateSyncClientState();
+    }
+
     private Task StopSyncClientAsync()
         => _syncClient.StopAsync();
 
@@ -1899,6 +2156,7 @@ public class SyncshellWindow : IDisposable
     {
         _disposed = true;
         StopPeriodicRefresh();
+        CancelActiveDownloads();
         foreach (var unsubscribe in _ipcUnsubscribers)
         {
             try
@@ -1983,13 +2241,24 @@ public class SyncshellWindow : IDisposable
         public void Fatal(string message, Exception exception) { }
     }
 
+    private sealed class DownloadDeferredException : Exception
+    {
+        public string Reason { get; }
+
+        public DownloadDeferredException(string reason)
+            : base(reason)
+        {
+            Reason = reason;
+        }
+    }
+
     private class PenumbraConflict
     {
         public string ModName { get; set; } = string.Empty;
         public TaskCompletionSource<bool> Tcs { get; set; } = new();
     }
 
-    private readonly record struct PendingDownload(string Key, Asset Asset, bool IsBundle);
+    private readonly record struct PendingDownload(string Key, Asset Asset, bool IsBundle, bool AutoResume);
 
     private class Asset
     {
