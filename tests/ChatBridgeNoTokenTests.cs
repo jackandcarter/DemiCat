@@ -80,6 +80,34 @@ public class ChatBridgeNoTokenTests
         bridge.Stop();
     }
 
+    [Fact]
+    public void UnsubscribeLastChannel_SendsEmptySubscriptionList()
+    {
+        var handler = new SuccessHandler();
+        var client = new HttpClient(handler);
+        var config = new Config { ApiBaseUrl = "http://localhost", GuildId = "guild" };
+        var tm = new TokenManager();
+        var bridge = new ChatBridge(config, client, tm, () => new Uri("ws://localhost"), new ChannelSelectionService(config));
+
+#if TEST
+        var frames = new List<string>();
+        bridge.ForceWebSocketOpen = true;
+        bridge.SendRawInterceptor = frames.Add;
+#endif
+
+        bridge.Subscribe("channel-1", config.GuildId, ChannelKind.Chat);
+
+#if TEST
+        frames.Clear();
+#endif
+
+        bridge.Unsubscribe("channel-1");
+
+#if TEST
+        Assert.Contains("{\"op\":\"sub\",\"channels\":[]}", frames);
+#endif
+    }
+
     private class CountingHandler : HttpMessageHandler
     {
         public int CallCount { get; private set; }
