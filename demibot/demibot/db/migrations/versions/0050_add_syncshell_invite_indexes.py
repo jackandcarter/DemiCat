@@ -1,7 +1,7 @@
 """0050_add_syncshell_invite_indexes
 
 Revision ID: 0050_add_syncshell_invite_indexes
-Revises: 0049_add_installation_asset_hash
+Revises: 0049a_add_syncshell_invites_table
 Create Date: 2024-06-09 00:00:00.000000
 """
 
@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0050_add_syncshell_invite_indexes"
-down_revision: Union[str, None] = "0049_add_installation_asset_hash"
+down_revision: Union[str, None] = "0049a_add_syncshell_invites_table"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
