@@ -471,6 +471,8 @@ public sealed class SyncClient : IDisposable
             ? wantElement.Deserialize<WantBlobs>(JsonOptions) ?? new WantBlobs()
             : new WantBlobs();
 
+        var upload = _uploads.GetOrAdd(peerId, static _ => new PeerUploadState());
+
         if (element.TryGetProperty("limits", out var limitsElement) && limitsElement.ValueKind == JsonValueKind.Object)
         {
             if (limitsElement.TryGetProperty("transfer", out var transferElement) && transferElement.ValueKind == JsonValueKind.Object)
@@ -488,9 +490,20 @@ public sealed class SyncClient : IDisposable
                 if (budgetElement.TryGetProperty("throttleAfterBytes", out var throttleElement) && throttleElement.ValueKind == JsonValueKind.Number)
                 {
                     var remaining = throttleElement.GetInt64();
+                    var budgetUpdate = upload.UpdateBudget(remaining);
                     if (remaining <= 0)
                     {
-                        PluginServices.Instance?.Log.Warning("SyncShell upload budget exhausted; awaiting reset before sending more blobs.");
+                        if (budgetUpdate == PeerUploadState.BudgetUpdateResult.Exhausted)
+                        {
+                            PluginServices.Instance?.Log.Warning($"SyncShell upload budget exhausted for peer {peerId}; awaiting reset before sending more blobs.");
+                        }
+                    }
+                    else
+                    {
+                        if (budgetUpdate == PeerUploadState.BudgetUpdateResult.Resumed)
+                        {
+                            PluginServices.Instance?.Log.Information($"SyncShell upload budget restored for peer {peerId}; resuming uploads.");
+                        }
                     }
                 }
             }
@@ -557,7 +570,11 @@ public sealed class SyncClient : IDisposable
 
         WantsReceived?.Invoke(this, new WantsReceivedEventArgs(peerId, want));
 
-        var upload = _uploads.GetOrAdd(peerId, static _ => new PeerUploadState());
+        if (upload.IsBudgetExhausted)
+        {
+            return;
+        }
+
         upload.AddRequests(want);
         TransferProgress?.Invoke(this, new TransferProgressEventArgs(peerId, upload.Completed, upload.Total, TransferKind.Upload));
 
@@ -969,22 +986,82 @@ public sealed class SyncClient : IDisposable
 
     private sealed class PeerUploadState
     {
+        private readonly object _sync = new();
         private readonly HashSet<string> _pending = new(StringComparer.OrdinalIgnoreCase);
         private int _total;
         private int _completed;
+        private bool _budgetExhausted;
 
-        public int Total => _total;
+        public enum BudgetUpdateResult
+        {
+            Unchanged,
+            Exhausted,
+            StillExhausted,
+            Resumed,
+        }
 
-        public int Completed => _completed;
+        public int Total
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _total;
+                }
+            }
+        }
+
+        public int Completed
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _completed;
+                }
+            }
+        }
 
         public bool IsComplete
         {
             get
             {
-                lock (_pending)
+                lock (_sync)
                 {
                     return _pending.Count == 0;
                 }
+            }
+        }
+
+        public bool IsBudgetExhausted
+        {
+            get
+            {
+                lock (_sync)
+                {
+                    return _budgetExhausted;
+                }
+            }
+        }
+
+        public BudgetUpdateResult UpdateBudget(long remaining)
+        {
+            lock (_sync)
+            {
+                if (remaining <= 0)
+                {
+                    if (_budgetExhausted)
+                    {
+                        return BudgetUpdateResult.StillExhausted;
+                    }
+
+                    _budgetExhausted = true;
+                    return BudgetUpdateResult.Exhausted;
+                }
+
+                var wasExhausted = _budgetExhausted;
+                _budgetExhausted = false;
+                return wasExhausted ? BudgetUpdateResult.Resumed : BudgetUpdateResult.Unchanged;
             }
         }
 
@@ -995,7 +1072,7 @@ public sealed class SyncClient : IDisposable
                 return;
             }
 
-            lock (_pending)
+            lock (_sync)
             {
                 foreach (var blob in want.Blobs)
                 {
@@ -1018,7 +1095,7 @@ public sealed class SyncClient : IDisposable
 
         public void MarkSent(string hash, BlobChunk? chunk)
         {
-            lock (_pending)
+            lock (_sync)
             {
                 var key = chunk is null ? hash : BuildChunkKey(chunk);
                 if (_pending.Remove(key))
