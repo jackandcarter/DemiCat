@@ -10,6 +10,9 @@ namespace DemiCatPlugin;
 
 public sealed class NotePadWindow : IDisposable
 {
+    private static readonly ImGuiMouseCursor ResizeEwCursor = ResolveResizeEwCursor();
+    private static readonly ImGuiTabBarFlags SectionTabBarFlags = ResolveSectionTabBarFlags();
+
     private readonly Config _config;
     private readonly NotePadService _service;
     private readonly SemaphoreSlim _saveLock = new(1, 1);
@@ -108,7 +111,7 @@ public sealed class NotePadWindow : IDisposable
         }
         else if (ImGui.IsItemHovered())
         {
-            ImGui.SetMouseCursor(ImGuiMouseCursor.ResizeEW);
+            ImGui.SetMouseCursor(ResizeEwCursor);
         }
 
         ImGui.SameLine();
@@ -132,7 +135,7 @@ public sealed class NotePadWindow : IDisposable
 
     private void DrawSectionTabs(IReadOnlyList<NotePadSection> sections)
     {
-        if (ImGui.BeginTabBar("NotePadSections", ImGuiTabBarFlags.Reorderable | ImGuiTabBarFlags.TabListPopupButton))
+        if (ImGui.BeginTabBar("NotePadSections", SectionTabBarFlags))
         {
             foreach (var section in sections)
             {
@@ -147,7 +150,7 @@ public sealed class NotePadWindow : IDisposable
                 ImGui.PushStyleColor(ImGuiCol.TabActive, AdjustTabColor(color, 1f));
                 ImGui.PushStyleColor(ImGuiCol.TabHovered, AdjustTabColor(color, 1.2f));
 
-                var tabOpen = ImGui.BeginTabItem(label, null, tabFlags);
+                var tabOpen = ImGui.BeginTabItem(label, tabFlags);
                 var rectMin = ImGui.GetItemRectMin();
                 var rectMax = ImGui.GetItemRectMax();
                 var drawList = ImGui.GetWindowDrawList();
@@ -170,7 +173,7 @@ public sealed class NotePadWindow : IDisposable
                 if (ImGui.BeginDragDropSource())
                 {
                     _draggingSectionId = section.Id;
-                    ImGui.SetDragDropPayload("NotePadSection", IntPtr.Zero, 0);
+                    ImGui.SetDragDropPayload("NotePadSection", ReadOnlySpan<byte>.Empty);
                     ImGui.TextUnformatted(title);
                     ImGui.EndDragDropSource();
                 }
@@ -178,7 +181,7 @@ public sealed class NotePadWindow : IDisposable
                 if (ImGui.BeginDragDropTarget())
                 {
                     var payload = ImGui.AcceptDragDropPayload("NotePadSection");
-                    if (payload.NativePtr != null && !string.IsNullOrEmpty(_draggingSectionId) &&
+                    if (!payload.Equals(default(ImGuiPayloadPtr)) && !string.IsNullOrEmpty(_draggingSectionId) &&
                         !string.Equals(_draggingSectionId, section.Id, StringComparison.Ordinal))
                     {
                         ReorderSections(_draggingSectionId, section.Id);
@@ -286,7 +289,7 @@ public sealed class NotePadWindow : IDisposable
             if (ImGui.BeginDragDropSource())
             {
                 _draggingPageId = page.Id;
-                ImGui.SetDragDropPayload("NotePadPage", IntPtr.Zero, 0);
+                ImGui.SetDragDropPayload("NotePadPage", ReadOnlySpan<byte>.Empty);
                 ImGui.TextUnformatted(label);
                 ImGui.EndDragDropSource();
             }
@@ -294,7 +297,7 @@ public sealed class NotePadWindow : IDisposable
             if (ImGui.BeginDragDropTarget())
             {
                 var payload = ImGui.AcceptDragDropPayload("NotePadPage");
-                if (payload.NativePtr != null && !string.IsNullOrEmpty(_draggingPageId) &&
+                if (!payload.Equals(default(ImGuiPayloadPtr)) && !string.IsNullOrEmpty(_draggingPageId) &&
                     !string.Equals(_draggingPageId, page.Id, StringComparison.Ordinal))
                 {
                     ReorderPages(section, _draggingPageId, page.Id);
@@ -739,7 +742,7 @@ public sealed class NotePadWindow : IDisposable
         name = name.Trim();
         if (string.IsNullOrEmpty(name))
         {
-            PluginServices.Instance?.ToastGui.ShowWarning("Section name cannot be empty.");
+            PluginServices.Instance?.ToastGui.ShowError("Section name cannot be empty.");
             return;
         }
 
@@ -756,7 +759,7 @@ public sealed class NotePadWindow : IDisposable
         title = title.Trim();
         if (string.IsNullOrEmpty(title))
         {
-            PluginServices.Instance?.ToastGui.ShowWarning("Page title cannot be empty.");
+            PluginServices.Instance?.ToastGui.ShowError("Page title cannot be empty.");
             return;
         }
 
@@ -868,7 +871,7 @@ public sealed class NotePadWindow : IDisposable
     {
         if (IsReadOnly)
         {
-            PluginServices.Instance?.ToastGui.ShowWarning("You do not have permission to create sections.");
+            PluginServices.Instance?.ToastGui.ShowError("You do not have permission to create sections.");
             return;
         }
 
@@ -880,7 +883,7 @@ public sealed class NotePadWindow : IDisposable
     {
         if (IsReadOnly)
         {
-            PluginServices.Instance?.ToastGui.ShowWarning("You do not have permission to create pages.");
+            PluginServices.Instance?.ToastGui.ShowError("You do not have permission to create pages.");
             return;
         }
 
@@ -930,5 +933,26 @@ public sealed class NotePadWindow : IDisposable
             Math.Clamp(color.Y * multiplier, 0f, 1f),
             Math.Clamp(color.Z * multiplier, 0f, 1f),
             1f);
+    }
+
+    private static ImGuiMouseCursor ResolveResizeEwCursor()
+    {
+        if (Enum.TryParse("ResizeEW", ignoreCase: true, out ImGuiMouseCursor cursor))
+        {
+            return cursor;
+        }
+
+        return ImGuiMouseCursor.ResizeAll;
+    }
+
+    private static ImGuiTabBarFlags ResolveSectionTabBarFlags()
+    {
+        var flags = ImGuiTabBarFlags.Reorderable;
+        if (Enum.TryParse("TabListPopupButton", ignoreCase: true, out ImGuiTabBarFlags extra))
+        {
+            flags |= extra;
+        }
+
+        return flags;
     }
 }

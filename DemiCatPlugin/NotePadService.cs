@@ -871,7 +871,7 @@ public sealed class NotePadService : IDisposable
         _lastToastSignature = signature;
         _lastToast = DateTime.UtcNow;
 
-        PluginServices.Instance?.ToastGui.ShowWarning(string.IsNullOrEmpty(details) ? message : $"{message}\n{details}");
+        PluginServices.Instance?.ToastGui.ShowError(string.IsNullOrEmpty(details) ? message : $"{message}\n{details}");
     }
 
     public void Dispose()
