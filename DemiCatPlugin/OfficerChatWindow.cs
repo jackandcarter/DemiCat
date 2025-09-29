@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Net.Http.Headers;
 using System.Threading;
 using System.Threading.Tasks;
@@ -487,6 +488,7 @@ public class OfficerChatWindow : ChatWindow
 
     private class RolesDto
     {
+        [JsonPropertyName("roles")]
         public List<string> Roles { get; set; } = new();
     }
 
