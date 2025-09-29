@@ -67,6 +67,8 @@ public class PluginChannelValidationTests
         var requestWatcher = new RequestWatcher(config, httpClient, tokenManager);
         var chatWindow = new ChatWindow(config, httpClient, null, tokenManager, channelService);
         var officerChatWindow = new OfficerChatWindow(config, httpClient, null, tokenManager, channelService);
+        var notePadService = new NotePadService(config, httpClient, tokenManager);
+        var notePadWindow = new NotePadWindow(config, notePadService);
         var settingsWindow = new SettingsWindow(
             config,
             tokenManager,
@@ -76,6 +78,7 @@ public class PluginChannelValidationTests
             logMock.Object,
             pluginInterfaceMock.Object
         );
+        settingsWindow.NotePadService = notePadService;
         var mainWindow = new MainWindow(
             config,
             ui,
@@ -85,7 +88,8 @@ public class PluginChannelValidationTests
             httpClient,
             channelService,
             channelSelection,
-            emojiManager
+            emojiManager,
+            notePadWindow
         );
         var channelWatcher = new ChannelWatcher(
             config,
@@ -118,6 +122,8 @@ public class PluginChannelValidationTests
         SetPrivateField(plugin, "_mainWindow", mainWindow);
         SetPrivateField(plugin, "_channelWatcher", channelWatcher);
         SetPrivateField(plugin, "_requestWatcher", requestWatcher);
+        SetPrivateField(plugin, "_notePadService", notePadService);
+        SetPrivateField(plugin, "_notePadWindow", notePadWindow);
 
         PingService.Instance = new PingService(httpClient, config, tokenManager);
 

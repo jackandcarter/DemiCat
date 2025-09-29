@@ -18,7 +18,9 @@ public class SyncshellTabToggleTests
         var ui = new UiRenderer(cfg, http, selection);
         var officer = new OfficerChatWindow(cfg, http, null, token, channelService, selection);
         var settings = (SettingsWindow)FormatterServices.GetUninitializedObject(typeof(SettingsWindow));
-        var main = new MainWindow(cfg, ui, null, officer, settings, http, channelService, selection, () => Task.FromResult(true));
+        var notePadService = new NotePadService(cfg, http, token);
+        var notePadWindow = new NotePadWindow(cfg, notePadService);
+        var main = new MainWindow(cfg, ui, null, officer, settings, http, channelService, selection, () => Task.FromResult(true), notePadWindow);
 
         Assert.Null(SyncshellWindow.Instance);
 
