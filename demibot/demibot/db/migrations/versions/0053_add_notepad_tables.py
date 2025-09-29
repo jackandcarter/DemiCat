@@ -22,55 +22,81 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.create_table(
-        "note_sections",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("guild_id", sa.Integer(), nullable=False),
-        sa.Column("name", sa.String(length=255), nullable=False),
-        sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("color", sa.Integer(), nullable=True),
-        sa.Column("created_by_id", mysql.BIGINT(unsigned=True), nullable=True),
-        sa.Column("updated_by_id", mysql.BIGINT(unsigned=True), nullable=True),
-        sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.text("0")),
-        sa.Column("deleted_at", sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(["guild_id"], ["guilds.id"]),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"]),
-        sa.ForeignKeyConstraint(["updated_by_id"], ["users.id"]),
-        sa.UniqueConstraint(
-            "guild_id", "sort_order", name="uq_note_sections_guild_order"
-        ),
-    )
-    op.create_index("ix_note_sections_guild_id", "note_sections", ["guild_id"])
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
 
-    op.create_table(
-        "note_pages",
-        sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
-        sa.Column("guild_id", sa.Integer(), nullable=False),
-        sa.Column("section_id", sa.Integer(), nullable=False),
-        sa.Column("title", sa.String(length=255), nullable=False),
-        sa.Column("content", sa.Text(), nullable=False),
-        sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("color", sa.Integer(), nullable=True),
-        sa.Column("created_by_id", mysql.BIGINT(unsigned=True), nullable=True),
-        sa.Column("updated_by_id", mysql.BIGINT(unsigned=True), nullable=True),
-        sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
-        sa.Column("created_at", sa.DateTime(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(), nullable=False),
-        sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.text("0")),
-        sa.Column("deleted_at", sa.DateTime(), nullable=True),
-        sa.ForeignKeyConstraint(["guild_id"], ["guilds.id"]),
-        sa.ForeignKeyConstraint(["section_id"], ["note_sections.id"]),
-        sa.ForeignKeyConstraint(["created_by_id"], ["users.id"]),
-        sa.ForeignKeyConstraint(["updated_by_id"], ["users.id"]),
-        sa.UniqueConstraint(
-            "section_id", "sort_order", name="uq_note_pages_section_order"
-        ),
-    )
-    op.create_index("ix_note_pages_guild_id", "note_pages", ["guild_id"])
-    op.create_index("ix_note_pages_section_id", "note_pages", ["section_id"])
+    note_sections_exists = inspector.has_table("note_sections")
+    if not note_sections_exists:
+        op.create_table(
+            "note_sections",
+            sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column("guild_id", sa.Integer(), nullable=False),
+            sa.Column("name", sa.String(length=255), nullable=False),
+            sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("color", sa.Integer(), nullable=True),
+            sa.Column("created_by_id", mysql.BIGINT(unsigned=True), nullable=True),
+            sa.Column("updated_by_id", mysql.BIGINT(unsigned=True), nullable=True),
+            sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
+            sa.Column("created_at", sa.DateTime(), nullable=False),
+            sa.Column("updated_at", sa.DateTime(), nullable=False),
+            sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+            sa.Column("deleted_at", sa.DateTime(), nullable=True),
+            sa.ForeignKeyConstraint(["guild_id"], ["guilds.id"]),
+            sa.ForeignKeyConstraint(["created_by_id"], ["users.id"]),
+            sa.ForeignKeyConstraint(["updated_by_id"], ["users.id"]),
+            sa.UniqueConstraint(
+                "guild_id", "sort_order", name="uq_note_sections_guild_order"
+            ),
+        )
+
+    if note_sections_exists:
+        existing_note_section_indexes = {
+            index["name"] for index in inspector.get_indexes("note_sections")
+        }
+    else:
+        existing_note_section_indexes = set()
+
+    if not note_sections_exists or "ix_note_sections_guild_id" not in existing_note_section_indexes:
+        op.create_index("ix_note_sections_guild_id", "note_sections", ["guild_id"])
+
+    note_pages_exists = inspector.has_table("note_pages")
+    if not note_pages_exists:
+        op.create_table(
+            "note_pages",
+            sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
+            sa.Column("guild_id", sa.Integer(), nullable=False),
+            sa.Column("section_id", sa.Integer(), nullable=False),
+            sa.Column("title", sa.String(length=255), nullable=False),
+            sa.Column("content", sa.Text(), nullable=False),
+            sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
+            sa.Column("color", sa.Integer(), nullable=True),
+            sa.Column("created_by_id", mysql.BIGINT(unsigned=True), nullable=True),
+            sa.Column("updated_by_id", mysql.BIGINT(unsigned=True), nullable=True),
+            sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
+            sa.Column("created_at", sa.DateTime(), nullable=False),
+            sa.Column("updated_at", sa.DateTime(), nullable=False),
+            sa.Column("is_deleted", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+            sa.Column("deleted_at", sa.DateTime(), nullable=True),
+            sa.ForeignKeyConstraint(["guild_id"], ["guilds.id"]),
+            sa.ForeignKeyConstraint(["section_id"], ["note_sections.id"]),
+            sa.ForeignKeyConstraint(["created_by_id"], ["users.id"]),
+            sa.ForeignKeyConstraint(["updated_by_id"], ["users.id"]),
+            sa.UniqueConstraint(
+                "section_id", "sort_order", name="uq_note_pages_section_order"
+            ),
+        )
+
+    if note_pages_exists:
+        existing_note_page_indexes = {
+            index["name"] for index in inspector.get_indexes("note_pages")
+        }
+    else:
+        existing_note_page_indexes = set()
+
+    if not note_pages_exists or "ix_note_pages_guild_id" not in existing_note_page_indexes:
+        op.create_index("ix_note_pages_guild_id", "note_pages", ["guild_id"])
+    if not note_pages_exists or "ix_note_pages_section_id" not in existing_note_page_indexes:
+        op.create_index("ix_note_pages_section_id", "note_pages", ["section_id"])
 
 
 def downgrade() -> None:
