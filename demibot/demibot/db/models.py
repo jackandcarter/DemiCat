@@ -82,6 +82,7 @@ class Guild(Base):
     )
 
     config: Mapped["GuildConfig"] = relationship(back_populates="guild", uselist=False)
+    note_sections: Mapped[list["NoteSection"]] = relationship(back_populates="guild")
 
 
 class GuildConfig(Base):
@@ -140,6 +141,18 @@ class User(Base):
     installations: Mapped[list["UserInstallation"]] = relationship(
         back_populates="user", cascade="all, delete-orphan"
     )
+    note_sections_created: Mapped[list["NoteSection"]] = relationship(
+        back_populates="created_by", foreign_keys="NoteSection.created_by_id"
+    )
+    note_sections_updated: Mapped[list["NoteSection"]] = relationship(
+        back_populates="updated_by", foreign_keys="NoteSection.updated_by_id"
+    )
+    note_pages_created: Mapped[list["NotePage"]] = relationship(
+        back_populates="created_by", foreign_keys="NotePage.created_by_id"
+    )
+    note_pages_updated: Mapped[list["NotePage"]] = relationship(
+        back_populates="updated_by", foreign_keys="NotePage.updated_by_id"
+    )
 
 
 class UserKey(Base):
@@ -195,6 +208,83 @@ class MembershipRole(Base):
         ForeignKey("memberships.id"), primary_key=True
     )
     role_id: Mapped[int] = mapped_column(ForeignKey("roles.id"), primary_key=True)
+
+
+class NoteSection(Base):
+    __tablename__ = "note_sections"
+    __table_args__ = (
+        UniqueConstraint("guild_id", "sort_order", name="uq_note_sections_guild_order"),
+        Index("ix_note_sections_guild_id", "guild_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
+    name: Mapped[str] = mapped_column(String(255))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    color: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), nullable=True
+    )
+    updated_by_id: Mapped[Optional[int]] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), nullable=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    guild: Mapped[Guild] = relationship(back_populates="note_sections")
+    created_by: Mapped[Optional[User]] = relationship(
+        foreign_keys=[created_by_id], back_populates="note_sections_created"
+    )
+    updated_by: Mapped[Optional[User]] = relationship(
+        foreign_keys=[updated_by_id], back_populates="note_sections_updated"
+    )
+    pages: Mapped[list["NotePage"]] = relationship(
+        back_populates="section", order_by="NotePage.sort_order"
+    )
+
+
+class NotePage(Base):
+    __tablename__ = "note_pages"
+    __table_args__ = (
+        UniqueConstraint("section_id", "sort_order", name="uq_note_pages_section_order"),
+        Index("ix_note_pages_guild_id", "guild_id"),
+        Index("ix_note_pages_section_id", "section_id"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
+    section_id: Mapped[int] = mapped_column(ForeignKey("note_sections.id"))
+    title: Mapped[str] = mapped_column(String(255))
+    content: Mapped[str] = mapped_column(Text, default="")
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    color: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    created_by_id: Mapped[Optional[int]] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), nullable=True
+    )
+    updated_by_id: Mapped[Optional[int]] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), nullable=True
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    guild: Mapped[Guild] = relationship()
+    section: Mapped[NoteSection] = relationship(back_populates="pages")
+    created_by: Mapped[Optional[User]] = relationship(
+        foreign_keys=[created_by_id], back_populates="note_pages_created"
+    )
+    updated_by: Mapped[Optional[User]] = relationship(
+        foreign_keys=[updated_by_id], back_populates="note_pages_updated"
+    )
 
 
 class SyncshellPairing(Base):

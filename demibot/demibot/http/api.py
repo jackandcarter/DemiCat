@@ -71,6 +71,7 @@ def create_app() -> FastAPI:
     app.add_api_websocket_route("/ws/presences", websocket_endpoint)
     app.add_api_websocket_route("/ws/channels", websocket_endpoint)
     app.add_api_websocket_route("/ws/requests", websocket_endpoint)
+    app.add_api_websocket_route("/ws/notepad", websocket_endpoint)
     app.add_api_websocket_route("/ws/chat", websocket_endpoint_chat)
     app.add_api_websocket_route("/ws/syncshell", websocket_endpoint_syncshell)
 
