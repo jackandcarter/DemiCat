@@ -15,6 +15,7 @@ DemiCat/
 - **Events** – Browse and RSVP to Apollo events from within FFXIV.
 - **Create** – Draft new events without leaving the game.
 - **Templates** – Save and reuse preset event layouts.
+- **NotePad** – Organize guild knowledge in OneNote-style sections and pages. Officers can create and reorder sections while members browse the latest autosaved content.
 - **Request Board** – Track signup requests and interest.
 - **SyncShell** – Work-in-progress replacement for the Mare Synchronos mod-sharing plugin. Syncs Penumbra mod lists to replicate player appearances and is disabled by default while under development (see `DemiCatPlugin/SyncshellWindow.cs`).
 - **FC Chat** – Mirror Discord conversations directly in game.
@@ -29,6 +30,14 @@ DemiCat/
 - Delta tokens for incremental sync (`demibot/demibot/http/routes/delta_token.py`).
 - User settings endpoints (`demibot/demibot/http/routes/user_settings.py`).
 - Privacy and data controls (`demibot/demibot/http/routes/users.py`).
+
+### NotePad tab
+
+The NotePad tab mirrors the familiar OneNote hierarchy: sections contain ordered pages, each with its own color, metadata, and version number. Officers (users with the `officer` role on their API key) can create, rename, delete, or reorder sections and pages, while everyone else sees a read-only view that stays in sync with DemiBot. The plugin autosaves edits after a short debounce or when pressing **Ctrl+S**, and it records your last section/page so the same note reopens on launch.
+
+Each save sends the current `version` to the backend. If another editor has already changed the page, DemiBot returns HTTP 409 and the plugin surfaces a conflict dialog so you can reload or overwrite the remote copy. All mutations broadcast through the `/ws/notepad` websocket so connected clients update immediately, even across multiple characters or officers editing simultaneously.
+
+To enable editing, ensure the plugin configuration keeps `notePadEnabled` true (the default) and that the linked API key belongs to an officer.
 
 ## Prerequisites
 

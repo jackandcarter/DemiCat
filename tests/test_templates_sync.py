@@ -24,16 +24,16 @@ class RequestContext:
         self.roles = roles
 async def api_key_auth(*args, **kwargs):
     pass
+
+async def get_db(*args, **kwargs):
+    yield None
 deps_pkg.RequestContext = RequestContext
 deps_pkg.api_key_auth = api_key_auth
+deps_pkg.get_db = get_db
 sys.modules.setdefault("demibot.http.deps", deps_pkg)
 
-# Minimal discord/fastapi stubs
+# Minimal discord stub
 sys.modules.setdefault("discord", types.ModuleType("discord"))
-fastapi_stub = types.ModuleType("fastapi")
-fastapi_stub.WebSocket = type("WebSocket", (), {})
-fastapi_stub.WebSocketDisconnect = type("WebSocketDisconnect", (Exception,), {})
-sys.modules.setdefault("fastapi", fastapi_stub)
 
 from demibot.http.ws import ConnectionManager
 from demibot.http.routes import templates
