@@ -4,8 +4,9 @@ from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
+from sqlalchemy import select
 
-from demibot.db.models import Guild, User
+from demibot.db.models import Guild, NoteSection, User
 from demibot.db.session import get_session, init_db
 from demibot.http.routes import notepad
 from demibot.http.schemas import (
@@ -198,3 +199,73 @@ async def test_notepad_crud_flow(tmp_path, monkeypatch):
         "notepad.section.deleted",
     }.issubset(topics)
     assert all(event[2] == "/ws/notepad" for event in events)
+
+
+@pytest.mark.anyio
+async def test_reorder_sections_with_soft_deleted(tmp_path, monkeypatch):
+    db_path = Path(tmp_path) / "notepad_deleted.db"
+    await init_db(f"sqlite+aiosqlite:///{db_path}")
+
+    async with get_session() as db:
+        guild = Guild(id=1, discord_guild_id=1, name="Guild")
+        user = User(id=1, discord_user_id=10, global_name="Officer")
+        db.add_all([guild, user])
+        await db.commit()
+
+    ctx_officer = StubContext(
+        guild=SimpleNamespace(id=1),
+        user=SimpleNamespace(id=1),
+        roles=["officer"],
+    )
+
+    events: list[tuple[dict, int, str]] = []
+
+    async def fake_broadcast(message: str, guild_id: int, path: str):
+        events.append((json.loads(message), guild_id, path))
+
+    monkeypatch.setattr(notepad.manager, "broadcast_text", fake_broadcast)
+
+    async with get_session() as db:
+        section_one = await notepad.create_section(
+            body=NoteSectionCreateBody(name="Alpha"), ctx=ctx_officer, db=db
+        )
+        section_two = await notepad.create_section(
+            body=NoteSectionCreateBody(name="Beta"), ctx=ctx_officer, db=db
+        )
+        section_three = await notepad.create_section(
+            body=NoteSectionCreateBody(name="Gamma"), ctx=ctx_officer, db=db
+        )
+
+    async with get_session() as db:
+        await notepad.delete_section(
+            section_id=section_two.id, ctx=ctx_officer, db=db
+        )
+
+    reorder_body = NoteSectionReorderBody(
+        sectionIds=[section_three.id, section_one.id]
+    )
+    async with get_session() as db:
+        state = await notepad.reorder_sections(
+            body=reorder_body,
+            ctx=ctx_officer,
+            db=db,
+        )
+
+    assert [section.id for section in state.sections] == [
+        section_three.id,
+        section_one.id,
+    ]
+
+    async with get_session() as db:
+        result = await db.execute(
+            select(NoteSection)
+            .where(NoteSection.guild_id == 1)
+            .order_by(NoteSection.sort_order, NoteSection.id)
+        )
+        stored_sections = result.scalars().all()
+
+    active_orders = [s.sort_order for s in stored_sections if not s.is_deleted]
+    deleted_orders = [s.sort_order for s in stored_sections if s.is_deleted]
+
+    assert active_orders == [0, 1]
+    assert all(order >= len(active_orders) for order in deleted_orders)
