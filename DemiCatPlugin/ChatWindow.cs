@@ -451,6 +451,7 @@ public class ChatWindow : IDisposable
 
             if (!string.IsNullOrEmpty(oldId))
             {
+                ClearTextureCache();
                 _bridge.Unsubscribe(oldId);
             }
 
@@ -516,7 +517,6 @@ public class ChatWindow : IDisposable
 
             if (selectedChannelId != null)
             {
-                ClearTextureCache();
                 _channelSelection.SetChannel(_channelKind, _config.GuildId, selectedChannelId);
             }
         }
