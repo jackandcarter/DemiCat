@@ -833,18 +833,18 @@ async def _send_via_webhook(
         webhook = created
 
     async def _send_with_view(target: discord.Webhook):
-        view_payload = view if view is not None else MISSING
-        return await target.send(
-            content,
-            username=username,
-            avatar_url=avatar,
-            files=_make_discord_files(files),
-            wait=True,
-            allowed_mentions=ALLOWED_MENTIONS,
-            embeds=list(embeds) if embeds else None,
-            view=view_payload,
-            thread=thread,
-        )
+        send_kwargs: dict[str, object] = {
+            "username": username,
+            "avatar_url": avatar,
+            "files": _make_discord_files(files),
+            "wait": True,
+            "allowed_mentions": ALLOWED_MENTIONS,
+            "embeds": list(embeds) if embeds else None,
+            "thread": thread,
+        }
+        if isinstance(view, discord.ui.View):
+            send_kwargs["view"] = view
+        return await target.send(content, **send_kwargs)
 
     sent = None
     try:

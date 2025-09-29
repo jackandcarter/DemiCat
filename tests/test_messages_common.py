@@ -1471,6 +1471,110 @@ def test_send_via_webhook_reuses_existing_url(monkeypatch):
     asyncio.run(_run())
 
 
+def test_send_via_webhook_view_kwarg(monkeypatch):
+    async def _run():
+        from demibot.db import session as db_session
+
+        db_session._engine = None
+        db_session._Session = None
+
+        engine = await init_db("sqlite+aiosqlite://")
+        try:
+            async with get_session() as db:
+                channel_id = 9876
+                guild_id = 4321
+                webhook_url = "https://example.com/webhook/test"
+
+                original_webhooks = mc._channel_webhooks
+                mc._channel_webhooks = {channel_id: webhook_url}
+                monkeypatch.setattr(mc, "discord_client", object())
+
+                discord_module = mc.discord
+                if not hasattr(discord_module, "ui"):
+                    discord_module.ui = types.SimpleNamespace()
+                if not hasattr(discord_module.ui, "View"):
+                    discord_module.ui.View = type("View", (), {})
+
+                webhook_cls = getattr(discord_module, "Webhook", None)
+                if webhook_cls is None:
+                    webhook_cls = type("Webhook", (), {})
+                    discord_module.Webhook = webhook_cls
+
+                send_calls: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+                async def fake_send(self, *args, **kwargs):
+                    send_calls.append((args, kwargs))
+                    return types.SimpleNamespace(id=555, attachments=[])
+
+                monkeypatch.setattr(webhook_cls, "send", fake_send, raising=False)
+
+                webhook_instance = object.__new__(webhook_cls)
+
+                def fake_from_url(cls, url: str, *, client=None):
+                    assert url == webhook_url
+                    return webhook_instance
+
+                monkeypatch.setattr(
+                    webhook_cls,
+                    "from_url",
+                    classmethod(fake_from_url),
+                    raising=False,
+                )
+
+                msg_id, attachments, errors, used_url, _ = await mc._send_via_webhook(
+                    channel=None,
+                    channel_id=channel_id,
+                    guild_id=guild_id,
+                    content="content",
+                    username="Tester",
+                    avatar=None,
+                    files=None,
+                    channel_kind=None,
+                    embeds=None,
+                    view=None,
+                    db=db,
+                    thread=None,
+                )
+
+                assert msg_id == 555
+                assert attachments is None
+                assert errors == []
+                assert used_url == webhook_url
+                assert send_calls and "view" not in send_calls[-1][1]
+
+                send_calls.clear()
+
+                view = mc.discord.ui.View()
+
+                msg_id, attachments, errors, used_url, _ = await mc._send_via_webhook(
+                    channel=None,
+                    channel_id=channel_id,
+                    guild_id=guild_id,
+                    content="content",
+                    username="Tester",
+                    avatar=None,
+                    files=None,
+                    channel_kind=None,
+                    embeds=None,
+                    view=view,
+                    db=db,
+                    thread=None,
+                )
+
+                assert msg_id == 555
+                assert attachments is None
+                assert errors == []
+                assert used_url == webhook_url
+                assert send_calls and send_calls[-1][1].get("view") is view
+        finally:
+            mc._channel_webhooks = original_webhooks
+            await engine.dispose()
+            db_session._engine = None
+            db_session._Session = None
+
+    asyncio.run(_run())
+
+
 def test_webhook_kind_persistence_when_ids_match(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
