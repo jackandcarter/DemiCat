@@ -64,13 +64,18 @@ internal static class RoleCache
                 return;
             }
             var stream = await response.Content.ReadAsStreamAsync();
-            var roles = await JsonSerializer.DeserializeAsync<List<RoleDto>>(stream) ?? new List<RoleDto>();
+            var payload = await JsonSerializer.DeserializeAsync<GuildRolesResponseDto>(stream)
+                ?? new GuildRolesResponseDto();
+            var roles = payload.Roles ?? new List<RoleDto>();
+            var mentionRoleIds = payload.MentionRoleIds ?? new List<string>();
+
             _roles = roles;
             _lastErrorMessage = null;
             _loaded = true;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 config.GuildRoles = roles;
+                config.MentionRoleIds = mentionRoleIds;
                 PluginServices.Instance!.PluginInterface.SavePluginConfig(config);
             });
         }

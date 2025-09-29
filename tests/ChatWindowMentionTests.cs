@@ -5,10 +5,14 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Reflection;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using DemiCatPlugin;
+using Dalamud.Configuration;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using DemiCatPlugin;
+using Moq;
 using Xunit;
 
 public class ChatWindowMentionTests
@@ -129,6 +133,39 @@ public class ChatWindowMentionTests
     }
 
     [Fact]
+    public async Task MentionDrawer_PopulatesAfterAllowlistSync()
+    {
+        SetupServices();
+        RoleCache.Reset();
+        try
+        {
+            var config = new Config { ApiBaseUrl = "http://localhost" };
+            using var httpClient = new HttpClient(new JsonHandler(
+                "{\"roles\":[{\"id\":\"2\",\"name\":\"Raiders\",\"position\":0,\"hoist\":false,\"tags\":{\"premium_subscriber\":false}}],\"mention_role_ids\":[\"2\"]}"
+            ));
+            var tokenManager = new TokenManager();
+            var channelService = new ChannelService(config, httpClient, tokenManager);
+            var window = new ChatWindow(config, httpClient, null, tokenManager, channelService);
+
+            await RoleCache.Refresh(httpClient, config);
+
+            Assert.Equal(new[] { "2" }, config.MentionRoleIds);
+            Assert.Single(RoleCache.Roles);
+            Assert.Equal("2", RoleCache.Roles[0].Id);
+
+            var candidates = InvokeBuildMentionCandidates(window, string.Empty).Cast<object>().ToList();
+            Assert.Single(candidates);
+            var candidateType = candidates[0].GetType();
+            Assert.Equal("2", candidateType.GetProperty("Id")!.GetValue(candidates[0]));
+            Assert.Equal("Raiders", candidateType.GetProperty("Name")!.GetValue(candidates[0]));
+        }
+        finally
+        {
+            RoleCache.Reset();
+        }
+    }
+
+    [Fact]
     public void UpdateMentionState_DismissesWhenQueryHasNoMatches()
     {
         SetupServices();
@@ -226,6 +263,10 @@ public class ChatWindowMentionTests
         var log = new TestLog();
         typeof(PluginServices).GetProperty("Framework", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, framework);
         typeof(PluginServices).GetProperty("Log", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, log);
+        var pluginInterfaceMock = new Mock<IDalamudPluginInterface>();
+        pluginInterfaceMock.Setup(p => p.SavePluginConfig(It.IsAny<IPluginConfiguration>()));
+        typeof(PluginServices).GetProperty("PluginInterface", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .SetValue(services, pluginInterfaceMock.Object);
     }
 
     private class DummyHandler : HttpMessageHandler
@@ -233,6 +274,25 @@ public class ChatWindowMentionTests
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        }
+    }
+
+    private class JsonHandler : HttpMessageHandler
+    {
+        private readonly string _json;
+
+        public JsonHandler(string json)
+        {
+            _json = json;
+        }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_json, Encoding.UTF8, "application/json")
+            };
+            return Task.FromResult(response);
         }
     }
 

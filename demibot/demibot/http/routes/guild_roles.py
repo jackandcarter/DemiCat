@@ -18,18 +18,29 @@ async def get_guild_roles(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    cfg = await db.scalar(
+        select(GuildConfig).where(GuildConfig.guild_id == ctx.guild.id)
+    )
+    mention_role_ids = [
+        rid
+        for rid in (cfg.mention_role_ids.split(",") if cfg and cfg.mention_role_ids else [])
+        if rid
+    ]
+
     mention_ids: set[int] | None = None
     roles = _role_set(ctx)
     if "officer" not in roles:
-        cfg = await db.scalar(
-            select(GuildConfig).where(GuildConfig.guild_id == ctx.guild.id)
-        )
-        if cfg and cfg.mention_role_ids:
+        if mention_role_ids:
             mention_ids = {
-                int(r) for r in cfg.mention_role_ids.split(",") if r
+                int(r)
+                for r in mention_role_ids
+                if r.isdigit()
             }
         else:
-            return []
+            return {
+                "roles": [],
+                "mention_role_ids": mention_role_ids,
+            }
 
     stmt = select(Role).where(Role.guild_id == ctx.guild.id)
     if mention_ids is not None:
@@ -37,7 +48,8 @@ async def get_guild_roles(
     result = await db.execute(stmt)
     rows = result.scalars().all()
     if rows:
-        return [
+        return {
+            "roles": [
             {
                 "id": str(role.discord_role_id),
                 "name": role.name,
@@ -48,7 +60,9 @@ async def get_guild_roles(
                 },
             }
             for role in rows
-        ]
+        ],
+            "mention_role_ids": mention_role_ids,
+        }
 
     if discord_client:
         guild = discord_client.get_guild(ctx.guild.discord_guild_id)
@@ -83,6 +97,12 @@ async def get_guild_roles(
                     )
                 )
             await db.commit()
-            return roles_out
-    return []
+            return {
+                "roles": roles_out,
+                "mention_role_ids": mention_role_ids,
+            }
+    return {
+        "roles": [],
+        "mention_role_ids": mention_role_ids,
+    }
 
