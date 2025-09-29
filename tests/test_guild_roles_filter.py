@@ -56,10 +56,12 @@ def test_guild_roles_filter():
             await db.commit()
         ctx = StubContext(1, [])
         async with get_session() as db:
-            roles = await guild_roles.get_guild_roles(ctx=ctx, db=db)
-            assert {r["id"] for r in roles} == {"1", "2"}
+            payload = await guild_roles.get_guild_roles(ctx=ctx, db=db)
+            assert {r["id"] for r in payload["roles"]} == {"1", "2"}
+            assert payload["mention_role_ids"] == ["1", "2"]
         ctx_off = StubContext(1, ["officer"])
         async with get_session() as db:
-            roles = await guild_roles.get_guild_roles(ctx=ctx_off, db=db)
-            assert {r["id"] for r in roles} == {"1", "2", "3"}
+            payload = await guild_roles.get_guild_roles(ctx=ctx_off, db=db)
+            assert {r["id"] for r in payload["roles"]} == {"1", "2", "3"}
+            assert payload["mention_role_ids"] == ["1", "2"]
     asyncio.run(_run())

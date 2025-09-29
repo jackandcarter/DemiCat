@@ -32,9 +32,9 @@ async def _run_test() -> None:
         db.add(Role(guild_id=guild.id, discord_role_id=10, name="Alpha"))
         db.add(Role(guild_id=guild.id, discord_role_id=20, name="Beta"))
         await db.commit()
-        ctx = SimpleNamespace(guild=guild)
+        ctx = SimpleNamespace(guild=guild, roles=["officer"])
         res = await get_guild_roles(ctx=ctx, db=db)
-        pairs = {(r["id"], r["name"]) for r in res}
+        pairs = {(r["id"], r["name"]) for r in res["roles"]}
         assert pairs == {("10", "Alpha"), ("20", "Beta")}
 
 
