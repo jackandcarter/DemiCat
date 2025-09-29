@@ -490,7 +490,8 @@ public class MainWindow : IDisposable
     private static bool HasWindowInteraction()
     {
         var hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows | ImGuiHoveredFlags.AllowWhenBlockedByActiveItem | ImGuiHoveredFlags.AllowWhenBlockedByPopup);
-        var focused = ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
+        var hasActiveItem = ImGui.IsAnyItemActive() || ImGui.IsAnyItemFocused();
+        var focused = hasActiveItem && ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
         return hovered || focused;
     }
 
