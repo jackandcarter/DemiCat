@@ -51,7 +51,7 @@ def upgrade() -> None:
         sa.Column("guild_id", sa.Integer(), nullable=False),
         sa.Column("section_id", sa.Integer(), nullable=False),
         sa.Column("title", sa.String(length=255), nullable=False),
-        sa.Column("content", sa.Text(), nullable=False, server_default=""),
+        sa.Column("content", sa.Text(), nullable=False),
         sa.Column("sort_order", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("color", sa.Integer(), nullable=True),
         sa.Column("created_by_id", mysql.BIGINT(unsigned=True), nullable=True),
