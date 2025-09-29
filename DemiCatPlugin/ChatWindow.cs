@@ -590,259 +590,251 @@ public class ChatWindow : IDisposable
             ImGui.Dummy(new Vector2(1f, topPadding));
         }
 
-        var clipper = new ImGuiListClipper();
-        clipper.Begin(_messages.Count);
-        while (clipper.Step())
+        for (var i = 0; i < _messages.Count; i++)
         {
-            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++)
+            var msg = _messages[i];
+            ImGui.PushID(msg.Id);
+            using var emojiFont = _emojiManager.PushEmojiFont();
+            var drawList = ImGui.GetWindowDrawList();
+            drawList.ChannelsSplit(2);
+            drawList.ChannelsSetCurrent(1);
+            var hoveredLastFrame = _messageHoverStates.TryGetValue(msg.Id, out var wasHovered) && wasHovered;
+            var styleForRow = ImGui.GetStyle();
+            var pushedHoverText = false;
+            if (hoveredLastFrame)
             {
-                var msg = _messages[i];
-                ImGui.PushID(msg.Id);
-                using var emojiFont = _emojiManager.PushEmojiFont();
-                var drawList = ImGui.GetWindowDrawList();
-                drawList.ChannelsSplit(2);
-                drawList.ChannelsSetCurrent(1);
-                var hoveredLastFrame = _messageHoverStates.TryGetValue(msg.Id, out var wasHovered) && wasHovered;
-                var styleForRow = ImGui.GetStyle();
-                var pushedHoverText = false;
-                if (hoveredLastFrame)
-                {
-                    var baseTextColor = styleForRow.Colors[(int)ImGuiCol.Text];
-                    var hoverTextColor = Vector4.Lerp(baseTextColor, Vector4.One, MessageHoverTextBlend);
-                    ImGui.PushStyleColor(ImGuiCol.Text, hoverTextColor);
-                    pushedHoverText = true;
-                }
+                var baseTextColor = styleForRow.Colors[(int)ImGuiCol.Text];
+                var hoverTextColor = Vector4.Lerp(baseTextColor, Vector4.One, MessageHoverTextBlend);
+                ImGui.PushStyleColor(ImGuiCol.Text, hoverTextColor);
+                pushedHoverText = true;
+            }
 
-                ImGui.BeginGroup();
-                if (msg.Author != null && msg.AvatarTexture == null && _avatarCache != null)
-                {
-                    _ = _avatarCache.GetAsync(msg.Author.AvatarUrl, msg.Author.Id)
-                        .ContinueWith(t => PluginServices.Instance!.Framework.RunOnTick(() => msg.AvatarTexture = t.Result));
-                }
-                if (msg.AvatarTexture != null)
-                {
-                    var wrap = msg.AvatarTexture.GetWrapOrEmpty();
-                    ImGui.Image(wrap.Handle, new Vector2(20, 20));
-                }
-                else
-                {
-                    ImGui.Dummy(new Vector2(20, 20));
-                }
-                ImGui.SameLine();
+            ImGui.BeginGroup();
+            if (msg.Author != null && msg.AvatarTexture == null && _avatarCache != null)
+            {
+                _ = _avatarCache.GetAsync(msg.Author.AvatarUrl, msg.Author.Id)
+                    .ContinueWith(t => PluginServices.Instance!.Framework.RunOnTick(() => msg.AvatarTexture = t.Result));
+            }
+            if (msg.AvatarTexture != null)
+            {
+                var wrap = msg.AvatarTexture.GetWrapOrEmpty();
+                ImGui.Image(wrap.Handle, new Vector2(20, 20));
+            }
+            else
+            {
+                ImGui.Dummy(new Vector2(20, 20));
+            }
+            ImGui.SameLine();
 
-                ImGui.BeginGroup();
-                ImGui.TextUnformatted(msg.Author?.Name ?? "Unknown");
-                ImGui.SameLine();
-                ImGui.TextUnformatted(msg.Timestamp.ToLocalTime().ToString());
+            ImGui.BeginGroup();
+            ImGui.TextUnformatted(msg.Author?.Name ?? "Unknown");
+            ImGui.SameLine();
+            ImGui.TextUnformatted(msg.Timestamp.ToLocalTime().ToString());
 
-                if (msg.Reference?.MessageId != null)
+            if (msg.Reference?.MessageId != null)
+            {
+                var refMsg = _messages.Find(m => m.Id == msg.Reference.MessageId);
+                if (refMsg != null)
                 {
-                    var refMsg = _messages.Find(m => m.Id == msg.Reference.MessageId);
-                    if (refMsg != null)
-                    {
-                        var preview = refMsg.Content ?? string.Empty;
+                    var preview = refMsg.Content ?? string.Empty;
 
-                        if (preview.Length > 50) preview = preview.Substring(0, 50) + "...";
-                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.7f, 0.7f, 0.7f, 1f));
-                        ImGui.TextUnformatted($"> {refMsg.Author?.Name ?? "Unknown"}: {preview}");
-                        ImGui.PopStyleColor();
-                    }
-                }
-
-                FormatContent(msg, hoveredLastFrame);
-                if (msg.EditedTimestamp != null)
-                {
-                    ImGui.SameLine();
-                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
-                    ImGui.TextUnformatted("(edited)");
+                    if (preview.Length > 50) preview = preview.Substring(0, 50) + "...";
+                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.7f, 0.7f, 0.7f, 1f));
+                    ImGui.TextUnformatted($"> {refMsg.Author?.Name ?? "Unknown"}: {preview}");
                     ImGui.PopStyleColor();
                 }
-                if (msg.Embeds != null)
+            }
+
+            FormatContent(msg, hoveredLastFrame);
+            if (msg.EditedTimestamp != null)
+            {
+                ImGui.SameLine();
+                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.6f, 0.6f, 0.6f, 1f));
+                ImGui.TextUnformatted("(edited)");
+                ImGui.PopStyleColor();
+            }
+            if (msg.Embeds != null)
+            {
+                foreach (var embed in msg.Embeds)
                 {
-                    foreach (var embed in msg.Embeds)
-                    {
-                        EmbedRenderer.Draw(embed, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
-                    }
+                    EmbedRenderer.Draw(embed, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
                 }
-                if (msg.Attachments != null)
+            }
+            if (msg.Attachments != null)
+            {
+                var attachmentCap = new Vector2(480f, 360f) * ImGuiHelpers.GlobalScale;
+                foreach (var att in msg.Attachments)
                 {
-                    var attachmentCap = new Vector2(480f, 360f) * ImGuiHelpers.GlobalScale;
-                    foreach (var att in msg.Attachments)
+                    if (att.ContentType != null && att.ContentType.StartsWith("image"))
                     {
-                        if (att.ContentType != null && att.ContentType.StartsWith("image"))
+                        if (att.Texture == null)
                         {
-                            if (att.Texture == null)
-                            {
-                                LoadTexture(att.Url, t => att.Texture = t);
-                            }
-                            if (att.Texture != null)
-                            {
-                                var wrapAtt = att.Texture.GetWrapOrEmpty();
-                                var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
-                                var bounds = GetAttachmentBounds(attachmentCap);
-                                var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
-                                ImGui.Image(wrapAtt.Handle, displaySize);
-                                if (ImGui.IsItemHovered())
-                                {
-                                    ImGui.BeginTooltip();
-                                    ImGui.TextUnformatted("Open original");
-                                    ImGui.EndTooltip();
-                                }
-                                if (ImGui.IsItemClicked())
-                                {
-                                    try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
-                                }
-                            }
+                            LoadTexture(att.Url, t => att.Texture = t);
                         }
-                        else
+                        if (att.Texture != null)
                         {
-                            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.6f, 1f, 1f));
-                            ImGui.TextUnformatted(att.Filename ?? att.Url);
+                            var wrapAtt = att.Texture.GetWrapOrEmpty();
+                            var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
+                            var bounds = GetAttachmentBounds(attachmentCap);
+                            var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
+                            ImGui.Image(wrapAtt.Handle, displaySize);
+                            if (ImGui.IsItemHovered())
+                            {
+                                ImGui.BeginTooltip();
+                                ImGui.TextUnformatted("Open original");
+                                ImGui.EndTooltip();
+                            }
                             if (ImGui.IsItemClicked())
                             {
                                 try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
                             }
-                            ImGui.PopStyleColor();
                         }
                     }
-                }
-                if (msg.Components != null && msg.Components.Count > 0)
-                {
-                    var buttons = msg.Components.Select(c => new EmbedButtonDto
+                    else
                     {
-                        Label = c.Label,
-                        CustomId = c.CustomId,
-                        Url = c.Url,
-                        Emoji = c.Emoji,
-                        Style = c.Style,
-                        RowIndex = c.RowIndex
-                    }).ToList();
-                    var pseudo = new EmbedDto { Id = msg.Id + "_components", Buttons = buttons };
-                    EmbedRenderer.Draw(pseudo, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
-                }
-                ImGui.Spacing();
-                if (msg.Reactions != null && msg.Reactions.Count > 0)
-                {
-                    for (int j = 0; j < msg.Reactions.Count; j++)
-                    {
-                        var reaction = msg.Reactions[j];
-                        ImGui.BeginGroup();
-                        var handled = false;
-
-                        if (!string.IsNullOrEmpty(reaction.EmojiId))
+                        ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(0.2f, 0.6f, 1f, 1f));
+                        ImGui.TextUnformatted(att.Filename ?? att.Url);
+                        if (ImGui.IsItemClicked())
                         {
-                            if (reaction.Texture == null)
-                            {
-                                var ext = reaction.IsAnimated ? "gif" : "png";
-                                var url = $"https://cdn.discordapp.com/emojis/{reaction.EmojiId}.{ext}";
-                                LoadTexture(url, t => reaction.Texture = t);
-                            }
-                            if (reaction.Texture != null)
-                            {
-                                var wrap = reaction.Texture.GetWrapOrEmpty();
-                                if (ImGui.ImageButton(wrap.Handle, new Vector2(20, 20)))
-                                {
-                                    _ = React(msg.Id, reaction.Emoji, reaction.Me);
-                                }
-                                ImGui.SameLine();
-                                ImGui.TextUnformatted(reaction.Count.ToString());
-                                handled = true;
-                            }
+                            try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
                         }
+                        ImGui.PopStyleColor();
+                    }
+                }
+            }
+            if (msg.Components != null && msg.Components.Count > 0)
+            {
+                var buttons = msg.Components.Select(c => new EmbedButtonDto
+                {
+                    Label = c.Label,
+                    CustomId = c.CustomId,
+                    Url = c.Url,
+                    Emoji = c.Emoji,
+                    Style = c.Style,
+                    RowIndex = c.RowIndex
+                }).ToList();
+                var pseudo = new EmbedDto { Id = msg.Id + "_components", Buttons = buttons };
+                EmbedRenderer.Draw(pseudo, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
+            }
+            ImGui.Spacing();
+            if (msg.Reactions != null && msg.Reactions.Count > 0)
+            {
+                for (int j = 0; j < msg.Reactions.Count; j++)
+                {
+                    var reaction = msg.Reactions[j];
+                    ImGui.BeginGroup();
+                    var handled = false;
 
-                        if (!handled)
+                    if (!string.IsNullOrEmpty(reaction.EmojiId))
+                    {
+                        if (reaction.Texture == null)
                         {
-                            if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
+                            var ext = reaction.IsAnimated ? "gif" : "png";
+                            var url = $"https://cdn.discordapp.com/emojis/{reaction.EmojiId}.{ext}";
+                            LoadTexture(url, t => reaction.Texture = t);
+                        }
+                        if (reaction.Texture != null)
+                        {
+                            var wrap = reaction.Texture.GetWrapOrEmpty();
+                            if (ImGui.ImageButton(wrap.Handle, new Vector2(20, 20)))
                             {
                                 _ = React(msg.Id, reaction.Emoji, reaction.Me);
                             }
+                            ImGui.SameLine();
+                            ImGui.TextUnformatted(reaction.Count.ToString());
+                            handled = true;
                         }
+                    }
 
-                        ImGui.EndGroup();
-                        if (j < msg.Reactions.Count - 1) ImGui.SameLine();
-                    }
-                }
-                if (ImGui.SmallButton($"+##react{msg.Id}"))
-                {
-                    ImGui.OpenPopup($"reactPicker{msg.Id}");
-                }
-                if (ImGui.BeginPopup($"reactPicker{msg.Id}"))
-                {
-                    ImGui.TextUnformatted("Pick an emoji:");
-                    foreach (var emoji in DefaultReactions)
+                    if (!handled)
                     {
-                        if (ImGui.Button($"{emoji}##pick{msg.Id}{emoji}"))
+                        if (ImGui.SmallButton($"{reaction.Emoji} {reaction.Count}##{msg.Id}{reaction.Emoji}"))
                         {
-                            _ = React(msg.Id, emoji, false);
-                            ImGui.CloseCurrentPopup();
+                            _ = React(msg.Id, reaction.Emoji, reaction.Me);
                         }
-                        ImGui.SameLine();
                     }
-                    ImGui.NewLine();
-                    var pick = _emojiPicker.Draw();
-                    if (!string.IsNullOrEmpty(pick))
+
+                    ImGui.EndGroup();
+                    if (j < msg.Reactions.Count - 1) ImGui.SameLine();
+                }
+            }
+            if (ImGui.SmallButton($"+##react{msg.Id}"))
+            {
+                ImGui.OpenPopup($"reactPicker{msg.Id}");
+            }
+            if (ImGui.BeginPopup($"reactPicker{msg.Id}"))
+            {
+                ImGui.TextUnformatted("Pick an emoji:");
+                foreach (var emoji in DefaultReactions)
+                {
+                    if (ImGui.Button($"{emoji}##pick{msg.Id}{emoji}"))
                     {
-                        _ = React(msg.Id, pick, false);
+                        _ = React(msg.Id, emoji, false);
                         ImGui.CloseCurrentPopup();
                     }
-                    ImGui.EndPopup();
+                    ImGui.SameLine();
                 }
-                ImGui.EndGroup();
-
-                if (pushedHoverText)
+                ImGui.NewLine();
+                var pick = _emojiPicker.Draw();
+                if (!string.IsNullOrEmpty(pick))
                 {
-                    ImGui.PopStyleColor();
+                    _ = React(msg.Id, pick, false);
+                    ImGui.CloseCurrentPopup();
                 }
-
-                var rowMin = ImGui.GetItemRectMin();
-                var rowMax = ImGui.GetItemRectMax();
-                var rowHovered = ImGui.IsItemHovered(hoverFlags);
-                _messageHoverStates[msg.Id] = rowHovered;
-
-                if (ImGui.BeginPopupContextItem("messageContext"))
-                {
-                    if (ImGui.MenuItem("Reply"))
-                    {
-                        _replyToId = msg.Id;
-                    }
-                    if (ImGui.MenuItem("Edit"))
-                    {
-                        _editingMessageId = msg.Id;
-                        _editingChannelId = msg.ChannelId;
-                        _editContent = msg.Content ?? string.Empty;
-                        ImGui.OpenPopup("editMessage");
-                    }
-                    if (ImGui.MenuItem("Delete"))
-                    {
-                        _ = DeleteMessage(msg.Id, msg.ChannelId);
-                    }
-                    ImGui.EndPopup();
-                }
-
-                drawList.ChannelsSetCurrent(0);
-                var bgColor = rowHovered ? MessageHoverBgColor : MessageIdleBgColor;
-                if (bgColor.W > 0f)
-                {
-                    var rounding = styleForRow.FrameRounding > 0f ? styleForRow.FrameRounding : 4f * ImGuiHelpers.GlobalScale;
-                    drawList.AddRectFilled(rowMin, rowMax, ImGui.ColorConvertFloat4ToU32(bgColor), rounding);
-                }
-                drawList.ChannelsMerge();
-
-                clipper.IncludeItemByIndex(i);
-
-                if (i < _messages.Count - 1)
-                {
-                    var spacingY = styleForRow.ItemSpacing.Y * 0.5f;
-                    if (spacingY > 0f)
-                    {
-                        ImGui.Dummy(new Vector2(0f, spacingY));
-                    }
-                }
-
-                ImGui.PopID();
+                ImGui.EndPopup();
             }
+            ImGui.EndGroup();
+
+            if (pushedHoverText)
+            {
+                ImGui.PopStyleColor();
+            }
+
+            var rowMin = ImGui.GetItemRectMin();
+            var rowMax = ImGui.GetItemRectMax();
+            var rowHovered = ImGui.IsItemHovered(hoverFlags);
+            _messageHoverStates[msg.Id] = rowHovered;
+
+            if (ImGui.BeginPopupContextItem("messageContext"))
+            {
+                if (ImGui.MenuItem("Reply"))
+                {
+                    _replyToId = msg.Id;
+                }
+                if (ImGui.MenuItem("Edit"))
+                {
+                    _editingMessageId = msg.Id;
+                    _editingChannelId = msg.ChannelId;
+                    _editContent = msg.Content ?? string.Empty;
+                    ImGui.OpenPopup("editMessage");
+                }
+                if (ImGui.MenuItem("Delete"))
+                {
+                    _ = DeleteMessage(msg.Id, msg.ChannelId);
+                }
+                ImGui.EndPopup();
+            }
+
+            drawList.ChannelsSetCurrent(0);
+            var bgColor = rowHovered ? MessageHoverBgColor : MessageIdleBgColor;
+            if (bgColor.W > 0f)
+            {
+                var rounding = styleForRow.FrameRounding > 0f ? styleForRow.FrameRounding : 4f * ImGuiHelpers.GlobalScale;
+                drawList.AddRectFilled(rowMin, rowMax, ImGui.ColorConvertFloat4ToU32(bgColor), rounding);
+            }
+            drawList.ChannelsMerge();
+
+            if (i < _messages.Count - 1)
+            {
+                var spacingY = styleForRow.ItemSpacing.Y * 0.5f;
+                if (spacingY > 0f)
+                {
+                    ImGui.Dummy(new Vector2(0f, spacingY));
+                }
+            }
+
+            ImGui.PopID();
         }
-        clipper.End();
 
         if (_messageHoverStates.Count > _messages.Count)
         {
