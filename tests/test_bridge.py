@@ -191,7 +191,7 @@ def test_build_bridge_message_populates_embed_footer(sample_user, sample_members
         timestamp=fixed_time,
     )
 
-    expected_header = "Message Sent by: Nick @ 2024-01-02 03:04:05 UTC"
+    expected_header = "Message Sent by: Nick\n---"
     assert discord_content == ""
     assert nonce
     assert len(embeds) == 1
@@ -200,8 +200,7 @@ def test_build_bridge_message_populates_embed_footer(sample_user, sample_members
     footer_text = embed_dict.get("footer", {}).get("text")
     assert footer_text and footer_text.endswith(f"{BRIDGE_MARKER}{nonce}")
     description = embed_dict.get("description", "")
-    assert description.startswith(expected_header)
-    assert description.split("\n", 1)[1] == content
+    assert description == f"{expected_header}\n{content}"
     assert embed_dict.get("author", {}).get("name") == sample_membership.nickname
     assert embed_dict.get("author", {}).get("icon_url") == sample_membership.avatar_url
 
@@ -252,7 +251,7 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
         timestamp=fixed_time,
     )
 
-    expected_header = "Message Sent by: Nick @ 2024-05-06 07:08:09 UTC"
+    expected_header = "Message Sent by: Nick\n---"
     assert discord_content
     assert not uploads
     assert nonce
@@ -265,10 +264,9 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
         embed.to_dict().get("description", "") for embed in embeds
     ]
     combined = "".join(embed_descriptions)
-    assert combined.startswith(expected_header)
-    body_in_embeds = combined[len(expected_header):]
-    if body_in_embeds.startswith("\n"):
-        body_in_embeds = body_in_embeds[1:]
+    expected_prefix = f"{expected_header}\n"
+    assert combined.startswith(expected_prefix)
+    body_in_embeds = combined[len(expected_prefix):]
 
     total_length = 0
     for embed in embeds:
@@ -310,17 +308,18 @@ def test_build_bridge_message_includes_character_when_enabled(
         timestamp=fixed_time,
     )
 
-    expected_header = (
-        "Message Sent by: Nick / Hero / Eorzea @ 2024-07-08 09:10:11 UTC"
-    )
+    expected_header = "Message Sent by: Nick / Hero / Eorzea\n---"
     assert discord_content == ""
-    assert embeds[0].to_dict().get("description", "").startswith(expected_header)
+    assert (
+        embeds[0].to_dict().get("description", "")
+        == f"{expected_header}\nHi"
+    )
     assert not uploads
     assert nonce
 
 
 def test_build_bridge_message_preserves_existing_header(sample_user, sample_membership):
-    existing_header = "Message Sent by: Nick @ 2024-01-02 03:04:05 UTC"
+    existing_header = "Message Sent by: Nick\n---"
     body = "Preformatted content"
     preformatted = f"{existing_header}\n{body}"
     server_timestamp = datetime(2024, 12, 11, 10, 9, 8, tzinfo=timezone.utc)

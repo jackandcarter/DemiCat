@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Iterable, Mapping, Sequence
 
 import discord
@@ -180,7 +180,6 @@ def build_bridge_message(
             if image_filename is None and _is_image(filename, content_type):
                 image_filename = filename
 
-    timestamp = timestamp or datetime.now(timezone.utc)
     display_name = _determine_display_name(user=user, membership=membership)
     character_name = user.character_name if use_character_name else None
     world_name = user.world if use_character_name else None
@@ -192,7 +191,6 @@ def build_bridge_message(
             use_character_name=use_character_name,
             character_name=character_name,
             world_name=world_name,
-            timestamp=timestamp,
         )
         if normalized:
             normalized = f"{header}\n{normalized}"
@@ -217,7 +215,7 @@ def build_bridge_message(
 
     embeds: list[discord.Embed] = []
     for index, chunk in enumerate(chunks):
-        embed = discord.Embed(description=chunk or None, timestamp=timestamp, color=color)
+        embed = discord.Embed(description=chunk or None, color=color)
         embed.set_footer(text=footer)
         embed.set_author(name=author_name, icon_url=author_icon)
         if index == 0 and image_filename:
@@ -237,7 +235,6 @@ def _format_header_line(
     use_character_name: bool,
     character_name: str | None,
     world_name: str | None,
-    timestamp: datetime,
 ) -> str:
     name = display_name.strip() or "You"
     segments = [name]
@@ -250,29 +247,20 @@ def _format_header_line(
                 segments.append(world)
         elif world:
             segments.append(world)
-    formatted_timestamp = timestamp.astimezone(timezone.utc).strftime(
-        "%Y-%m-%d %H:%M:%S UTC"
-    )
-    return f"Message Sent by: {' / '.join(segments)} @ {formatted_timestamp}"
+    return "Message Sent by: {}\n---".format(" / ".join(segments))
 
 
 
 def _has_existing_header(content: str) -> bool:
     if not content:
         return False
-    first_line, _, _ = content.partition("\n")
-    line = first_line.strip()
-    if not line.startswith("Message Sent by:"):
+    first_line, sep, remainder = content.partition("\n")
+    if not sep:
         return False
-    parts = line.rsplit("@", 1)
-    if len(parts) != 2:
+    if not first_line.strip().startswith("Message Sent by:"):
         return False
-    timestamp_text = parts[1].strip()
-    if not timestamp_text:
-        return False
-    try:
-        datetime.strptime(timestamp_text, "%Y-%m-%d %H:%M:%S UTC")
-    except ValueError:
+    second_line, _, _ = remainder.partition("\n")
+    if second_line.strip() != "---":
         return False
     return True
 
