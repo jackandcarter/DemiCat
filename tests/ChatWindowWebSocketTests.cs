@@ -83,6 +83,51 @@ public class ChatWindowWebSocketTests
     }
 
     [Fact]
+    public async Task WebSocket_ConnectionTimeoutSurfacesStatus()
+    {
+        _ = SetupServices();
+        var config = new Config { EnableFcChat = true, ApiBaseUrl = "http://localhost", ChatChannelId = "1" };
+        var selection = new ChannelSelectionService(config);
+        using var client = new HttpClient(new PingOkHandler());
+        var attempts = 0;
+        var bridge = new ChatBridge(
+            config,
+            client,
+            new TokenManager(),
+            () => new Uri("ws://localhost/ws/chat"),
+            selection,
+            connectTimeout: TimeSpan.FromMilliseconds(50),
+            connectAsync: (_, _, ct) =>
+            {
+                Interlocked.Increment(ref attempts);
+                return Task.Delay(Timeout.Infinite, ct);
+            });
+
+        using var timeoutSeen = new ManualResetEventSlim();
+        bridge.StatusChanged += status =>
+        {
+            if (status == "Connection timed out; retrying...")
+            {
+                timeoutSeen.Set();
+            }
+        };
+
+        bridge.Start();
+
+        try
+        {
+            await WaitUntil(() => timeoutSeen.IsSet, TimeSpan.FromSeconds(5));
+            await WaitUntil(() => Volatile.Read(ref attempts) >= 2, TimeSpan.FromSeconds(5));
+        }
+        finally
+        {
+            bridge.Stop();
+        }
+
+        Assert.True(timeoutSeen.IsSet);
+    }
+
+    [Fact]
     public async Task OfficerChatWebSocket_UsesOfficerMetadata()
     {
         using var server = new MockWsServer(async (ws, _, srv) =>
@@ -869,6 +914,14 @@ public class ChatWindowWebSocketTests
             }
 
             return Task.FromResult(_responses.Dequeue());
+        }
+    }
+
+    private sealed class PingOkHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
         }
     }
 
