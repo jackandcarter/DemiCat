@@ -3232,10 +3232,6 @@ public class ChatWindow : IDisposable
         }
         _textureCache.Clear();
         _textureLru.Clear();
-        foreach (var m in _messages)
-        {
-            DisposeMessageTextures(m);
-        }
         foreach (var e in _emojiCatalog.Values)
         {
             e.Texture = null;
@@ -3256,6 +3252,10 @@ public class ChatWindow : IDisposable
         StopNetworking();
         _channelSelection.ChannelChanged -= HandleChannelSelectionChanged;
         _bridge.Dispose();
+        foreach (var message in _messages)
+        {
+            DisposeMessageTextures(message);
+        }
         ClearTextureCache();
     }
 
