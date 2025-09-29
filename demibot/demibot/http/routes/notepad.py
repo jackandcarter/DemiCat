@@ -446,8 +446,24 @@ async def reorder_pages(
             continue
         final_orders.setdefault(page.section_id, []).append(page.id)
 
+    affected_section_ids = {sid for sid in final_orders if sid in section_map}
+    deleted_pages: list[NotePage] = []
+    if affected_section_ids:
+        result = await db.execute(
+            select(NotePage).where(
+                NotePage.guild_id == ctx.guild.id,
+                NotePage.section_id.in_(affected_section_ids),
+                NotePage.is_deleted.is_(True),
+            )
+        )
+        deleted_pages = result.scalars().all()
+
+    max_sort_order = await db.scalar(
+        select(func.max(NotePage.sort_order)).where(NotePage.guild_id == ctx.guild.id)
+    )
+    next_temp_order = (max_sort_order if max_sort_order is not None else -1) + 1
+
     temp_page_updates: list[tuple[NotePage, int]] = []
-    total_pages = len(pages)
     for section_id, ids in final_orders.items():
         if section_id not in section_map:
             continue
@@ -461,8 +477,21 @@ async def reorder_pages(
             if page.sort_order != index:
                 changed = True
             if changed:
-                page.sort_order = total_pages + len(temp_page_updates)
+                page.sort_order = next_temp_order
+                next_temp_order += 1
                 temp_page_updates.append((page, index))
+
+    deleted_offsets: dict[int, int] = {}
+    for page in sorted(deleted_pages, key=lambda p: (p.section_id, p.sort_order, p.id)):
+        active_count = len(final_orders.get(page.section_id, []))
+        offset = deleted_offsets.get(page.section_id, 0)
+        deleted_offsets[page.section_id] = offset + 1
+        target_index = active_count + offset
+        if page.sort_order != target_index:
+            page.sort_order = next_temp_order
+            next_temp_order += 1
+            temp_page_updates.append((page, target_index))
+
     if temp_page_updates:
         await db.flush()
         for page, index in temp_page_updates:

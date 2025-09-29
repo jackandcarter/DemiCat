@@ -180,6 +180,22 @@ async def test_notepad_crud_flow(tmp_path, monkeypatch):
     async with get_session() as db:
         await notepad.delete_page(page_id=page2.id, ctx=ctx_officer, db=db)
 
+    reorder_after_delete = NotePageReorderBody(
+        sections=[
+            NotePageReorderEntry(sectionId=section2.id, pageIds=[]),
+            NotePageReorderEntry(sectionId=section.id, pageIds=[page.id]),
+        ]
+    )
+    async with get_session() as db:
+        post_delete_state = await notepad.reorder_pages(
+            body=reorder_after_delete,
+            ctx=ctx_officer,
+            db=db,
+        )
+    sections_after_delete = {s.id: s for s in post_delete_state.sections}
+    assert sections_after_delete[section.id].pages[0].id == page.id
+    assert sections_after_delete[section2.id].pages == []
+
     async with get_session() as db:
         await notepad.delete_section(section_id=section.id, ctx=ctx_officer, db=db)
 
