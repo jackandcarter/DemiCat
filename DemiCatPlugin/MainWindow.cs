@@ -38,8 +38,11 @@ public class MainWindow : IDisposable
         set
         {
             _hasOfficerAccess = value;
-            _notePad.IsReadOnly = !value;
         }
+    }
+    public void SetNotePadReadOnly(bool isReadOnly)
+    {
+        _notePad.IsReadOnly = isReadOnly;
     }
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;

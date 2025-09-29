@@ -137,6 +137,7 @@ public class Plugin : IDalamudPlugin
         _settings.NotePadService = _notePadService;
 
         _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
+        _mainWindow.SetNotePadReadOnly(!_tokenManager.IsReady());
 
         _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
@@ -627,6 +628,7 @@ public class Plugin : IDalamudPlugin
     {
         _invalidTokenToastShown = false;
         try { _services.ChatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
+        _mainWindow.SetNotePadReadOnly(false);
         StartWatchers();
     }
 
@@ -635,6 +637,7 @@ public class Plugin : IDalamudPlugin
         void Execute()
         {
             StopWatchers();
+            _mainWindow.SetNotePadReadOnly(true);
 
             var hadOfficerAccess = _config.IsOfficerToken;
             _config.IsOfficerToken = false;

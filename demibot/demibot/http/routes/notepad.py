@@ -31,13 +31,6 @@ router = APIRouter(prefix="/api")
 logger = logging.getLogger(__name__)
 
 
-def _require_officer(ctx: RequestContext) -> None:
-    if "officer" not in ctx.roles:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="officer role required"
-        )
-
-
 def _parse_int(value: str, label: str) -> int:
     try:
         return int(value)
@@ -165,7 +158,6 @@ async def create_section(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> NoteSectionDto:
-    _require_officer(ctx)
     max_order = await db.scalar(
         select(func.max(NoteSection.sort_order)).where(
             NoteSection.guild_id == ctx.guild.id,
@@ -200,7 +192,6 @@ async def update_section(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> NoteSectionDto:
-    _require_officer(ctx)
     sid = _parse_int(section_id, "sectionId")
     section = await _get_section(db, ctx.guild.id, sid)
     if section.version != body.version:
@@ -228,7 +219,6 @@ async def reorder_sections(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> NotepadStateDto:
-    _require_officer(ctx)
     requested_ids = [_parse_int(section_id, "sectionId") for section_id in body.section_ids]
     if len(requested_ids) != len(set(requested_ids)):
         raise HTTPException(status_code=400, detail="duplicate section ids")
@@ -283,7 +273,6 @@ async def delete_section(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    _require_officer(ctx)
     sid = _parse_int(section_id, "sectionId")
     section = await _get_section(db, ctx.guild.id, sid)
     now = datetime.utcnow()
@@ -314,7 +303,6 @@ async def create_page(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> NotePageDto:
-    _require_officer(ctx)
     section_id = _parse_int(body.section_id, "sectionId")
     section = await _get_section(db, ctx.guild.id, section_id)
     max_order = await db.scalar(
@@ -353,7 +341,6 @@ async def update_page(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> NotePageDto:
-    _require_officer(ctx)
     pid = _parse_int(page_id, "pageId")
     page = await _get_page(db, ctx.guild.id, pid)
     if page.version != body.version:
@@ -382,7 +369,6 @@ async def update_page_content(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> NotePageDto:
-    _require_officer(ctx)
     pid = _parse_int(page_id, "pageId")
     page = await _get_page(db, ctx.guild.id, pid)
     if page.version != body.version:
@@ -407,7 +393,6 @@ async def reorder_pages(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> NotepadStateDto:
-    _require_officer(ctx)
     provided_section_ids: list[int] = []
     provided_page_ids: list[int] = []
     for entry in body.sections:
@@ -515,7 +500,6 @@ async def delete_page(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    _require_officer(ctx)
     pid = _parse_int(page_id, "pageId")
     page = await _get_page(db, ctx.guild.id, pid)
     now = datetime.utcnow()

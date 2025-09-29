@@ -73,6 +73,7 @@ public class NotePadWindowTests
             };
         };
 
+        Assert.False(fixture.Window.IsReadOnly);
         fixture.SetSelection("s1", "p1");
         fixture.SetEditorState(content: "Updated", version: 1, dirty: true, lastEditUtc: DateTime.UtcNow.AddSeconds(-10));
 
@@ -91,6 +92,7 @@ public class NotePadWindowTests
             .GetField("_editorVersion", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(fixture.Window)!;
         Assert.Equal(2, currentVersion);
+        Assert.False(fixture.Window.IsReadOnly);
     }
 
     [Fact]

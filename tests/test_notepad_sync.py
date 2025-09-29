@@ -88,8 +88,9 @@ async def test_notepad_sync_and_conflict_flow(tmp_path, monkeypatch):
 
     async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Guild")
-        user = User(id=1, discord_user_id=42, global_name="Officer")
-        db.add_all([guild, user])
+        officer = User(id=1, discord_user_id=42, global_name="Officer")
+        member = User(id=2, discord_user_id=99, global_name="Member")
+        db.add_all([guild, officer, member])
         await db.commit()
 
     manager = ConnectionManager()
@@ -106,7 +107,7 @@ async def test_notepad_sync_and_conflict_flow(tmp_path, monkeypatch):
     async with get_session() as db:
         section = await notepad.create_section(
             body=NoteSectionCreateBody(name="Raid", color=0x123456),
-            ctx=ctx_officer,
+            ctx=ctx_member,
             db=db,
         )
 
@@ -117,7 +118,7 @@ async def test_notepad_sync_and_conflict_flow(tmp_path, monkeypatch):
     async with get_session() as db:
         page = await notepad.create_page(
             body=NotePageCreateBody(sectionId=section.id, title="Notes", content="Initial"),
-            ctx=ctx_officer,
+            ctx=ctx_member,
             db=db,
         )
 
@@ -128,7 +129,7 @@ async def test_notepad_sync_and_conflict_flow(tmp_path, monkeypatch):
         updated = await notepad.update_page_content(
             page_id=page.id,
             body=NotePageContentBody(content="Revised", version=page.version),
-            ctx=ctx_officer,
+            ctx=ctx_member,
             db=db,
         )
 
@@ -141,7 +142,7 @@ async def test_notepad_sync_and_conflict_flow(tmp_path, monkeypatch):
             await notepad.update_page_content(
                 page_id=page.id,
                 body=NotePageContentBody(content="Stale", version=stale_version),
-                ctx=ctx_officer,
+                ctx=ctx_member,
                 db=db,
             )
     assert getattr(excinfo.value, "status_code", None) == 409
