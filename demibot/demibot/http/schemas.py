@@ -183,3 +183,79 @@ class TemplateDto(CamelModel):
     description: str | None = None
     payload: TemplatePayload
     updated_at: datetime = Field(alias="updatedAt")
+
+
+# ---- Notepad ----
+
+
+class NotePageDto(CamelModel):
+    id: str
+    section_id: str = Field(alias="sectionId")
+    title: str
+    content: str
+    order: int
+    color: int | None = None
+    created_by_id: str | None = Field(default=None, alias="createdById")
+    updated_by_id: str | None = Field(default=None, alias="updatedById")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+    version: int
+
+
+class NoteSectionDto(CamelModel):
+    id: str
+    name: str
+    order: int
+    color: int | None = None
+    created_by_id: str | None = Field(default=None, alias="createdById")
+    updated_by_id: str | None = Field(default=None, alias="updatedById")
+    created_at: datetime = Field(alias="createdAt")
+    updated_at: datetime = Field(alias="updatedAt")
+    version: int
+    pages: List[NotePageDto] = Field(default_factory=list)
+
+
+class NotepadStateDto(CamelModel):
+    sections: List[NoteSectionDto] = Field(default_factory=list)
+
+
+class NoteSectionCreateBody(CamelModel):
+    name: str
+    color: int | None = None
+
+
+class NoteSectionUpdateBody(CamelModel):
+    name: str | None = None
+    color: int | None = None
+    version: int
+
+
+class NoteSectionReorderBody(CamelModel):
+    section_ids: List[str] = Field(alias="sectionIds")
+
+
+class NotePageCreateBody(CamelModel):
+    section_id: str = Field(alias="sectionId")
+    title: str
+    content: str = ""
+    color: int | None = None
+
+
+class NotePageUpdateBody(CamelModel):
+    title: str | None = None
+    color: int | None = None
+    version: int
+
+
+class NotePageReorderEntry(CamelModel):
+    section_id: str = Field(alias="sectionId")
+    page_ids: List[str] = Field(default_factory=list, alias="pageIds")
+
+
+class NotePageReorderBody(CamelModel):
+    sections: List[NotePageReorderEntry] = Field(default_factory=list)
+
+
+class NotePageContentBody(CamelModel):
+    content: str
+    version: int
