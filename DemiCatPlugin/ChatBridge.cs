@@ -30,6 +30,9 @@ public class ChatBridge : IDisposable
     private readonly Dictionary<string, (string GuildId, string Kind)> _channelMetadata = new();
     private readonly HashSet<string> _subs = new();
     private readonly ChannelSelectionService _channelSelection;
+    private readonly Func<ClientWebSocket> _webSocketFactory;
+    private readonly Func<ClientWebSocket, Uri, CancellationToken, Task> _connectAsync;
+    private readonly TimeSpan _connectTimeout;
     private int _connectCount;
     private int _reconnectCount;
     private int _resyncCount;
@@ -52,6 +55,7 @@ public class ChatBridge : IDisposable
     private static readonly TimeSpan BatchDropThrottle = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan WebSocketCloseTimeout = TimeSpan.FromSeconds(1);
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
+    private static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds(10);
     private const string ForbiddenMessage = "Forbidden – check API key/roles";
     private bool _permissionWarningShown;
 #if TEST
@@ -67,13 +71,16 @@ public class ChatBridge : IDisposable
     public event Action<string, long>? ResyncRequested;
     public event Action? TemplatesUpdated;
 
-    public ChatBridge(Config config, HttpClient httpClient, TokenManager tokenManager, Func<Uri> uriBuilder, ChannelSelectionService channelSelection)
+    public ChatBridge(Config config, HttpClient httpClient, TokenManager tokenManager, Func<Uri> uriBuilder, ChannelSelectionService channelSelection, Func<ClientWebSocket>? webSocketFactory = null, TimeSpan? connectTimeout = null, Func<ClientWebSocket, Uri, CancellationToken, Task>? connectAsync = null)
     {
         _config = config;
         _httpClient = httpClient;
         _tokenManager = tokenManager;
         _uriBuilder = uriBuilder;
         _channelSelection = channelSelection;
+        _webSocketFactory = webSocketFactory ?? (() => new ClientWebSocket());
+        _connectTimeout = connectTimeout ?? DefaultConnectTimeout;
+        _connectAsync = connectAsync ?? ((socket, uri, ct) => socket.ConnectAsync(uri, ct));
     }
 
     public void Start()
@@ -459,6 +466,8 @@ public class ChatBridge : IDisposable
             var failureStage = "connect";
             var connected = false;
             var attemptedConnect = false;
+            var connectTimedOut = false;
+            CancellationTokenSource? connectCts = null;
             try
             {
                 StatusChanged?.Invoke("Connecting...");
@@ -484,12 +493,14 @@ public class ChatBridge : IDisposable
                 }
 
                 _ws?.Dispose();
-                _ws = new ClientWebSocket();
+                _ws = _webSocketFactory();
                 _ws.Options.DangerousDeflateOptions = new WebSocketDeflateOptions();
                 _ws.Options.SetRequestHeader("Sec-WebSocket-Extensions", "permessage-deflate");
                 ApiHelpers.AddAuthHeader(_ws, _tokenManager);
                 attemptedConnect = true;
-                await _ws.ConnectAsync(uri!, token);
+                connectCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                connectCts.CancelAfter(_connectTimeout);
+                await _connectAsync(_ws, uri!, connectCts.Token);
                 _connectedSince = DateTime.UtcNow;
                 _reconnectAttempt = 0;
                 _tokenValid = true;
@@ -508,6 +519,11 @@ public class ChatBridge : IDisposable
             }
             catch (OperationCanceledException ex) when (!ShouldRethrow(ex, token))
             {
+                if (!token.IsCancellationRequested && connectCts?.IsCancellationRequested == true)
+                {
+                    connectTimedOut = true;
+                    PluginServices.Instance?.Log.Warning($"chat.ws connect timed out after {_connectTimeout.TotalSeconds:0.#}s");
+                }
             }
             catch (OperationCanceledException)
             {
@@ -542,6 +558,7 @@ public class ChatBridge : IDisposable
             }
             finally
             {
+                connectCts?.Dispose();
                 var status = _ws?.CloseStatus;
                 var description = _ws?.CloseStatusDescription;
                 try
@@ -588,7 +605,9 @@ public class ChatBridge : IDisposable
             var backoff = GetReconnectDelay(_reconnectAttempt);
             StatusChanged?.Invoke(forbidden
                 ? ForbiddenMessage
-                : $"Reconnecting in {backoff.TotalSeconds:0.#}s...");
+                : connectTimedOut
+                    ? "Connection timed out; retrying..."
+                    : $"Reconnecting in {backoff.TotalSeconds:0.#}s...");
             await DelayWithBackoff(backoff, token);
         }
     }
