@@ -351,18 +351,30 @@ public class MainWindow : IDisposable
                     else if (ImGui.BeginTabItem(chatLabel))
                     {
                         var overrideStylesApplied = false;
+                        AlphaOverrideState alphaOverrideState = AlphaOverrideState.None;
                         if (_chat is FcChatWindow)
                         {
                             _fcChatTabActive = true;
 
-                            overrideStylesApplied = TryPushWindowOpacityOverride(
-                                !_config.ChatFadeOutEnabled,
-                                primaryColor,
-                                childBaseColor,
-                                tabBaseColor,
-                                tabActiveBaseColor,
-                                tabHoveredBaseColor,
-                                Math.Clamp(_config.FcChatOpacity, 0f, 1f));
+                            if (_config.ChatFadeOutEnabled)
+                            {
+                                overrideStylesApplied = TryPushWindowOpacityOverride(
+                                    previousOpacityOverrideActive,
+                                    primaryColor,
+                                    childBaseColor,
+                                    tabBaseColor,
+                                    tabActiveBaseColor,
+                                    tabHoveredBaseColor,
+                                    Math.Clamp(_config.FcChatOpacity, 0f, 1f));
+                            }
+                            else
+                            {
+                                alphaOverrideState = PushWindowAlphaOnly(
+                                    Math.Clamp(_config.FcChatOpacity, 0f, 1f),
+                                    primaryColor,
+                                    childBaseColor,
+                                    useStyleVar: false);
+                            }
                         }
                         else
                         {
@@ -385,6 +397,10 @@ public class MainWindow : IDisposable
                         {
                             ImGui.PopStyleColor(5);
                         }
+                        else
+                        {
+                            PopWindowAlphaOnly(alphaOverrideState);
+                        }
                     }
                 }
 
@@ -406,14 +422,26 @@ public class MainWindow : IDisposable
                             _officerTabActive = true;
 
                             var overrideStylesApplied = false;
-                            overrideStylesApplied = TryPushWindowOpacityOverride(
-                                !_config.ChatFadeOutEnabled,
-                                primaryColor,
-                                childBaseColor,
-                                tabBaseColor,
-                                tabActiveBaseColor,
-                                tabHoveredBaseColor,
-                                Math.Clamp(_config.OfficerChatOpacity, 0f, 1f));
+                            var alphaOverrideState = AlphaOverrideState.None;
+                            if (_config.ChatFadeOutEnabled)
+                            {
+                                overrideStylesApplied = TryPushWindowOpacityOverride(
+                                    previousOpacityOverrideActive,
+                                    primaryColor,
+                                    childBaseColor,
+                                    tabBaseColor,
+                                    tabActiveBaseColor,
+                                    tabHoveredBaseColor,
+                                    Math.Clamp(_config.OfficerChatOpacity, 0f, 1f));
+                            }
+                            else
+                            {
+                                alphaOverrideState = PushWindowAlphaOnly(
+                                    Math.Clamp(_config.OfficerChatOpacity, 0f, 1f),
+                                    primaryColor,
+                                    childBaseColor,
+                                    useStyleVar: false);
+                            }
 
                             ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
                             _officer.Draw();
@@ -423,6 +451,10 @@ public class MainWindow : IDisposable
                             if (overrideStylesApplied)
                             {
                                 ImGui.PopStyleColor(5);
+                            }
+                            else
+                            {
+                                PopWindowAlphaOnly(alphaOverrideState);
                             }
                         }
                     }
@@ -560,6 +592,41 @@ public class MainWindow : IDisposable
         ImGui.PushStyleColor(ImGuiCol.TabHovered, WithAlpha(tabHoveredBaseColor, alpha));
     }
 
+    private static AlphaOverrideState PushWindowAlphaOnly(
+        float alpha,
+        Vector4 primaryColor,
+        Vector4 childBaseColor,
+        bool useStyleVar)
+    {
+        if (alpha >= 1f - FadeAlphaTolerance)
+        {
+            return AlphaOverrideState.None;
+        }
+
+        if (useStyleVar)
+        {
+            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, alpha);
+            return AlphaOverrideState.StyleVar;
+        }
+
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, WithAlpha(primaryColor, alpha));
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, WithAlpha(childBaseColor, alpha));
+        return AlphaOverrideState.BackgroundColors;
+    }
+
+    private static void PopWindowAlphaOnly(AlphaOverrideState state)
+    {
+        switch (state)
+        {
+            case AlphaOverrideState.StyleVar:
+                ImGui.PopStyleVar();
+                break;
+            case AlphaOverrideState.BackgroundColors:
+                ImGui.PopStyleColor(2);
+                break;
+        }
+    }
+
     private static bool TryPushWindowOpacityOverride(
         bool condition,
         Vector4 primaryColor,
@@ -590,5 +657,12 @@ public class MainWindow : IDisposable
     private static Vector4 WithAlpha(Vector4 color, float alphaMultiplier)
     {
         return new Vector4(color.X, color.Y, color.Z, Math.Clamp(color.W * alphaMultiplier, 0f, 1f));
+    }
+
+    private enum AlphaOverrideState
+    {
+        None,
+        StyleVar,
+        BackgroundColors,
     }
 }
