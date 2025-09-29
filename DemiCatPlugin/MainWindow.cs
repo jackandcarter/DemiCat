@@ -100,9 +100,10 @@ public class MainWindow : IDisposable
 
         var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
         var childBaseColor = AdjustBrightness(primaryColor, 0.9f);
+        var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
         var tabBaseColor = AdjustBrightness(primaryColor, 1.05f);
-        var tabActiveBaseColor = AdjustBrightness(primaryColor, 1.15f);
-        var tabHoveredBaseColor = AdjustBrightness(primaryColor, 1.25f);
+        var tabActiveBaseColor = accentColor;
+        var tabHoveredBaseColor = AdjustBrightness(accentColor, 1.1f);
 
         var previousOpacityOverrideActive = !_config.ChatFadeOutEnabled && (fcTabPreviouslyActive || officerTabPreviouslyActive);
 
