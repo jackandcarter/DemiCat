@@ -8,6 +8,7 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using DiscordHelper;
+using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Toast;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
@@ -30,6 +31,8 @@ public class Plugin : IDalamudPlugin
     [PluginService] internal ITextureProvider TextureProvider { get; private set; } = null!;
 
     private const uint InvalidTokenLinkCommandId = 0x44434B49;
+    private const string MewCommand = "/mew";
+    private const string MewCommandHelpMessage = "Open the DemiCat main window.";
 
     private readonly PluginServices _services;
     private readonly UiRenderer _ui;
@@ -54,6 +57,7 @@ public class Plugin : IDalamudPlugin
     private bool _invalidTokenToastShown;
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
     private readonly IFontHandle? _emojiFontHandle;
+    private readonly CommandInfo _mewCommandInfo;
 
     public Plugin()
     {
@@ -139,6 +143,12 @@ public class Plugin : IDalamudPlugin
         _openConfigUi = () => _settings.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
 
+        _mewCommandInfo = new CommandInfo(OnMewCommand)
+        {
+            HelpMessage = MewCommandHelpMessage
+        };
+        _services.CommandManager.AddHandler(MewCommand, _mewCommandInfo);
+
         _tokenManager.OnLinked += HandleTokenLinked;
         _tokenManager.OnUnlinked += HandleTokenUnlinked;
 
@@ -173,6 +183,8 @@ public class Plugin : IDalamudPlugin
         _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
         _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
 
+        _services.CommandManager.RemoveHandler(MewCommand);
+
         _tokenManager.OnLinked -= HandleTokenLinked;
         _tokenManager.OnUnlinked -= HandleTokenUnlinked;
 
@@ -195,6 +207,11 @@ public class Plugin : IDalamudPlugin
         {
             PluginServices.Instance.ProgressOverlay = null;
         }
+    }
+
+    private void OnMewCommand(string command, string arguments)
+    {
+        _mainWindow.IsOpen = true;
     }
 
     private void DrawOverlay()

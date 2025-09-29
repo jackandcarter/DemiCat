@@ -1,4 +1,5 @@
 using Dalamud.Game.ClientState;
+using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Toast;
 using Dalamud.IoC;
 using Dalamud.Plugin;
@@ -36,6 +37,9 @@ internal class PluginServices
 
     [PluginService]
     internal IChatGui ChatGui { get; private set; } = null!;
+
+    [PluginService]
+    internal ICommandManager CommandManager { get; private set; } = null!;
 
     internal ProgressOverlay? ProgressOverlay { get; set; }
 
