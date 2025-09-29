@@ -20,7 +20,6 @@ public class MainWindow : IDisposable
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
     private bool _templatesTabActive;
-    private bool _notePadTabActive;
     private bool _fcChatTabActive;
     private bool _officerTabActive;
     private readonly HttpClient _httpClient;
@@ -275,7 +274,6 @@ public class MainWindow : IDisposable
 
                 if (!linked)
                 {
-                    _notePadTabActive = false;
                     ImGui.BeginDisabled();
                     ImGui.TabItemButton("NotePad");
                     ImGui.EndDisabled();
@@ -293,15 +291,10 @@ public class MainWindow : IDisposable
                             childBaseColor,
                             1f);
 
-                        _notePadTabActive = true;
                         _notePad.Draw();
                         ImGui.EndTabItem();
 
                         PopWindowAlphaOnly(alphaOverrideState);
-                    }
-                    else
-                    {
-                        _notePadTabActive = false;
                     }
                 }
 
