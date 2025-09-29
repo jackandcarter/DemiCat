@@ -48,3 +48,10 @@ python -m demibot.main
 The Discord bot requires the `GUILD_MESSAGES` and `GUILD_MEMBERS` intents.
 After obtaining an API key, the plugin wizard can configure channels via
 the `/api/channels` endpoint.
+
+## Notepad API
+
+DemiBot exposes `/api/notepad` for listing sections and pages plus mutation endpoints for creating, renaming, deleting, and reordering content. All write operations require an API key tied to an officer role, while any linked user may read the current state.
+
+Real-time updates stream over `/ws/notepad`; the payloads mirror the REST responses so the Dalamud plugin and any other clients stay synchronized. Each page update carries a `version` field—send it back when saving to perform optimistic concurrency checks. If the stored version is newer, the API returns HTTP 409 so the client can surface a conflict dialog or refresh before overwriting remote changes.
+
