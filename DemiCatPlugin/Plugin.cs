@@ -44,6 +44,8 @@ public class Plugin : IDalamudPlugin
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
+    private readonly NotePadService _notePadService;
+    private readonly NotePadWindow _notePadWindow;
     private readonly ChannelSelectionService _channelSelection;
     private readonly EmojiManager _emojiManager;
 
@@ -106,6 +108,9 @@ public class Plugin : IDalamudPlugin
 
         _presenceService?.Reset();
 
+        _notePadService = new NotePadService(_config, _httpClient, _tokenManager);
+        _notePadWindow = new NotePadWindow(_config, _notePadService);
+
         _mainWindow = new MainWindow(
             _config,
             _ui,
@@ -115,7 +120,8 @@ public class Plugin : IDalamudPlugin
             _httpClient,
             _channelService,
             _channelSelection,
-            _emojiManager
+            _emojiManager,
+            _notePadWindow
         );
 
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
@@ -128,6 +134,7 @@ public class Plugin : IDalamudPlugin
         _settings.OfficerChatWindow = _officerChatWindow;
         _settings.ChannelWatcher = _channelWatcher;
         _settings.RequestWatcher = _requestWatcher;
+        _settings.NotePadService = _notePadService;
 
         _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
 
@@ -194,6 +201,8 @@ public class Plugin : IDalamudPlugin
 
         _channelWatcher.Dispose();
         _requestWatcher.Dispose();
+        _notePadWindow.Dispose();
+        _notePadService.Dispose();
         _presenceService?.Dispose();
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();
@@ -709,6 +718,12 @@ public class Plugin : IDalamudPlugin
             _ = _channelWatcher.Start();
         }
 
+        if (_config.NotePadEnabled)
+        {
+            _services.Log.Info("Starting notepad service");
+            _notePadService.Start();
+        }
+
         if (_config.SyncedChat && _config.EnableFcChat)
         {
             _services.Log.Info("Starting chat window networking");
@@ -823,6 +838,7 @@ public class Plugin : IDalamudPlugin
         _services.Log.Info("Stopping watchers");
         _requestWatcher.Stop();
         _channelWatcher.Stop();
+        _notePadService.Stop();
         _chatWindow.StopNetworking();
         _officerChatWindow.StopNetworking();
         _officerWatcherRunning = false;

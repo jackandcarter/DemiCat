@@ -17,7 +17,7 @@ public class Config : IPluginConfiguration
     public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
 
     // Required by Dalamud
-    public int Version { get; set; } = 11;
+    public int Version { get; set; } = 12;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -109,6 +109,21 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("categories")]
     public Dictionary<string, CategoryState> Categories { get; set; } = new();
+
+    [JsonPropertyName("notePadEnabled")]
+    public bool NotePadEnabled { get; set; } = true;
+
+    [JsonPropertyName("notePadLastSectionId")]
+    public string? NotePadLastSectionId { get; set; }
+
+    [JsonPropertyName("notePadLastPageId")]
+    public string? NotePadLastPageId { get; set; }
+
+    [JsonPropertyName("notePadPageListWidthRatio")]
+    public float NotePadPageListWidthRatio { get; set; } = 0.3f;
+
+    [JsonPropertyName("notePadEditorZoom")]
+    public float NotePadEditorZoom { get; set; } = 1f;
 
     [JsonExtensionData]
     public Dictionary<string, JsonElement>? ExtensionData { get; set; }
@@ -348,6 +363,34 @@ public class Config : IPluginConfiguration
             SecondaryAccentColor = SanitizeColor(SecondaryAccentColor, DefaultSecondaryAccentColor);
 
             Version = 11;
+            ExtensionData = null;
+        }
+        if (Version < 12)
+        {
+            NotePadEnabled = true;
+            if (string.IsNullOrWhiteSpace(NotePadLastSectionId))
+            {
+                NotePadLastSectionId = null;
+            }
+
+            if (string.IsNullOrWhiteSpace(NotePadLastPageId))
+            {
+                NotePadLastPageId = null;
+            }
+
+            if (!float.IsFinite(NotePadPageListWidthRatio) || NotePadPageListWidthRatio <= 0f)
+            {
+                NotePadPageListWidthRatio = 0.3f;
+            }
+            NotePadPageListWidthRatio = Math.Clamp(NotePadPageListWidthRatio, 0.15f, 0.6f);
+
+            if (!float.IsFinite(NotePadEditorZoom) || NotePadEditorZoom <= 0f)
+            {
+                NotePadEditorZoom = 1f;
+            }
+            NotePadEditorZoom = Math.Clamp(NotePadEditorZoom, 0.5f, 2f);
+
+            Version = 12;
             ExtensionData = null;
         }
     }

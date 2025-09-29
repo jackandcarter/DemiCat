@@ -16,9 +16,11 @@ public class MainWindow : IDisposable
     private readonly EventCreateWindow _create;
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
+    private readonly NotePadWindow _notePad;
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
     private bool _templatesTabActive;
+    private bool _notePadTabActive;
     private bool _fcChatTabActive;
     private bool _officerTabActive;
     private readonly HttpClient _httpClient;
@@ -30,10 +32,20 @@ public class MainWindow : IDisposable
     private bool _closeSyncshellTab;
 
     public bool IsOpen;
-    public bool HasOfficerAccess { get; set; }
+    private bool _hasOfficerAccess;
+    public bool HasOfficerAccess
+    {
+        get => _hasOfficerAccess;
+        set
+        {
+            _hasOfficerAccess = value;
+            _notePad.IsReadOnly = !value;
+        }
+    }
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;
     public TemplatesWindow TemplatesWindow => _templates;
+    public NotePadWindow NotePadWindow => _notePad;
     internal static MainWindow? Instance { get; private set; }
 
     public MainWindow(
@@ -45,7 +57,8 @@ public class MainWindow : IDisposable
         HttpClient httpClient,
         ChannelService channelService,
         ChannelSelectionService channelSelection,
-        EmojiManager emojiManager)
+        EmojiManager emojiManager,
+        NotePadWindow notePad)
     {
         _config = config;
         _ui = ui;
@@ -56,6 +69,7 @@ public class MainWindow : IDisposable
         _create = new EventCreateWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _requestBoard = new RequestBoardWindow(config, httpClient);
+        _notePad = notePad;
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
         Instance = this;
@@ -256,6 +270,38 @@ public class MainWindow : IDisposable
                     else
                     {
                         _templatesTabActive = false;
+                    }
+                }
+
+                if (!linked)
+                {
+                    _notePadTabActive = false;
+                    ImGui.BeginDisabled();
+                    ImGui.TabItemButton("NotePad");
+                    ImGui.EndDisabled();
+                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                        ImGui.SetTooltip("Link DemiCat to use the NotePad.");
+                }
+                else
+                {
+                    var notePadOpen = ImGui.BeginTabItem("NotePad");
+                    if (notePadOpen)
+                    {
+                        var alphaOverrideState = TryPushWindowOpacityOverride(
+                            previousOpacityOverrideActive,
+                            primaryColor,
+                            childBaseColor,
+                            1f);
+
+                        _notePadTabActive = true;
+                        _notePad.Draw();
+                        ImGui.EndTabItem();
+
+                        PopWindowAlphaOnly(alphaOverrideState);
+                    }
+                    else
+                    {
+                        _notePadTabActive = false;
                     }
                 }
 

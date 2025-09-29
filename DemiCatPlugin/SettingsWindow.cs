@@ -43,6 +43,7 @@ public class SettingsWindow : IDisposable
     public OfficerChatWindow? OfficerChatWindow { get; set; }
     public ChannelWatcher? ChannelWatcher { get; set; }
     public RequestWatcher? RequestWatcher { get; set; }
+    public NotePadService? NotePadService { get; set; }
 
     public SettingsWindow(Config config, TokenManager tokenManager, HttpClient httpClient, Func<Task<bool>> refreshRoles, Func<Task> startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
@@ -692,6 +693,7 @@ public class SettingsWindow : IDisposable
             }
         }, "Failed to stop ChannelWatcher.");
         SafeInvoke(() => RequestWatcher?.Stop(), "Failed to stop RequestWatcher.");
+        SafeInvoke(() => NotePadService?.Stop(), "Failed to stop NotePad service.");
         SafeInvoke(() =>
         {
             var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
@@ -770,6 +772,8 @@ public class SettingsWindow : IDisposable
         _config.Categories.Clear();
         _config.AutoApply.Clear();
         _config.PenumbraChoices.Clear();
+        _config.NotePadLastSectionId = null;
+        _config.NotePadLastPageId = null;
 
         _categoryToggles.Clear();
 
@@ -938,6 +942,18 @@ public class SettingsWindow : IDisposable
             catch (Exception ex)
             {
                 _log.Error(ex, "Failed to start RequestWatcher during hard reload.");
+            }
+
+            try
+            {
+                if (_config.NotePadEnabled)
+                {
+                    NotePadService?.Start();
+                }
+            }
+            catch (Exception ex)
+            {
+                _log.Error(ex, "Failed to start NotePad service during hard reload.");
             }
 
             try
