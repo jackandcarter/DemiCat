@@ -229,7 +229,9 @@ public class TemplatesWindow
                 }
                 else
                 {
-                    var msg = RoleCache.LastErrorMessage ?? "No roles available";
+                    var msg = _config.MentionRoleIds.Count > 0 && RoleCache.LastErrorMessage == null
+                        ? "No mentionable roles configured"
+                        : RoleCache.LastErrorMessage ?? "No roles available";
                     ImGui.TextUnformatted(msg);
                 }
             }
@@ -510,8 +512,25 @@ public class TemplatesWindow
         }
         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
         {
+            IEnumerable<RoleDto> roles = RoleCache.Roles;
+            List<RoleDto> filtered;
+            if (_config.MentionRoleIds.Count > 0)
+            {
+                var allowed = new HashSet<string>(_config.MentionRoleIds, StringComparer.Ordinal);
+                filtered = roles.Where(role => allowed.Contains(role.Id)).ToList();
+            }
+            else
+            {
+                filtered = roles.ToList();
+            }
+
+            var validIds = new HashSet<string>(filtered.Select(role => role.Id), StringComparer.Ordinal);
             _roles.Clear();
-            _roles.AddRange(RoleCache.Roles);
+            _roles.AddRange(filtered);
+            if (_mentions.Count > 0)
+            {
+                _mentions.RemoveWhere(id => !validIds.Contains(id));
+            }
             _rolesLoaded = true;
             _rolesLoading = false;
         });
