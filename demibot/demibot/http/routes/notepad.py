@@ -244,9 +244,19 @@ async def reorder_sections(
     ]
     ordered_sections = [section_map[sid] for sid in requested_ids]
     ordered_sections.extend(sorted(remaining, key=lambda s: (s.sort_order, s.id)))
+
+    deleted_sections = [
+        section for section in sections if section.is_deleted
+    ]
+    deleted_sections.sort(key=lambda s: (s.sort_order, s.id))
+
+    final_sections: list[NoteSection] = []
+    final_sections.extend(ordered_sections)
+    final_sections.extend(deleted_sections)
+
     temp_updates: list[tuple[NoteSection, int]] = []
-    total = len(ordered_sections)
-    for index, section in enumerate(ordered_sections):
+    total = len(final_sections)
+    for index, section in enumerate(final_sections):
         if section.sort_order != index:
             section.sort_order = total + index
             temp_updates.append((section, index))
