@@ -832,9 +832,9 @@ async def _send_via_webhook(
             return None, None, errors, webhook_url
         webhook = created
 
-    sent = None
-    try:
-        sent = await webhook.send(
+    async def _send_with_view(target: discord.Webhook):
+        view_payload = view if view is not None else MISSING
+        return await target.send(
             content,
             username=username,
             avatar_url=avatar,
@@ -842,9 +842,13 @@ async def _send_via_webhook(
             wait=True,
             allowed_mentions=ALLOWED_MENTIONS,
             embeds=list(embeds) if embeds else None,
-            view=view,
+            view=view_payload,
             thread=thread,
         )
+
+    sent = None
+    try:
+        sent = await _send_with_view(webhook)
     except discord.HTTPException as e:  # pragma: no cover - network errors
         if e.status == 429:
             try:
@@ -853,17 +857,7 @@ async def _send_via_webhook(
                 retry_after = 1.0
             await asyncio.sleep(min(retry_after, 5.0))
             try:
-                sent = await webhook.send(
-                    content,
-                    username=username,
-                    avatar_url=avatar,
-                    files=_make_discord_files(files),
-                    wait=True,
-                    allowed_mentions=ALLOWED_MENTIONS,
-                    embeds=list(embeds) if embeds else None,
-                    view=view,
-                    thread=thread,
-                )
+                sent = await _send_with_view(webhook)
             except Exception as e2:  # pragma: no cover - network errors
                 e = e2
         stale_webhook = False
@@ -923,17 +917,7 @@ async def _send_via_webhook(
         if created is None:
             return None, None, errors, webhook_url
         try:
-            sent = await created.send(
-                content,
-                username=username,
-                avatar_url=avatar,
-                files=_make_discord_files(files),
-                wait=True,
-                allowed_mentions=ALLOWED_MENTIONS,
-                embeds=list(embeds) if embeds else None,
-                view=view,
-                thread=thread,
-            )
+            sent = await _send_with_view(created)
         except discord.Forbidden:
             logging.warning(
                 "Webhook creation forbidden during retry %s",
