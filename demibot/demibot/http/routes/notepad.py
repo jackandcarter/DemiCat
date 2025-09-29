@@ -328,7 +328,7 @@ async def create_page(
         guild_id=ctx.guild.id,
         section_id=section.id,
         title=body.title,
-        content=body.content,
+        content=body.content or "",
         color=body.color,
         sort_order=next_order,
         created_by_id=ctx.user.id,
