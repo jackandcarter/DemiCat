@@ -59,6 +59,14 @@ public class NotePadWindowTests
         using var fixture = new NotePadWindowFixture();
         fixture.Handler.Responder = request =>
         {
+            Assert.Equal(HttpMethod.Patch, request.Method);
+            Assert.Equal("/api/notepad/pages/p1/content", request.RequestUri!.AbsolutePath);
+            var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            Assert.Equal("Updated", root.GetProperty("content").GetString());
+            Assert.Equal(1, root.GetProperty("version").GetInt32());
+
             var payload = JsonSerializer.Serialize(new NotePadPage
             {
                 Id = "p1",
@@ -84,8 +92,15 @@ public class NotePadWindowTests
         method.Invoke(fixture.Window, Array.Empty<object>());
 
         var request = await fixture.Handler.WaitForRequestAsync(TimeSpan.FromSeconds(1));
-        Assert.Equal(HttpMethod.Put, request.Method);
-        Assert.Contains("/api/notepad/sections/s1/pages/p1", request.RequestUri!.ToString());
+        Assert.Equal(HttpMethod.Patch, request.Method);
+        Assert.Equal("/api/notepad/pages/p1/content", request.RequestUri!.AbsolutePath);
+        var body = await request.Content!.ReadAsStringAsync();
+        using (var document = JsonDocument.Parse(body))
+        {
+            var root = document.RootElement;
+            Assert.Equal("Updated", root.GetProperty("content").GetString());
+            Assert.Equal(1, root.GetProperty("version").GetInt32());
+        }
 
         await fixture.WaitForDirtyFlagAsync(expectedDirty: false);
         var currentVersion = (int)typeof(NotePadWindow)
@@ -93,6 +108,47 @@ public class NotePadWindowTests
             .GetValue(fixture.Window)!;
         Assert.Equal(2, currentVersion);
         Assert.False(fixture.Window.IsReadOnly);
+    }
+
+    [Fact]
+    public async Task CreatePageAsync_UsesGlobalPagesEndpointAndPayload()
+    {
+        using var fixture = new NotePadWindowFixture();
+        fixture.Handler.Responder = request =>
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.Equal("/api/notepad/pages", request.RequestUri!.AbsolutePath);
+            var body = request.Content!.ReadAsStringAsync().GetAwaiter().GetResult();
+            using var document = JsonDocument.Parse(body);
+            var root = document.RootElement;
+            Assert.Equal("s1", root.GetProperty("sectionId").GetString());
+            Assert.Equal("New Page", root.GetProperty("title").GetString());
+            Assert.Equal(string.Empty, root.GetProperty("content").GetString());
+            Assert.Equal("#123456", root.GetProperty("color").GetString());
+
+            var responsePayload = JsonSerializer.Serialize(new NotePadPage
+            {
+                Id = "p-new",
+                Title = "New Page",
+                Content = string.Empty,
+                Version = 0,
+                UpdatedAt = DateTimeOffset.UtcNow,
+                Color = "#123456"
+            });
+
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(responsePayload, Encoding.UTF8, "application/json")
+            };
+        };
+
+        var page = await fixture.Service.CreatePageAsync("s1", "New Page", CancellationToken.None);
+
+        Assert.NotNull(page);
+        Assert.Equal("p-new", page!.Id);
+        var request = fixture.Handler.Requests.Last();
+        Assert.Equal(HttpMethod.Post, request.Method);
+        Assert.Equal("/api/notepad/pages", request.RequestUri!.AbsolutePath);
     }
 
     [Fact]
@@ -153,6 +209,7 @@ public class NotePadWindowTests
                 {
                     Id = "s1",
                     Name = "Alpha",
+                    Color = "#123456",
                     Pages = new List<NotePadPage>
                     {
                         new()
@@ -185,6 +242,7 @@ public class NotePadWindowTests
                 {
                     Id = "s2",
                     Name = "Beta",
+                    Color = "#654321",
                     Pages = new List<NotePadPage>
                     {
                         new()
@@ -201,6 +259,7 @@ public class NotePadWindowTests
                 {
                     Id = "s3",
                     Name = "Gamma",
+                    Color = "#abcdef",
                     Pages = new List<NotePadPage>()
                 }
             };

@@ -8,6 +8,7 @@ using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -319,8 +320,11 @@ public sealed class NotePadService : IDisposable
 
     public async Task<NotePadPage?> CreatePageAsync(string sectionId, string title, CancellationToken cancellationToken)
     {
-        var payload = new { title };
-        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections/{sectionId}/pages";
+        var color = await GetSectionColorAsync(sectionId, cancellationToken).ConfigureAwait(false);
+        object payload = color != null
+            ? new { sectionId, title, content = string.Empty, color }
+            : new { sectionId, title, content = string.Empty };
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/pages";
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
@@ -362,8 +366,24 @@ public sealed class NotePadService : IDisposable
 
     public async Task<bool> RenamePageAsync(string sectionId, string pageId, string title, CancellationToken cancellationToken)
     {
-        var payload = new { title };
-        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections/{sectionId}/pages/{pageId}";
+        var existing = await GetPageSnapshotAsync(sectionId, pageId, cancellationToken).ConfigureAwait(false);
+        if (existing == null)
+        {
+            PluginServices.Instance?.Log.Warning("Unable to rename page {PageId}: not found in section {SectionId}", pageId, sectionId);
+            return false;
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["version"] = existing.Version,
+            ["title"] = title
+        };
+        if (!string.IsNullOrEmpty(existing.Color))
+        {
+            payload["color"] = existing.Color;
+        }
+
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/pages/{pageId}";
         var request = new HttpRequestMessage(HttpMethod.Patch, url)
         {
             Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
@@ -406,7 +426,7 @@ public sealed class NotePadService : IDisposable
 
     public async Task<bool> DeletePageAsync(string sectionId, string pageId, CancellationToken cancellationToken)
     {
-        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections/{sectionId}/pages/{pageId}";
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/pages/{pageId}";
         var request = new HttpRequestMessage(HttpMethod.Delete, url);
         ApiHelpers.AddAuthHeader(request, _tokenManager);
 
@@ -446,8 +466,18 @@ public sealed class NotePadService : IDisposable
 
     public async Task<bool> ReorderPagesAsync(string sectionId, IReadOnlyList<string> pageIds, CancellationToken cancellationToken)
     {
-        var payload = new { ids = pageIds };
-        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections/{sectionId}/pages/reorder";
+        var payload = new
+        {
+            sections = new[]
+            {
+                new
+                {
+                    sectionId,
+                    pageIds = pageIds.ToArray()
+                }
+            }
+        };
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/pages/reorder";
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
             Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
@@ -522,8 +552,8 @@ public sealed class NotePadService : IDisposable
 
     public async Task<NotePadPage?> SavePageAsync(string sectionId, string pageId, NotePadPageUpdate update, CancellationToken cancellationToken)
     {
-        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections/{sectionId}/pages/{pageId}";
-        var request = new HttpRequestMessage(HttpMethod.Put, url)
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/pages/{pageId}/content";
+        var request = new HttpRequestMessage(HttpMethod.Patch, url)
         {
             Content = new StringContent(JsonSerializer.Serialize(update), Encoding.UTF8, "application/json")
         };
@@ -564,6 +594,34 @@ public sealed class NotePadService : IDisposable
         }
 
         return page;
+    }
+
+    private async Task<NotePadPage?> GetPageSnapshotAsync(string sectionId, string pageId, CancellationToken cancellationToken)
+    {
+        await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var section = _sections.FirstOrDefault(s => string.Equals(s.Id, sectionId, StringComparison.Ordinal));
+            var page = section?.Pages.FirstOrDefault(p => string.Equals(p.Id, pageId, StringComparison.Ordinal));
+            return page != null ? ClonePage(page) : null;
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
+    }
+
+    private async Task<string?> GetSectionColorAsync(string sectionId, CancellationToken cancellationToken)
+    {
+        await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return _sections.FirstOrDefault(s => string.Equals(s.Id, sectionId, StringComparison.Ordinal))?.Color;
+        }
+        finally
+        {
+            _stateLock.Release();
+        }
     }
 
     private async Task HandleResponseAsync(HttpResponseMessage response, Func<Stream, Task> onSuccess)
@@ -900,7 +958,8 @@ public sealed class NotePadService : IDisposable
             Title = source.Title,
             Content = source.Content,
             Version = source.Version,
-            UpdatedAt = source.UpdatedAt
+            UpdatedAt = source.UpdatedAt,
+            Color = source.Color
         };
     }
 }
@@ -920,6 +979,7 @@ public sealed class NotePadPage
     public string Content { get; set; } = string.Empty;
     public int Version { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+    public string? Color { get; set; }
 }
 
 public sealed class NotePadListResponse
@@ -929,7 +989,10 @@ public sealed class NotePadListResponse
 
 public sealed class NotePadPageUpdate
 {
+    [JsonPropertyName("content")]
     public string Content { get; set; } = string.Empty;
+
+    [JsonPropertyName("version")]
     public int Version { get; set; }
 }
 
