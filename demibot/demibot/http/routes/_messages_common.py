@@ -829,7 +829,7 @@ async def _send_via_webhook(
         if created_url:
             webhook_url = created_url
         if created is None:
-            return None, None, errors, webhook_url
+            return None, None, errors, webhook_url, None
         webhook = created
 
     async def _send_with_view(target: discord.Webhook):
@@ -915,7 +915,7 @@ async def _send_via_webhook(
         if created_url:
             webhook_url = created_url
         if created is None:
-            return None, None, errors, webhook_url
+            return None, None, errors, webhook_url, None
         try:
             sent = await _send_with_view(created)
         except discord.Forbidden:
@@ -925,7 +925,7 @@ async def _send_via_webhook(
                 extra=log_extra_base,
             )
             errors.append("Webhook retry failed: Manage Webhooks required")
-            return None, None, errors, webhook_url
+            return None, None, errors, webhook_url, None
         except Exception as exc2:  # pragma: no cover - network errors
             if isinstance(exc2, discord.HTTPException):
                 logging.exception(
@@ -945,7 +945,7 @@ async def _send_via_webhook(
                     extra=log_extra_base,
                 )
                 errors.append(f"Webhook retry failed: {exc2}")
-            return None, None, errors, webhook_url
+            return None, None, errors, webhook_url, None
         webhook = created
 
     discord_msg_id = getattr(sent, "id", None)
@@ -955,7 +955,7 @@ async def _send_via_webhook(
             "webhook.send returned no id for channel %s", channel_id
         )
         errors.append(f"webhook.send returned no id for channel {channel_id}")
-        return None, None, errors, webhook_url
+        return None, None, errors, webhook_url, None
     if sent.attachments:
         attachments = [
             AttachmentDto(
