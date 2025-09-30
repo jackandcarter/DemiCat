@@ -171,17 +171,18 @@ public class SettingsWindow : IDisposable
         var syncEnabled = _config.FCSyncShell;
         if (!linked)
             ImGui.BeginDisabled();
-        if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
+        if (ImGui.Checkbox("Enable FC SyncShell", ref syncEnabled))
         {
             _config.FCSyncShell = syncEnabled;
             SaveConfig();
+            MainWindow?.UpdateSyncshell();
             _ = Task.Run(PushSettings);
         }
         if (!linked)
         {
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Link DemiCat to enable Syncshell.");
+                ImGui.SetTooltip("Link DemiCat to enable SyncShell.");
         }
 
         var overlayVisible = _config.ShowSyncshellProgressOverlay;
@@ -197,22 +198,7 @@ public class SettingsWindow : IDisposable
         {
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Enable Syncshell to display transfer progress overlay.");
-        }
-
-        var paused = !_config.Enabled;
-        if (ImGui.Checkbox("Pause", ref paused))
-        {
-            _config.Enabled = !paused;
-            SaveConfig();
-            if (_config.Enabled)
-            {
-                _ = HardReloadIdentityAndStartAsync();
-            }
-            else
-            {
-                StopAllWatchersAndPresence();
-            }
+                ImGui.SetTooltip("Enable FC SyncShell to display transfer progress overlay.");
         }
 
         foreach (var kvp in _categoryToggles.ToList())
