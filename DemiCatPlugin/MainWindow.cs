@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
@@ -17,6 +19,7 @@ public class MainWindow : IDisposable
     private const float BaseSpacing = 8f;
     private const float IndicatorRadius = 4f;
     private const string DockWindowTitle = "DemiCat Dock";
+    private const string DockDragPayloadType = "DemiCatDockItem";
 
     private readonly Config _config;
     private readonly UiRenderer _ui;
@@ -288,9 +291,10 @@ public class MainWindow : IDisposable
         ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
 
         var open = true;
+        var reordered = false;
         if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
         {
-            DrawDockStrip(visibleItems, iconSize, spacing, indicatorHeight, stripColor, accentColor);
+            reordered = DrawDockStrip(visibleItems, iconSize, spacing, indicatorHeight, stripColor, accentColor);
             DrawDockContextMenu();
         }
         var windowPos = ImGui.GetWindowPos();
@@ -312,6 +316,11 @@ public class MainWindow : IDisposable
                 _config.DockPositionInitialized = true;
                 SaveConfig();
             }
+        }
+
+        if (reordered)
+        {
+            visibleItems = _dockItems.Where(i => i.IsVisible()).ToList();
         }
 
         DrawFeatureWindows();
@@ -389,7 +398,7 @@ public class MainWindow : IDisposable
         }
     }
 
-    private void DrawDockStrip(
+    private bool DrawDockStrip(
         IReadOnlyList<DockItem> items,
         Vector2 iconSize,
         float spacing,
@@ -409,6 +418,7 @@ public class MainWindow : IDisposable
 
         ImGui.SetCursorScreenPos(iconStart);
 
+        var reordered = false;
         for (var i = 0; i < items.Count; i++)
         {
             if (i > 0)
@@ -418,6 +428,8 @@ public class MainWindow : IDisposable
 
             var item = items[i];
             var enabled = item.IsEnabled();
+
+            ImGui.PushID(item.Id);
 
             if (!enabled)
             {
@@ -441,6 +453,48 @@ public class MainWindow : IDisposable
                 ImGui.SetTooltip(item.Tooltip);
             }
 
+            if (ImGui.BeginDragDropSource())
+            {
+                var payloadData = Encoding.UTF8.GetBytes(item.Id);
+                ImGui.SetDragDropPayload(DockDragPayloadType, payloadData);
+                ImGui.TextUnformatted(item.Tooltip);
+                ImGui.EndDragDropSource();
+            }
+
+            if (ImGui.BeginDragDropTarget())
+            {
+                var payload = ImGui.AcceptDragDropPayload(DockDragPayloadType);
+                if (!payload.Equals(default(ImGuiPayloadPtr)) && payload.Data != IntPtr.Zero && payload.DataSize > 0)
+                {
+                    var sourceBytes = new byte[payload.DataSize];
+                    Marshal.Copy(payload.Data, sourceBytes, 0, payload.DataSize);
+                    var sourceId = Encoding.UTF8.GetString(sourceBytes);
+
+                    if (!string.IsNullOrEmpty(sourceId) && !string.Equals(sourceId, item.Id, StringComparison.Ordinal))
+                    {
+                        var sourceIndex = _dockItems.FindIndex(d => string.Equals(d.Id, sourceId, StringComparison.Ordinal));
+                        var targetIndex = _dockItems.FindIndex(d => string.Equals(d.Id, item.Id, StringComparison.Ordinal));
+
+                        if (sourceIndex >= 0 && targetIndex >= 0)
+                        {
+                            var movedItem = _dockItems[sourceIndex];
+                            _dockItems.RemoveAt(sourceIndex);
+                            if (sourceIndex < targetIndex)
+                            {
+                                targetIndex--;
+                            }
+                            _dockItems.Insert(targetIndex, movedItem);
+
+                            _config.DockOrder = _dockItems.Select(d => d.Id).ToList();
+                            SaveConfig();
+                            reordered = true;
+                        }
+                    }
+                }
+
+                ImGui.EndDragDropTarget();
+            }
+
             if (item.GetIsOpen())
             {
                 var rectMin = ImGui.GetItemRectMin();
@@ -450,9 +504,12 @@ public class MainWindow : IDisposable
                 center.Y += radius + spacing * 0.1f;
                 drawList.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(indicatorColor));
             }
+
+            ImGui.PopID();
         }
 
         ImGui.Dummy(new Vector2(0f, indicatorHeight));
+        return reordered;
     }
 
     private bool DrawDockButton(DockItem item, Vector2 iconSize)
