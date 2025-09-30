@@ -23,16 +23,10 @@ public class Config : IPluginConfiguration
     public const float MaxEmojiGridHeight = 800f;
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
-    public const int CurrentVersion = 15;
+    public const string DefaultEmbedBorderGlyph = "⬛";
+    public const int CurrentVersion = 16;
 
     public int Version { get; set; } = CurrentVersion;
-
-    public enum EmbedBorderGlyph
-    {
-        Square,
-        Circle,
-        Triangle
-    }
 
     public sealed class EmbedBorderSettings
     {
@@ -40,8 +34,7 @@ public class Config : IPluginConfiguration
         public bool Enabled { get; set; }
 
         [JsonPropertyName("glyph")]
-        [JsonConverter(typeof(JsonStringEnumConverter))]
-        public EmbedBorderGlyph Glyph { get; set; } = EmbedBorderGlyph.Square;
+        public string Glyph { get; set; } = DefaultEmbedBorderGlyph;
 
         [JsonPropertyName("color")]
         public uint Color { get; set; }
@@ -50,7 +43,7 @@ public class Config : IPluginConfiguration
             => new()
             {
                 Enabled = Enabled,
-                Glyph = Glyph,
+                Glyph = SanitizeEmbedBorderGlyph(Glyph),
                 Color = Color
             };
 
@@ -58,7 +51,7 @@ public class Config : IPluginConfiguration
             => new()
             {
                 Enabled = false,
-                Glyph = EmbedBorderGlyph.Square,
+                Glyph = DefaultEmbedBorderGlyph,
                 Color = GetDefaultEmbedColor(channelKind)
             };
     }
@@ -478,6 +471,16 @@ public class Config : IPluginConfiguration
             Version = 15;
             ExtensionData = null;
         }
+        if (Version < 16)
+        {
+            FcEmbedBorder ??= EmbedBorderSettings.CreateDefault(ChannelKind.FcChat);
+            OfficerEmbedBorder ??= EmbedBorderSettings.CreateDefault(ChannelKind.OfficerChat);
+            FcEmbedBorder.Glyph = SanitizeEmbedBorderGlyph(FcEmbedBorder.Glyph);
+            OfficerEmbedBorder.Glyph = SanitizeEmbedBorderGlyph(OfficerEmbedBorder.Glyph);
+
+            Version = 16;
+            ExtensionData = null;
+        }
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)
@@ -486,6 +489,23 @@ public class Config : IPluginConfiguration
         {
             ChannelKind.OfficerChat => DefaultOfficerEmbedColor,
             _ => DefaultFcEmbedColor
+        };
+    }
+
+    public static string SanitizeEmbedBorderGlyph(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return DefaultEmbedBorderGlyph;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed switch
+        {
+            "Square" or "square" => "⬛",
+            "Circle" or "circle" => "⚫",
+            "Triangle" or "triangle" => "🔺",
+            _ => trimmed
         };
     }
 
@@ -511,6 +531,7 @@ public class Config : IPluginConfiguration
             settings = EmbedBorderSettings.CreateDefault(channelKind);
         }
         settings.Color = SanitizeRgb(settings.Color, GetDefaultEmbedColor(channelKind));
+        settings.Glyph = SanitizeEmbedBorderGlyph(settings.Glyph);
         return settings;
     }
 
@@ -523,6 +544,7 @@ public class Config : IPluginConfiguration
 
         settings = settings.Clone();
         settings.Color = SanitizeRgb(settings.Color, GetDefaultEmbedColor(channelKind));
+        settings.Glyph = SanitizeEmbedBorderGlyph(settings.Glyph);
         switch (channelKind)
         {
             case ChannelKind.OfficerChat:

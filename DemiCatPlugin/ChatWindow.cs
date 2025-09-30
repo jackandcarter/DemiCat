@@ -178,12 +178,16 @@ public class ChatWindow : IDisposable
         }
 
         var current = _config.GetEmbedBorderSettingsCopy(_channelKind);
-        if (current.Enabled == settings.Enabled && current.Glyph == settings.Glyph && current.Color == settings.Color)
+        var currentGlyph = EmbedBorderBuilder.GetGlyphSymbol(current.Glyph);
+        var newGlyph = EmbedBorderBuilder.GetGlyphSymbol(settings.Glyph);
+        if (current.Enabled == settings.Enabled && string.Equals(currentGlyph, newGlyph, StringComparison.Ordinal) && current.Color == settings.Color)
         {
             return;
         }
 
-        _config.SetEmbedBorderSettings(_channelKind, settings);
+        var sanitized = settings.Clone();
+        sanitized.Glyph = newGlyph;
+        _config.SetEmbedBorderSettings(_channelKind, sanitized);
         SaveConfig();
         InvalidatePreview();
     }
@@ -194,7 +198,7 @@ public class ChatWindow : IDisposable
         var payload = new
         {
             enabled = border.Enabled,
-            glyph = EmbedBorderBuilder.GetGlyphName(border.Glyph),
+            glyph = EmbedBorderBuilder.GetGlyphSymbol(border.Glyph),
             color = border.Color
         };
         return JsonSerializer.Serialize(payload);
@@ -212,7 +216,10 @@ public class ChatWindow : IDisposable
             ChannelKindKey = _channelKind,
             EffectiveEmbedColor = GetEffectiveEmbedColor(),
             EmbedColorOverride = GetEmbedColorOverride(),
-            Border = _config.GetEmbedBorderSettingsCopy(_channelKind)
+            Border = _config.GetEmbedBorderSettingsCopy(_channelKind),
+            EmojiManager = _emojiManager,
+            EmojiTileSize = Config.SanitizeEmojiTileSize(_config.EmojiTileSize),
+            EmojiGridHeight = Config.SanitizeEmojiGridHeight(_config.EmojiGridHeight)
         };
 
         var result = EmbedStyleControls.Draw(context);
