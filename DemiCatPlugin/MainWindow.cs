@@ -610,8 +610,9 @@ public class MainWindow : IDisposable
                 return;
 
             var pixel = new byte[] { 255, 255, 255, 255 };
-            wrap = provider.CreateFromRaw(RawImageSpecification.Rgba32(1, 1), pixel);
-            _dockIconTexture = new ForwardingSharedImmediateTexture(wrap);
+            var createdWrap = provider.CreateFromRaw(RawImageSpecification.Rgba32(1, 1), pixel);
+            wrap = createdWrap;
+            _dockIconTexture = new ForwardingSharedImmediateTexture(createdWrap);
             wrap = null;
         }
         catch
