@@ -27,7 +27,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 18;
+    public const int CurrentVersion = 19;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -111,6 +111,9 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("dockAutoShow")]
     public Dictionary<string, bool> DockAutoShow { get; set; } = new();
+
+    [JsonPropertyName("dockOrder")]
+    public List<string> DockOrder { get; set; } = new();
 
     public float ChatFontScale { get; set; } = 1f;
     public bool ChatImageAutoStretch { get; set; } = true;
@@ -543,6 +546,13 @@ public class Config : IPluginConfiguration
             DockAutoShow ??= new Dictionary<string, bool>();
 
             Version = 18;
+            ExtensionData = null;
+        }
+        if (Version < 19)
+        {
+            DockOrder ??= new List<string>();
+
+            Version = 19;
             ExtensionData = null;
         }
     }
