@@ -83,16 +83,53 @@ source .venv/bin/activate
 export DEMIBOT_FORCED_URL DEMIBOT_DATABASE_URL
 pip install --upgrade pip
 
-# Install dependencies from demibot/pyproject.toml
+# Install dependencies from demibot/pyproject.toml.
+# Caret (^) constraints from the TOML are expanded to explicit lower/upper bounds
+# so pip receives a full SpecifierSet (e.g. ^0.116.1 -> ">=0.116.1,<0.117.0").
 python <<'PY'
-import tomllib, subprocess
+import subprocess
+import sys
+import tomllib
 from pathlib import Path
+
+try:
+    from packaging.version import Version
+except ImportError:  # Ensure caret range handling works even in a fresh venv
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'packaging'])
+    from packaging.version import Version
 
 toml_path = Path('demibot/pyproject.toml')
 data = tomllib.load(toml_path.open('rb'))
 
+def expand_caret(version: Version) -> str:
+    release = list(version.release)
+    if not release:
+        raise ValueError('Caret specifier requires a concrete release component')
+
+    # Identify the most-significant non-zero component to bump for the upper bound.
+    for idx, value in enumerate(release):
+        if value != 0:
+            break
+    else:
+        idx = len(release) - 1
+
+    upper = release[:]
+    upper[idx] += 1
+    for i in range(idx + 1, len(upper)):
+        upper[i] = 0
+
+    upper_str = '.'.join(str(part) for part in upper)
+    return f">={version},<{upper_str}"
+
+
 def normalize(ver: str) -> str:
-    return ver.replace('^', '>=') if ver else ''
+    if not ver:
+        return ''
+    ver = ver.strip()
+    if ver.startswith('^'):
+        version = Version(ver[1:])
+        return expand_caret(version)
+    return ver
 
 def flatten(prefix, value):
     if isinstance(value, dict) and not {'version', 'extras', 'optional'} & value.keys():
