@@ -42,6 +42,7 @@ public sealed class SyncClient : IDisposable
     private readonly ConcurrentDictionary<string, PeerDownloadState> _downloads = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, PeerUploadState> _uploads = new(StringComparer.OrdinalIgnoreCase);
     private readonly SemaphoreSlim _sendLock = new(1, 1);
+    private PenumbraResolveOptions? _penumbraOverrides;
 
     private Task? _runTask;
     private SyncLimits _localLimits;
@@ -110,6 +111,15 @@ public sealed class SyncClient : IDisposable
     public SyncLimits NegotiatedLimits => _negotiatedLimits;
 
     /// <summary>
+    /// Updates the Penumbra resolution overrides used when building or applying manifests.
+    /// </summary>
+    /// <param name="overrides">Overrides to apply.</param>
+    public void UpdatePenumbraOverrides(PenumbraResolveOptions? overrides)
+    {
+        Volatile.Write(ref _penumbraOverrides, overrides);
+    }
+
+    /// <summary>
     /// Starts the client background loop.
     /// </summary>
     public void Start()
@@ -159,7 +169,9 @@ public sealed class SyncClient : IDisposable
             throw new InvalidOperationException("SyncShell client is not connected.");
         }
 
-        var manifest = await _resolver.BuildManifestAsync(cancellationToken).ConfigureAwait(false);
+        var manifest = await _resolver
+            .BuildManifestAsync(Volatile.Read(ref _penumbraOverrides), cancellationToken)
+            .ConfigureAwait(false);
         await SendManifestAsync(socket, null, manifest, cancellationToken).ConfigureAwait(false);
     }
 
@@ -367,7 +379,9 @@ public sealed class SyncClient : IDisposable
         }
 
         // push initial manifest so peers can start requesting data
-        var manifest = await _resolver.BuildManifestAsync(token).ConfigureAwait(false);
+        var manifest = await _resolver
+            .BuildManifestAsync(Volatile.Read(ref _penumbraOverrides), token)
+            .ConfigureAwait(false);
         await SendManifestAsync(socket, null, manifest, token).ConfigureAwait(false);
     }
 
@@ -652,7 +666,9 @@ public sealed class SyncClient : IDisposable
     {
         try
         {
-            await _resolver.ApplyManifestAsync(peerId, manifest, token).ConfigureAwait(false);
+        await _resolver
+            .ApplyManifestAsync(peerId, manifest, Volatile.Read(ref _penumbraOverrides), token)
+            .ConfigureAwait(false);
             ApplyCompleted?.Invoke(this, new ApplyResultEventArgs(peerId, true, null));
         }
         catch (Exception ex)

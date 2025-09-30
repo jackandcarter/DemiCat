@@ -27,7 +27,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 20;
+    public const int CurrentVersion = 21;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -197,6 +197,15 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("penumbraChoices")]
     public Dictionary<string, bool> PenumbraChoices { get; set; } = new();
+
+    [JsonPropertyName("penumbraCollectionOverride")]
+    public string PenumbraCollectionOverride
+    {
+        get => _penumbraCollectionOverride;
+        set => _penumbraCollectionOverride = value?.Trim() ?? string.Empty;
+    }
+
+    private string _penumbraCollectionOverride = string.Empty;
 
     [JsonPropertyName("categories")]
     public Dictionary<string, CategoryState> Categories { get; set; } = new();
@@ -613,6 +622,14 @@ public class Config : IPluginConfiguration
             PenumbraConfigDirectory ??= string.Empty;
 
             Version = 20;
+            ExtensionData = null;
+        }
+
+        if (Version < 21)
+        {
+            PenumbraCollectionOverride ??= string.Empty;
+
+            Version = 21;
             ExtensionData = null;
         }
     }
