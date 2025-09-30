@@ -368,7 +368,16 @@ public class MainWindow : IDisposable
             Instance = null;
         }
 
-        _dockIconTexture?.Dispose();
+        try
+        {
+            (_dockIconTexture?.GetWrapOrEmpty() as IDisposable)?.Dispose();
+        }
+        catch
+        {
+            // Suppress disposal failures; Dalamud will clean these up on exit.
+        }
+
+        _dockIconTexture = null;
         _syncshell?.Dispose();
     }
 
