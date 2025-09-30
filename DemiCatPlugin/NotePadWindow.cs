@@ -19,7 +19,7 @@ public sealed class NotePadWindow : IDisposable
     private readonly List<string> _sectionOrder = new();
     private readonly Dictionary<string, string> _sectionRenameBuffers = new();
     private readonly Dictionary<string, string> _pageRenameBuffers = new();
-    private readonly TimeSpan _autosaveDelay = TimeSpan.FromSeconds(2.5);
+    private readonly TimeSpan _autosaveDelay = TimeSpan.FromMinutes(1);
 
     private string? _selectedSectionId;
     private string? _selectedPageId;

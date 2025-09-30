@@ -83,7 +83,7 @@ public class NotePadWindowTests
 
         Assert.False(fixture.Window.IsReadOnly);
         fixture.SetSelection("s1", "p1");
-        fixture.SetEditorState(content: "Updated", version: 1, dirty: true, lastEditUtc: DateTime.UtcNow.AddSeconds(-10));
+        fixture.SetEditorState(content: "Updated", version: 1, dirty: true, lastEditUtc: DateTime.UtcNow.AddMinutes(-2));
 
         var method = typeof(NotePadWindow).GetMethod(
             "HandleAutosave",
@@ -157,7 +157,7 @@ public class NotePadWindowTests
         using var fixture = new NotePadWindowFixture();
         fixture.Window.IsReadOnly = true;
         fixture.SetSelection("s1", "p1");
-        fixture.SetEditorState(content: "Updated", version: 1, dirty: true, lastEditUtc: DateTime.UtcNow.AddSeconds(-10));
+        fixture.SetEditorState(content: "Updated", version: 1, dirty: true, lastEditUtc: DateTime.UtcNow.AddMinutes(-2));
 
         var method = typeof(NotePadWindow).GetMethod(
             "HandleAutosave",
