@@ -27,6 +27,8 @@ public sealed class EventsDockableWindow : DockableWindow
 
     protected override void DrawContents()
     {
+        DrawHeaderWithSettingsButton();
+
         if (!_isLinked())
         {
             DrawLinkPrompt("Link DemiCat to view events.");
@@ -56,6 +58,8 @@ public sealed class EventCreateDockableWindow : DockableWindow
 
     protected override void DrawContents()
     {
+        DrawHeaderWithSettingsButton();
+
         if (!_isLinked())
         {
             DrawLinkPrompt("Link DemiCat to create events.");
@@ -94,6 +98,8 @@ public sealed class TemplatesDockableWindow : DockableWindow
 
     protected override void DrawContents()
     {
+        DrawHeaderWithSettingsButton();
+
         if (!_isLinked())
         {
             DrawLinkPrompt("Link DemiCat to use templates.");
@@ -123,6 +129,8 @@ public sealed class NotePadDockableWindow : DockableWindow
 
     protected override void DrawContents()
     {
+        DrawHeaderWithSettingsButton();
+
         if (!Config.NotePadEnabled)
         {
             ImGui.TextUnformatted("NotePad is disabled.");
@@ -147,6 +155,8 @@ public sealed class RequestBoardDockableWindow : DockableWindow
 
     protected override void DrawContents()
     {
+        DrawHeaderWithSettingsButton();
+
         if (!_isLinked())
         {
             DrawLinkPrompt("Link DemiCat to view requests.");
@@ -171,6 +181,8 @@ public sealed class SyncshellDockableWindow : DockableWindow
 
     protected override void DrawContents()
     {
+        DrawHeaderWithSettingsButton();
+
         if (!_isLinked())
         {
             DrawLinkPrompt("Link DemiCat to use syncshell.");
@@ -218,6 +230,8 @@ public class ChatDockableWindow : DockableWindow
 
     protected override void DrawContents()
     {
+        DrawHeaderWithSettingsButton();
+
         if (!_isLinked())
         {
             DrawLinkPrompt(_linkPrompt);
