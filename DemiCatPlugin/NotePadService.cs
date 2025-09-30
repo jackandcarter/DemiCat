@@ -324,10 +324,18 @@ public sealed class NotePadService : IDisposable
 
     public async Task<NotePadPage?> CreatePageAsync(string sectionId, string title, CancellationToken cancellationToken)
     {
+        var payload = new Dictionary<string, object?>
+        {
+            ["sectionId"] = sectionId,
+            ["title"] = title,
+            ["content"] = string.Empty
+        };
+
         var color = await GetSectionColorAsync(sectionId, cancellationToken).ConfigureAwait(false);
-        object payload = color != null
-            ? new { sectionId, title, content = string.Empty, color }
-            : new { sectionId, title, content = string.Empty };
+        if (NotePadColorHelper.TryParseColorString(color, out var colorValue))
+        {
+            payload["color"] = colorValue & 0xFFFFFF;
+        }
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/pages";
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
@@ -382,9 +390,9 @@ public sealed class NotePadService : IDisposable
             ["version"] = existing.Version,
             ["title"] = title
         };
-        if (!string.IsNullOrEmpty(existing.Color))
+        if (NotePadColorHelper.TryParseColorString(existing.Color, out var color))
         {
-            payload["color"] = existing.Color;
+            payload["color"] = color & 0xFFFFFF;
         }
 
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/pages/{pageId}";
