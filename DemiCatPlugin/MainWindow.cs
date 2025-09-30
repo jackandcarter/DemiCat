@@ -30,6 +30,7 @@ public class MainWindow : IDisposable
     private readonly EmojiManager _emojiManager;
     private readonly HttpClient _httpClient;
     private readonly List<DockItem> _dockItems = new();
+    private readonly HashSet<string> _autoShownDockItems = new();
 
     private readonly Action _openSettingsAction;
     private readonly EventsDockableWindow _eventsWindowHost;
@@ -255,9 +256,9 @@ public class MainWindow : IDisposable
         var totalHeight = iconAreaHeight + padding * 2f + indicatorHeight;
         var dockSize = new Vector2(totalWidth, totalHeight);
 
-        EnsureDockPositionInitialized(dockSize);
+        var dockPosition = GetDockPosition(dockSize);
 
-        ImGui.SetNextWindowPos(_config.DockPosition, ImGuiCond.Appearing);
+        ImGui.SetNextWindowPos(dockPosition, ImGuiCond.Appearing);
         ImGui.SetNextWindowSize(dockSize, ImGuiCond.Appearing);
 
         var windowFlags = ImGuiWindowFlags.NoDecoration
@@ -297,7 +298,7 @@ public class MainWindow : IDisposable
             IsOpen = false;
         }
 
-        if (!_config.DockLocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        if (_config.DockRememberPosition && !_config.DockLocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
         {
             if (!_config.DockPositionInitialized || Vector2.Distance(windowPos, _config.DockPosition) > 0.5f)
             {
@@ -314,6 +315,10 @@ public class MainWindow : IDisposable
     {
         _styleNeedsUpdate = true;
         BuildDockItems();
+        foreach (var host in _windowHosts)
+        {
+            host.OnAppearanceSettingsChanged();
+        }
     }
 
     public void ResetEventCreateRoles()
@@ -336,6 +341,18 @@ public class MainWindow : IDisposable
                 window.ResetFadeTimer();
             }
         }
+    }
+
+    public void RefreshDockAutoShow()
+    {
+        _autoShownDockItems.Clear();
+    }
+
+    public void ResetDockPosition()
+    {
+        _config.DockPositionInitialized = false;
+        _config.DockPosition = Vector2.Zero;
+        SaveConfig();
     }
 
     public void Dispose()
@@ -455,6 +472,23 @@ public class MainWindow : IDisposable
             SaveConfig();
         }
 
+        var remember = _config.DockRememberPosition;
+        if (ImGui.MenuItem("Remember Position", null, remember))
+        {
+            var newValue = !_config.DockRememberPosition;
+            _config.DockRememberPosition = newValue;
+            if (newValue)
+            {
+                ResetDockPosition();
+            }
+            else
+            {
+                _config.DockPositionInitialized = false;
+                _config.DockPosition = Vector2.Zero;
+                SaveConfig();
+            }
+        }
+
         var iconScaleValue = _config.DockIconScale;
         if (ImGui.SliderFloat("Icon Scale", ref iconScaleValue, Config.MinDockIconScale, Config.MaxDockIconScale, "%.2f"))
         {
@@ -462,11 +496,16 @@ public class MainWindow : IDisposable
             SaveConfig();
         }
 
-        var alpha = _config.DockBackgroundAlpha;
-        if (ImGui.SliderFloat("Background Alpha", ref alpha, 0.2f, 1f, "%.2f"))
+        var dockColor = _config.DockBackgroundColor;
+        if (ImGui.ColorEdit4("Background Color", ref dockColor, ImGuiColorEditFlags.NoInputs | ImGuiColorEditFlags.AlphaBar))
         {
-            _config.DockBackgroundAlpha = Math.Clamp(alpha, 0f, 1f);
-            SaveConfig();
+            var sanitized = Config.SanitizeDockBackgroundColor(dockColor);
+            if (!ColorsAlmostEqual(sanitized, _config.DockBackgroundColor))
+            {
+                _config.DockBackgroundColor = sanitized;
+                _config.DockBackgroundAlpha = sanitized.W;
+                SaveConfig();
+            }
         }
 
         if (ImGui.MenuItem("Show Settings", null, _settings.IsOpen))
@@ -498,10 +537,39 @@ public class MainWindow : IDisposable
     private float GetSpacing(float iconScale)
         => BaseSpacing * iconScale;
 
+    private Vector2 GetDockPosition(Vector2 dockSize)
+    {
+        if (_config.DockRememberPosition)
+        {
+            EnsureDockPositionInitialized(dockSize);
+            return _config.DockPosition;
+        }
+
+        return CalculateDefaultDockPosition(dockSize);
+    }
+
     private Vector4 GetDockBackgroundColor()
     {
-        var color = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
-        return DockableWindow.WithAlpha(color, Math.Clamp(_config.DockBackgroundAlpha, 0.2f, 1f));
+        var sanitized = Config.SanitizeDockBackgroundColor(_config.DockBackgroundColor);
+        var changed = false;
+        if (!ColorsAlmostEqual(sanitized, _config.DockBackgroundColor))
+        {
+            _config.DockBackgroundColor = sanitized;
+            changed = true;
+        }
+
+        if (Math.Abs(sanitized.W - _config.DockBackgroundAlpha) > 0.0001f)
+        {
+            _config.DockBackgroundAlpha = sanitized.W;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            SaveConfig();
+        }
+
+        return sanitized;
     }
 
     private Vector4 GetDockStripColor(Vector4 background)
@@ -510,6 +578,9 @@ public class MainWindow : IDisposable
         strip.W = background.W;
         return strip;
     }
+
+    private static bool ColorsAlmostEqual(Vector4 a, Vector4 b)
+        => Vector4.DistanceSquared(a, b) <= 0.0001f;
 
     private void EnsureDockIconTexture()
     {
@@ -648,10 +719,13 @@ public class MainWindow : IDisposable
             () => _settings.IsOpen,
             v => _settings.IsOpen = v,
             () => { }));
+
+        _autoShownDockItems.RemoveWhere(id => _dockItems.All(item => item.Id != id));
     }
 
     private void DrawFeatureWindows()
     {
+        EnsureAutoShownWindows();
         foreach (var item in _dockItems)
         {
             if (!item.IsVisible() && item.GetIsOpen())
@@ -667,22 +741,49 @@ public class MainWindow : IDisposable
         }
     }
 
+    private void EnsureAutoShownWindows()
+    {
+        foreach (var item in _dockItems)
+        {
+            if (!_config.GetDockAutoShow(item.Id))
+            {
+                continue;
+            }
+
+            if (_autoShownDockItems.Contains(item.Id))
+            {
+                continue;
+            }
+
+            if (!item.IsVisible() || !item.IsEnabled())
+            {
+                continue;
+            }
+
+            item.SetIsOpen(true);
+            _autoShownDockItems.Add(item.Id);
+        }
+    }
+
     private void EnsureDockPositionInitialized(Vector2 dockSize)
     {
-        if (_config.DockPositionInitialized)
+        if (!_config.DockRememberPosition || _config.DockPositionInitialized)
         {
             return;
         }
 
-        var viewport = ImGui.GetMainViewport();
-        var available = viewport.WorkSize;
-        var desired = new Vector2(
-            viewport.WorkPos.X + (available.X - dockSize.X) * 0.5f,
-            viewport.WorkPos.Y + available.Y - dockSize.Y - 30f);
-
-        _config.DockPosition = desired;
+        _config.DockPosition = CalculateDefaultDockPosition(dockSize);
         _config.DockPositionInitialized = true;
         SaveConfig();
+    }
+
+    private Vector2 CalculateDefaultDockPosition(Vector2 dockSize)
+    {
+        var viewport = ImGui.GetMainViewport();
+        var available = viewport.WorkSize;
+        return new Vector2(
+            viewport.WorkPos.X + (available.X - dockSize.X) * 0.5f,
+            viewport.WorkPos.Y + available.Y - dockSize.Y - 30f);
     }
 
     private void SaveConfig()

@@ -17,6 +17,7 @@ public class Config : IPluginConfiguration
     public const float MaxDockIconScale = 2.5f;
     public static readonly Vector4 DefaultPrimaryWindowColor = new(0.11f, 0.11f, 0.12f, 1f);
     public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
+    public static readonly Vector4 DefaultDockBackgroundColor = new(0.11f, 0.11f, 0.12f, 0.9f);
 
     // Required by Dalamud
     public const float MinEmojiTileSize = 16f;
@@ -26,7 +27,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -96,11 +97,20 @@ public class Config : IPluginConfiguration
     [JsonPropertyName("dockBackgroundAlpha")]
     public float DockBackgroundAlpha { get; set; } = 0.9f;
 
+    [JsonPropertyName("dockBackgroundColor")]
+    public Vector4 DockBackgroundColor { get; set; } = DefaultDockBackgroundColor;
+
     [JsonPropertyName("dockPosition")]
     public Vector2 DockPosition { get; set; } = Vector2.Zero;
 
     [JsonPropertyName("dockPositionInitialized")]
     public bool DockPositionInitialized { get; set; }
+
+    [JsonPropertyName("dockRememberPosition")]
+    public bool DockRememberPosition { get; set; } = true;
+
+    [JsonPropertyName("dockAutoShow")]
+    public Dictionary<string, bool> DockAutoShow { get; set; } = new();
 
     public float ChatFontScale { get; set; } = 1f;
     public bool ChatImageAutoStretch { get; set; } = true;
@@ -510,11 +520,29 @@ public class Config : IPluginConfiguration
             {
                 DockBackgroundAlpha = 0.9f;
             }
-            DockBackgroundAlpha = Math.Clamp(DockBackgroundAlpha, 0.2f, 1f);
+            DockBackgroundAlpha = Math.Clamp(DockBackgroundAlpha, 0.1f, 1f);
             DockPositionInitialized = false;
             DockPosition = Vector2.Zero;
 
             Version = 17;
+            ExtensionData = null;
+        }
+        if (Version < 18)
+        {
+            var primary = SanitizeColor(PrimaryWindowColor, DefaultPrimaryWindowColor);
+            var backgroundAlpha = DockBackgroundAlpha;
+            if (!float.IsFinite(backgroundAlpha) || backgroundAlpha <= 0f)
+            {
+                backgroundAlpha = 0.9f;
+            }
+
+            backgroundAlpha = Math.Clamp(backgroundAlpha, 0.1f, 1f);
+            var backgroundColor = new Vector4(primary.X, primary.Y, primary.Z, backgroundAlpha);
+            DockBackgroundColor = SanitizeDockBackgroundColor(backgroundColor);
+            DockBackgroundAlpha = DockBackgroundColor.W;
+            DockAutoShow ??= new Dictionary<string, bool>();
+
+            Version = 18;
             ExtensionData = null;
         }
     }
@@ -592,6 +620,43 @@ public class Config : IPluginConfiguration
         }
     }
 
+    public bool GetDockAutoShow(string id)
+    {
+        if (DockAutoShow == null)
+        {
+            DockAutoShow = new Dictionary<string, bool>();
+        }
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return false;
+        }
+
+        return DockAutoShow.TryGetValue(id, out var value) && value;
+    }
+
+    public void SetDockAutoShow(string id, bool value)
+    {
+        if (DockAutoShow == null)
+        {
+            DockAutoShow = new Dictionary<string, bool>();
+        }
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        if (value)
+        {
+            DockAutoShow[id] = true;
+        }
+        else
+        {
+            DockAutoShow.Remove(id);
+        }
+    }
+
     internal static uint SanitizeRgb(uint value, uint fallback)
     {
         var sanitized = value & 0xFFFFFFu;
@@ -650,5 +715,12 @@ public class Config : IPluginConfiguration
         }
 
         return Math.Clamp(value, MinDockIconScale, MaxDockIconScale);
+    }
+
+    internal static Vector4 SanitizeDockBackgroundColor(Vector4 color)
+    {
+        var sanitized = SanitizeColor(color, DefaultDockBackgroundColor);
+        sanitized.W = Math.Clamp(sanitized.W, 0.1f, 1f);
+        return sanitized;
     }
 }
