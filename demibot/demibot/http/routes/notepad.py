@@ -161,7 +161,6 @@ async def create_section(
     max_order = await db.scalar(
         select(func.max(NoteSection.sort_order)).where(
             NoteSection.guild_id == ctx.guild.id,
-            NoteSection.is_deleted.is_(False),
         )
     )
     next_order = (max_order if max_order is not None else -1) + 1
