@@ -977,6 +977,7 @@ class PostBody(BaseModel):
     message_reference: MessageReferenceDto | None = Field(
         default=None, alias="messageReference"
     )
+    embed_color: int | None = Field(default=None, alias="embedColor")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -1190,6 +1191,7 @@ class PostBody(BaseModel):
     message_reference: MessageReferenceDto | None = Field(
         default=None, alias="messageReference"
     )
+    embed_color: int | None = Field(default=None, alias="embedColor")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -1300,6 +1302,7 @@ async def save_message(
         channel_kind=gc_kind or channel_kind,
         use_character_name=bool(body.use_character_name),
         attachments=uploads_data,
+        embed_color=body.embed_color,
     )
 
     username_base = nickname or (

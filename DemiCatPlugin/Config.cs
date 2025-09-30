@@ -21,8 +21,10 @@ public class Config : IPluginConfiguration
     public const float MaxEmojiTileSize = 64f;
     public const float MinEmojiGridHeight = 120f;
     public const float MaxEmojiGridHeight = 800f;
+    public const uint DefaultFcEmbedColor = 0x5865F2;
+    public const uint DefaultOfficerEmbedColor = 0xED4245;
 
-    public int Version { get; set; } = 13;
+    public int Version { get; set; } = 14;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -42,6 +44,10 @@ public class Config : IPluginConfiguration
     public bool EnableFcChatUserSet { get; set; } = false;
     public float FcChatOpacity { get; set; } = 1f;
     public float OfficerChatOpacity { get; set; } = 1f;
+    [JsonPropertyName("fcEmbedColor")]
+    public uint? FcEmbedColor { get; set; } = DefaultFcEmbedColor;
+    [JsonPropertyName("officerEmbedColor")]
+    public uint? OfficerEmbedColor { get; set; } = DefaultOfficerEmbedColor;
     public bool ChatFadeOutEnabled { get; set; } = false;
     public int ChatFadeOutDelaySeconds { get; set; } = 10;
     public float ChatFadeOutMinimumAlpha { get; set; } = 0.3f;
@@ -412,6 +418,23 @@ public class Config : IPluginConfiguration
             Version = 13;
             ExtensionData = null;
         }
+        if (Version < 14)
+        {
+            FcEmbedColor ??= DefaultFcEmbedColor;
+            OfficerEmbedColor ??= DefaultOfficerEmbedColor;
+
+            Version = 14;
+            ExtensionData = null;
+        }
+    }
+
+    public static uint GetDefaultEmbedColor(string? channelKind)
+    {
+        return channelKind switch
+        {
+            ChannelKind.OfficerChat => DefaultOfficerEmbedColor,
+            _ => DefaultFcEmbedColor
+        };
     }
 
     internal static Vector4 SanitizeColor(Vector4 color, Vector4 fallback)
