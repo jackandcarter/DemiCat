@@ -602,6 +602,7 @@ public class MainWindow : IDisposable
         if (_dockIconTexture != null)
             return;
 
+        ISharedImmediateTextureWrap? wrap = null;
         try
         {
             var provider = PluginServices.Instance?.TextureProvider;
@@ -609,11 +610,14 @@ public class MainWindow : IDisposable
                 return;
 
             var pixel = new byte[] { 255, 255, 255, 255 };
-            _dockIconTexture = provider.CreateFromRaw(RawImageSpecification.Rgba32(1, 1), pixel);
+            wrap = provider.CreateFromRaw(RawImageSpecification.Rgba32(1, 1), pixel);
+            _dockIconTexture = new ForwardingSharedImmediateTexture(wrap);
+            wrap = null;
         }
         catch
         {
             _dockIconTexture = null;
+            wrap?.Dispose();
         }
     }
 
