@@ -16,6 +16,8 @@ DISCORD_EMBED_DESCRIPTION_LIMIT = 4096
 DISCORD_EMBED_TOTAL_LIMIT = 6000
 DISCORD_EMBED_COUNT_LIMIT = 10
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+DEFAULT_FC_COLOR = 0x5865F2
+DEFAULT_OFFICER_COLOR = 0xED4245
 
 
 @dataclass
@@ -182,6 +184,20 @@ def _split_embed_text(text: str) -> tuple[list[str], int]:
     return chunks, consumed
 
 
+def _sanitize_embed_color(value: int | None) -> int | None:
+    if value is None:
+        return None
+    try:
+        numeric = int(value)
+    except (TypeError, ValueError):
+        return None
+    if numeric < 0:
+        return 0
+    if numeric > 0xFFFFFF:
+        return 0xFFFFFF
+    return numeric
+
+
 def build_bridge_message(
     *,
     content: str,
@@ -192,6 +208,7 @@ def build_bridge_message(
     attachments: Sequence[tuple[str, bytes, str | None]] | None = None,
     nonce: str | None = None,
     timestamp: datetime | None = None,
+    embed_color: int | None = None,
 ) -> tuple[str, list[discord.Embed], list[BridgeUpload], str]:
     """Construct the Discord payload for a bridge message."""
 
@@ -221,9 +238,13 @@ def build_bridge_message(
     )
     author_icon = membership.avatar_url if membership else None
 
-    color_value = 0x5865F2
-    if channel_kind == ChannelKind.OFFICER_CHAT:
-        color_value = 0xED4245
+    override_color = _sanitize_embed_color(embed_color)
+    color_value = override_color
+    if color_value is None:
+        if channel_kind == ChannelKind.OFFICER_CHAT:
+            color_value = DEFAULT_OFFICER_COLOR
+        else:
+            color_value = DEFAULT_FC_COLOR
     color_factory = getattr(discord, "Color", None) or getattr(discord, "Colour", None)
     color = color_factory(color_value) if callable(color_factory) else color_value
 

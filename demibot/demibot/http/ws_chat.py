@@ -1169,6 +1169,15 @@ class ChatConnectionManager:
         use_character_name_flag = bool(
             payload.get("useCharacterName") or payload.get("use_character_name")
         )
+        raw_embed_color = payload.get("embedColor")
+        if raw_embed_color is None:
+            raw_embed_color = payload.get("embed_color")
+        embed_color_value: int | None = None
+        if raw_embed_color is not None:
+            try:
+                embed_color_value = int(raw_embed_color)
+            except (TypeError, ValueError):
+                embed_color_value = None
 
         channel_obj: discord.abc.Messageable | discord.Thread | None = None
         thread_id: int | None = None
@@ -1314,6 +1323,7 @@ class ChatConnectionManager:
             channel_kind=channel_kind_value,
             use_character_name=use_character_name_flag,
             attachments=file_data,
+            embed_color=embed_color_value,
         )
 
         username = (

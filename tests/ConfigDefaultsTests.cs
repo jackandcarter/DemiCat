@@ -40,5 +40,7 @@ public class ConfigDefaultsTests
         Assert.Equal(10, cfg.ChatFadeOutDelaySeconds);
         Assert.Equal(0.3f, cfg.ChatFadeOutMinimumAlpha);
         Assert.Equal(0.35f, cfg.ChatInputSplitRatio);
+        Assert.Equal(Config.DefaultFcEmbedColor, cfg.FcEmbedColor);
+        Assert.Equal(Config.DefaultOfficerEmbedColor, cfg.OfficerEmbedColor);
     }
 }

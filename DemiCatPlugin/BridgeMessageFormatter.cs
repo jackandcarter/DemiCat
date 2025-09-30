@@ -30,6 +30,7 @@ public static class BridgeMessageFormatter
         public string? CharacterName { get; init; }
         public string? WorldName { get; init; }
         public string? AuthorAvatarUrl { get; init; }
+        public uint? EmbedColor { get; init; }
         public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
     }
 
@@ -125,7 +126,7 @@ public static class BridgeMessageFormatter
                 Timestamp = options.Timestamp,
                 AuthorName = DetermineAuthor(options),
                 AuthorIconUrl = options.AuthorAvatarUrl,
-                Color = DetermineColor(options.ChannelKind)
+                Color = DetermineColor(options)
             };
             list.Add(embed);
         }
@@ -142,13 +143,14 @@ public static class BridgeMessageFormatter
         return "You";
     }
 
-    private static uint DetermineColor(string? channelKind)
+    private static uint DetermineColor(BridgeFormatterOptions options)
     {
-        return channelKind switch
+        if (options.EmbedColor is uint color)
         {
-            ChannelKind.OfficerChat => 0xED4245, // red-ish for emphasis
-            _ => 0x5865F2 // Discord blurple
-        };
+            return color;
+        }
+
+        return Config.GetDefaultEmbedColor(options.ChannelKind);
     }
 
     private static IReadOnlyList<string> SplitIntoEmbedChunks(

@@ -215,6 +215,23 @@ def test_build_bridge_message_generates_simple_embed(sample_user, sample_members
     assert extract_bridge_nonce_from_payload(payload) == nonce
 
 
+def test_build_bridge_message_honors_embed_color(sample_user, sample_membership):
+    discord_content, embeds, uploads, nonce = build_bridge_message(
+        content="Color",
+        user=sample_user,
+        membership=sample_membership,
+        channel_kind=ChannelKind.FC_CHAT,
+        attachments=None,
+        embed_color=0x123456,
+    )
+
+    assert nonce
+    assert not discord_content
+    assert not uploads
+    embed_dict = embeds[0].to_dict()
+    assert embed_dict.get("color") == 0x123456
+
+
 @pytest.mark.parametrize(
     "provider_path",
     [

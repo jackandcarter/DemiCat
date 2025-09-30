@@ -57,7 +57,7 @@ async def test_post_message_accepts_channel_aliases(channel_key, monkeypatch):
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.post(
             "/api/messages",
-            json={channel_key: "123", "content": "Hello"},
+            json={channel_key: "123", "content": "Hello", "embedColor": 0x123456},
         )
 
     app.dependency_overrides.clear()
@@ -68,6 +68,7 @@ async def test_post_message_accepts_channel_aliases(channel_key, monkeypatch):
     assert captured["channel_id"] == "123"
     assert isinstance(captured["body"], messages_routes.PostBody)
     assert captured["channel_kind"] == ChannelKind.FC_CHAT
+    assert captured["body"].embed_color == 0x123456
 
 
 @pytest.mark.asyncio
@@ -103,6 +104,7 @@ async def test_channel_messages_multipart_accepts_message_reference(monkeypatch)
             "content": "Hello",
             "useCharacterName": "true",
             "message_reference": json.dumps({"messageId": "5", "channelId": "555"}),
+            "embedColor": str(0x123456),
         }
         resp = await client.post(
             "/api/channels/555/messages",
@@ -122,6 +124,7 @@ async def test_channel_messages_multipart_accepts_message_reference(monkeypatch)
     assert body.message_reference is not None
     assert body.message_reference.channel_id == "555"
     assert body.message_reference.message_id == "5"
+    assert body.embed_color == 0x123456
 
     assert captured["channel_kind"] == ChannelKind.FC_CHAT
 

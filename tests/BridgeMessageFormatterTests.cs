@@ -57,4 +57,16 @@ public class BridgeMessageFormatterTests
         Assert.Single(result.Mentions);
         Assert.Equal("1", result.Mentions[0].Id);
     }
+
+    [Fact]
+    public void Format_UsesEmbedColorOverride()
+    {
+        var options = CreateOptions();
+        options.EmbedColor = 0x123456;
+
+        var result = BridgeMessageFormatter.Format("Hello", Array.Empty<string>(), options);
+
+        var embed = Assert.Single(result.Embeds);
+        Assert.Equal((uint)0x123456, embed.Color);
+    }
 }
