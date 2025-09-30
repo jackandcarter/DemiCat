@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Numerics;
-using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using DemiCatPlugin.Emoji;
@@ -17,7 +16,6 @@ public class MainWindow : IDisposable
     private const float BaseSpacing = 8f;
     private const float IndicatorRadius = 4f;
     private const string DockWindowTitle = "DemiCat Dock";
-    private const string DockDragDropPayloadType = "DemiCatDockItem";
 
     private readonly Config _config;
     private readonly UiRenderer _ui;
@@ -33,7 +31,6 @@ public class MainWindow : IDisposable
     private readonly List<DockItem> _dockItems = new();
     private readonly HashSet<string> _autoShownDockItems = new();
     private readonly DockIconLoader _dockIconLoader;
-    private string? _draggingDockItemId;
 
     private readonly Action _openSettingsAction;
     private readonly EventsDockableWindow _eventsWindowHost;
@@ -383,7 +380,7 @@ public class MainWindow : IDisposable
     }
 
     private void DrawDockStrip(
-        IList<DockItem> items,
+        IReadOnlyList<DockItem> items,
         Vector2 iconSize,
         float spacing,
         float indicatorHeight,
@@ -401,9 +398,6 @@ public class MainWindow : IDisposable
         drawList.AddRectFilled(stripMin, stripMax, ImGui.ColorConvertFloat4ToU32(stripColor), MathF.Max(spacing * 2f, 18f));
 
         ImGui.SetCursorScreenPos(iconStart);
-
-        string? pendingSourceId = null;
-        string? pendingTargetId = null;
 
         for (var i = 0; i < items.Count; i++)
         {
@@ -437,32 +431,6 @@ public class MainWindow : IDisposable
                 ImGui.SetTooltip(item.Tooltip);
             }
 
-            if (ImGui.BeginDragDropSource())
-            {
-                _draggingDockItemId = item.Id;
-                var payloadBytes = Encoding.UTF8.GetBytes(item.Id);
-                ImGui.SetDragDropPayload(DockDragDropPayloadType, payloadBytes);
-                ImGui.TextUnformatted(item.Tooltip);
-                ImGui.EndDragDropSource();
-            }
-
-            if (ImGui.BeginDragDropTarget())
-            {
-                var payload = ImGui.AcceptDragDropPayload(DockDragDropPayloadType);
-                if (!payload.Equals(default(ImGuiPayloadPtr)))
-                {
-                    var sourceId = _draggingDockItemId;
-                    if (!string.IsNullOrEmpty(sourceId) &&
-                        !string.Equals(sourceId, item.Id, StringComparison.Ordinal))
-                    {
-                        pendingSourceId = sourceId;
-                        pendingTargetId = item.Id;
-                    }
-                }
-
-                ImGui.EndDragDropTarget();
-            }
-
             if (item.GetIsOpen())
             {
                 var rectMin = ImGui.GetItemRectMin();
@@ -475,16 +443,6 @@ public class MainWindow : IDisposable
         }
 
         ImGui.Dummy(new Vector2(0f, indicatorHeight));
-
-        if (pendingSourceId != null && pendingTargetId != null)
-        {
-            ReorderDockItems(pendingSourceId, pendingTargetId);
-        }
-
-        if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
-        {
-            _draggingDockItemId = null;
-        }
     }
 
     private bool DrawDockButton(DockItem item, Vector2 iconSize)
@@ -747,86 +705,7 @@ public class MainWindow : IDisposable
             v => _settings.IsOpen = v,
             () => { }));
 
-        ApplyDockOrder();
         _autoShownDockItems.RemoveWhere(id => _dockItems.All(item => item.Id != id));
-    }
-
-    private void ApplyDockOrder()
-    {
-        if (_dockItems.Count == 0)
-        {
-            return;
-        }
-
-        var itemLookup = _dockItems.ToDictionary(item => item.Id, item => item, StringComparer.Ordinal);
-        var storedOrder = _config.DockOrder ?? new List<string>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        var resolvedOrder = new List<string>(storedOrder.Count + _dockItems.Count);
-
-        foreach (var id in storedOrder)
-        {
-            if (itemLookup.ContainsKey(id) && seen.Add(id))
-            {
-                resolvedOrder.Add(id);
-            }
-        }
-
-        foreach (var item in _dockItems)
-        {
-            if (seen.Add(item.Id))
-            {
-                resolvedOrder.Add(item.Id);
-            }
-        }
-
-        UpdateDockOrder(resolvedOrder);
-
-        var indexLookup = resolvedOrder
-            .Select((id, index) => new KeyValuePair<string, int>(id, index))
-            .ToDictionary(pair => pair.Key, pair => pair.Value, StringComparer.Ordinal);
-
-        _dockItems.Sort((a, b) => indexLookup[a.Id].CompareTo(indexLookup[b.Id]));
-    }
-
-    private void UpdateDockOrder(List<string> newOrder)
-    {
-        var existing = _config.DockOrder ?? new List<string>();
-        var changed = existing.Count != newOrder.Count || !existing.SequenceEqual(newOrder);
-        _config.DockOrder = newOrder;
-
-        if (changed)
-        {
-            SaveConfig();
-        }
-    }
-
-    private void ReorderDockItems(string sourceId, string targetId)
-    {
-        if (string.Equals(sourceId, targetId, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        var sourceIndex = _dockItems.FindIndex(item => string.Equals(item.Id, sourceId, StringComparison.Ordinal));
-        var targetIndex = _dockItems.FindIndex(item => string.Equals(item.Id, targetId, StringComparison.Ordinal));
-
-        if (sourceIndex < 0 || targetIndex < 0)
-        {
-            return;
-        }
-
-        var movedItem = _dockItems[sourceIndex];
-        _dockItems.RemoveAt(sourceIndex);
-
-        if (sourceIndex < targetIndex)
-        {
-            targetIndex--;
-        }
-
-        _dockItems.Insert(targetIndex, movedItem);
-        _draggingDockItemId = null;
-
-        UpdateDockOrder(_dockItems.Select(item => item.Id).ToList());
     }
 
     private ISharedImmediateTexture? GetDockIconOrPlaceholder(string id)
