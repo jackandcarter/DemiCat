@@ -1288,11 +1288,11 @@ public class ChatWindow : IDisposable
 
             using (var emojiFont = _emojiManager.PushEmojiFont())
             {
-                var style = ImGui.GetStyle();
+                var previewStyle = ImGui.GetStyle();
                 var available = ImGui.GetContentRegionAvail();
-                var lineHeight = ImGui.GetTextLineHeightWithSpacing();
-                var minPreviewHeight = MathF.Max(lineHeight * 2f, lineHeight * MinInputLines);
-                var fallbackHeight = lineHeight * 6f;
+                var previewLineHeight = ImGui.GetTextLineHeightWithSpacing();
+                var minPreviewHeight = MathF.Max(previewLineHeight * 2f, previewLineHeight * MinInputLines);
+                var fallbackHeight = previewLineHeight * 6f;
                 var availableHeight = available.Y;
                 if (!float.IsFinite(availableHeight) || availableHeight <= 0f)
                 {
@@ -1323,10 +1323,10 @@ public class ChatWindow : IDisposable
                 var childEndCursor = ImGui.GetCursorPosY();
                 ImGui.EndChild();
 
-                var measuredHeight = (childEndCursor - childStartCursor) + (style.WindowPadding.Y * 2f);
+                var measuredHeight = (childEndCursor - childStartCursor) + (previewStyle.WindowPadding.Y * 2f);
                 if (float.IsFinite(measuredHeight) && measuredHeight > 0f)
                 {
-                    var absoluteMax = lineHeight * 24f;
+                    var absoluteMax = previewLineHeight * 24f;
                     _previewContentHeight = Math.Clamp(measuredHeight, minPreviewHeight, absoluteMax);
                 }
             }
