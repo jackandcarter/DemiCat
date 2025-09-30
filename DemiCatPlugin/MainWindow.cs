@@ -17,6 +17,7 @@ public class MainWindow : IDisposable
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
     private readonly NotePadWindow _notePad;
+    private readonly EmojiManager _emojiManager;
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
     private bool _templatesTabActive;
@@ -68,6 +69,7 @@ public class MainWindow : IDisposable
         _officer = officer;
         _settings = settings;
         _httpClient = httpClient;
+        _emojiManager = emojiManager;
         _create = new EventCreateWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _requestBoard = new RequestBoardWindow(config, httpClient);
@@ -179,9 +181,12 @@ public class MainWindow : IDisposable
             var buttonSize = ImGui.GetFrameHeight();
             var cursor = ImGui.GetCursorPos();
             ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - buttonSize - padding.X, cursor.Y));
-            if (ImGui.Button("\u2699\uFE0F##dc_settings", new Vector2(buttonSize, buttonSize)))
             {
-                _settings.IsOpen = true;
+                using var emojiFont = _emojiManager.PushEmojiFont();
+                if (ImGui.Button("\u2699\uFE0F##dc_settings", new Vector2(buttonSize, buttonSize)))
+                {
+                    _settings.IsOpen = true;
+                }
             }
             ImGui.SetCursorPos(cursor);
 
