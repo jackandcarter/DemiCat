@@ -444,6 +444,8 @@ public class ChatWindow : IDisposable
     {
     }
 
+    public bool IsNetworkingActive => _networkingActive;
+
     protected void MarkNetworkingStarted()
     {
         _networkingActive = true;

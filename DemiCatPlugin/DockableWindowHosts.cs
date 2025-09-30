@@ -210,12 +210,10 @@ public class ChatDockableWindow : DockableWindow
 
     protected override void OnOpened()
     {
-        _chatWindow.StartNetworking();
-    }
-
-    protected override void OnClosed()
-    {
-        _chatWindow.StopNetworking();
+        if (!_chatWindow.IsNetworkingActive)
+        {
+            _chatWindow.StartNetworking();
+        }
     }
 
     protected override void DrawContents()
