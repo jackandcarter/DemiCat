@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using System.Numerics;
 using DemiCatPlugin;
 using Xunit;
 
@@ -48,5 +49,12 @@ public class ConfigDefaultsTests
         Assert.False(cfg.OfficerEmbedBorder.Enabled);
         Assert.Equal(Config.DefaultEmbedBorderGlyph, cfg.OfficerEmbedBorder.Glyph);
         Assert.Equal(Config.DefaultOfficerEmbedColor, cfg.OfficerEmbedBorder.Color);
+        Assert.True(cfg.DockRememberPosition);
+        Assert.False(cfg.DockLocked);
+        Assert.Equal(1f, cfg.DockIconScale);
+        Assert.Equal(Config.DefaultDockBackgroundColor, cfg.DockBackgroundColor);
+        Assert.Equal(cfg.DockBackgroundColor.W, cfg.DockBackgroundAlpha, 3);
+        Assert.NotNull(cfg.DockAutoShow);
+        Assert.Empty(cfg.DockAutoShow);
     }
 }

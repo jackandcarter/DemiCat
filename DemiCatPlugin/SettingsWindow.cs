@@ -360,9 +360,13 @@ public class SettingsWindow : IDisposable
 
         ImGui.Spacing();
 
+        DrawDockSettings();
+
+        ImGui.Spacing();
+
         ImGui.BeginDisabled(fadeOutEnabled);
         var fcOpacity = _config.FcChatOpacity * 100f;
-        if (ImGui.SliderFloat("FC Chat Opacity", ref fcOpacity, 0f, 100f, "%.0f%%"))
+        if (ImGui.SliderFloat("FC Chat window opacity", ref fcOpacity, 0f, 100f, "%.0f%%"))
         {
             _config.FcChatOpacity = Math.Clamp(fcOpacity / 100f, 0f, 1f);
             SaveConfig();
@@ -374,7 +378,7 @@ public class SettingsWindow : IDisposable
 
         ImGui.BeginDisabled(fadeOutEnabled);
         var officerOpacity = _config.OfficerChatOpacity * 100f;
-        if (ImGui.SliderFloat("Officer Tab Opacity", ref officerOpacity, 0f, 100f, "%.0f%%"))
+        if (ImGui.SliderFloat("Officer Chat window opacity", ref officerOpacity, 0f, 100f, "%.0f%%"))
         {
             _config.OfficerChatOpacity = Math.Clamp(officerOpacity / 100f, 0f, 1f);
             SaveConfig();
@@ -433,6 +437,106 @@ public class SettingsWindow : IDisposable
         ImGui.SameLine();
         DrawFadePreview("##fadePreview", _config.ChatFadeOutMinimumAlpha);
         ImGui.EndDisabled();
+    }
+
+    private void DrawDockSettings()
+    {
+        ImGui.Separator();
+        ImGui.TextUnformatted("Dock");
+        ImGui.Spacing();
+
+        var dockLocked = _config.DockLocked;
+        if (ImGui.Checkbox("Lock dock position", ref dockLocked))
+        {
+            _config.DockLocked = dockLocked;
+            SaveConfig();
+        }
+
+        var rememberPosition = _config.DockRememberPosition;
+        if (ImGui.Checkbox("Remember dock position between sessions", ref rememberPosition))
+        {
+            _config.DockRememberPosition = rememberPosition;
+            SaveConfig();
+            if (rememberPosition)
+            {
+                MainWindow?.ResetDockPosition();
+            }
+        }
+
+        var iconScale = _config.DockIconScale;
+        if (ImGui.SliderFloat("Dock icon scale", ref iconScale, Config.MinDockIconScale, Config.MaxDockIconScale, "%.2fx"))
+        {
+            _config.DockIconScale = Config.SanitizeDockIconScale(iconScale);
+            SaveConfig();
+        }
+
+        var dockColor = _config.DockBackgroundColor;
+        if (ImGui.ColorEdit4("Dock background color", ref dockColor, ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.AlphaPreviewHalf))
+        {
+            var sanitized = Config.SanitizeDockBackgroundColor(dockColor);
+            if (!ColorsAlmostEqual(sanitized, _config.DockBackgroundColor))
+            {
+                _config.DockBackgroundColor = sanitized;
+                _config.DockBackgroundAlpha = sanitized.W;
+                SaveConfig();
+                MainWindow?.OnAppearanceSettingsChanged();
+            }
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Auto-open windows");
+        ImGui.Spacing();
+
+        var options = new List<(string Id, string Label, bool Available)>
+        {
+            ("events", "Events", _config.Events),
+            ("create", "Create Event", _config.Events),
+            ("templates", "Templates", _config.Templates),
+            ("requests", "Request Board", _config.Requests),
+            ("notepad", "NotePad", _config.NotePadEnabled)
+        };
+
+        if (MainWindow?.ChatWindowHost != null && ChatWindow != null)
+        {
+            var chatLabel = ChatWindow is FcChatWindow ? "FC Chat" : "Chat";
+            options.Add(("chat", chatLabel, true));
+        }
+
+        if (OfficerChatWindow != null)
+        {
+            options.Add(("officer", "Officer Chat", MainWindow?.HasOfficerAccess ?? false));
+        }
+
+        var syncshellAvailable = _config.FCSyncShell && (MainWindow?.SyncshellWindowHost != null);
+        options.Add(("syncshell", "Syncshell", syncshellAvailable));
+
+        foreach (var option in options)
+        {
+            var autoShow = _config.GetDockAutoShow(option.Id);
+            var available = option.Available;
+
+            if (!available)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            var label = $"Auto-open {option.Label}";
+            if (ImGui.Checkbox(label, ref autoShow))
+            {
+                _config.SetDockAutoShow(option.Id, autoShow);
+                SaveConfig();
+                MainWindow?.RefreshDockAutoShow();
+            }
+
+            if (!available)
+            {
+                ImGui.EndDisabled();
+                if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                {
+                    ImGui.SetTooltip("Enable this feature to auto-open the window.");
+                }
+            }
+        }
     }
 
     private void RefreshChatWindows()

@@ -106,6 +106,10 @@ public abstract class DockableWindow
         _lastFadeReset = DateTime.UtcNow;
     }
 
+    public virtual void OnAppearanceSettingsChanged()
+    {
+    }
+
     private float ComputeEffectiveOpacity()
     {
         var fadeAlpha = SupportsFade ? ComputeFadeAlpha() : 1f;

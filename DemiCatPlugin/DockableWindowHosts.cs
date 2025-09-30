@@ -235,6 +235,12 @@ public class ChatDockableWindow : DockableWindow
     }
 
     protected ChatWindow Chat => _chatWindow;
+
+    public override void OnAppearanceSettingsChanged()
+    {
+        base.OnAppearanceSettingsChanged();
+        _chatWindow.OnAppearanceSettingsChanged();
+    }
 }
 
 public sealed class OfficerChatDockableWindow : ChatDockableWindow
