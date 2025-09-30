@@ -1717,6 +1717,8 @@ async def edit_message(
     db: AsyncSession,
     *,
     is_officer: bool,
+    embed_color: object = MISSING,
+    embed_border: object = MISSING,
 ) -> dict:
     if is_officer and "officer" not in _role_set(ctx):
         raise HTTPException(status_code=403)
@@ -1754,6 +1756,74 @@ async def edit_message(
     )
     existing_nonce = getattr(mapping, "nonce", None) if mapping else None
 
+    def _coerce_embed_color_value(value: object) -> int | None:
+        if value is None or isinstance(value, bool):
+            return None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            try:
+                return int(stripped, 0)
+            except ValueError:
+                return None
+        return None
+
+    def _coerce_embed_border_value(value: object) -> dict[str, object] | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            try:
+                value = json.loads(stripped)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                return None
+        if not isinstance(value, Mapping):
+            return None
+        enabled = value.get("enabled")
+        glyph = value.get("glyph")
+        color_value = _coerce_embed_color_value(value.get("color"))
+        if not isinstance(enabled, bool) or not isinstance(glyph, str):
+            return None
+        border_dict: dict[str, object] = {"enabled": enabled, "glyph": glyph}
+        if color_value is not None or "color" in value:
+            border_dict["color"] = color_value
+        return border_dict
+
+    existing_embed_color: int | None = None
+    existing_embed_border: dict[str, object] | None = None
+    if msg.embeds_json:
+        try:
+            embed_data = json.loads(msg.embeds_json)
+        except Exception:
+            embed_data = None
+        if isinstance(embed_data, list):
+            for entry in embed_data:
+                if not isinstance(entry, Mapping):
+                    continue
+                color_candidate = _coerce_embed_color_value(entry.get("color"))
+                if color_candidate is not None:
+                    existing_embed_color = color_candidate
+                border_candidate = _coerce_embed_border_value(entry.get("border"))
+                if border_candidate is not None:
+                    existing_embed_border = border_candidate
+                break
+
+    resolved_embed_color = (
+        existing_embed_color
+        if embed_color is MISSING
+        else _coerce_embed_color_value(embed_color)
+    )
+    resolved_embed_border = (
+        existing_embed_border
+        if embed_border is MISSING
+        else _coerce_embed_border_value(embed_border)
+    )
+
     bridge_content, embeds, _, nonce = build_bridge_message(
         content=content,
         user=ctx.user,
@@ -1762,7 +1832,8 @@ async def edit_message(
         use_character_name=use_character_name_flag,
         attachments=None,
         nonce=existing_nonce,
-        embed_border=None,
+        embed_color=resolved_embed_color,
+        embed_border=resolved_embed_border,
     )
 
     now = datetime.utcnow()

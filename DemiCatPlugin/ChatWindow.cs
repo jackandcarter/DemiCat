@@ -49,6 +49,8 @@ public class ChatWindow : IDisposable
     protected string? _editingMessageId;
     protected string _editingChannelId = string.Empty;
     protected string _editContent = string.Empty;
+    protected uint? _editEmbedColor;
+    protected EmbedBorderRenderDto? _editEmbedBorder;
     private static readonly string[] DefaultReactions = new[] { "👍", "👎", "❤️" };
     private static readonly ImGuiMouseCursor ResizeNsCursor = ResolveResizeNsCursor();
     private readonly EmojiManager _emojiManager;
@@ -910,6 +912,16 @@ public class ChatWindow : IDisposable
                     _editingMessageId = msg.Id;
                     _editingChannelId = msg.ChannelId;
                     _editContent = msg.Content ?? string.Empty;
+                    var firstEmbed = msg.Embeds?.FirstOrDefault();
+                    _editEmbedColor = firstEmbed?.Color;
+                    _editEmbedBorder = firstEmbed?.Border != null
+                        ? new EmbedBorderRenderDto
+                        {
+                            Enabled = firstEmbed.Border.Enabled,
+                            Glyph = firstEmbed.Border.Glyph,
+                            Color = firstEmbed.Border.Color
+                        }
+                        : null;
                     ImGui.OpenPopup("editMessage");
                 }
                 if (ImGui.MenuItem("Delete"))
@@ -1059,12 +1071,16 @@ public class ChatWindow : IDisposable
                 {
                     _ = EditMessage(_editingMessageId, _editingChannelId, _editContent);
                 }
+                _editEmbedColor = null;
+                _editEmbedBorder = null;
                 _editingMessageId = null;
                 ImGui.CloseCurrentPopup();
             }
             ImGui.SameLine();
             if (ImGui.Button("Cancel"))
             {
+                _editEmbedColor = null;
+                _editEmbedBorder = null;
                 _editingMessageId = null;
                 ImGui.CloseCurrentPopup();
             }
@@ -2975,6 +2991,27 @@ public class ChatWindow : IDisposable
         }
     }
 
+    protected object CreateEditMessageBody(string content)
+    {
+        object? borderPayload = null;
+        if (_editEmbedBorder != null)
+        {
+            borderPayload = new
+            {
+                enabled = _editEmbedBorder.Enabled,
+                glyph = _editEmbedBorder.Glyph,
+                color = _editEmbedBorder.Color
+            };
+        }
+
+        return new
+        {
+            content,
+            embedColor = _editEmbedColor,
+            embedBorder = borderPayload
+        };
+    }
+
     protected virtual async Task EditMessage(string messageId, string channelId, string content)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
@@ -2989,7 +3026,7 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var body = new { content };
+            var body = CreateEditMessageBody(content);
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/messages/{messageId}";
             var request = new HttpRequestMessage(HttpMethod.Patch, url);
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
