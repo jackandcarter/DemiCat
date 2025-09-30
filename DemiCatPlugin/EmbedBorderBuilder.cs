@@ -9,16 +9,9 @@ public static class EmbedBorderBuilder
 {
     private const int MaxLineLength = 120;
     private const int Padding = 1;
-    private static readonly IReadOnlyDictionary<Config.EmbedBorderGlyph, string> GlyphSymbols = new Dictionary<Config.EmbedBorderGlyph, string>
-    {
-        [Config.EmbedBorderGlyph.Square] = "■",
-        [Config.EmbedBorderGlyph.Circle] = "●",
-        [Config.EmbedBorderGlyph.Triangle] = "▲"
-    };
-
     public sealed class BorderState
     {
-        public Config.EmbedBorderGlyph Glyph { get; init; }
+        public string Glyph { get; init; } = Config.DefaultEmbedBorderGlyph;
         public uint Color { get; init; }
     }
 
@@ -95,21 +88,16 @@ public static class EmbedBorderBuilder
             Applied = true,
             Border = new BorderState
             {
-                Glyph = sanitized.Glyph,
+                Glyph = glyphSymbol,
                 Color = sanitized.Color
             }
         };
     }
 
-    public static bool TryStrip(string text, string? glyphName, out string stripped)
+    public static bool TryStrip(string text, string? glyph, out string stripped)
     {
         stripped = text ?? string.Empty;
         if (string.IsNullOrEmpty(text))
-        {
-            return false;
-        }
-
-        if (!TryParseGlyph(glyphName, out var glyph))
         {
             return false;
         }
@@ -145,46 +133,10 @@ public static class EmbedBorderBuilder
         return true;
     }
 
-    public static string GetGlyphName(Config.EmbedBorderGlyph glyph)
-        => glyph switch
-        {
-            Config.EmbedBorderGlyph.Circle => "circle",
-            Config.EmbedBorderGlyph.Triangle => "triangle",
-            _ => "square"
-        };
-
-    public static bool TryParseGlyph(string? glyphName, out Config.EmbedBorderGlyph glyph)
+    public static string GetGlyphSymbol(string? glyph)
     {
-        glyph = Config.EmbedBorderGlyph.Square;
-        if (string.IsNullOrWhiteSpace(glyphName))
-        {
-            return false;
-        }
-
-        switch (glyphName.Trim().ToLowerInvariant())
-        {
-            case "circle":
-                glyph = Config.EmbedBorderGlyph.Circle;
-                return true;
-            case "triangle":
-                glyph = Config.EmbedBorderGlyph.Triangle;
-                return true;
-            case "square":
-                glyph = Config.EmbedBorderGlyph.Square;
-                return true;
-            default:
-                return false;
-        }
-    }
-
-    public static string GetGlyphSymbol(Config.EmbedBorderGlyph glyph)
-    {
-        if (GlyphSymbols.TryGetValue(glyph, out var symbol))
-        {
-            return symbol;
-        }
-
-        return GlyphSymbols[Config.EmbedBorderGlyph.Square];
+        var symbol = Config.SanitizeEmbedBorderGlyph(glyph);
+        return string.IsNullOrEmpty(symbol) ? Config.DefaultEmbedBorderGlyph : symbol;
     }
 
     private static bool IsHorizontalLine(string line, string symbol)

@@ -78,7 +78,7 @@ public class BridgeMessageFormatterTests
         options.EmbedBorder = new Config.EmbedBorderSettings
         {
             Enabled = true,
-            Glyph = Config.EmbedBorderGlyph.Circle,
+            Glyph = Config.SanitizeEmbedBorderGlyph("⚫"),
             Color = 0x112233
         };
 
@@ -87,7 +87,7 @@ public class BridgeMessageFormatterTests
         var embed = Assert.Single(result.Embeds);
         var border = Assert.NotNull(embed.Border);
         Assert.True(border.Enabled);
-        Assert.Equal("circle", border.Glyph);
+        Assert.Equal(Config.SanitizeEmbedBorderGlyph("⚫"), border.Glyph);
         Assert.Equal((uint)0x112233 & 0xFFFFFFu, border.Color);
 
         var expected = EmbedBorderBuilder.Apply("Hi", options.EmbedBorder, ChannelKind.FcChat, 4096);
@@ -104,7 +104,7 @@ public class BridgeMessageFormatterTests
         options.EmbedBorder = new Config.EmbedBorderSettings
         {
             Enabled = true,
-            Glyph = Config.EmbedBorderGlyph.Square,
+            Glyph = Config.DefaultEmbedBorderGlyph,
             Color = 0x445566
         };
 

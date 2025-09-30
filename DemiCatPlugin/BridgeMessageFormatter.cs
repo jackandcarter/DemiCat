@@ -143,7 +143,7 @@ public static class BridgeMessageFormatter
                 embed.Border = new EmbedBorderRenderDto
                 {
                     Enabled = true,
-                    Glyph = EmbedBorderBuilder.GetGlyphName(borderResult.Border.Glyph),
+                    Glyph = EmbedBorderBuilder.GetGlyphSymbol(borderResult.Border.Glyph),
                     Color = borderResult.Border.Color
                 };
             }

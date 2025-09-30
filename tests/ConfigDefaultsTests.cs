@@ -43,10 +43,10 @@ public class ConfigDefaultsTests
         Assert.Equal(Config.DefaultFcEmbedColor, cfg.FcEmbedColor);
         Assert.Equal(Config.DefaultOfficerEmbedColor, cfg.OfficerEmbedColor);
         Assert.False(cfg.FcEmbedBorder.Enabled);
-        Assert.Equal(Config.EmbedBorderGlyph.Square, cfg.FcEmbedBorder.Glyph);
+        Assert.Equal(Config.DefaultEmbedBorderGlyph, cfg.FcEmbedBorder.Glyph);
         Assert.Equal(Config.DefaultFcEmbedColor, cfg.FcEmbedBorder.Color);
         Assert.False(cfg.OfficerEmbedBorder.Enabled);
-        Assert.Equal(Config.EmbedBorderGlyph.Square, cfg.OfficerEmbedBorder.Glyph);
+        Assert.Equal(Config.DefaultEmbedBorderGlyph, cfg.OfficerEmbedBorder.Glyph);
         Assert.Equal(Config.DefaultOfficerEmbedColor, cfg.OfficerEmbedBorder.Color);
     }
 }

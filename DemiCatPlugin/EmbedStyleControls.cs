@@ -1,18 +1,25 @@
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
 public static class EmbedStyleControls
 {
+    private static readonly Dictionary<string, string> GlyphSearchTerms = new();
+
     public sealed class Context
     {
         public string ChannelKindKey { get; init; } = string.Empty;
         public uint EffectiveEmbedColor { get; init; }
         public uint? EmbedColorOverride { get; init; }
         public Config.EmbedBorderSettings Border { get; init; } = Config.EmbedBorderSettings.CreateDefault(global::DemiCatPlugin.ChannelKind.Chat);
+        public EmojiManager? EmojiManager { get; init; }
+        public float EmojiTileSize { get; init; } = Config.MinEmojiTileSize;
+        public float EmojiGridHeight { get; init; } = Config.MinEmojiGridHeight;
     }
 
     public sealed class Result
@@ -83,27 +90,34 @@ public static class EmbedStyleControls
         }
 
         ImGui.SameLine();
-        var comboWidth = 120f * ImGuiHelpers.GlobalScale;
         if (!enabled)
         {
             ImGui.BeginDisabled();
         }
 
-        ImGui.SetNextItemWidth(comboWidth);
-        var label = GetGlyphLabel(border.Glyph);
-        if (ImGui.BeginCombo($"##embedBorderGlyph_{context.ChannelKindKey}", label))
+        var glyphSymbol = EmbedBorderBuilder.GetGlyphSymbol(border.Glyph);
+        var glyphPopupId = $"embedBorderGlyphPopup##{context.ChannelKindKey}";
+        var glyphButtonSize = new Vector2(ImGui.GetFrameHeight() * 1.8f, ImGui.GetFrameHeight());
+        using (context.EmojiManager?.PushEmojiFont())
         {
-            foreach (Config.EmbedBorderGlyph glyph in Enum.GetValues<Config.EmbedBorderGlyph>())
+            if (ImGui.Button($"{glyphSymbol}##embedBorderGlyph_{context.ChannelKindKey}", glyphButtonSize))
             {
-                var isSelected = border.Glyph == glyph;
-                if (ImGui.Selectable(GetGlyphLabel(glyph), isSelected))
-                {
-                    border.Glyph = glyph;
-                    borderChanged = true;
-                }
+                ImGui.OpenPopup(glyphPopupId);
             }
+        }
 
-            ImGui.EndCombo();
+        var selectedGlyph = DrawGlyphPopup(glyphPopupId, context);
+        if (!string.IsNullOrEmpty(selectedGlyph) && !string.Equals(selectedGlyph, glyphSymbol, StringComparison.Ordinal))
+        {
+            border.Glyph = selectedGlyph;
+            borderChanged = true;
+            glyphSymbol = selectedGlyph;
+        }
+
+        var tooltip = TryGetEmojiName(context, glyphSymbol);
+        if (!string.IsNullOrEmpty(tooltip) && ImGui.IsItemHovered())
+        {
+            ImGui.SetTooltip(tooltip);
         }
 
         ImGui.SameLine();
@@ -149,11 +163,149 @@ public static class EmbedStyleControls
         };
     }
 
-    private static string GetGlyphLabel(Config.EmbedBorderGlyph glyph)
-        => glyph switch
+    private static string? DrawGlyphPopup(string popupId, Context context)
+    {
+        string? selected = null;
+        if (!ImGui.BeginPopup(popupId))
         {
-            Config.EmbedBorderGlyph.Circle => "Circle",
-            Config.EmbedBorderGlyph.Triangle => "Triangle",
-            _ => "Square"
-        };
+            return null;
+        }
+
+        var manager = context.EmojiManager;
+        var searchKey = GetSearchKey(context);
+        if (manager == null || !manager.CanLoadStandard)
+        {
+            ImGui.TextDisabled("Emoji list unavailable. Link DemiCat to load emoji.");
+        }
+        else
+        {
+            if (!GlyphSearchTerms.TryGetValue(searchKey, out var search))
+            {
+                search = string.Empty;
+            }
+
+            if (ImGui.InputTextWithHint($"##borderEmojiSearch_{searchKey}", "Search…", ref search, 64))
+            {
+                GlyphSearchTerms[searchKey] = search;
+            }
+
+            ImGui.Separator();
+
+            _ = manager.EnsureUnicodeAsync();
+            var status = manager.UnicodeStatus;
+            var items = manager.Unicode;
+            IReadOnlyList<UnicodeEmoji> filtered = items;
+
+            if (!string.IsNullOrWhiteSpace(search) && items.Count > 0)
+            {
+                var matches = new List<UnicodeEmoji>();
+                foreach (var emoji in items)
+                {
+                    if (emoji.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+                        emoji.Emoji.Contains(search, StringComparison.OrdinalIgnoreCase))
+                    {
+                        matches.Add(emoji);
+                    }
+                }
+                filtered = matches;
+            }
+
+            if (filtered.Count == 0)
+            {
+                if (status.Loading)
+                {
+                    ImGui.TextDisabled("Loading emoji…");
+                }
+                else if (status.HasError && !string.IsNullOrEmpty(status.Error))
+                {
+                    ImGui.TextWrapped(status.Error);
+                }
+                else
+                {
+                    ImGui.TextDisabled(string.IsNullOrWhiteSpace(search) ? "No emoji available." : "No matches.");
+                }
+            }
+            else
+            {
+                var tileSize = Math.Clamp(context.EmojiTileSize, Config.MinEmojiTileSize, Config.MaxEmojiTileSize);
+                var childSize = context.EmojiGridHeight > 0f ? new Vector2(0f, context.EmojiGridHeight) : Vector2.Zero;
+                ImGui.BeginChild($"##borderEmojiGrid_{searchKey}", childSize, false);
+
+                var avail = Math.Max(1f, ImGui.GetContentRegionAvail().X);
+                var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (tileSize + 4f)));
+                var column = 0;
+
+                using var font = manager.PushEmojiFont();
+                for (var i = 0; i < filtered.Count; i++)
+                {
+                    if (column >= columns)
+                    {
+                        ImGui.NewLine();
+                        column = 0;
+                    }
+
+                    var emoji = filtered[i];
+                    ImGui.PushID(i);
+                    if (ImGui.Button(emoji.Emoji, new Vector2(tileSize, tileSize)))
+                    {
+                        selected = emoji.Emoji;
+                    }
+                    if (!string.IsNullOrEmpty(emoji.Name) && ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip(emoji.Name);
+                    }
+                    ImGui.PopID();
+
+                    column++;
+                    if (column < columns)
+                    {
+                        ImGui.SameLine();
+                    }
+
+                    if (!string.IsNullOrEmpty(selected))
+                    {
+                        break;
+                    }
+                }
+
+                ImGui.EndChild();
+            }
+        }
+
+        if (!string.IsNullOrEmpty(selected))
+        {
+            GlyphSearchTerms[searchKey] = string.Empty;
+            ImGui.CloseCurrentPopup();
+        }
+
+        ImGui.EndPopup();
+        return string.IsNullOrEmpty(selected) ? null : Config.SanitizeEmbedBorderGlyph(selected);
+    }
+
+    private static string GetSearchKey(Context context)
+        => string.IsNullOrWhiteSpace(context.ChannelKindKey) ? "default" : context.ChannelKindKey;
+
+    private static string? TryGetEmojiName(Context context, string glyph)
+    {
+        if (string.IsNullOrEmpty(glyph))
+        {
+            return null;
+        }
+
+        var manager = context.EmojiManager;
+        if (manager == null)
+        {
+            return null;
+        }
+
+        foreach (var emoji in manager.Unicode)
+        {
+            if (emoji.Emoji.Equals(glyph, StringComparison.Ordinal))
+            {
+                return emoji.Name;
+            }
+        }
+
+        return null;
+    }
 }
