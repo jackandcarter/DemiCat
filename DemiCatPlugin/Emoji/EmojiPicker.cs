@@ -9,6 +9,10 @@ namespace DemiCatPlugin.Emoji;
 public sealed class EmojiPicker
 {
     private readonly EmojiManager _manager;
+    private readonly Config _config;
+    private readonly Action? _persistSettings;
+    private float _tileSize;
+    private float _gridHeight;
     private EmojiTab _tab;
     private string _search = string.Empty;
     private readonly ConcurrentDictionary<string, bool> _customTextureRequests = new();
@@ -19,25 +23,58 @@ public sealed class EmojiPicker
         Custom
     }
 
-    public EmojiPicker(EmojiManager manager) => _manager = manager;
+    public EmojiPicker(EmojiManager manager, Config config, Action? persistSettings = null)
+    {
+        _manager = manager;
+        _config = config;
+        _persistSettings = persistSettings;
+        _tileSize = Config.SanitizeEmojiTileSize(config.EmojiTileSize);
+        _gridHeight = Config.SanitizeEmojiGridHeight(config.EmojiGridHeight);
+    }
 
-    public string? Draw(float buttonSize = 28f)
+    public string? Draw()
     {
         var previous = _tab;
         string? selected = null;
+
+        var size = _tileSize;
+        if (ImGui.SliderFloat(
+                "Emoji Size",
+                ref size,
+                Config.MinEmojiTileSize,
+                Config.MaxEmojiTileSize,
+                "%.0f px"))
+        {
+            SetTileSize(size);
+        }
+
+        var height = _gridHeight;
+        if (ImGui.DragFloat(
+                "Grid Height",
+                ref height,
+                1f,
+                0f,
+                Config.MaxEmojiGridHeight,
+                height <= 0f ? "Fill" : "%.0f px"))
+        {
+            SetGridHeight(height);
+        }
+
+        ImGui.Separator();
+
         if (ImGui.BeginTabBar("##dc_emoji_tabs"))
         {
             if (ImGui.BeginTabItem("Standard"))
             {
                 _tab = EmojiTab.Standard;
-                selected = DrawStandard(buttonSize);
+                selected = DrawStandard();
                 ImGui.EndTabItem();
             }
 
             if (ImGui.BeginTabItem("Custom"))
             {
                 _tab = EmojiTab.Custom;
-                selected ??= DrawCustom(buttonSize);
+                selected ??= DrawCustom();
                 ImGui.EndTabItem();
             }
 
@@ -52,7 +89,7 @@ public sealed class EmojiPicker
         return string.IsNullOrEmpty(selected) ? null : selected;
     }
 
-    private string? DrawStandard(float size)
+    private string? DrawStandard()
     {
         ImGui.InputTextWithHint("##emoji_std_search", "Search…", ref _search, 64);
         ImGui.Separator();
@@ -100,9 +137,10 @@ public sealed class EmojiPicker
             return null;
         }
 
-        ImGui.BeginChild("##emoji_std_grid", new Vector2(0, 220f), false);
+        var childSize = _gridHeight > 0f ? new Vector2(0, _gridHeight) : Vector2.Zero;
+        ImGui.BeginChild("##emoji_std_grid", childSize, false);
         var avail = ImGui.GetContentRegionAvail().X;
-        var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (size + 4f)));
+        var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (_tileSize + 4f)));
         var column = 0;
         string? selected = null;
 
@@ -117,7 +155,7 @@ public sealed class EmojiPicker
             var emoji = filtered[i];
             ImGui.PushID(i);
             using var _ = _manager.PushEmojiFont();
-            if (ImGui.Button(emoji.Emoji, new Vector2(size, size)))
+            if (ImGui.Button(emoji.Emoji, new Vector2(_tileSize, _tileSize)))
             {
                 selected = EmojiFormatter.CreateUnicodeToken(emoji);
             }
@@ -143,7 +181,7 @@ public sealed class EmojiPicker
         return string.IsNullOrEmpty(selected) ? null : selected;
     }
 
-    private string? DrawCustom(float size)
+    private string? DrawCustom()
     {
         ImGui.InputTextWithHint("##emoji_custom_search", "Search :name:", ref _search, 64);
         ImGui.SameLine();
@@ -198,9 +236,10 @@ public sealed class EmojiPicker
             return null;
         }
 
-        ImGui.BeginChild("##emoji_custom_grid", new Vector2(0, 220f), false);
+        var childSize = _gridHeight > 0f ? new Vector2(0, _gridHeight) : Vector2.Zero;
+        ImGui.BeginChild("##emoji_custom_grid", childSize, false);
         var avail = ImGui.GetContentRegionAvail().X;
-        var columns = Math.Max(1, (int)Math.Floor((avail + 6f) / (size + 6f)));
+        var columns = Math.Max(1, (int)Math.Floor((avail + 6f) / (_tileSize + 6f)));
         var column = 0;
         string? selected = null;
 
@@ -242,14 +281,14 @@ public sealed class EmojiPicker
                 texture != null)
             {
                 var wrap = texture.GetWrapOrEmpty();
-                if (ImGui.ImageButton(wrap.Handle, new Vector2(size, size)))
+                if (ImGui.ImageButton(wrap.Handle, new Vector2(_tileSize, _tileSize)))
                 {
                     clicked = true;
                 }
             }
             else
             {
-                if (ImGui.Button(tooltip, new Vector2(size * 3f, size)))
+                if (ImGui.Button(tooltip, new Vector2(_tileSize * 3f, _tileSize)))
                 {
                     clicked = true;
                 }
@@ -287,5 +326,42 @@ public sealed class EmojiPicker
         ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
         ImGui.TextWrapped(message);
         ImGui.PopStyleColor();
+    }
+
+    private void SetTileSize(float value)
+    {
+        var sanitized = Config.SanitizeEmojiTileSize(value);
+        if (Math.Abs(sanitized - _tileSize) < 0.01f)
+        {
+            return;
+        }
+
+        _tileSize = sanitized;
+        if (Math.Abs(_config.EmojiTileSize - sanitized) >= 0.01f)
+        {
+            _config.EmojiTileSize = sanitized;
+            PersistSettings();
+        }
+    }
+
+    private void SetGridHeight(float value)
+    {
+        var sanitized = Config.SanitizeEmojiGridHeight(value);
+        if (Math.Abs(sanitized - _gridHeight) < 0.01f)
+        {
+            return;
+        }
+
+        _gridHeight = sanitized;
+        if (Math.Abs(_config.EmojiGridHeight - sanitized) >= 0.01f)
+        {
+            _config.EmojiGridHeight = sanitized;
+            PersistSettings();
+        }
+    }
+
+    private void PersistSettings()
+    {
+        _persistSettings?.Invoke();
     }
 }

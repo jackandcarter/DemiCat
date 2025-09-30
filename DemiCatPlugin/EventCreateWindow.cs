@@ -80,7 +80,7 @@ public class EventCreateWindow
         _emojiManager = emojiManager;
         _channelSelection = channelSelection;
         _optionEditor = new SignupOptionEditor(config, httpClient, emojiManager);
-        _descriptionEmojiPopup = new EmojiPopup(emojiManager, "EventDescriptionEmoji");
+        _descriptionEmojiPopup = new EmojiPopup(config, emojiManager, "EventDescriptionEmoji", SaveConfig);
         var defaultTime = DateTimePicker.GetDefaultTime();
         _timePicker = new DateTimePicker(defaultTime);
         _time = defaultTime.ToUniversalTime().ToString("O");

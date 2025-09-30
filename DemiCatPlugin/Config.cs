@@ -17,7 +17,12 @@ public class Config : IPluginConfiguration
     public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
 
     // Required by Dalamud
-    public int Version { get; set; } = 12;
+    public const float MinEmojiTileSize = 16f;
+    public const float MaxEmojiTileSize = 64f;
+    public const float MinEmojiGridHeight = 120f;
+    public const float MaxEmojiGridHeight = 800f;
+
+    public int Version { get; set; } = 13;
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -44,6 +49,12 @@ public class Config : IPluginConfiguration
     public float ChatFontScale { get; set; } = 1f;
     public bool ChatImageAutoStretch { get; set; } = true;
     public float ChatImageManualScale { get; set; } = 1f;
+
+    [JsonPropertyName("emojiTileSize")]
+    public float EmojiTileSize { get; set; } = 28f;
+
+    [JsonPropertyName("emojiGridHeight")]
+    public float EmojiGridHeight { get; set; } = 220f;
 
     [JsonPropertyName("primaryWindowColor")]
     public Vector4 PrimaryWindowColor { get; set; } = DefaultPrimaryWindowColor;
@@ -393,6 +404,14 @@ public class Config : IPluginConfiguration
             Version = 12;
             ExtensionData = null;
         }
+        if (Version < 13)
+        {
+            EmojiTileSize = SanitizeEmojiTileSize(EmojiTileSize);
+            EmojiGridHeight = SanitizeEmojiGridHeight(EmojiGridHeight);
+
+            Version = 13;
+            ExtensionData = null;
+        }
     }
 
     internal static Vector4 SanitizeColor(Vector4 color, Vector4 fallback)
@@ -407,5 +426,30 @@ public class Config : IPluginConfiguration
             Math.Clamp(color.Y, 0f, 1f),
             Math.Clamp(color.Z, 0f, 1f),
             Math.Clamp(color.W, 0f, 1f));
+    }
+
+    internal static float SanitizeEmojiTileSize(float value)
+    {
+        if (!float.IsFinite(value) || value <= 0f)
+        {
+            return 28f;
+        }
+
+        return Math.Clamp(value, MinEmojiTileSize, MaxEmojiTileSize);
+    }
+
+    internal static float SanitizeEmojiGridHeight(float value)
+    {
+        if (!float.IsFinite(value))
+        {
+            return 220f;
+        }
+
+        if (value <= 0f)
+        {
+            return 0f;
+        }
+
+        return Math.Clamp(value, MinEmojiGridHeight, MaxEmojiGridHeight);
     }
 }

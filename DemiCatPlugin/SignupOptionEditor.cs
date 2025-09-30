@@ -14,6 +14,7 @@ public class SignupOptionEditor
     private bool _open;
     private Template.TemplateButton _working = new();
     private Action<Template.TemplateButton>? _onSave;
+    private readonly Config _config;
     private readonly EmojiPopup _emojiPopup;
     private readonly EmojiManager _emojiManager;
     private int _emojiSelectionStart;
@@ -22,8 +23,9 @@ public class SignupOptionEditor
 
     public SignupOptionEditor(Config config, HttpClient httpClient, EmojiManager emojiManager)
     {
+        _config = config;
         _emojiManager = emojiManager;
-        _emojiPopup = new EmojiPopup(emojiManager);
+        _emojiPopup = new EmojiPopup(config, emojiManager, persistSettings: SaveConfig);
     }
 
     public void Open(Template.TemplateButton button, Action<Template.TemplateButton> onSave)
@@ -182,5 +184,10 @@ public class SignupOptionEditor
         _emojiSelectionStart = data.SelectionStart;
         _emojiSelectionEnd = data.SelectionEnd;
         return 0;
+    }
+
+    private void SaveConfig()
+    {
+        PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
     }
 }

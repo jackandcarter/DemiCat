@@ -9,9 +9,9 @@ public sealed class EmojiPopup
     private readonly string _popupId;
     private Action<string>? _onSelected;
 
-    public EmojiPopup(EmojiManager manager, string popupId = "PickEmoji")
+    public EmojiPopup(Config config, EmojiManager manager, string popupId = "PickEmoji", Action? persistSettings = null)
     {
-        _picker = new EmojiPicker(manager);
+        _picker = new EmojiPicker(manager, config, persistSettings);
         _popupId = popupId;
     }
 
