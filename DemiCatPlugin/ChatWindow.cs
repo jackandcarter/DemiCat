@@ -92,6 +92,7 @@ public class ChatWindow : IDisposable
     private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
     private string _previewKey = string.Empty;
     private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
+    private float _previewContentHeight;
     private const string OldestRestCursorSuffix = ":oldest";
     private const int MentionResultLimit = 20;
     private const float MentionDrawerAnimationSpeed = 12f;
@@ -1280,7 +1281,23 @@ public class ChatWindow : IDisposable
 
             using (var emojiFont = _emojiManager.PushEmojiFont())
             {
-                ImGui.BeginChild("##inputPreview", new Vector2(0, ImGui.GetTextLineHeight() * 6), true);
+                var style = ImGui.GetStyle();
+                var available = ImGui.GetContentRegionAvail();
+                var lineHeight = ImGui.GetTextLineHeightWithSpacing();
+                var minPreviewHeight = MathF.Max(lineHeight * 2f, lineHeight * MinInputLines);
+                var fallbackHeight = lineHeight * 6f;
+                var availableHeight = available.Y;
+                if (!float.IsFinite(availableHeight) || availableHeight <= 0f)
+                {
+                    availableHeight = fallbackHeight;
+                }
+
+                var maxPreviewHeight = MathF.Max(minPreviewHeight, availableHeight);
+                var desiredPreviewHeight = _previewContentHeight > 0f ? _previewContentHeight : fallbackHeight;
+                var previewHeight = Math.Clamp(desiredPreviewHeight, minPreviewHeight, maxPreviewHeight);
+
+                ImGui.BeginChild("##inputPreview", new Vector2(0, previewHeight), true);
+                var childStartCursor = ImGui.GetCursorPosY();
                 if (!string.IsNullOrEmpty(plainTextPreview))
                 {
                     ImGui.TextWrapped(plainTextPreview);
@@ -1296,7 +1313,15 @@ public class ChatWindow : IDisposable
                     RenderAttachmentPreview(att);
                 }
 
+                var childEndCursor = ImGui.GetCursorPosY();
                 ImGui.EndChild();
+
+                var measuredHeight = (childEndCursor - childStartCursor) + (style.WindowPadding.Y * 2f);
+                if (float.IsFinite(measuredHeight) && measuredHeight > 0f)
+                {
+                    var absoluteMax = lineHeight * 24f;
+                    _previewContentHeight = Math.Clamp(measuredHeight, minPreviewHeight, absoluteMax);
+                }
             }
 
             foreach (var warning in _previewMessage.Warnings)
@@ -1312,6 +1337,10 @@ public class ChatWindow : IDisposable
                 ImGui.TextWrapped(error);
                 ImGui.PopStyleColor();
             }
+        }
+        else
+        {
+            _previewContentHeight = 0f;
         }
 
         if (!string.IsNullOrEmpty(_lastError))
