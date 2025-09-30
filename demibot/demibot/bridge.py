@@ -32,12 +32,39 @@ class BridgeUpload:
         return discord.File(io.BytesIO(self.data), filename=self.filename)
 
 
-def _tab_label(kind: ChannelKind | None) -> str:
-    if kind == ChannelKind.OFFICER_CHAT:
-        return "Officer Chat"
-    if kind == ChannelKind.FC_CHAT:
-        return "FC Chat"
-    return "Chat"
+def _get_embed_type() -> type:
+    embed_type = getattr(discord, "Embed", None)
+    if embed_type is not None:
+        return embed_type
+
+    class _FallbackEmbed:
+        def __init__(self, *, description: str | None = None, color=None):
+            self._data: dict[str, object] = {}
+            if description is not None:
+                self._data["description"] = description
+            if color is not None:
+                value = getattr(color, "value", color)
+                self._data["color"] = value
+
+        def set_author(
+            self, *, name: str | None = None, icon_url: str | None = None
+        ) -> None:
+            author: dict[str, object] = {}
+            if name is not None:
+                author["name"] = name
+            if icon_url is not None:
+                author["icon_url"] = icon_url
+            if author:
+                self._data.setdefault("author", {}).update(author)
+
+        def set_image(self, *, url: str | None = None) -> None:
+            if url is not None:
+                self._data.setdefault("image", {})["url"] = url
+
+        def to_dict(self) -> dict[str, object]:
+            return dict(self._data)
+
+    return _FallbackEmbed
 
 
 def _is_image(filename: str, content_type: str | None) -> bool:
@@ -184,39 +211,26 @@ def build_bridge_message(
     character_name = user.character_name if use_character_name else None
     world_name = user.world if use_character_name else None
 
-    header_present = _has_existing_header(normalized)
-    if not header_present:
-        header = _format_header_line(
-            display_name=display_name,
-            use_character_name=use_character_name,
-            character_name=character_name,
-            world_name=world_name,
-        )
-        if normalized:
-            normalized = f"{header}\n{normalized}"
-        else:
-            normalized = header
-
-
     chunks, represented = _split_embed_text(normalized)
     if not chunks:
         chunks = [""]
 
     embed_nonce = nonce or uuid.uuid4().hex
-    footer = f"DemiCat • {_tab_label(channel_kind)} • {BRIDGE_MARKER}{embed_nonce}"
     author_name = _determine_author_name(
         user=user, membership=membership, use_character_name=use_character_name
     )
     author_icon = membership.avatar_url if membership else None
 
-    color = discord.Color(0x5865F2)
+    color_value = 0x5865F2
     if channel_kind == ChannelKind.OFFICER_CHAT:
-        color = discord.Color(0xED4245)
+        color_value = 0xED4245
+    color_factory = getattr(discord, "Color", None) or getattr(discord, "Colour", None)
+    color = color_factory(color_value) if callable(color_factory) else color_value
 
+    embed_type = _get_embed_type()
     embeds: list[discord.Embed] = []
     for index, chunk in enumerate(chunks):
-        embed = discord.Embed(description=chunk or None, color=color)
-        embed.set_footer(text=footer)
+        embed = embed_type(description=chunk or None, color=color)
         embed.set_author(name=author_name, icon_url=author_icon)
         if index == 0 and image_filename:
             embed.set_image(url=f"attachment://{image_filename}")
@@ -227,43 +241,6 @@ def build_bridge_message(
         leftover = leftover[1:]
     discord_content = leftover[:DISCORD_CONTENT_LIMIT]
     return discord_content, embeds, uploads, embed_nonce
-
-
-def _format_header_line(
-    *,
-    display_name: str,
-    use_character_name: bool,
-    character_name: str | None,
-    world_name: str | None,
-) -> str:
-    name = display_name.strip() or "You"
-    segments = [name]
-    if use_character_name:
-        char = (character_name or "").strip()
-        world = (world_name or "").strip()
-        if char:
-            segments.append(char)
-            if world:
-                segments.append(world)
-        elif world:
-            segments.append(world)
-    return "Message Sent by: {}\n---".format(" / ".join(segments))
-
-
-
-def _has_existing_header(content: str) -> bool:
-    if not content:
-        return False
-    first_line, sep, remainder = content.partition("\n")
-    if not sep:
-        return False
-    if not first_line.strip().startswith("Message Sent by:"):
-        return False
-    second_line, _, _ = remainder.partition("\n")
-    if second_line.strip() != "---":
-        return False
-    return True
-
 
 
 def extract_bridge_nonce_from_footer(text: str | None) -> str | None:
@@ -318,6 +295,10 @@ def extract_bridge_nonce_from_embed_dict(embed: Mapping[str, object]) -> str | N
 
 
 def extract_bridge_nonce_from_payload(payload: Mapping[str, object]) -> str | None:
+    raw_nonce = payload.get("nonce")
+    if isinstance(raw_nonce, str) and raw_nonce:
+        return raw_nonce
+
     embeds = payload.get("embeds")
     if isinstance(embeds, Iterable):
         for embed in embeds:

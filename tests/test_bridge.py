@@ -177,7 +177,7 @@ def sample_membership():
     )
 
 
-def test_build_bridge_message_populates_embed_footer(sample_user, sample_membership):
+def test_build_bridge_message_generates_simple_embed(sample_user, sample_membership):
     content = "Hello from DemiCat"
     attachments = [("screenshot.png", b"bytes", "image/png")]
     fixed_time = datetime(2024, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
@@ -191,16 +191,14 @@ def test_build_bridge_message_populates_embed_footer(sample_user, sample_members
         timestamp=fixed_time,
     )
 
-    expected_header = "Message Sent by: Nick\n---"
     assert discord_content == ""
     assert nonce
     assert len(embeds) == 1
 
     embed_dict = embeds[0].to_dict()
-    footer_text = embed_dict.get("footer", {}).get("text")
-    assert footer_text and footer_text.endswith(f"{BRIDGE_MARKER}{nonce}")
     description = embed_dict.get("description", "")
-    assert description == f"{expected_header}\n{content}"
+    assert description == content
+    assert "footer" not in embed_dict or not embed_dict["footer"]
     assert embed_dict.get("author", {}).get("name") == sample_membership.nickname
     assert embed_dict.get("author", {}).get("icon_url") == sample_membership.avatar_url
 
@@ -213,7 +211,7 @@ def test_build_bridge_message_populates_embed_footer(sample_user, sample_members
     assert upload.content_type == "image/png"
     assert upload.data == b"bytes"
 
-    payload = {"embeds": [embed_dict]}
+    payload = {"nonce": nonce, "embeds": [embed_dict]}
     assert extract_bridge_nonce_from_payload(payload) == nonce
 
 
@@ -251,22 +249,16 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
         timestamp=fixed_time,
     )
 
-    expected_header = "Message Sent by: Nick\n---"
     assert discord_content
     assert not uploads
     assert nonce
     assert len(embeds) >= 2
 
-    first_description = embeds[0].to_dict().get("description", "")
-    assert first_description.startswith(expected_header)
-
     embed_descriptions = [
         embed.to_dict().get("description", "") for embed in embeds
     ]
     combined = "".join(embed_descriptions)
-    expected_prefix = f"{expected_header}\n"
-    assert combined.startswith(expected_prefix)
-    body_in_embeds = combined[len(expected_prefix):]
+    body_in_embeds = combined
 
     total_length = 0
     for embed in embeds:
@@ -274,7 +266,7 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
         description = data.get("description", "")
         assert len(description) <= 4096
         total_length += len(description)
-        assert data.get("footer", {}).get("text", "").endswith(f"{BRIDGE_MARKER}{nonce}")
+        assert "footer" not in data or not data["footer"]
 
     assert total_length <= 6000
     last_description = embeds[-1].to_dict().get("description", "")
@@ -290,7 +282,7 @@ def test_build_bridge_message_splits_long_content(sample_user, sample_membership
         == expected_leftover[: DISCORD_CONTENT_LIMIT]
     )
 
-    payload = {"embeds": [embed.to_dict() for embed in embeds]}
+    payload = {"nonce": nonce, "embeds": [embed.to_dict() for embed in embeds]}
     assert extract_bridge_nonce_from_payload(payload) == nonce
 
 
@@ -308,12 +300,10 @@ def test_build_bridge_message_includes_character_when_enabled(
         timestamp=fixed_time,
     )
 
-    expected_header = "Message Sent by: Nick / Hero / Eorzea\n---"
     assert discord_content == ""
-    assert (
-        embeds[0].to_dict().get("description", "")
-        == f"{expected_header}\nHi"
-    )
+    embed_dict = embeds[0].to_dict()
+    assert embed_dict.get("description", "") == "Hi"
+    assert embed_dict.get("author", {}).get("name") == sample_user.character_name
     assert not uploads
     assert nonce
 
