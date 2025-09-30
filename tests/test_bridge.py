@@ -148,6 +148,7 @@ from demibot.bridge import (
     BRIDGE_MARKER,
     BridgeUpload,
     DISCORD_CONTENT_LIMIT,
+    _apply_embed_border,
     build_bridge_message,
     extract_bridge_nonce_from_payload,
 )
@@ -230,6 +231,28 @@ def test_build_bridge_message_honors_embed_color(sample_user, sample_membership)
     assert not uploads
     embed_dict = embeds[0].to_dict()
     assert embed_dict.get("color") == 0x123456
+
+
+def test_build_bridge_message_applies_embed_border(sample_user, sample_membership):
+    settings = {"enabled": True, "glyph": "circle", "color": 0x334455}
+    discord_content, embeds, uploads, nonce = build_bridge_message(
+        content="Border",
+        user=sample_user,
+        membership=sample_membership,
+        channel_kind=ChannelKind.FC_CHAT,
+        attachments=None,
+        embed_border=settings,
+    )
+
+    assert nonce
+    assert not discord_content
+    embed_dict = embeds[0].to_dict()
+    bordered, applied, warning = _apply_embed_border(
+        "Border", settings, channel_kind=ChannelKind.FC_CHAT
+    )
+    assert warning is None
+    assert applied is True
+    assert embed_dict.get("description") == bordered
 
 
 @pytest.mark.parametrize(

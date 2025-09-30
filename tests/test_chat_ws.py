@@ -351,6 +351,8 @@ def test_chat_ws_send_uses_channel_field(monkeypatch):
             use_character_name=False,
             attachments=None,
             nonce=None,
+            embed_color=None,
+            embed_border=None,
         ):
             return content, [], [], nonce or "nonce"
 
@@ -454,6 +456,8 @@ def test_chat_ws_thread_send_includes_thread_param(monkeypatch):
             use_character_name=False,
             attachments=None,
             nonce=None,
+            embed_color=None,
+            embed_border=None,
         ):
             return content, [], [], nonce or "nonce"
 

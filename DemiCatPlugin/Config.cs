@@ -23,8 +23,45 @@ public class Config : IPluginConfiguration
     public const float MaxEmojiGridHeight = 800f;
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
+    public const int CurrentVersion = 15;
 
-    public int Version { get; set; } = 14;
+    public int Version { get; set; } = CurrentVersion;
+
+    public enum EmbedBorderGlyph
+    {
+        Square,
+        Circle,
+        Triangle
+    }
+
+    public sealed class EmbedBorderSettings
+    {
+        [JsonPropertyName("enabled")]
+        public bool Enabled { get; set; }
+
+        [JsonPropertyName("glyph")]
+        [JsonConverter(typeof(JsonStringEnumConverter))]
+        public EmbedBorderGlyph Glyph { get; set; } = EmbedBorderGlyph.Square;
+
+        [JsonPropertyName("color")]
+        public uint Color { get; set; }
+
+        public EmbedBorderSettings Clone()
+            => new()
+            {
+                Enabled = Enabled,
+                Glyph = Glyph,
+                Color = Color
+            };
+
+        public static EmbedBorderSettings CreateDefault(string? channelKind)
+            => new()
+            {
+                Enabled = false,
+                Glyph = EmbedBorderGlyph.Square,
+                Color = GetDefaultEmbedColor(channelKind)
+            };
+    }
 
     public bool Enabled { get; set; } = true;
     public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
@@ -102,6 +139,11 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("syncshellManualSyncCustom")]
     public bool SyncshellManualSyncCustom { get; set; }
+    [JsonPropertyName("fcEmbedBorder")]
+    public EmbedBorderSettings FcEmbedBorder { get; set; } = EmbedBorderSettings.CreateDefault(ChannelKind.FcChat);
+
+    [JsonPropertyName("officerEmbedBorder")]
+    public EmbedBorderSettings OfficerEmbedBorder { get; set; } = EmbedBorderSettings.CreateDefault(ChannelKind.OfficerChat);
     public bool UseCharacterName { get; set; } = false;
     public List<string> Roles { get; set; } = new();
     [JsonPropertyName("mentionRoleIds")]
@@ -426,6 +468,16 @@ public class Config : IPluginConfiguration
             Version = 14;
             ExtensionData = null;
         }
+        if (Version < 15)
+        {
+            FcEmbedBorder ??= EmbedBorderSettings.CreateDefault(ChannelKind.FcChat);
+            OfficerEmbedBorder ??= EmbedBorderSettings.CreateDefault(ChannelKind.OfficerChat);
+            FcEmbedBorder.Color = SanitizeRgb(FcEmbedBorder.Color, GetDefaultEmbedColor(ChannelKind.FcChat));
+            OfficerEmbedBorder.Color = SanitizeRgb(OfficerEmbedBorder.Color, GetDefaultEmbedColor(ChannelKind.OfficerChat));
+
+            Version = 15;
+            ExtensionData = null;
+        }
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)
@@ -435,6 +487,62 @@ public class Config : IPluginConfiguration
             ChannelKind.OfficerChat => DefaultOfficerEmbedColor,
             _ => DefaultFcEmbedColor
         };
+    }
+
+    public EmbedBorderSettings GetEmbedBorderSettings(string? channelKind)
+    {
+        return channelKind switch
+        {
+            ChannelKind.OfficerChat => OfficerEmbedBorder ?? EmbedBorderSettings.CreateDefault(channelKind),
+            ChannelKind.FcChat => FcEmbedBorder ?? EmbedBorderSettings.CreateDefault(channelKind),
+            _ => EmbedBorderSettings.CreateDefault(channelKind)
+        };
+    }
+
+    public EmbedBorderSettings GetEmbedBorderSettingsCopy(string? channelKind)
+    {
+        var settings = GetEmbedBorderSettings(channelKind);
+        if (settings != null)
+        {
+            settings = settings.Clone();
+        }
+        else
+        {
+            settings = EmbedBorderSettings.CreateDefault(channelKind);
+        }
+        settings.Color = SanitizeRgb(settings.Color, GetDefaultEmbedColor(channelKind));
+        return settings;
+    }
+
+    public void SetEmbedBorderSettings(string? channelKind, EmbedBorderSettings settings)
+    {
+        if (settings == null)
+        {
+            return;
+        }
+
+        settings = settings.Clone();
+        settings.Color = SanitizeRgb(settings.Color, GetDefaultEmbedColor(channelKind));
+        switch (channelKind)
+        {
+            case ChannelKind.OfficerChat:
+                OfficerEmbedBorder = settings;
+                break;
+            case ChannelKind.FcChat:
+                FcEmbedBorder = settings;
+                break;
+        }
+    }
+
+    internal static uint SanitizeRgb(uint value, uint fallback)
+    {
+        var sanitized = value & 0xFFFFFFu;
+        if (sanitized == value)
+        {
+            return sanitized;
+        }
+
+        return fallback & 0xFFFFFFu;
     }
 
     internal static Vector4 SanitizeColor(Vector4 color, Vector4 fallback)

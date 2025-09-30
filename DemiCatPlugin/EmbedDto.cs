@@ -28,6 +28,14 @@ public class EmbedDto
     public ulong? ChannelId { get; set; }
     public string? GuildId { get; set; }
     public List<ulong>? Mentions { get; set; }
+    public EmbedBorderRenderDto? Border { get; set; }
+}
+
+public class EmbedBorderRenderDto
+{
+    public bool Enabled { get; set; }
+    public string Glyph { get; set; } = string.Empty;
+    public uint Color { get; set; }
 }
 
 public class EmbedFieldDto

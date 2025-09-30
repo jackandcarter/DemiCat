@@ -18,6 +18,12 @@ DISCORD_EMBED_COUNT_LIMIT = 10
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 DEFAULT_FC_COLOR = 0x5865F2
 DEFAULT_OFFICER_COLOR = 0xED4245
+MAX_BORDER_LINE_LENGTH = 120
+GLYPH_SYMBOLS = {
+    "square": "■",
+    "circle": "●",
+    "triangle": "▲",
+}
 
 
 @dataclass
@@ -198,6 +204,74 @@ def _sanitize_embed_color(value: int | None) -> int | None:
     return numeric
 
 
+def _sanitize_embed_border(
+    settings: Mapping[str, object] | None, *, channel_kind: ChannelKind
+) -> tuple[bool, str, int]:
+    if not isinstance(settings, Mapping):
+        default_color = (
+            DEFAULT_OFFICER_COLOR
+            if channel_kind == ChannelKind.OFFICER_CHAT
+            else DEFAULT_FC_COLOR
+        )
+        return False, "square", default_color
+
+    enabled = bool(settings.get("enabled"))
+    glyph_value = str(settings.get("glyph") or "square").lower()
+    if glyph_value not in GLYPH_SYMBOLS:
+        glyph_value = "square"
+
+    color_value = _sanitize_embed_color(settings.get("color"))
+    if color_value is None:
+        color_value = (
+            DEFAULT_OFFICER_COLOR
+            if channel_kind == ChannelKind.OFFICER_CHAT
+            else DEFAULT_FC_COLOR
+        )
+    color_value &= 0xFFFFFF
+    return enabled, glyph_value, color_value
+
+
+def _apply_embed_border(
+    text: str,
+    settings: Mapping[str, object] | None,
+    *,
+    channel_kind: ChannelKind,
+) -> tuple[str, bool, str | None]:
+    if not text.strip():
+        return text, False, None
+
+    enabled, glyph, _ = _sanitize_embed_border(settings, channel_kind=channel_kind)
+    if not enabled:
+        return text, False, None
+
+    lines = text.split("\n")
+    if any(len(line) > MAX_BORDER_LINE_LENGTH for line in lines):
+        return (
+            text,
+            False,
+            f"Embed border disabled because a line exceeds {MAX_BORDER_LINE_LENGTH} characters.",
+        )
+
+    width = max(1, max(len(line) for line in lines))
+    glyph_symbol = GLYPH_SYMBOLS.get(glyph, GLYPH_SYMBOLS["square"])
+    horizontal_count = width + (1 + 1) * 2
+    top = glyph_symbol * horizontal_count
+    bordered_lines = [top]
+    for line in lines:
+        bordered_lines.append(f"{glyph_symbol} {line.ljust(width)} {glyph_symbol}")
+    bordered_lines.append(top)
+    bordered = "\n".join(bordered_lines)
+
+    if len(bordered) > DISCORD_EMBED_DESCRIPTION_LIMIT:
+        return (
+            text,
+            False,
+            "Embed border disabled because it exceeds Discord's embed length limit.",
+        )
+
+    return bordered, True, None
+
+
 def build_bridge_message(
     *,
     content: str,
@@ -209,6 +283,7 @@ def build_bridge_message(
     nonce: str | None = None,
     timestamp: datetime | None = None,
     embed_color: int | None = None,
+    embed_border: Mapping[str, object] | None = None,
 ) -> tuple[str, list[discord.Embed], list[BridgeUpload], str]:
     """Construct the Discord payload for a bridge message."""
 
@@ -228,7 +303,12 @@ def build_bridge_message(
     character_name = user.character_name if use_character_name else None
     world_name = user.world if use_character_name else None
 
-    chunks, represented = _split_embed_text(normalized)
+    bordered_text, border_applied, _ = _apply_embed_border(
+        normalized, embed_border, channel_kind=channel_kind
+    )
+    embed_source = bordered_text if border_applied else normalized
+
+    chunks, represented = _split_embed_text(embed_source)
     if not chunks:
         chunks = [""]
 
@@ -257,7 +337,7 @@ def build_bridge_message(
             embed.set_image(url=f"attachment://{image_filename}")
         embeds.append(embed)
 
-    leftover = normalized[represented:]
+    leftover = embed_source[represented:]
     if leftover.startswith("\n"):
         leftover = leftover[1:]
     discord_content = leftover[:DISCORD_CONTENT_LIMIT]

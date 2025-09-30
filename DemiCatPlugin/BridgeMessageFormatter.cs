@@ -32,6 +32,7 @@ public static class BridgeMessageFormatter
         public string? AuthorAvatarUrl { get; init; }
         public uint? EmbedColor { get; init; }
         public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
+        public Config.EmbedBorderSettings? EmbedBorder { get; init; }
     }
 
     public sealed class BridgeFormattedAttachment
@@ -82,15 +83,23 @@ public static class BridgeMessageFormatter
             errors.Add($"Message exceeds Discord's {DiscordContentLimit} character limit.");
         }
 
-        var embedChunks = SplitIntoEmbedChunks(displayContent, warnings, errors);
-        var embeds = BuildEmbeds(embedChunks, options, warnings);
+        var borderResult = EmbedBorderBuilder.Apply(displayContent, options.EmbedBorder, options.ChannelKind, DiscordEmbedDescriptionLimit);
+        if (!string.IsNullOrEmpty(borderResult.Warning))
+        {
+            warnings.Add(borderResult.Warning!);
+        }
+
+        var borderedDisplayContent = borderResult.Applied ? borderResult.Text : displayContent;
+
+        var embedChunks = SplitIntoEmbedChunks(borderedDisplayContent, warnings, errors);
+        var embeds = BuildEmbeds(embedChunks, options, warnings, borderResult);
 
         var attachments = ProcessAttachments(attachmentPaths, warnings, errors);
 
         return new BridgeFormattedMessage
         {
             Content = content,
-            DisplayContent = displayContent,
+            DisplayContent = borderedDisplayContent,
             Embeds = embeds,
             Attachments = attachments,
             Warnings = warnings,
@@ -106,7 +115,8 @@ public static class BridgeMessageFormatter
     private static IReadOnlyList<EmbedDto> BuildEmbeds(
         IReadOnlyList<string> chunks,
         BridgeFormatterOptions options,
-        List<string> warnings)
+        List<string> warnings,
+        EmbedBorderBuilder.Result borderResult)
     {
         var list = new List<EmbedDto>();
         var chunkCount = chunks.Count > 0 ? chunks.Count : 1;
@@ -128,6 +138,15 @@ public static class BridgeMessageFormatter
                 AuthorIconUrl = options.AuthorAvatarUrl,
                 Color = DetermineColor(options)
             };
+            if (borderResult.Applied && borderResult.Border != null && i == 0)
+            {
+                embed.Border = new EmbedBorderRenderDto
+                {
+                    Enabled = true,
+                    Glyph = EmbedBorderBuilder.GetGlyphName(borderResult.Border.Glyph),
+                    Color = borderResult.Border.Color
+                };
+            }
             list.Add(embed);
         }
 

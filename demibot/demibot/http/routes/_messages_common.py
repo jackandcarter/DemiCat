@@ -52,7 +52,7 @@ try:  # pragma: no cover - optional dependency in tests
 except Exception:  # pragma: no cover - fallback when discord.utils missing
     MISSING = object()
 from fastapi import HTTPException, UploadFile
-from pydantic import BaseModel, Field, ConfigDict, model_validator
+from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -978,6 +978,7 @@ class PostBody(BaseModel):
         default=None, alias="messageReference"
     )
     embed_color: int | None = Field(default=None, alias="embedColor")
+    embed_border: dict | None = Field(default=None, alias="embedBorder")
 
     model_config = ConfigDict(populate_by_name=True)
 
@@ -993,6 +994,19 @@ class PostBody(BaseModel):
             if channel_value is not None:
                 values["channel_id"] = channel_value
         return values
+
+    @field_validator("embed_border", mode="before")
+    @classmethod
+    def _parse_embed_border(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            if not stripped:
+                return None
+            try:
+                return json.loads(stripped)
+            except json.JSONDecodeError:
+                return None
+        return value
 
 
 async def fetch_messages(
@@ -1303,6 +1317,7 @@ async def save_message(
         use_character_name=bool(body.use_character_name),
         attachments=uploads_data,
         embed_color=body.embed_color,
+        embed_border=body.embed_border,
     )
 
     username_base = nickname or (
@@ -1747,6 +1762,7 @@ async def edit_message(
         use_character_name=use_character_name_flag,
         attachments=None,
         nonce=existing_nonce,
+        embed_border=None,
     )
 
     now = datetime.utcnow()

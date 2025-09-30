@@ -167,46 +167,61 @@ public class ChatWindow : IDisposable
         }
     }
 
-    private void DrawEmbedColorPicker()
+    private void SetEmbedBorderSettings(Config.EmbedBorderSettings settings)
+    {
+        if (settings == null)
+        {
+            return;
+        }
+
+        var current = _config.GetEmbedBorderSettingsCopy(_channelKind);
+        if (current.Enabled == settings.Enabled && current.Glyph == settings.Glyph && current.Color == settings.Color)
+        {
+            return;
+        }
+
+        _config.SetEmbedBorderSettings(_channelKind, settings);
+        SaveConfig();
+        InvalidatePreview();
+    }
+
+    private string SerializeBorderSettingsForPayload()
+    {
+        var border = _config.GetEmbedBorderSettingsCopy(_channelKind);
+        var payload = new
+        {
+            enabled = border.Enabled,
+            glyph = EmbedBorderBuilder.GetGlyphName(border.Glyph),
+            color = border.Color
+        };
+        return JsonSerializer.Serialize(payload);
+    }
+
+    private void DrawEmbedStyleControls()
     {
         if (!SupportsEmbedColorSelection())
         {
             return;
         }
 
-        ImGui.AlignTextToFramePadding();
-        ImGui.TextUnformatted("Embed Color:");
-        ImGui.SameLine();
-
-        var effectiveColor = GetEffectiveEmbedColor();
-        var colorVec = ColorUtils.RgbToVector4(effectiveColor);
-        var buttonSize = new Vector2(ImGui.GetFrameHeight() * 2.2f, ImGui.GetFrameHeight());
-        var popupId = $"embedColorPicker##{_channelKind}";
-        if (ImGui.ColorButton($"##embedColorButton_{_channelKind}", colorVec, ImGuiColorEditFlags.NoAlpha, buttonSize))
+        var context = new EmbedStyleControls.Context
         {
-            ImGui.OpenPopup(popupId);
+            ChannelKind = _channelKind,
+            EffectiveEmbedColor = GetEffectiveEmbedColor(),
+            EmbedColorOverride = GetEmbedColorOverride(),
+            Border = _config.GetEmbedBorderSettingsCopy(_channelKind)
+        };
+
+        var result = EmbedStyleControls.Draw(context);
+
+        if (result.EmbedColorChanged)
+        {
+            SetEmbedColorOverride(result.EmbedColorOverride);
         }
 
-        if (ImGui.BeginPopup(popupId))
+        if (result.BorderChanged)
         {
-            var pickerColor = new Vector3(colorVec.X, colorVec.Y, colorVec.Z);
-            var pickerFlags = ImGuiColorEditFlags.NoSidePreview | ImGuiColorEditFlags.NoSmallPreview;
-            if (ImGui.ColorPicker3("##embedColorPicker", ref pickerColor, pickerFlags))
-            {
-                var newColor = ColorUtils.ImGuiToRgb(ColorUtils.Vector4ToImGui(new Vector4(pickerColor, 1f)));
-                SetEmbedColorOverride(newColor);
-            }
-
-            if (GetEmbedColorOverride().HasValue)
-            {
-                if (ImGui.Button("Reset to Default"))
-                {
-                    SetEmbedColorOverride(null);
-                    ImGui.CloseCurrentPopup();
-                }
-            }
-
-            ImGui.EndPopup();
+            SetEmbedBorderSettings(result.Border);
         }
 
         ImGui.SameLine();
@@ -1112,7 +1127,7 @@ public class ChatWindow : IDisposable
             }
         }
 
-        DrawEmbedColorPicker();
+        DrawEmbedStyleControls();
 
         if (ImGui.SmallButton("B")) WrapSelection("**", "**");
         ImGui.SameLine();
@@ -2597,6 +2612,7 @@ public class ChatWindow : IDisposable
             CharacterName = characterName,
             WorldName = worldName,
             EmbedColor = GetEmbedColorOverride(),
+            EmbedBorder = _config.GetEmbedBorderSettingsCopy(_channelKind),
             Timestamp = DateTimeOffset.UtcNow
         };
     }
@@ -2858,6 +2874,7 @@ public class ChatWindow : IDisposable
         {
             var color = GetEffectiveEmbedColor();
             fields.Add(new KeyValuePair<string, string>("embedColor", color.ToString()));
+            fields.Add(new KeyValuePair<string, string>("embedBorder", SerializeBorderSettingsForPayload()));
         }
         if (messageReference != null)
         {
@@ -2882,6 +2899,7 @@ public class ChatWindow : IDisposable
         {
             var color = GetEffectiveEmbedColor().ToString();
             form.Add(new StringContent(color), "embedColor");
+            form.Add(new StringContent(SerializeBorderSettingsForPayload(), Encoding.UTF8), "embedBorder");
         }
         if (!string.IsNullOrEmpty(_replyToId))
         {

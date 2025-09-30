@@ -20,6 +20,10 @@ public static class EmbedPreviewRenderer
         const float contentPadding = 8f;
         const float verticalPadding = 4f;
 
+        var borderInfo = dto.Border;
+        var borderEnabled = borderInfo?.Enabled == true;
+        var borderColor = borderInfo?.Color ?? 0u;
+
         var indent = contentPadding + (dto.Color.HasValue ? stripeWidth : 0f);
         var avail = ImGui.GetContentRegionAvail().X;
         if (avail <= 0)
@@ -185,12 +189,20 @@ public static class EmbedPreviewRenderer
         ImGui.Unindent(indent);
 
         ImGui.EndChild();
+        var rectMin = ImGui.GetItemRectMin();
+        var rectMax = ImGui.GetItemRectMax();
         if (dto.Color.HasValue)
         {
-            var min = ImGui.GetItemRectMin();
-            var max = ImGui.GetItemRectMax();
             var color = ColorUtils.RgbToImGui(dto.Color.Value);
-            ImGui.GetWindowDrawList().AddRectFilled(min, new Vector2(min.X + stripeWidth, max.Y), color);
+            ImGui.GetWindowDrawList().AddRectFilled(rectMin, new Vector2(rectMin.X + stripeWidth, rectMax.Y), color);
+        }
+
+        if (borderEnabled && rectMax.X > rectMin.X && rectMax.Y > rectMin.Y)
+        {
+            var drawList = ImGui.GetWindowDrawList();
+            var color = ColorUtils.RgbToImGui(borderColor);
+            var inset = new Vector2(1f, 1f);
+            drawList.AddRect(rectMin + inset, rectMax - inset, color, 0f, ImDrawFlags.None, 1.5f);
         }
     }
 

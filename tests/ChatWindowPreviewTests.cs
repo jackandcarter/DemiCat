@@ -14,7 +14,8 @@ public class ChatWindowPreviewTests
         var options = new BridgeMessageFormatter.BridgeFormatterOptions
         {
             AuthorName = "Tester",
-            Timestamp = FixedTimestamp
+            Timestamp = FixedTimestamp,
+            EmbedBorder = Config.EmbedBorderSettings.CreateDefault(ChannelKind.FcChat)
         };
         var message = BridgeMessageFormatter.Format("Hello world", Array.Empty<string>(), options);
 
@@ -29,7 +30,8 @@ public class ChatWindowPreviewTests
         var options = new BridgeMessageFormatter.BridgeFormatterOptions
         {
             AuthorName = "Tester",
-            Timestamp = FixedTimestamp
+            Timestamp = FixedTimestamp,
+            EmbedBorder = Config.EmbedBorderSettings.CreateDefault(ChannelKind.FcChat)
         };
         var longBody = new string('A', 50000);
         var message = BridgeMessageFormatter.Format(longBody, Array.Empty<string>(), options);
