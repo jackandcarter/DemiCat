@@ -13,6 +13,8 @@ public class Config : IPluginConfiguration
     public const float MaxChatFontScale = 1.5f;
     public const float MinChatImageScale = 0.5f;
     public const float MaxChatImageScale = 3f;
+    public const float MinDockIconScale = 0.75f;
+    public const float MaxDockIconScale = 2.5f;
     public static readonly Vector4 DefaultPrimaryWindowColor = new(0.11f, 0.11f, 0.12f, 1f);
     public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
 
@@ -24,7 +26,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 16;
+    public const int CurrentVersion = 17;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -81,6 +83,24 @@ public class Config : IPluginConfiguration
     public bool ChatFadeOutEnabled { get; set; } = false;
     public int ChatFadeOutDelaySeconds { get; set; } = 10;
     public float ChatFadeOutMinimumAlpha { get; set; } = 0.3f;
+
+    [JsonPropertyName("dockVisible")]
+    public bool DockVisible { get; set; } = true;
+
+    [JsonPropertyName("dockLocked")]
+    public bool DockLocked { get; set; }
+
+    [JsonPropertyName("dockIconScale")]
+    public float DockIconScale { get; set; } = 1f;
+
+    [JsonPropertyName("dockBackgroundAlpha")]
+    public float DockBackgroundAlpha { get; set; } = 0.9f;
+
+    [JsonPropertyName("dockPosition")]
+    public Vector2 DockPosition { get; set; } = Vector2.Zero;
+
+    [JsonPropertyName("dockPositionInitialized")]
+    public bool DockPositionInitialized { get; set; }
 
     public float ChatFontScale { get; set; } = 1f;
     public bool ChatImageAutoStretch { get; set; } = true;
@@ -481,6 +501,22 @@ public class Config : IPluginConfiguration
             Version = 16;
             ExtensionData = null;
         }
+        if (Version < 17)
+        {
+            DockVisible = true;
+            DockLocked = false;
+            DockIconScale = SanitizeDockIconScale(DockIconScale);
+            if (!float.IsFinite(DockBackgroundAlpha) || DockBackgroundAlpha <= 0f)
+            {
+                DockBackgroundAlpha = 0.9f;
+            }
+            DockBackgroundAlpha = Math.Clamp(DockBackgroundAlpha, 0.2f, 1f);
+            DockPositionInitialized = false;
+            DockPosition = Vector2.Zero;
+
+            Version = 17;
+            ExtensionData = null;
+        }
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)
@@ -604,5 +640,15 @@ public class Config : IPluginConfiguration
         }
 
         return Math.Clamp(value, MinEmojiGridHeight, MaxEmojiGridHeight);
+    }
+
+    internal static float SanitizeDockIconScale(float value)
+    {
+        if (!float.IsFinite(value) || value <= 0f)
+        {
+            return 1f;
+        }
+
+        return Math.Clamp(value, MinDockIconScale, MaxDockIconScale);
     }
 }
