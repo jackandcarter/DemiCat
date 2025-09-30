@@ -116,11 +116,15 @@ public sealed class NotePadService : IDisposable
 
     public async Task<NotePadSection?> CreateSectionAsync(string name, string colorHex, CancellationToken cancellationToken)
     {
-        var payload = new
+        var payload = new Dictionary<string, object?>
         {
-            name,
-            color = colorHex
+            ["name"] = name
         };
+
+        if (NotePadColorHelper.TryParseColorString(colorHex, out var colorValue))
+        {
+            payload["color"] = colorValue & 0xFFFFFF;
+        }
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections";
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
@@ -966,9 +970,18 @@ public sealed class NotePadService : IDisposable
 
 public sealed class NotePadSection
 {
+    private string _color = NotePadColorHelper.DefaultHexColor;
+
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
-    public string Color { get; set; } = "#4a5568";
+
+    [JsonConverter(typeof(NotePadColorJsonConverter))]
+    public string Color
+    {
+        get => _color;
+        set => _color = NotePadColorHelper.Normalize(value);
+    }
+
     public List<NotePadPage> Pages { get; set; } = new();
 }
 

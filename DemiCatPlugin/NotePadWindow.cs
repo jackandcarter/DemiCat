@@ -503,7 +503,7 @@ public sealed class NotePadWindow : IDisposable
                 {
                     _ = Task.Run(async () =>
                     {
-                        var section = await _service.CreateSectionAsync(name, "#4a5568", CancellationToken.None);
+                        var section = await _service.CreateSectionAsync(name, NotePadColorHelper.DefaultHexColor, CancellationToken.None);
                         if (section != null)
                         {
                             SelectSection(section.Id);
@@ -849,22 +849,15 @@ public sealed class NotePadWindow : IDisposable
 
     private static Vector4 ParseColor(string? color)
     {
-        if (string.IsNullOrWhiteSpace(color) || color!.Length < 7 || color[0] != '#')
+        if (!NotePadColorHelper.TryParseColorString(color, out var rgb))
         {
-            return new Vector4(0.29f, 0.33f, 0.39f, 1f);
+            rgb = NotePadColorHelper.DefaultColorValue;
         }
 
-        try
-        {
-            var r = Convert.ToInt32(color.Substring(1, 2), 16) / 255f;
-            var g = Convert.ToInt32(color.Substring(3, 2), 16) / 255f;
-            var b = Convert.ToInt32(color.Substring(5, 2), 16) / 255f;
-            return new Vector4(r, g, b, 1f);
-        }
-        catch
-        {
-            return new Vector4(0.29f, 0.33f, 0.39f, 1f);
-        }
+        var r = ((rgb >> 16) & 0xFF) / 255f;
+        var g = ((rgb >> 8) & 0xFF) / 255f;
+        var b = (rgb & 0xFF) / 255f;
+        return new Vector4(r, g, b, 1f);
     }
 
     private void OpenNewSectionPopup()
