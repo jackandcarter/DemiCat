@@ -100,7 +100,7 @@ public class ChatWindow : IDisposable
     private MentionDrawerState? _mentionDrawerState;
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
-    protected string ChannelKind => _channelKind;
+    protected string ChannelKindKey => _channelKind;
 
     private class TextureCacheEntry
     {
@@ -126,13 +126,13 @@ public class ChatWindow : IDisposable
     }
 
     private bool SupportsEmbedColorSelection()
-        => _channelKind == ChannelKind.FcChat || _channelKind == ChannelKind.OfficerChat;
+        => _channelKind == global::DemiCatPlugin.ChannelKind.FcChat || _channelKind == global::DemiCatPlugin.ChannelKind.OfficerChat;
 
     private uint? GetEmbedColorOverride()
         => _channelKind switch
         {
-            ChannelKind.FcChat => _config.FcEmbedColor,
-            ChannelKind.OfficerChat => _config.OfficerEmbedColor,
+            global::DemiCatPlugin.ChannelKind.FcChat => _config.FcEmbedColor,
+            global::DemiCatPlugin.ChannelKind.OfficerChat => _config.OfficerEmbedColor,
             _ => null
         };
 
@@ -145,7 +145,7 @@ public class ChatWindow : IDisposable
     private void SetEmbedColorOverride(uint? color)
     {
         var changed = false;
-        if (_channelKind == ChannelKind.FcChat)
+        if (_channelKind == global::DemiCatPlugin.ChannelKind.FcChat)
         {
             if (_config.FcEmbedColor != color)
             {
@@ -153,7 +153,7 @@ public class ChatWindow : IDisposable
                 changed = true;
             }
         }
-        else if (_channelKind == ChannelKind.OfficerChat)
+        else if (_channelKind == global::DemiCatPlugin.ChannelKind.OfficerChat)
         {
             if (_config.OfficerEmbedColor != color)
             {
@@ -425,7 +425,7 @@ public class ChatWindow : IDisposable
             tokenManager,
             channelService,
             new ChannelSelectionService(config),
-            ChannelKind.Chat,
+            global::DemiCatPlugin.ChannelKind.Chat,
             null,
             new EmojiManager(httpClient, tokenManager, config))
     {
