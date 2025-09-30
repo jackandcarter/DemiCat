@@ -149,7 +149,10 @@ public sealed class NotePadWindow : IDisposable
                 var textSize = ImGui.CalcTextSize(title);
                 var style = ImGui.GetStyle();
                 var padding = style.FramePadding.X + 6f;
-                var minWidth = textSize.X + padding * 2f;
+                var textLineHeight = ImGui.GetTextLineHeight();
+                var chipGap = MathF.Min(style.FramePadding.X * 0.5f, 6f);
+                var chipWidth = MathF.Max(0f, MathF.Min(textLineHeight, style.FramePadding.X - chipGap));
+                var minWidth = textSize.X + padding * 2f + chipWidth + chipGap;
 
                 var color = ParseColor(section.Color);
                 var previousTabMinWidth = style.TabMinWidthForCloseButton;
@@ -162,10 +165,15 @@ public sealed class NotePadWindow : IDisposable
                 var rectMin = ImGui.GetItemRectMin();
                 var rectMax = ImGui.GetItemRectMax();
                 var drawList = ImGui.GetWindowDrawList();
-                var chipWidth = Math.Min(rectMax.X - rectMin.X, ImGui.GetTextLineHeight());
-                var chipMin = new Vector2(rectMin.X + 4f, rectMin.Y + 4f);
-                var chipMax = new Vector2(chipMin.X + chipWidth * 0.2f, rectMax.Y - 4f);
-                drawList.AddRectFilled(chipMin, chipMax, ImGui.ColorConvertFloat4ToU32(color), 3f);
+                var textStartX = rectMin.X + style.FramePadding.X;
+                var chipRight = textStartX - chipGap;
+                var chipLeft = chipRight - chipWidth;
+                if (chipWidth > 0f && chipRight > rectMin.X)
+                {
+                    var chipMin = new Vector2(MathF.Max(chipLeft, rectMin.X + 1f), rectMin.Y + 4f);
+                    var chipMax = new Vector2(chipRight, rectMax.Y - 4f);
+                    drawList.AddRectFilled(chipMin, chipMax, ImGui.ColorConvertFloat4ToU32(color), 3f);
+                }
 
                 if (tabOpen)
                 {
