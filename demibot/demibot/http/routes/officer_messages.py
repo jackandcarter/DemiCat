@@ -43,6 +43,7 @@ async def post_officer_message_with_attachments(
     useCharacterName: bool | None = Form(False),
     message_reference: str | None = Form(None),
     embedColor: int | None = Form(None),
+    embedBorder: str | None = Form(None),
     files: list[UploadFile] | None = File(None),
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
@@ -60,6 +61,7 @@ async def post_officer_message_with_attachments(
         use_character_name=useCharacterName,
         message_reference=ref,
         embed_color=embedColor,
+        embed_border=embedBorder,
     )
 
     return await save_message(

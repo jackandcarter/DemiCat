@@ -17,7 +17,8 @@ public class BridgeMessageFormatterTests
             Timestamp = FixedTimestamp,
             AuthorName = "You",
             CharacterName = "Tester",
-            WorldName = "World"
+            WorldName = "World",
+            EmbedBorder = Config.EmbedBorderSettings.CreateDefault(ChannelKind.FcChat)
         };
 
     [Fact]
@@ -68,5 +69,52 @@ public class BridgeMessageFormatterTests
 
         var embed = Assert.Single(result.Embeds);
         Assert.Equal((uint)0x123456, embed.Color);
+    }
+
+    [Fact]
+    public void Format_AppliesEmbedBorderWhenWithinLimits()
+    {
+        var options = CreateOptions();
+        options.EmbedBorder = new Config.EmbedBorderSettings
+        {
+            Enabled = true,
+            Glyph = Config.EmbedBorderGlyph.Circle,
+            Color = 0x112233
+        };
+
+        var result = BridgeMessageFormatter.Format("Hi", Array.Empty<string>(), options);
+
+        var embed = Assert.Single(result.Embeds);
+        var border = Assert.NotNull(embed.Border);
+        Assert.True(border.Enabled);
+        Assert.Equal("circle", border.Glyph);
+        Assert.Equal((uint)0x112233 & 0xFFFFFFu, border.Color);
+
+        var expected = EmbedBorderBuilder.Apply("Hi", options.EmbedBorder, ChannelKind.FcChat, 4096);
+        Assert.True(expected.Applied);
+        Assert.Equal(expected.Text, embed.Description);
+        Assert.Equal(expected.Text, result.DisplayContent);
+        Assert.DoesNotContain(result.Warnings, w => w.Contains("border", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Format_DisablesBorderWhenLineTooLong()
+    {
+        var options = CreateOptions();
+        options.EmbedBorder = new Config.EmbedBorderSettings
+        {
+            Enabled = true,
+            Glyph = Config.EmbedBorderGlyph.Square,
+            Color = 0x445566
+        };
+
+        var input = new string('x', 200);
+        var result = BridgeMessageFormatter.Format(input, Array.Empty<string>(), options);
+
+        var embed = Assert.Single(result.Embeds);
+        Assert.Null(embed.Border);
+        Assert.Equal(input, embed.Description);
+        Assert.Equal(input, result.DisplayContent);
+        Assert.Contains(result.Warnings, w => w.Contains("border", StringComparison.OrdinalIgnoreCase));
     }
 }

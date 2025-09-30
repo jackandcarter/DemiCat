@@ -129,6 +129,9 @@ async def test_officer_multipart_uses_officer_endpoint(monkeypatch):
             "useCharacterName": "true",
             "message_reference": json.dumps({"messageId": "5", "channelId": "555"}),
             "embedColor": str(0x123456),
+            "embedBorder": json.dumps(
+                {"enabled": True, "glyph": "triangle", "color": 0x112233}
+            ),
         }
         resp = await client.post(
             "/api/channels/555/officer-messages",
@@ -149,6 +152,11 @@ async def test_officer_multipart_uses_officer_endpoint(monkeypatch):
     assert body.message_reference.channel_id == "555"
     assert body.message_reference.message_id == "5"
     assert body.embed_color == 0x123456
+    assert body.embed_border == {
+        "enabled": True,
+        "glyph": "triangle",
+        "color": 0x112233,
+    }
 
     assert captured["channel_kind"] == ChannelKind.OFFICER_CHAT
 

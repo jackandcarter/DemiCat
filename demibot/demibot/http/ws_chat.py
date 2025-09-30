@@ -1178,6 +1178,17 @@ class ChatConnectionManager:
                 embed_color_value = int(raw_embed_color)
             except (TypeError, ValueError):
                 embed_color_value = None
+        raw_embed_border = payload.get("embedBorder")
+        if raw_embed_border is None:
+            raw_embed_border = payload.get("embed_border")
+        embed_border_value: Mapping[str, object] | None = None
+        if isinstance(raw_embed_border, str):
+            try:
+                embed_border_value = json.loads(raw_embed_border)
+            except json.JSONDecodeError:
+                embed_border_value = None
+        elif isinstance(raw_embed_border, Mapping):
+            embed_border_value = raw_embed_border
 
         channel_obj: discord.abc.Messageable | discord.Thread | None = None
         thread_id: int | None = None
@@ -1324,6 +1335,7 @@ class ChatConnectionManager:
             use_character_name=use_character_name_flag,
             attachments=file_data,
             embed_color=embed_color_value,
+            embed_border=embed_border_value,
         )
 
         username = (

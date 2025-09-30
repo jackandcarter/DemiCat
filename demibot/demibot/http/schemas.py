@@ -47,6 +47,13 @@ class EmbedAuthorDto(CamelModel):
     url: Optional[str] = None
     icon_url: Optional[str] = Field(default=None, alias="iconUrl")
 
+
+class EmbedBorderDto(CamelModel):
+    enabled: bool
+    glyph: str
+    color: int
+
+
 class EmbedDto(CamelModel):
     id: str
     timestamp: Optional[datetime] = None
@@ -70,6 +77,7 @@ class EmbedDto(CamelModel):
     buttons: List[EmbedButtonDto] | None = None
     channel_id: Optional[int] = Field(default=None, alias="channelId")
     mentions: List[int] | None = None
+    border: Optional[EmbedBorderDto] = None
 
 # ---- Chat ----
 
