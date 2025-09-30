@@ -114,6 +114,14 @@ public sealed class Resolver : IResolver
             manifest.SizeHints.Add(new SizeHint { Path = "customize+", Size = Encoding.UTF8.GetByteCount(customize!) });
         }
 
+        var simpleHeels = TryInvokeIpc<string>("SimpleHeels.GetCurrentProfile")
+            ?? TryInvokeIpc<string>("SimpleHeels.GetProfile");
+        if (!string.IsNullOrWhiteSpace(simpleHeels))
+        {
+            manifest.Appearance.CustomState["simpleheels"] = simpleHeels!;
+            manifest.SizeHints.Add(new SizeHint { Path = "simpleheels", Size = Encoding.UTF8.GetByteCount(simpleHeels!) });
+        }
+
         manifest.SizeHints.Add(new SizeHint
         {
             Path = penumbraPaths.CollectionName,
@@ -222,6 +230,11 @@ public sealed class Resolver : IResolver
         if (manifest.Appearance.CustomState.TryGetValue("customize+", out var customize) && !string.IsNullOrWhiteSpace(customize))
         {
             InvokeIpcSafe("Customize.ApplyProfile", customize);
+        }
+
+        if (manifest.Appearance.CustomState.TryGetValue("simpleheels", out var heels) && !string.IsNullOrWhiteSpace(heels))
+        {
+            InvokeIpcSafe("SimpleHeels.ApplyProfile", heels);
         }
     }
 
