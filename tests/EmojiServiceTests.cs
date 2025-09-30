@@ -1,3 +1,4 @@
+using System;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -39,8 +40,13 @@ public class EmojiManagerTests
     {
         public event FrameworkUpdateDelegate? Update { add { } remove { } }
         public FrameworkUpdateType CurrentUpdateType => FrameworkUpdateType.None;
-        public void RunOnTick(System.Action action, FrameworkUpdatePriority priority = FrameworkUpdatePriority.Normal)
-            => action();
+        public Task RunOnTick(System.Action action, FrameworkUpdatePriority priority = FrameworkUpdatePriority.Normal)
+        {
+            action();
+            return Task.CompletedTask;
+        }
+
+        public Task RunOnTick(Func<Task> action, FrameworkUpdatePriority priority = FrameworkUpdatePriority.Normal) => action();
     }
 
     private sealed class TestLog : IPluginLog
