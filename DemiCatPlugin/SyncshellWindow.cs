@@ -2358,8 +2358,12 @@ public class SyncshellWindow : IDisposable
             () =>
             {
                 var subscriber = pi.GetIpcSubscriber<object?>("Customize.ProfileChanged");
-                subscriber.Subscribe(HandleCustomizePlusProfileChangedObj);
-                return () => subscriber.Unsubscribe(HandleCustomizePlusProfileChangedObj);
+                Action<object?> handler = HandleCustomizePlusProfileChangedObj;
+                subscriber.Subscribe(handler);
+                return () =>
+                {
+                    subscriber.Unsubscribe(handler);
+                };
             });
 
         void HandleCustomizePlusProfileApplied(string _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
@@ -2382,8 +2386,12 @@ public class SyncshellWindow : IDisposable
             () =>
             {
                 var subscriber = pi.GetIpcSubscriber<object?>("Customize.ProfileApplied");
-                subscriber.Subscribe(HandleCustomizePlusProfileAppliedObj);
-                return () => subscriber.Unsubscribe(HandleCustomizePlusProfileAppliedObj);
+                Action<object?> handler = HandleCustomizePlusProfileAppliedObj;
+                subscriber.Subscribe(handler);
+                return () =>
+                {
+                    subscriber.Unsubscribe(handler);
+                };
             });
 
         void HandleSimpleHeelsProfileChanged(string _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
@@ -2406,8 +2414,12 @@ public class SyncshellWindow : IDisposable
             () =>
             {
                 var subscriber = pi.GetIpcSubscriber<object?>("SimpleHeels.ProfileChanged");
-                subscriber.Subscribe(HandleSimpleHeelsProfileChangedObj);
-                return () => subscriber.Unsubscribe(HandleSimpleHeelsProfileChangedObj);
+                Action<object?> handler = HandleSimpleHeelsProfileChangedObj;
+                subscriber.Subscribe(handler);
+                return () =>
+                {
+                    subscriber.Unsubscribe(handler);
+                };
             });
 
         void HandleSimpleHeelsProfileApplied(string _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
@@ -2430,8 +2442,12 @@ public class SyncshellWindow : IDisposable
             () =>
             {
                 var subscriber = pi.GetIpcSubscriber<object?>("SimpleHeels.ProfileApplied");
-                subscriber.Subscribe(HandleSimpleHeelsProfileAppliedObj);
-                return () => subscriber.Unsubscribe(HandleSimpleHeelsProfileAppliedObj);
+                Action<object?> handler = HandleSimpleHeelsProfileAppliedObj;
+                subscriber.Subscribe(handler);
+                return () =>
+                {
+                    subscriber.Unsubscribe(handler);
+                };
             });
     }
 
