@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
 using System.Numerics;
-using System.Runtime.InteropServices;
-using System.Text;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
@@ -33,6 +31,7 @@ public class MainWindow : IDisposable
     private readonly EmojiManager _emojiManager;
     private readonly HttpClient _httpClient;
     private readonly List<DockItem> _dockItems = new();
+    private string? _draggingDockItemId;
     private readonly HashSet<string> _autoShownDockItems = new();
 
     private readonly Action _openSettingsAction;
@@ -455,8 +454,8 @@ public class MainWindow : IDisposable
 
             if (ImGui.BeginDragDropSource())
             {
-                var payloadData = Encoding.UTF8.GetBytes(item.Id);
-                ImGui.SetDragDropPayload(DockDragPayloadType, payloadData);
+                _draggingDockItemId = item.Id;
+                ImGui.SetDragDropPayload(DockDragPayloadType, ReadOnlySpan<byte>.Empty);
                 ImGui.TextUnformatted(item.Tooltip);
                 ImGui.EndDragDropSource();
             }
@@ -464,15 +463,11 @@ public class MainWindow : IDisposable
             if (ImGui.BeginDragDropTarget())
             {
                 var payload = ImGui.AcceptDragDropPayload(DockDragPayloadType);
-                if (!payload.Equals(default(ImGuiPayloadPtr)) && payload.Data != IntPtr.Zero && payload.DataSize > 0)
+                if (!payload.Equals(default(ImGuiPayloadPtr)))
                 {
-                    var sourceBytes = new byte[payload.DataSize];
-                    Marshal.Copy(payload.Data, sourceBytes, 0, payload.DataSize);
-                    var sourceId = Encoding.UTF8.GetString(sourceBytes);
-
-                    if (!string.IsNullOrEmpty(sourceId) && !string.Equals(sourceId, item.Id, StringComparison.Ordinal))
+                    if (!string.IsNullOrEmpty(_draggingDockItemId) && !string.Equals(_draggingDockItemId, item.Id, StringComparison.Ordinal))
                     {
-                        var sourceIndex = _dockItems.FindIndex(d => string.Equals(d.Id, sourceId, StringComparison.Ordinal));
+                        var sourceIndex = _dockItems.FindIndex(d => string.Equals(d.Id, _draggingDockItemId, StringComparison.Ordinal));
                         var targetIndex = _dockItems.FindIndex(d => string.Equals(d.Id, item.Id, StringComparison.Ordinal));
 
                         if (sourceIndex >= 0 && targetIndex >= 0)
@@ -490,6 +485,8 @@ public class MainWindow : IDisposable
                             reordered = true;
                         }
                     }
+
+                    _draggingDockItemId = null;
                 }
 
                 ImGui.EndDragDropTarget();
