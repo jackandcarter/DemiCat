@@ -331,7 +331,7 @@ def test_should_drop_due_to_nonce_and_cleanup(monkeypatch):
             "nonce": "abc123",
             "embeds": [
                 {
-                    "footer": {"text": f"DemiCat • Chat • {BRIDGE_MARKER}abc123"},
+                    "description": "hello",
                 }
             ],
         },
