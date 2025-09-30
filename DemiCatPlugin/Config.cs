@@ -27,7 +27,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 18;
+    public const int CurrentVersion = 19;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -111,6 +111,9 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("dockAutoShow")]
     public Dictionary<string, bool> DockAutoShow { get; set; } = new();
+
+    [JsonPropertyName("dockOrder")]
+    public List<string> DockOrder { get; set; } = new();
 
     public float ChatFontScale { get; set; } = 1f;
     public bool ChatImageAutoStretch { get; set; } = true;
@@ -544,6 +547,59 @@ public class Config : IPluginConfiguration
 
             Version = 18;
             ExtensionData = null;
+        }
+        if (Version < 19)
+        {
+            var defaultDockOrder = new[]
+            {
+                "events",
+                "create",
+                "templates",
+                "notepad",
+                "requests",
+                "chat",
+                "officer",
+                "syncshell",
+                "settings"
+            };
+
+            var order = DockOrder ?? new List<string>();
+            var defaultSet = new HashSet<string>(defaultDockOrder);
+            var seen = new HashSet<string>();
+            var normalized = new List<string>();
+
+            foreach (var id in order)
+            {
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    continue;
+                }
+
+                var trimmed = id.Trim();
+                if (!defaultSet.Contains(trimmed))
+                {
+                    continue;
+                }
+
+                if (seen.Add(trimmed))
+                {
+                    normalized.Add(trimmed);
+                }
+            }
+
+            foreach (var id in defaultDockOrder)
+            {
+                if (seen.Add(id))
+                {
+                    normalized.Add(id);
+                }
+            }
+
+            DockOrder = normalized;
+
+            Version = 19;
+            ExtensionData = null;
+            PluginServices.Instance?.PluginInterface.SavePluginConfig(this);
         }
     }
 
