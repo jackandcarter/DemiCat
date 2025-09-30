@@ -57,6 +57,7 @@ public class Plugin : IDalamudPlugin
     private readonly TokenManager _tokenManager;
     private bool _officerWatcherRunning;
     private bool _invalidTokenToastShown;
+    private bool? _savedDockVisibilityPreference;
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
     private readonly IFontHandle? _emojiFontHandle;
     private readonly CommandInfo _mewCommandInfo;
@@ -628,6 +629,11 @@ public class Plugin : IDalamudPlugin
     {
         _invalidTokenToastShown = false;
         try { _services.ChatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
+
+        var desiredDockVisibility = _savedDockVisibilityPreference ?? _config.DockVisible;
+        _savedDockVisibilityPreference = null;
+        _mainWindow.IsOpen = desiredDockVisibility;
+
         _mainWindow.SetNotePadReadOnly(false);
         StartWatchers();
     }
@@ -638,6 +644,20 @@ public class Plugin : IDalamudPlugin
         {
             StopWatchers();
             _mainWindow.SetNotePadReadOnly(true);
+
+            var savedDockVisibility = _config.DockVisible;
+            _savedDockVisibilityPreference = savedDockVisibility;
+
+            if (_mainWindow.IsOpen)
+            {
+                _mainWindow.IsOpen = false;
+            }
+
+            if (_config.DockVisible != savedDockVisibility)
+            {
+                _config.DockVisible = savedDockVisibility;
+                _services.PluginInterface?.SavePluginConfig(_config);
+            }
 
             var hadOfficerAccess = _config.IsOfficerToken;
             _config.IsOfficerToken = false;
