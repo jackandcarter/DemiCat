@@ -291,7 +291,7 @@ public class ChatWindow : IDisposable
         _avatarCache = avatarCache;
         _channelKind = channelKind;
         _emojiManager = emojiManager;
-        _emojiPicker = new EmojiPicker(_emojiManager);
+        _emojiPicker = new EmojiPicker(_emojiManager, _config, SaveConfig);
         _ = _emojiManager.EnsureUnicodeAsync();
         _ = _emojiManager.EnsureCustomAsync();
         _useCharacterName = config.UseCharacterName;
