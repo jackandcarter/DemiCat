@@ -764,7 +764,7 @@ public sealed class NotePadWindow : IDisposable
 
         if (!string.Equals(trimmed, clamped, StringComparison.Ordinal))
         {
-            PluginServices.Instance?.ToastGui.ShowInfo($"Section name truncated to {MaxTitleLength} characters.");
+            PluginServices.Instance?.ToastGui.ShowNormal($"Section name truncated to {MaxTitleLength} characters.");
         }
 
         var success = await _service.RenameSectionAsync(sectionId, clamped, CancellationToken.None).ConfigureAwait(false);
@@ -787,7 +787,7 @@ public sealed class NotePadWindow : IDisposable
 
         if (!string.Equals(trimmed, clamped, StringComparison.Ordinal))
         {
-            PluginServices.Instance?.ToastGui.ShowInfo($"Page title truncated to {MaxTitleLength} characters.");
+            PluginServices.Instance?.ToastGui.ShowNormal($"Page title truncated to {MaxTitleLength} characters.");
         }
 
         var success = await _service.RenamePageAsync(sectionId, pageId, clamped, CancellationToken.None).ConfigureAwait(false);
