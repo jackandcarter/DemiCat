@@ -456,29 +456,33 @@ public class EventView : IDisposable
 
     private void DrawFooterSection(EmbedDto dto)
     {
-        var footerText = dto.FooterText ?? string.Empty;
+        var parts = new List<string>(capacity: 2);
+
+        if (!string.IsNullOrWhiteSpace(dto.FooterText))
+        {
+            parts.Add(dto.FooterText!.Trim());
+        }
+
         if (dto.Timestamp.HasValue)
         {
-            if (footerText.Length > 0)
-            {
-                footerText += " • ";
-            }
-
-            footerText += dto.Timestamp.Value.LocalDateTime.ToString();
+            parts.Add(dto.Timestamp.Value.LocalDateTime.ToString());
         }
+
+        var hasText = parts.Count > 0;
 
         if (_footerIcon != null)
         {
             var wrap = _footerIcon.GetWrapOrEmpty();
             ImGui.Image(wrap.Handle, new Vector2(16, 16));
-            if (!string.IsNullOrEmpty(footerText))
+            if (hasText)
             {
                 ImGui.SameLine();
             }
         }
 
-        if (!string.IsNullOrEmpty(footerText))
+        if (hasText)
         {
+            var footerText = string.Join(" • ", parts);
             ImGui.TextUnformatted(footerText);
         }
     }

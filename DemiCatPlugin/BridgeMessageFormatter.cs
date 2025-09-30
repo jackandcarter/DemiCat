@@ -1,9 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Globalization;
 using System.IO;
-using System.Linq;
-using System.Text;
 using DiscordHelper;
 
 namespace DemiCatPlugin;
@@ -76,21 +73,6 @@ public static class BridgeMessageFormatter
         var displayContent = ChatWindow.ReplaceMentionTokens(content, resolution.Mentions);
         displayContent = displayContent.Replace("@\u200B", "@");
 
-        var header = BuildHeaderLine(options);
-        if (!string.IsNullOrEmpty(header))
-        {
-            if (!string.IsNullOrEmpty(content))
-            {
-                content = string.Concat(header, "\n", content);
-                displayContent = string.Concat(header, "\n", displayContent);
-            }
-            else
-            {
-                content = header;
-                displayContent = header;
-            }
-        }
-
         var warnings = new List<string>();
         var errors = new List<string>();
 
@@ -127,8 +109,6 @@ public static class BridgeMessageFormatter
     {
         var list = new List<EmbedDto>();
         var chunkCount = chunks.Count > 0 ? chunks.Count : 1;
-        var baseFooter = BuildFooterBase(options);
-
         if (chunkCount > DiscordEmbedCountLimit)
         {
             warnings.Add($"Embed count reduced to {DiscordEmbedCountLimit} to satisfy Discord limits.");
@@ -145,42 +125,12 @@ public static class BridgeMessageFormatter
                 Timestamp = options.Timestamp,
                 AuthorName = DetermineAuthor(options),
                 AuthorIconUrl = options.AuthorAvatarUrl,
-                FooterText = BuildFooter(baseFooter, chunkCount, i),
                 Color = DetermineColor(options.ChannelKind)
             };
             list.Add(embed);
         }
 
         return list;
-    }
-
-    private static string BuildFooterBase(BridgeFormatterOptions options)
-    {
-        var channelLabel = options.ChannelKind switch
-        {
-            ChannelKind.OfficerChat => "Officer Chat",
-            ChannelKind.FcChat => "FC Chat",
-            ChannelKind.Chat => "Chat",
-            _ => string.IsNullOrEmpty(options.ChannelKind) ? "Chat" : options.ChannelKind
-        };
-
-        var footer = new StringBuilder(channelLabel);
-        if (!string.IsNullOrWhiteSpace(options.WorldName))
-        {
-            footer.Append(' ');
-            footer.Append('•');
-            footer.Append(' ');
-            footer.Append(options.WorldName);
-        }
-        footer.Append(" • DemiCat");
-        return footer.ToString();
-    }
-
-    private static string BuildFooter(string baseFooter, int totalChunks, int index)
-    {
-        if (totalChunks <= 1)
-            return baseFooter;
-        return $"{baseFooter} • Part {index + 1}/{totalChunks}";
     }
 
     private static string DetermineAuthor(BridgeFormatterOptions options)
@@ -200,36 +150,6 @@ public static class BridgeMessageFormatter
             _ => 0x5865F2 // Discord blurple
         };
     }
-
-    private static string BuildHeaderLine(BridgeFormatterOptions options)
-    {
-        var displayName = string.IsNullOrWhiteSpace(options.AuthorName)
-            ? "You"
-            : options.AuthorName!.Trim();
-
-        var segments = new List<string> { displayName };
-        if (options.UseCharacterName)
-        {
-            if (!string.IsNullOrWhiteSpace(options.CharacterName))
-            {
-                segments.Add(options.CharacterName.Trim());
-                if (!string.IsNullOrWhiteSpace(options.WorldName))
-                {
-                    segments.Add(options.WorldName.Trim());
-                }
-            }
-            else if (!string.IsNullOrWhiteSpace(options.WorldName))
-            {
-                segments.Add(options.WorldName.Trim());
-            }
-        }
-
-        var timestamp = FormatTimestamp(options.Timestamp);
-        return $"Message Sent by: {string.Join(" / ", segments)} @ {timestamp}";
-    }
-
-    private static string FormatTimestamp(DateTimeOffset timestamp)
-        => timestamp.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss 'UTC'", CultureInfo.InvariantCulture);
 
     private static IReadOnlyList<string> SplitIntoEmbedChunks(
         string displayContent,
