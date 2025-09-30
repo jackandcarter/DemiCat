@@ -1,13 +1,23 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
 using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
 public class MainWindow : IDisposable
 {
+    private const float BaseIconSize = 42f;
+    private const float BasePadding = 10f;
+    private const float BaseSpacing = 8f;
+    private const float IndicatorRadius = 4f;
+    private const string DockWindowTitle = "DemiCat Dock";
+
     private readonly Config _config;
     private readonly UiRenderer _ui;
     private readonly ChatWindow? _chat;
@@ -18,33 +28,60 @@ public class MainWindow : IDisposable
     private readonly RequestBoardWindow _requestBoard;
     private readonly NotePadWindow _notePad;
     private readonly EmojiManager _emojiManager;
+    private readonly HttpClient _httpClient;
+    private readonly List<DockItem> _dockItems = new();
+
+    private ISharedImmediateTexture? _dockIconTexture;
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
-    private bool _templatesTabActive;
-    private bool _fcChatTabActive;
-    private bool _officerTabActive;
-    private readonly HttpClient _httpClient;
-    private const float FadeAlphaTolerance = 0.001f;
-    private const float MinimumFadeDuration = 0.001f;
-    private float _timeSinceLastInteraction;
-    private float _fadeAlpha = 1f;
+    private bool _templatesActive;
     private bool _styleNeedsUpdate = true;
-    private bool _closeSyncshellTab;
-
-    public bool IsOpen;
     private bool _hasOfficerAccess;
+    private bool _isOpen;
+
+    private bool _eventsOpen;
+    private bool _createOpen;
+    private bool _templatesOpen;
+    private bool _notePadOpen;
+    private bool _requestsOpen;
+    private bool _chatOpen;
+    private bool _officerOpen;
+    private bool _syncshellOpen;
+
     public bool HasOfficerAccess
     {
         get => _hasOfficerAccess;
         set
         {
+            if (_hasOfficerAccess == value)
+                return;
+
             _hasOfficerAccess = value;
         }
     }
-    public void SetNotePadReadOnly(bool isReadOnly)
+
+    public bool IsOpen
     {
-        _notePad.IsReadOnly = isReadOnly;
+        get => _isOpen;
+        set
+        {
+            if (_isOpen == value)
+                return;
+
+            _isOpen = value;
+            if (_config.DockVisible != value)
+            {
+                _config.DockVisible = value;
+                SaveConfig();
+            }
+
+            if (!value)
+            {
+                CloseAllFeatureWindows();
+            }
+        }
     }
+
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;
     public TemplatesWindow TemplatesWindow => _templates;
@@ -76,7 +113,18 @@ public class MainWindow : IDisposable
         _notePad = notePad;
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
+        _templatesActive = false;
+        _isOpen = config.DockVisible;
+
         Instance = this;
+
+        EnsureDockIconTexture();
+        BuildDockItems();
+    }
+
+    public void SetNotePadReadOnly(bool isReadOnly)
+    {
+        _notePad.IsReadOnly = isReadOnly;
     }
 
     internal void UpdateSyncshell()
@@ -94,7 +142,7 @@ public class MainWindow : IDisposable
         {
             _syncshell?.Dispose();
             _syncshell = null;
-            _closeSyncshellTab = true;
+            _syncshellOpen = false;
         }
     }
 
@@ -102,375 +150,105 @@ public class MainWindow : IDisposable
     {
         UpdateSyncshell();
 
-        if (!IsOpen)
-        {
-            ResetFadeTimer();
-            return;
-        }
-
-        var io = ImGui.GetIO();
-        var deltaTime = Math.Max(0f, io.DeltaTime);
-        var fadeAlpha = GetCurrentFadeAlpha();
-        var fadeActive = _config.ChatFadeOutEnabled && fadeAlpha < 1f - FadeAlphaTolerance;
-
-        var fcTabPreviouslyActive = _fcChatTabActive && _chat is FcChatWindow;
-        var officerTabPreviouslyActive = _officerTabActive && HasOfficerAccess;
-
-        var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
-        var childBaseColor = AdjustBrightness(primaryColor, 0.9f);
-        var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
-        var tabBaseColor = AdjustBrightness(primaryColor, 1.05f);
-        var tabActiveBaseColor = accentColor;
-        var tabHoveredBaseColor = AdjustBrightness(accentColor, 1.1f);
-
-        var previousOpacityOverrideActive = !_config.ChatFadeOutEnabled && (fcTabPreviouslyActive || officerTabPreviouslyActive);
-
-        var styleAlpha = fadeAlpha;
-        if (!_config.ChatFadeOutEnabled)
-        {
-            styleAlpha = 1f;
-            if (fcTabPreviouslyActive)
-            {
-                styleAlpha = Math.Clamp(_config.FcChatOpacity, 0f, 1f);
-            }
-            else if (officerTabPreviouslyActive)
-            {
-                styleAlpha = Math.Clamp(_config.OfficerChatOpacity, 0f, 1f);
-            }
-        }
-
-        _fcChatTabActive = false;
-        _officerTabActive = false;
-
         if (_styleNeedsUpdate)
         {
             ApplyAccentColors();
             _styleNeedsUpdate = false;
         }
 
-        ImGui.SetNextWindowSize(new Vector2(800, 600), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSizeConstraints(new Vector2(600, 400), new Vector2(float.MaxValue, float.MaxValue));
-        PushWindowOpacityStyles(primaryColor, childBaseColor, tabBaseColor, tabActiveBaseColor, tabHoveredBaseColor, styleAlpha);
-
-        var styleAlphaPushed = false;
-        if (fadeActive)
+        if (!IsOpen)
         {
-            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, fadeAlpha);
-            styleAlphaPushed = true;
+            if (_config.DockVisible)
+            {
+                _config.DockVisible = false;
+                SaveConfig();
+            }
+
+            return;
         }
 
-        var windowOpen = ImGui.Begin("DemiCat", ref IsOpen, ImGuiWindowFlags.NoCollapse);
-        var interacted = windowOpen && HasWindowInteraction();
-
-        if (windowOpen)
+        if (!_config.DockVisible)
         {
-            var linked = TokenManager.Instance?.State == LinkState.Linked;
-            if (!linked)
-            {
-                ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
-                ImGui.SameLine();
-                if (ImGui.Button("Open Settings"))
-                {
-                    _settings.IsOpen = true;
-                }
-                ImGui.Separator();
-            }
-
-            var padding = ImGui.GetStyle().FramePadding;
-            ImGui.Dummy(new Vector2(0f, padding.Y));
-            var buttonSize = ImGui.GetFrameHeight();
-            var cursor = ImGui.GetCursorPos();
-            ImGui.SetCursorPos(new Vector2(ImGui.GetWindowContentRegionMax().X - buttonSize - padding.X, cursor.Y));
-            {
-                using var emojiFont = _emojiManager.PushEmojiFont();
-                if (ImGui.Button("\u2699\uFE0F##dc_settings", new Vector2(buttonSize, buttonSize)))
-                {
-                    _settings.IsOpen = true;
-                }
-            }
-            ImGui.SetCursorPos(cursor);
-
-            if (ImGui.BeginTabBar("MainTabs"))
-            {
-                if (_closeSyncshellTab)
-                {
-                    ImGui.SetTabItemClosed("Syncshell");
-                    _closeSyncshellTab = false;
-                }
-
-                if (!linked)
-                {
-                    ImGui.BeginDisabled();
-                    ImGui.TabItemButton("Events");
-                    ImGui.EndDisabled();
-                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                        ImGui.SetTooltip("Link DemiCat to view events.");
-                }
-                else if (ImGui.BeginTabItem("Events"))
-                {
-                    var alphaOverrideState = TryPushWindowOpacityOverride(
-                        previousOpacityOverrideActive,
-                        primaryColor,
-                        childBaseColor,
-                        1f);
-
-                    ImGui.BeginChild("##eventsArea", ImGui.GetContentRegionAvail(), false);
-                    _ui.Draw();
-                    ImGui.EndChild();
-                    ImGui.EndTabItem();
-
-                    PopWindowAlphaOnly(alphaOverrideState);
-                }
-
-                if (!linked)
-                {
-                    ImGui.BeginDisabled();
-                    ImGui.TabItemButton("Create");
-                    ImGui.EndDisabled();
-                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                        ImGui.SetTooltip("Link DemiCat to create events.");
-                }
-                else if (ImGui.BeginTabItem("Create"))
-                {
-                    var alphaOverrideState = TryPushWindowOpacityOverride(
-                        previousOpacityOverrideActive,
-                        primaryColor,
-                        childBaseColor,
-                        1f);
-
-                    _create.Draw();
-                    ImGui.EndTabItem();
-
-                    PopWindowAlphaOnly(alphaOverrideState);
-                }
-
-                if (!linked)
-                {
-                    _templatesTabActive = false;
-                    ImGui.BeginDisabled();
-                    ImGui.TabItemButton("Templates");
-                    ImGui.EndDisabled();
-                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                        ImGui.SetTooltip("Link DemiCat to use templates.");
-                }
-                else
-                {
-                    var templatesOpen = ImGui.BeginTabItem("Templates");
-                    if (templatesOpen)
-                    {
-                        var alphaOverrideState = TryPushWindowOpacityOverride(
-                            previousOpacityOverrideActive,
-                            primaryColor,
-                            childBaseColor,
-                            1f);
-
-                        if (!_templatesTabActive)
-                        {
-                            _templates.OnTabActivated();
-                        }
-                        _templatesTabActive = true;
-                        _templates.Draw();
-                        ImGui.EndTabItem();
-
-                        PopWindowAlphaOnly(alphaOverrideState);
-                    }
-                    else
-                    {
-                        _templatesTabActive = false;
-                    }
-                }
-
-                if (!linked)
-                {
-                    ImGui.BeginDisabled();
-                    ImGui.TabItemButton("NotePad");
-                    ImGui.EndDisabled();
-                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                        ImGui.SetTooltip("Link DemiCat to use the NotePad.");
-                }
-                else
-                {
-                    var notePadOpen = ImGui.BeginTabItem("NotePad");
-                    if (notePadOpen)
-                    {
-                        var alphaOverrideState = TryPushWindowOpacityOverride(
-                            previousOpacityOverrideActive,
-                            primaryColor,
-                            childBaseColor,
-                            1f);
-
-                        _notePad.Draw();
-                        ImGui.EndTabItem();
-
-                        PopWindowAlphaOnly(alphaOverrideState);
-                    }
-                }
-
-                if (!linked)
-                {
-                    ImGui.BeginDisabled();
-                    ImGui.TabItemButton("Request Board");
-                    ImGui.EndDisabled();
-                    if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                        ImGui.SetTooltip("Link DemiCat to use request board.");
-                }
-                else if (ImGui.BeginTabItem("Request Board"))
-                {
-                    var alphaOverrideState = TryPushWindowOpacityOverride(
-                        previousOpacityOverrideActive,
-                        primaryColor,
-                        childBaseColor,
-                        1f);
-
-                    _requestBoard.Draw();
-                    ImGui.EndTabItem();
-
-                    PopWindowAlphaOnly(alphaOverrideState);
-                }
-
-                if (!linked)
-                {
-                    if (_config.FCSyncShell)
-                    {
-                        ImGui.BeginDisabled();
-                        ImGui.TabItemButton("Syncshell");
-                        ImGui.EndDisabled();
-                        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                            ImGui.SetTooltip("Link DemiCat to use syncshell.");
-                    }
-                }
-                else if (_config.FCSyncShell && _syncshell != null && ImGui.BeginTabItem("Syncshell"))
-                {
-                    var alphaOverrideState = TryPushWindowOpacityOverride(
-                        previousOpacityOverrideActive,
-                        primaryColor,
-                        childBaseColor,
-                        1f);
-
-                    _syncshell.Draw();
-                    ImGui.EndTabItem();
-
-                    PopWindowAlphaOnly(alphaOverrideState);
-                }
-
-                if (_chat != null)
-                {
-                    var chatLabel = _chat is FcChatWindow ? "FC Chat" : "Chat";
-                    var chatTooltip = _chat is FcChatWindow ? "Link DemiCat to use FC chat." : "Link DemiCat to use chat.";
-                    if (!linked)
-                    {
-                        ImGui.BeginDisabled();
-                        ImGui.TabItemButton(chatLabel);
-                        ImGui.EndDisabled();
-                        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                            ImGui.SetTooltip(chatTooltip);
-                    }
-                    else if (ImGui.BeginTabItem(chatLabel))
-                    {
-                        var alphaOverrideState = AlphaOverrideState.None;
-                        if (_chat is FcChatWindow)
-                        {
-                            _fcChatTabActive = true;
-
-                            if (_config.ChatFadeOutEnabled)
-                            {
-                                alphaOverrideState = TryPushWindowOpacityOverride(
-                                    previousOpacityOverrideActive,
-                                    primaryColor,
-                                    childBaseColor,
-                                    Math.Clamp(_config.FcChatOpacity, 0f, 1f));
-                            }
-                            else
-                            {
-                                alphaOverrideState = PushWindowAlphaOnly(
-                                    Math.Clamp(_config.FcChatOpacity, 0f, 1f),
-                                    primaryColor,
-                                    childBaseColor,
-                                    useStyleVar: false);
-                            }
-                        }
-                        else
-                        {
-                            alphaOverrideState = TryPushWindowOpacityOverride(
-                                previousOpacityOverrideActive,
-                                primaryColor,
-                                childBaseColor,
-                                1f);
-                        }
-
-                        ImGui.BeginChild("##chatArea", ImGui.GetContentRegionAvail(), false);
-                        _chat.Draw();
-                        ImGui.EndChild();
-                        ImGui.EndTabItem();
-
-                        PopWindowAlphaOnly(alphaOverrideState);
-                    }
-                }
-
-                if (HasOfficerAccess)
-                {
-                    if (!linked)
-                    {
-                        ImGui.BeginDisabled();
-                        ImGui.TabItemButton("Officer");
-                        ImGui.EndDisabled();
-                        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                            ImGui.SetTooltip("Link DemiCat to use officer chat.");
-                    }
-                    else
-                    {
-                        var officerOpen = ImGui.BeginTabItem("Officer");
-                        if (officerOpen)
-                        {
-                            _officerTabActive = true;
-
-                            var alphaOverrideState = AlphaOverrideState.None;
-                            if (_config.ChatFadeOutEnabled)
-                            {
-                                alphaOverrideState = TryPushWindowOpacityOverride(
-                                    previousOpacityOverrideActive,
-                                    primaryColor,
-                                    childBaseColor,
-                                    Math.Clamp(_config.OfficerChatOpacity, 0f, 1f));
-                            }
-                            else
-                            {
-                                alphaOverrideState = PushWindowAlphaOnly(
-                                    Math.Clamp(_config.OfficerChatOpacity, 0f, 1f),
-                                    primaryColor,
-                                    childBaseColor,
-                                    useStyleVar: false);
-                            }
-
-                            ImGui.BeginChild("##officerChatArea", ImGui.GetContentRegionAvail(), false);
-                            _officer.Draw();
-                            ImGui.EndChild();
-                            ImGui.EndTabItem();
-
-                            PopWindowAlphaOnly(alphaOverrideState);
-                        }
-                    }
-                }
-
-                ImGui.EndTabBar();
-            }
+            _config.DockVisible = true;
+            SaveConfig();
         }
 
+        var visibleItems = _dockItems.Where(i => i.IsVisible()).ToList();
+        if (visibleItems.Count == 0)
+        {
+            return;
+        }
+
+        var iconScale = GetIconScale();
+        var padding = GetPadding(iconScale);
+        var spacing = GetSpacing(iconScale);
+        var iconSize = new Vector2(BaseIconSize * iconScale, BaseIconSize * iconScale);
+        var indicatorHeight = IndicatorRadius * 2f * iconScale + spacing * 0.75f;
+        var iconAreaWidth = iconSize.X * visibleItems.Count + spacing * Math.Max(0, visibleItems.Count - 1);
+        var iconAreaHeight = iconSize.Y;
+        var totalWidth = iconAreaWidth + padding * 2f;
+        var totalHeight = iconAreaHeight + padding * 2f + indicatorHeight;
+        var dockSize = new Vector2(totalWidth, totalHeight);
+
+        EnsureDockPositionInitialized(dockSize);
+
+        ImGui.SetNextWindowPos(_config.DockPosition, ImGuiCond.Appearing);
+        ImGui.SetNextWindowSize(dockSize, ImGuiCond.Appearing);
+
+        var windowFlags = ImGuiWindowFlags.NoDecoration
+            | ImGuiWindowFlags.NoScrollbar
+            | ImGuiWindowFlags.NoCollapse
+            | ImGuiWindowFlags.NoSavedSettings
+            | ImGuiWindowFlags.AlwaysAutoResize;
+
+        if (_config.DockLocked)
+        {
+            windowFlags |= ImGuiWindowFlags.NoMove;
+        }
+
+        var dockBgColor = GetDockBackgroundColor();
+        var stripColor = GetDockStripColor(dockBgColor);
+        var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
+
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, MathF.Max(14f, padding * 1.5f));
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(padding, padding));
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, dockBgColor);
+        ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
+
+        var open = true;
+        if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
+        {
+            DrawDockStrip(visibleItems, iconSize, spacing, indicatorHeight, stripColor, accentColor);
+            DrawDockContextMenu();
+        }
+        var windowPos = ImGui.GetWindowPos();
         ImGui.End();
 
-        if (styleAlphaPushed)
+        ImGui.PopStyleColor(2);
+        ImGui.PopStyleVar(2);
+
+        if (!open)
         {
-            ImGui.PopStyleVar();
+            IsOpen = false;
         }
 
-        ImGui.PopStyleColor(5);
+        if (!_config.DockLocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+        {
+            if (!_config.DockPositionInitialized || Vector2.Distance(windowPos, _config.DockPosition) > 0.5f)
+            {
+                _config.DockPosition = windowPos;
+                _config.DockPositionInitialized = true;
+                SaveConfig();
+            }
+        }
 
-        UpdateFadeState(interacted, deltaTime);
+        DrawFeatureWindows();
     }
 
     public void OnAppearanceSettingsChanged()
     {
         _styleNeedsUpdate = true;
+        BuildDockItems();
     }
 
     public void ResetEventCreateRoles()
@@ -486,65 +264,7 @@ public class MainWindow : IDisposable
 
     public void ResetFadeTimer()
     {
-        _timeSinceLastInteraction = 0f;
-        _fadeAlpha = 1f;
-    }
-
-    private float GetCurrentFadeAlpha()
-    {
-        if (!_config.ChatFadeOutEnabled)
-        {
-            return 1f;
-        }
-
-        var minAlpha = Math.Clamp(_config.ChatFadeOutMinimumAlpha, 0f, 1f);
-        return Math.Clamp(_fadeAlpha, minAlpha, 1f);
-    }
-
-    private void UpdateFadeState(bool interacted, float deltaTime)
-    {
-        if (!_config.ChatFadeOutEnabled)
-        {
-            ResetFadeTimer();
-            return;
-        }
-
-        if (interacted)
-        {
-            ResetFadeTimer();
-            return;
-        }
-
-        if (deltaTime <= 0f)
-        {
-            return;
-        }
-
-        var minAlpha = Math.Clamp(_config.ChatFadeOutMinimumAlpha, 0f, 1f);
-        if (minAlpha >= 1f - FadeAlphaTolerance)
-        {
-            ResetFadeTimer();
-            return;
-        }
-
-        var duration = Math.Max(MinimumFadeDuration, (float)_config.ChatFadeOutDelaySeconds);
-        _timeSinceLastInteraction = Math.Clamp(_timeSinceLastInteraction + deltaTime, 0f, duration);
-        var progress = Math.Clamp(_timeSinceLastInteraction / duration, 0f, 1f);
-        var targetAlpha = 1f - (1f - minAlpha) * progress;
-        _fadeAlpha = Math.Clamp(targetAlpha, minAlpha, 1f);
-    }
-
-    private static bool HasWindowInteraction()
-    {
-        var hovered = ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows | ImGuiHoveredFlags.AllowWhenBlockedByActiveItem | ImGuiHoveredFlags.AllowWhenBlockedByPopup);
-        var hasActiveItem = ImGui.IsAnyItemActive() || ImGui.IsAnyItemFocused();
-        var focused = hasActiveItem && ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows);
-        return hovered || focused;
-    }
-
-    private void SaveConfig()
-    {
-        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
+        // The dock UI no longer fades, but keep the method for compatibility with existing callers.
     }
 
     public void Dispose()
@@ -553,6 +273,566 @@ public class MainWindow : IDisposable
         {
             Instance = null;
         }
+
+        _dockIconTexture?.Dispose();
+        _syncshell?.Dispose();
+    }
+
+    private void CloseAllFeatureWindows()
+    {
+        _eventsOpen = false;
+        _createOpen = false;
+        _templatesOpen = false;
+        _notePadOpen = false;
+        _requestsOpen = false;
+        _chatOpen = false;
+        _officerOpen = false;
+        _syncshellOpen = false;
+    }
+
+    private void DrawDockStrip(
+        IReadOnlyList<DockItem> items,
+        Vector2 iconSize,
+        float spacing,
+        float indicatorHeight,
+        Vector4 stripColor,
+        Vector4 indicatorColor)
+    {
+        var drawList = ImGui.GetWindowDrawList();
+        var iconStart = ImGui.GetCursorScreenPos();
+        var iconAreaSize = new Vector2(
+            iconSize.X * items.Count + spacing * Math.Max(0, items.Count - 1),
+            iconSize.Y);
+
+        var stripMin = iconStart - new Vector2(spacing * 0.75f, spacing * 0.75f);
+        var stripMax = iconStart + iconAreaSize + new Vector2(spacing * 0.75f, indicatorHeight + spacing * 0.75f);
+        drawList.AddRectFilled(stripMin, stripMax, ImGui.ColorConvertFloat4ToU32(stripColor), MathF.Max(spacing * 2f, 18f));
+
+        ImGui.SetCursorScreenPos(iconStart);
+
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (i > 0)
+            {
+                ImGui.SameLine(0f, spacing);
+            }
+
+            var item = items[i];
+            var enabled = item.IsEnabled();
+
+            if (!enabled)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            var clicked = DrawDockButton(item, iconSize);
+
+            if (!enabled)
+            {
+                ImGui.EndDisabled();
+            }
+
+            if (clicked && enabled)
+            {
+                item.SetIsOpen(!item.GetIsOpen());
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(item.Tooltip);
+            }
+
+            if (item.GetIsOpen())
+            {
+                var rectMin = ImGui.GetItemRectMin();
+                var rectMax = ImGui.GetItemRectMax();
+                var center = new Vector2((rectMin.X + rectMax.X) * 0.5f, rectMax.Y + IndicatorRadius * ImGui.GetIO().FontGlobalScale * 0.5f);
+                var radius = IndicatorRadius * MathF.Max(1f, iconSize.X / BaseIconSize);
+                center.Y += radius + spacing * 0.1f;
+                drawList.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(indicatorColor));
+            }
+        }
+
+        ImGui.Dummy(new Vector2(0f, indicatorHeight));
+    }
+
+    private bool DrawDockButton(DockItem item, Vector2 iconSize)
+    {
+        if (item.Icon != null)
+        {
+            var wrap = item.Icon.GetWrapOrEmpty();
+            return ImGui.ImageButton(
+                wrap.Handle,
+                iconSize,
+                Vector2.Zero,
+                Vector2.One,
+                0,
+                Vector4.Zero,
+                item.IconTint);
+        }
+
+        return ImGui.Button(item.Tooltip, iconSize);
+    }
+
+    private void DrawDockContextMenu()
+    {
+        if (!ImGui.BeginPopupContextWindow("DockContext", ImGuiPopupFlags.MouseButtonRight | ImGuiPopupFlags.NoOpenOverItems))
+        {
+            return;
+        }
+
+        var locked = _config.DockLocked;
+        if (ImGui.MenuItem("Lock Position", null, locked))
+        {
+            _config.DockLocked = !_config.DockLocked;
+            SaveConfig();
+        }
+
+        var iconScaleValue = _config.DockIconScale;
+        if (ImGui.SliderFloat("Icon Scale", ref iconScaleValue, Config.MinDockIconScale, Config.MaxDockIconScale, "%.2f"))
+        {
+            _config.DockIconScale = Config.SanitizeDockIconScale(iconScaleValue);
+            SaveConfig();
+        }
+
+        var alpha = _config.DockBackgroundAlpha;
+        if (ImGui.SliderFloat("Background Alpha", ref alpha, 0.2f, 1f, "%.2f"))
+        {
+            _config.DockBackgroundAlpha = Math.Clamp(alpha, 0f, 1f);
+            SaveConfig();
+        }
+
+        if (ImGui.MenuItem("Show Settings", null, _settings.IsOpen))
+        {
+            _settings.IsOpen = !_settings.IsOpen;
+        }
+
+        ImGui.EndPopup();
+    }
+
+    private void DrawEventsWindow()
+    {
+        if (!_eventsOpen)
+            return;
+
+        var open = _eventsOpen;
+        var colorsPushed = PushContentWindowColors();
+        if (ImGui.Begin("DemiCat Events", ref open, ImGuiWindowFlags.NoCollapse))
+        {
+            if (!IsLinked())
+            {
+                DrawLinkPrompt("Link DemiCat to view events.");
+            }
+            else
+            {
+                _ui.Draw();
+            }
+        }
+        ImGui.End();
+        ImGui.PopStyleColor(colorsPushed);
+        _eventsOpen = open;
+    }
+
+    private void DrawCreateWindow()
+    {
+        if (!_createOpen)
+            return;
+
+        var open = _createOpen;
+        var colorsPushed = PushContentWindowColors();
+        if (ImGui.Begin("Create Event", ref open, ImGuiWindowFlags.NoCollapse))
+        {
+            if (!IsLinked())
+            {
+                DrawLinkPrompt("Link DemiCat to create events.");
+            }
+            else
+            {
+                _create.Draw();
+            }
+        }
+        ImGui.End();
+        ImGui.PopStyleColor(colorsPushed);
+        _createOpen = open;
+    }
+
+    private void DrawTemplatesWindow()
+    {
+        if (!_templatesOpen)
+            return;
+
+        var open = _templatesOpen;
+        var colorsPushed = PushContentWindowColors();
+        if (ImGui.Begin("Templates", ref open, ImGuiWindowFlags.NoCollapse))
+        {
+            if (!IsLinked())
+            {
+                DrawLinkPrompt("Link DemiCat to use templates.");
+                _templatesActive = false;
+            }
+            else
+            {
+                if (!_templatesActive)
+                {
+                    _templates.OnTabActivated();
+                    _templatesActive = true;
+                }
+
+                _templates.Draw();
+            }
+        }
+        ImGui.End();
+        ImGui.PopStyleColor(colorsPushed);
+        _templatesOpen = open;
+        if (!open)
+        {
+            _templatesActive = false;
+        }
+    }
+
+    private void DrawNotePadWindow()
+    {
+        if (!_notePadOpen)
+            return;
+
+        var open = _notePadOpen;
+        var colorsPushed = PushContentWindowColors();
+        if (ImGui.Begin("NotePad", ref open, ImGuiWindowFlags.NoCollapse))
+        {
+            if (!_config.NotePadEnabled)
+            {
+                ImGui.TextUnformatted("NotePad is disabled.");
+            }
+            else
+            {
+                _notePad.Draw();
+            }
+        }
+        ImGui.End();
+        ImGui.PopStyleColor(colorsPushed);
+        _notePadOpen = open;
+    }
+
+    private void DrawRequestBoardWindow()
+    {
+        if (!_requestsOpen)
+            return;
+
+        var open = _requestsOpen;
+        var colorsPushed = PushContentWindowColors();
+        if (ImGui.Begin("Request Board", ref open, ImGuiWindowFlags.NoCollapse))
+        {
+            _requestBoard.Draw();
+        }
+        ImGui.End();
+        ImGui.PopStyleColor(colorsPushed);
+        _requestsOpen = open;
+    }
+
+    private void DrawChatWindow()
+    {
+        if (!_chatOpen || _chat == null)
+            return;
+
+        var open = _chatOpen;
+        var colorsPushed = PushContentWindowColors();
+        var label = _chat is FcChatWindow ? "FC Chat" : "Chat";
+        if (ImGui.Begin($"DemiCat {label}", ref open, ImGuiWindowFlags.NoCollapse))
+        {
+            if (!IsLinked())
+            {
+                var tooltip = _chat is FcChatWindow ? "Link DemiCat to use FC chat." : "Link DemiCat to use chat.";
+                DrawLinkPrompt(tooltip);
+            }
+            else
+            {
+                _chat.Draw();
+            }
+        }
+        ImGui.End();
+        ImGui.PopStyleColor(colorsPushed);
+        _chatOpen = open;
+    }
+
+    private void DrawOfficerWindow()
+    {
+        if (!_officerOpen)
+            return;
+
+        var open = _officerOpen;
+        var colorsPushed = PushContentWindowColors();
+        if (ImGui.Begin("Officer Chat", ref open, ImGuiWindowFlags.NoCollapse))
+        {
+            if (!IsLinked())
+            {
+                DrawLinkPrompt("Link DemiCat to use officer chat.");
+            }
+            else if (!HasOfficerAccess)
+            {
+                ImGui.TextUnformatted("No officer access for this key.");
+            }
+            else
+            {
+                _officer.Draw();
+            }
+        }
+        ImGui.End();
+        ImGui.PopStyleColor(colorsPushed);
+        _officerOpen = open;
+    }
+
+    private void DrawSyncshellWindow()
+    {
+        if (!_syncshellOpen)
+            return;
+
+        if (_syncshell == null)
+        {
+            _syncshellOpen = false;
+            return;
+        }
+
+        var open = _syncshellOpen;
+        var colorsPushed = PushContentWindowColors();
+        if (ImGui.Begin("Syncshell", ref open, ImGuiWindowFlags.NoCollapse))
+        {
+            if (!IsLinked())
+            {
+                DrawLinkPrompt("Link DemiCat to use syncshell.");
+            }
+            else
+            {
+                _syncshell.Draw();
+            }
+        }
+        ImGui.End();
+        ImGui.PopStyleColor(colorsPushed);
+        _syncshellOpen = open;
+    }
+
+    private void DrawLinkPrompt(string message)
+    {
+        ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), message);
+        ImGui.SameLine();
+        if (ImGui.Button("Open Settings"))
+        {
+            _settings.IsOpen = true;
+        }
+    }
+
+    private bool IsLinked()
+        => TokenManager.Instance?.State == LinkState.Linked;
+
+    private int PushContentWindowColors()
+    {
+        var primary = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
+        var child = AdjustBrightness(primary, 0.9f);
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, WithAlpha(primary, 1f));
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, WithAlpha(child, 1f));
+        return 2;
+    }
+
+    private float GetIconScale()
+    {
+        var scale = Config.SanitizeDockIconScale(_config.DockIconScale);
+        if (Math.Abs(scale - _config.DockIconScale) > float.Epsilon)
+        {
+            _config.DockIconScale = scale;
+            SaveConfig();
+        }
+
+        return scale;
+    }
+
+    private float GetPadding(float iconScale)
+        => BasePadding * iconScale;
+
+    private float GetSpacing(float iconScale)
+        => BaseSpacing * iconScale;
+
+    private Vector4 GetDockBackgroundColor()
+    {
+        var color = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
+        return WithAlpha(color, Math.Clamp(_config.DockBackgroundAlpha, 0.2f, 1f));
+    }
+
+    private Vector4 GetDockStripColor(Vector4 background)
+    {
+        var strip = AdjustBrightness(background, 1.1f);
+        strip.W = background.W;
+        return strip;
+    }
+
+    private void EnsureDockIconTexture()
+    {
+        if (_dockIconTexture != null)
+            return;
+
+        try
+        {
+            var provider = PluginServices.Instance?.TextureProvider;
+            if (provider == null)
+                return;
+
+            var pixel = new byte[] { 255, 255, 255, 255 };
+            _dockIconTexture = provider.CreateFromRaw(RawImageSpecification.Rgba32(1, 1), pixel);
+        }
+        catch
+        {
+            _dockIconTexture = null;
+        }
+    }
+
+    private void BuildDockItems()
+    {
+        _dockItems.Clear();
+        var accent = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
+        var mutedAccent = AdjustBrightness(accent, 0.85f);
+        var positive = new Vector4(0.35f, 0.75f, 1f, 1f);
+        var warning = new Vector4(1f, 0.62f, 0.2f, 1f);
+        var neutral = new Vector4(0.8f, 0.8f, 0.8f, 1f);
+
+        _dockItems.Add(new DockItem(
+            "events",
+            _dockIconTexture,
+            accent,
+            "Events",
+            () => _config.Events,
+            () => IsLinked(),
+            () => _eventsOpen,
+            v => _eventsOpen = v,
+            DrawEventsWindow));
+
+        _dockItems.Add(new DockItem(
+            "create",
+            _dockIconTexture,
+            positive,
+            "Create Event",
+            () => _config.Events,
+            () => IsLinked(),
+            () => _createOpen,
+            v => _createOpen = v,
+            DrawCreateWindow));
+
+        _dockItems.Add(new DockItem(
+            "templates",
+            _dockIconTexture,
+            mutedAccent,
+            "Templates",
+            () => _config.Templates,
+            () => IsLinked(),
+            () => _templatesOpen,
+            v => _templatesOpen = v,
+            DrawTemplatesWindow));
+
+        _dockItems.Add(new DockItem(
+            "notepad",
+            _dockIconTexture,
+            neutral,
+            "NotePad",
+            () => true,
+            () => _config.NotePadEnabled,
+            () => _notePadOpen,
+            v => _notePadOpen = v,
+            DrawNotePadWindow));
+
+        _dockItems.Add(new DockItem(
+            "requests",
+            _dockIconTexture,
+            warning,
+            "Request Board",
+            () => _config.Requests,
+            () => IsLinked(),
+            () => _requestsOpen,
+            v => _requestsOpen = v,
+            DrawRequestBoardWindow));
+
+        if (_chat != null)
+        {
+            _dockItems.Add(new DockItem(
+                "chat",
+                _dockIconTexture,
+                accent,
+                _chat is FcChatWindow ? "FC Chat" : "Chat",
+                () => true,
+                () => IsLinked(),
+                () => _chatOpen,
+                v => _chatOpen = v,
+                DrawChatWindow));
+        }
+
+        _dockItems.Add(new DockItem(
+            "officer",
+            _dockIconTexture,
+            positive,
+            "Officer Chat",
+            () => HasOfficerAccess,
+            () => HasOfficerAccess && IsLinked(),
+            () => _officerOpen,
+            v => _officerOpen = v,
+            DrawOfficerWindow));
+
+        _dockItems.Add(new DockItem(
+            "syncshell",
+            _dockIconTexture,
+            accent,
+            "Syncshell",
+            () => _config.FCSyncShell && _syncshell != null,
+            () => _config.FCSyncShell && _syncshell != null && IsLinked(),
+            () => _syncshellOpen,
+            v => _syncshellOpen = v,
+            DrawSyncshellWindow));
+
+        _dockItems.Add(new DockItem(
+            "settings",
+            _dockIconTexture,
+            neutral,
+            "Settings",
+            () => true,
+            () => true,
+            () => _settings.IsOpen,
+            v => _settings.IsOpen = v,
+            () => { }));
+    }
+
+    private void DrawFeatureWindows()
+    {
+        foreach (var item in _dockItems)
+        {
+            if (!item.IsVisible() && item.GetIsOpen())
+            {
+                item.SetIsOpen(false);
+                continue;
+            }
+
+            if (item.GetIsOpen())
+            {
+                item.DrawWindow();
+            }
+        }
+    }
+
+    private void EnsureDockPositionInitialized(Vector2 dockSize)
+    {
+        if (_config.DockPositionInitialized)
+        {
+            return;
+        }
+
+        var viewport = ImGui.GetMainViewport();
+        var available = viewport.WorkSize;
+        var desired = new Vector2(
+            viewport.WorkPos.X + (available.X - dockSize.X) * 0.5f,
+            viewport.WorkPos.Y + available.Y - dockSize.Y - 30f);
+
+        _config.DockPosition = desired;
+        _config.DockPositionInitialized = true;
+        SaveConfig();
+    }
+
+    private void SaveConfig()
+    {
+        PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
     private void ApplyAccentColors()
@@ -570,71 +850,6 @@ public class MainWindow : IDisposable
         style.Colors[(int)ImGuiCol.SeparatorActive] = accentActive;
     }
 
-    private static void PushWindowOpacityStyles(
-        Vector4 primaryColor,
-        Vector4 childBaseColor,
-        Vector4 tabBaseColor,
-        Vector4 tabActiveBaseColor,
-        Vector4 tabHoveredBaseColor,
-        float alpha)
-    {
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, WithAlpha(primaryColor, alpha));
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, WithAlpha(childBaseColor, alpha));
-        ImGui.PushStyleColor(ImGuiCol.Tab, WithAlpha(tabBaseColor, alpha));
-        ImGui.PushStyleColor(ImGuiCol.TabActive, WithAlpha(tabActiveBaseColor, alpha));
-        ImGui.PushStyleColor(ImGuiCol.TabHovered, WithAlpha(tabHoveredBaseColor, alpha));
-    }
-
-    private static AlphaOverrideState PushWindowAlphaOnly(
-        float alpha,
-        Vector4 primaryColor,
-        Vector4 childBaseColor,
-        bool useStyleVar)
-    {
-        if (alpha >= 1f - FadeAlphaTolerance)
-        {
-            return AlphaOverrideState.None;
-        }
-
-        if (useStyleVar)
-        {
-            ImGui.PushStyleVar(ImGuiStyleVar.Alpha, alpha);
-            return AlphaOverrideState.StyleVar;
-        }
-
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, WithAlpha(primaryColor, alpha));
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, WithAlpha(childBaseColor, alpha));
-        return AlphaOverrideState.BackgroundColors;
-    }
-
-    private static void PopWindowAlphaOnly(AlphaOverrideState state)
-    {
-        switch (state)
-        {
-            case AlphaOverrideState.StyleVar:
-                ImGui.PopStyleVar();
-                break;
-            case AlphaOverrideState.BackgroundColors:
-                ImGui.PopStyleColor(2);
-                break;
-        }
-    }
-
-    private static AlphaOverrideState TryPushWindowOpacityOverride(
-        bool condition,
-        Vector4 primaryColor,
-        Vector4 childBaseColor,
-        float alpha,
-        bool useStyleVar = true)
-    {
-        if (!condition)
-        {
-            return AlphaOverrideState.None;
-        }
-
-        return PushWindowAlphaOnly(alpha, primaryColor, childBaseColor, useStyleVar);
-    }
-
     private static Vector4 AdjustBrightness(Vector4 color, float factor)
     {
         return new Vector4(
@@ -647,12 +862,5 @@ public class MainWindow : IDisposable
     private static Vector4 WithAlpha(Vector4 color, float alphaMultiplier)
     {
         return new Vector4(color.X, color.Y, color.Z, Math.Clamp(color.W * alphaMultiplier, 0f, 1f));
-    }
-
-    private enum AlphaOverrideState
-    {
-        None,
-        StyleVar,
-        BackgroundColors,
     }
 }
