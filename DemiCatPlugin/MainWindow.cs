@@ -625,13 +625,20 @@ public class MainWindow : IDisposable
     private void BuildDockItems()
     {
         _dockItems.Clear();
+        var defaultDockOrder = new List<string>();
+
+        void AddDockItem(DockItem item)
+        {
+            _dockItems.Add(item);
+            defaultDockOrder.Add(item.Id);
+        }
         var accent = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
         var mutedAccent = DockableWindow.AdjustBrightness(accent, 0.85f);
         var positive = new Vector4(0.35f, 0.75f, 1f, 1f);
         var warning = new Vector4(1f, 0.62f, 0.2f, 1f);
         var neutral = new Vector4(0.8f, 0.8f, 0.8f, 1f);
 
-        _dockItems.Add(new DockItem(
+        AddDockItem(new DockItem(
             "events",
             _dockIconTexture,
             accent,
@@ -642,7 +649,7 @@ public class MainWindow : IDisposable
             v => _eventsWindowHost.IsOpen = v,
             _eventsWindowHost.Draw));
 
-        _dockItems.Add(new DockItem(
+        AddDockItem(new DockItem(
             "create",
             _dockIconTexture,
             positive,
@@ -653,7 +660,7 @@ public class MainWindow : IDisposable
             v => _eventCreateWindowHost.IsOpen = v,
             _eventCreateWindowHost.Draw));
 
-        _dockItems.Add(new DockItem(
+        AddDockItem(new DockItem(
             "templates",
             _dockIconTexture,
             mutedAccent,
@@ -664,7 +671,7 @@ public class MainWindow : IDisposable
             v => _templatesWindowHost.IsOpen = v,
             _templatesWindowHost.Draw));
 
-        _dockItems.Add(new DockItem(
+        AddDockItem(new DockItem(
             "notepad",
             _dockIconTexture,
             neutral,
@@ -675,7 +682,7 @@ public class MainWindow : IDisposable
             v => _notePadWindowHost.IsOpen = v,
             _notePadWindowHost.Draw));
 
-        _dockItems.Add(new DockItem(
+        AddDockItem(new DockItem(
             "requests",
             _dockIconTexture,
             warning,
@@ -689,7 +696,7 @@ public class MainWindow : IDisposable
         var chat = _chat;
         if (_chatWindowHost != null && chat != null)
         {
-            _dockItems.Add(new DockItem(
+            AddDockItem(new DockItem(
                 "chat",
                 _dockIconTexture,
                 accent,
@@ -701,7 +708,7 @@ public class MainWindow : IDisposable
                 _chatWindowHost.Draw));
         }
 
-        _dockItems.Add(new DockItem(
+        AddDockItem(new DockItem(
             "officer",
             _dockIconTexture,
             positive,
@@ -712,7 +719,7 @@ public class MainWindow : IDisposable
             v => _officerWindowHost.IsOpen = v,
             _officerWindowHost.Draw));
 
-        _dockItems.Add(new DockItem(
+        AddDockItem(new DockItem(
             "syncshell",
             _dockIconTexture,
             accent,
@@ -729,7 +736,7 @@ public class MainWindow : IDisposable
             },
             () => _syncshellWindowHost?.Draw()));
 
-        _dockItems.Add(new DockItem(
+        AddDockItem(new DockItem(
             "settings",
             _dockIconTexture,
             neutral,
@@ -739,6 +746,55 @@ public class MainWindow : IDisposable
             () => _settings.IsOpen,
             v => _settings.IsOpen = v,
             () => { }));
+
+        var storedOrder = _config.DockOrder ?? new List<string>();
+        var knownIds = new HashSet<string>(defaultDockOrder);
+        var seen = new HashSet<string>();
+        var sanitizedOrder = new List<string>();
+
+        foreach (var id in storedOrder)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+            {
+                continue;
+            }
+
+            var trimmed = id.Trim();
+            if (!knownIds.Contains(trimmed))
+            {
+                continue;
+            }
+
+            if (seen.Add(trimmed))
+            {
+                sanitizedOrder.Add(trimmed);
+            }
+        }
+
+        foreach (var id in defaultDockOrder)
+        {
+            if (seen.Add(id))
+            {
+                sanitizedOrder.Add(id);
+            }
+        }
+
+        if (_config.DockOrder == null || !_config.DockOrder.SequenceEqual(sanitizedOrder))
+        {
+            _config.DockOrder = sanitizedOrder;
+            SaveConfig();
+        }
+
+        var orderLookup = sanitizedOrder
+            .Select((id, index) => (id, index))
+            .ToDictionary(pair => pair.id, pair => pair.index);
+
+        _dockItems.Sort((left, right) =>
+        {
+            var leftIndex = orderLookup.TryGetValue(left.Id, out var li) ? li : int.MaxValue;
+            var rightIndex = orderLookup.TryGetValue(right.Id, out var ri) ? ri : int.MaxValue;
+            return leftIndex.CompareTo(rightIndex);
+        });
 
         _autoShownDockItems.RemoveWhere(id => _dockItems.All(item => item.Id != id));
     }
