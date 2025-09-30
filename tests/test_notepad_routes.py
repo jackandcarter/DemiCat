@@ -284,3 +284,45 @@ async def test_reorder_sections_with_soft_deleted(tmp_path, monkeypatch):
 
     assert active_orders == [0, 1]
     assert all(order >= len(active_orders) for order in deleted_orders)
+
+
+@pytest.mark.anyio
+async def test_create_section_after_soft_delete(tmp_path, monkeypatch):
+    db_path = Path(tmp_path) / "notepad_soft_delete.db"
+    await init_db(f"sqlite+aiosqlite:///{db_path}")
+
+    async with get_session() as db:
+        guild = Guild(id=1, discord_guild_id=1, name="Guild")
+        user = User(id=1, discord_user_id=10, global_name="Officer")
+        db.add_all([guild, user])
+        await db.commit()
+
+    ctx = StubContext(
+        guild=SimpleNamespace(id=1),
+        user=SimpleNamespace(id=1),
+        roles=["officer"],
+    )
+
+    async def fake_broadcast(message: str, guild_id: int, path: str):
+        return None
+
+    monkeypatch.setattr(notepad.manager, "broadcast_text", fake_broadcast)
+
+    async with get_session() as db:
+        first_section = await notepad.create_section(
+            body=NoteSectionCreateBody(name="Raid"),
+            ctx=ctx,
+            db=db,
+        )
+
+    async with get_session() as db:
+        await notepad.delete_section(section_id=first_section.id, ctx=ctx, db=db)
+
+    async with get_session() as db:
+        second_section = await notepad.create_section(
+            body=NoteSectionCreateBody(name="Raid 2"),
+            ctx=ctx,
+            db=db,
+        )
+
+    assert second_section.order == first_section.order + 1
