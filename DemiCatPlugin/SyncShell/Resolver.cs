@@ -25,7 +25,7 @@ public interface IResolver
     /// </summary>
     /// <param name="cancellationToken">Cancellation token.</param>
     /// <returns>The populated manifest.</returns>
-    Task<SyncManifest> BuildManifestAsync(CancellationToken cancellationToken = default);
+    Task<SyncManifest> BuildManifestAsync(PenumbraResolveOptions? options = null, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Determines which blobs referenced by the manifest are missing from the backing <see cref="IBlobStore"/>.
@@ -40,7 +40,7 @@ public interface IResolver
     /// <param name="peerId">Identifier of the peer.</param>
     /// <param name="manifest">Manifest to apply.</param>
     /// <param name="cancellationToken">Cancellation token.</param>
-    Task ApplyManifestAsync(string peerId, SyncManifest manifest, CancellationToken cancellationToken = default);
+    Task ApplyManifestAsync(string peerId, SyncManifest manifest, PenumbraResolveOptions? options = null, CancellationToken cancellationToken = default);
 }
 
 /// <inheritdoc />
@@ -72,7 +72,7 @@ public sealed class Resolver : IResolver
     }
 
     /// <inheritdoc />
-    public async Task<SyncManifest> BuildManifestAsync(CancellationToken cancellationToken = default)
+    public async Task<SyncManifest> BuildManifestAsync(PenumbraResolveOptions? options = null, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
 
@@ -84,7 +84,7 @@ public sealed class Resolver : IResolver
             },
         };
 
-        var penumbraPaths = ResolvePenumbraPaths();
+        var penumbraPaths = ResolvePenumbraPaths(options);
         if (penumbraPaths is null)
         {
             _log.Warning("Unable to resolve Penumbra directories; returning empty manifest");
@@ -162,7 +162,7 @@ public sealed class Resolver : IResolver
     }
 
     /// <inheritdoc />
-    public async Task ApplyManifestAsync(string peerId, SyncManifest manifest, CancellationToken cancellationToken = default)
+    public async Task ApplyManifestAsync(string peerId, SyncManifest manifest, PenumbraResolveOptions? options = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(peerId))
         {
@@ -174,7 +174,7 @@ public sealed class Resolver : IResolver
             throw new ArgumentNullException(nameof(manifest));
         }
 
-        var paths = ResolvePenumbraPaths();
+        var paths = ResolvePenumbraPaths(options);
         if (paths is null)
         {
             throw new InvalidOperationException("Penumbra directories are not available");
@@ -596,15 +596,24 @@ public sealed class Resolver : IResolver
         }
     }
 
-    private PenumbraPaths? ResolvePenumbraPaths()
+    private PenumbraPaths? ResolvePenumbraPaths(PenumbraResolveOptions? options)
     {
         string? modsDirectory = null;
         string? configDirectory = null;
 
-        var configuredMods = ValidateConfiguredDirectory(_config.PenumbraModsDirectory, "Penumbra mods directory");
-        if (!string.IsNullOrEmpty(configuredMods))
+        var overrideMods = ValidateConfiguredDirectory(options?.ModsDirectory, "Penumbra mods directory override");
+        if (!string.IsNullOrEmpty(overrideMods))
         {
-            modsDirectory = configuredMods;
+            modsDirectory = overrideMods;
+        }
+
+        if (string.IsNullOrWhiteSpace(modsDirectory))
+        {
+            var configuredMods = ValidateConfiguredDirectory(_config.PenumbraModsDirectory, "Penumbra mods directory");
+            if (!string.IsNullOrEmpty(configuredMods))
+            {
+                modsDirectory = configuredMods;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(modsDirectory))
@@ -631,10 +640,19 @@ public sealed class Resolver : IResolver
             return null;
         }
 
-        var configuredConfig = ValidateConfiguredDirectory(_config.PenumbraConfigDirectory, "Penumbra config directory");
-        if (!string.IsNullOrEmpty(configuredConfig))
+        var overrideConfig = ValidateConfiguredDirectory(options?.ConfigDirectory, "Penumbra config directory override");
+        if (!string.IsNullOrEmpty(overrideConfig))
         {
-            configDirectory = configuredConfig;
+            configDirectory = overrideConfig;
+        }
+
+        if (string.IsNullOrWhiteSpace(configDirectory))
+        {
+            var configuredConfig = ValidateConfiguredDirectory(_config.PenumbraConfigDirectory, "Penumbra config directory");
+            if (!string.IsNullOrEmpty(configuredConfig))
+            {
+                configDirectory = configuredConfig;
+            }
         }
 
         if (string.IsNullOrWhiteSpace(configDirectory))
@@ -683,8 +701,185 @@ public sealed class Resolver : IResolver
             return null;
         }
 
+        var collectionOverride = options?.Collection;
+        if (string.IsNullOrWhiteSpace(collectionOverride))
+        {
+            collectionOverride = _config.PenumbraCollectionOverride;
+        }
+
+        var defaultMod = ResolveCollectionPath(configDirectory, collectionOverride, out var collectionName);
+        if (string.IsNullOrEmpty(defaultMod))
+        {
+            return null;
+        }
+
+        return new PenumbraPaths(modsDirectory, configDirectory, defaultMod, collectionName);
+    }
+
+    private string? ResolveCollectionPath(string configDirectory, string? collectionOverride, out string collectionName)
+    {
         var defaultMod = Path.Combine(configDirectory, "default_mod.json");
-        return new PenumbraPaths(modsDirectory, configDirectory, defaultMod);
+        var fallbackAvailable = File.Exists(defaultMod);
+
+        if (!string.IsNullOrWhiteSpace(collectionOverride))
+        {
+            var trimmed = collectionOverride.Trim();
+            foreach (var candidate in EnumerateCollectionPathCandidates(configDirectory, trimmed))
+            {
+                try
+                {
+                    if (File.Exists(candidate))
+                    {
+                        collectionName = NormalizeCollectionName(trimmed, candidate);
+                        return candidate;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Debug(ex, "Failed to inspect Penumbra collection candidate {Candidate}", candidate);
+                }
+            }
+
+            _log.Warning("Specified Penumbra collection '{Collection}' not found; falling back to default_mod.json", trimmed);
+        }
+
+        if (fallbackAvailable)
+        {
+            collectionName = "default";
+            return defaultMod;
+        }
+
+        _log.Warning("Unable to locate default_mod.json in {ConfigDirectory}", configDirectory);
+        collectionName = string.IsNullOrWhiteSpace(collectionOverride)
+            ? "default"
+            : NormalizeCollectionName(collectionOverride, null);
+        return null;
+    }
+
+    private static string NormalizeCollectionName(string rawName, string? resolvedPath)
+    {
+        if (string.IsNullOrWhiteSpace(rawName))
+        {
+            return "default";
+        }
+
+        var name = rawName.Trim();
+        if (Path.IsPathRooted(name))
+        {
+            var fileName = Path.GetFileNameWithoutExtension(name);
+            name = string.IsNullOrWhiteSpace(fileName) ? name : fileName;
+        }
+        else if (!string.IsNullOrWhiteSpace(resolvedPath))
+        {
+            var fileName = Path.GetFileNameWithoutExtension(resolvedPath);
+            if (!string.IsNullOrWhiteSpace(fileName))
+            {
+                name = fileName;
+            }
+        }
+
+        if (name.EndsWith("_mod", StringComparison.OrdinalIgnoreCase))
+        {
+            name = name[..^4];
+        }
+
+        name = name.Replace('\', '/');
+        var slashIndex = name.LastIndexOf('/');
+        if (slashIndex >= 0)
+        {
+            name = name[(slashIndex + 1)..];
+        }
+
+        return string.IsNullOrWhiteSpace(name) ? "default" : name;
+    }
+
+    private IEnumerable<string> EnumerateCollectionPathCandidates(string configDirectory, string identifier)
+    {
+        var results = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddCandidate(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            var candidate = path;
+            if (!Path.IsPathRooted(candidate))
+            {
+                candidate = Path.Combine(configDirectory, candidate);
+            }
+
+            try
+            {
+                candidate = Path.GetFullPath(candidate);
+            }
+            catch
+            {
+                return;
+            }
+
+            if (seen.Add(candidate))
+            {
+                results.Add(candidate);
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(identifier))
+        {
+            return results;
+        }
+
+        var trimmed = identifier.Trim();
+        var sanitized = trimmed.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+
+        AddCandidate(trimmed);
+        if (!ReferenceEquals(trimmed, sanitized))
+        {
+            AddCandidate(sanitized);
+        }
+
+        if (!sanitized.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+        {
+            AddCandidate(sanitized + ".json");
+        }
+
+        if (!sanitized.EndsWith("_mod.json", StringComparison.OrdinalIgnoreCase))
+        {
+            if (sanitized.EndsWith("_mod", StringComparison.OrdinalIgnoreCase))
+            {
+                AddCandidate(sanitized + ".json");
+            }
+            else
+            {
+                AddCandidate(sanitized + "_mod.json");
+            }
+        }
+
+        var collectionsDir = Path.Combine(configDirectory, "collections");
+        if (Directory.Exists(collectionsDir))
+        {
+            AddCandidate(Path.Combine("collections", sanitized));
+            if (!sanitized.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                AddCandidate(Path.Combine("collections", sanitized + ".json"));
+            }
+
+            if (!sanitized.EndsWith("_mod.json", StringComparison.OrdinalIgnoreCase))
+            {
+                if (sanitized.EndsWith("_mod", StringComparison.OrdinalIgnoreCase))
+                {
+                    AddCandidate(Path.Combine("collections", sanitized + ".json"));
+                }
+                else
+                {
+                    AddCandidate(Path.Combine("collections", sanitized + "_mod.json"));
+                }
+            }
+        }
+
+        return results;
     }
 
     private string? ValidateConfiguredDirectory(string? path, string description)
@@ -808,10 +1003,7 @@ public sealed class Resolver : IResolver
         return builder.ToString();
     }
 
-    private sealed record PenumbraPaths(string ModsDirectory, string ConfigDirectory, string DefaultModPath)
-    {
-        public string CollectionName { get; } = "default";
-    }
+    private sealed record PenumbraPaths(string ModsDirectory, string ConfigDirectory, string DefaultModPath, string CollectionName);
 
     private sealed class PenumbraModState
     {
