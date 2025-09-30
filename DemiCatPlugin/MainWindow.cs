@@ -481,14 +481,14 @@ public class MainWindow : IDisposable
         }
 
         var locked = _config.DockLocked;
-        if (ImGui.MenuItem("Lock Position", null, locked))
+        if (ImGui.MenuItem("Lock Position", default, locked))
         {
             _config.DockLocked = !_config.DockLocked;
             SaveConfig();
         }
 
         var remember = _config.DockRememberPosition;
-        if (ImGui.MenuItem("Remember Position", null, remember))
+        if (ImGui.MenuItem("Remember Position", default, remember))
         {
             var newValue = !_config.DockRememberPosition;
             _config.DockRememberPosition = newValue;
@@ -523,7 +523,7 @@ public class MainWindow : IDisposable
             }
         }
 
-        if (ImGui.MenuItem("Show Settings", null, _settings.IsOpen))
+        if (ImGui.MenuItem("Show Settings", default, _settings.IsOpen))
         {
             _settings.IsOpen = !_settings.IsOpen;
         }
