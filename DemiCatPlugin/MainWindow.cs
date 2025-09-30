@@ -602,7 +602,7 @@ public class MainWindow : IDisposable
         if (_dockIconTexture != null)
             return;
 
-        ISharedImmediateTextureWrap? wrap = null;
+        IDalamudTextureWrap? wrap = null;
         try
         {
             var provider = PluginServices.Instance?.TextureProvider;
