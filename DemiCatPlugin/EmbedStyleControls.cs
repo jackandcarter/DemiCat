@@ -9,10 +9,10 @@ public static class EmbedStyleControls
 {
     public sealed class Context
     {
-        public string ChannelKind { get; init; } = string.Empty;
+        public string ChannelKindKey { get; init; } = string.Empty;
         public uint EffectiveEmbedColor { get; init; }
         public uint? EmbedColorOverride { get; init; }
-        public Config.EmbedBorderSettings Border { get; init; } = Config.EmbedBorderSettings.CreateDefault(ChannelKind.Chat);
+        public Config.EmbedBorderSettings Border { get; init; } = Config.EmbedBorderSettings.CreateDefault(global::DemiCatPlugin.ChannelKind.Chat);
     }
 
     public sealed class Result
@@ -20,7 +20,7 @@ public static class EmbedStyleControls
         public bool EmbedColorChanged { get; init; }
         public uint? EmbedColorOverride { get; init; }
         public bool BorderChanged { get; init; }
-        public Config.EmbedBorderSettings Border { get; init; } = Config.EmbedBorderSettings.CreateDefault(ChannelKind.Chat);
+        public Config.EmbedBorderSettings Border { get; init; } = Config.EmbedBorderSettings.CreateDefault(global::DemiCatPlugin.ChannelKind.Chat);
     }
 
     public static Result Draw(Context context)
@@ -33,7 +33,7 @@ public static class EmbedStyleControls
         var embedColorChanged = false;
         var borderChanged = false;
         var colorOverride = context.EmbedColorOverride;
-        var border = context.Border?.Clone() ?? Config.EmbedBorderSettings.CreateDefault(context.ChannelKind);
+        var border = context.Border?.Clone() ?? Config.EmbedBorderSettings.CreateDefault(context.ChannelKindKey);
 
         ImGui.AlignTextToFramePadding();
         ImGui.TextUnformatted("Embed Color:");
@@ -41,8 +41,8 @@ public static class EmbedStyleControls
 
         var effectiveColor = ColorUtils.RgbToVector4(context.EffectiveEmbedColor);
         var buttonSize = new Vector2(ImGui.GetFrameHeight() * 2.2f, ImGui.GetFrameHeight());
-        var popupId = $"embedColorPicker##{context.ChannelKind}";
-        if (ImGui.ColorButton($"##embedColorButton_{context.ChannelKind}", effectiveColor, ImGuiColorEditFlags.NoAlpha, buttonSize))
+        var popupId = $"embedColorPicker##{context.ChannelKindKey}";
+        if (ImGui.ColorButton($"##embedColorButton_{context.ChannelKindKey}", effectiveColor, ImGuiColorEditFlags.NoAlpha, buttonSize))
         {
             ImGui.OpenPopup(popupId);
         }
@@ -76,7 +76,7 @@ public static class EmbedStyleControls
         ImGui.SameLine();
 
         var enabled = border.Enabled;
-        if (ImGui.Checkbox($"##embedBorderEnabled_{context.ChannelKind}", ref enabled))
+        if (ImGui.Checkbox($"##embedBorderEnabled_{context.ChannelKindKey}", ref enabled))
         {
             border.Enabled = enabled;
             borderChanged = true;
@@ -91,7 +91,7 @@ public static class EmbedStyleControls
 
         ImGui.SetNextItemWidth(comboWidth);
         var label = GetGlyphLabel(border.Glyph);
-        if (ImGui.BeginCombo($"##embedBorderGlyph_{context.ChannelKind}", label))
+        if (ImGui.BeginCombo($"##embedBorderGlyph_{context.ChannelKindKey}", label))
         {
             foreach (Config.EmbedBorderGlyph glyph in Enum.GetValues<Config.EmbedBorderGlyph>())
             {
@@ -108,8 +108,8 @@ public static class EmbedStyleControls
 
         ImGui.SameLine();
         var borderColor = ColorUtils.RgbToVector4(border.Color);
-        var borderPopupId = $"embedBorderColorPicker##{context.ChannelKind}";
-        if (ImGui.ColorButton($"##embedBorderColor_{context.ChannelKind}", borderColor, ImGuiColorEditFlags.NoAlpha, buttonSize))
+        var borderPopupId = $"embedBorderColorPicker##{context.ChannelKindKey}";
+        if (ImGui.ColorButton($"##embedBorderColor_{context.ChannelKindKey}", borderColor, ImGuiColorEditFlags.NoAlpha, buttonSize))
         {
             ImGui.OpenPopup(borderPopupId);
         }
