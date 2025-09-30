@@ -27,7 +27,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 19;
+    public const int CurrentVersion = 20;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -188,6 +188,12 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("autoApply")]
     public Dictionary<string, bool> AutoApply { get; set; } = new();
+
+    [JsonPropertyName("penumbraModsDirectory")]
+    public string PenumbraModsDirectory { get; set; } = string.Empty;
+
+    [JsonPropertyName("penumbraConfigDirectory")]
+    public string PenumbraConfigDirectory { get; set; } = string.Empty;
 
     [JsonPropertyName("penumbraChoices")]
     public Dictionary<string, bool> PenumbraChoices { get; set; } = new();
@@ -600,6 +606,14 @@ public class Config : IPluginConfiguration
             Version = 19;
             ExtensionData = null;
             PluginServices.Instance?.PluginInterface.SavePluginConfig(this);
+        }
+        if (Version < 20)
+        {
+            PenumbraModsDirectory ??= string.Empty;
+            PenumbraConfigDirectory ??= string.Empty;
+
+            Version = 20;
+            ExtensionData = null;
         }
     }
 

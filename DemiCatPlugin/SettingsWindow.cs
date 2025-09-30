@@ -8,7 +8,9 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
+using System.IO;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
@@ -26,6 +28,8 @@ public class SettingsWindow : IDisposable
 
     private string _apiKey = string.Empty;
     private string _apiBaseUrl = string.Empty;
+    private string _penumbraModsDirectory = string.Empty;
+    private string _penumbraConfigDirectory = string.Empty;
     private string _syncStatus = string.Empty;
     private bool _syncInProgress;
     private readonly Dictionary<string, bool> _categoryToggles = new();
@@ -35,6 +39,9 @@ public class SettingsWindow : IDisposable
     private bool _settingsLoaded;
     private bool _isLinked;
     private static readonly int[] FadeDurations = { 5, 10, 15, 20, 30 };
+
+    private readonly FileDialogManager _penumbraModsDialog = new();
+    private readonly FileDialogManager _penumbraConfigDialog = new();
 
     public bool IsOpen;
 
@@ -54,6 +61,8 @@ public class SettingsWindow : IDisposable
         _startNetworking = startNetworking;
         _apiKey = tokenManager.Token ?? string.Empty;
         _apiBaseUrl = config.ApiBaseUrl;
+        _penumbraModsDirectory = config.PenumbraModsDirectory ?? string.Empty;
+        _penumbraConfigDirectory = config.PenumbraConfigDirectory ?? string.Empty;
         _devWindow = new DeveloperWindow(config, pluginInterface);
         _log = log;
         _isLinked = _tokenManager.State == LinkState.Linked;
@@ -103,6 +112,9 @@ public class SettingsWindow : IDisposable
 
     private void DrawGeneralTab()
     {
+        _penumbraModsDialog.Draw();
+        _penumbraConfigDialog.Draw();
+
         DrawConnectionIndicator(_isLinked);
         ImGui.Spacing();
 
@@ -200,6 +212,8 @@ public class SettingsWindow : IDisposable
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
                 ImGui.SetTooltip("Enable FC SyncShell to display transfer progress overlay.");
         }
+
+        DrawPenumbraDirectorySettings();
 
         foreach (var kvp in _categoryToggles.ToList())
         {
@@ -862,6 +876,10 @@ public class SettingsWindow : IDisposable
         _config.Categories.Clear();
         _config.AutoApply.Clear();
         _config.PenumbraChoices.Clear();
+        _config.PenumbraModsDirectory = string.Empty;
+        _config.PenumbraConfigDirectory = string.Empty;
+        _penumbraModsDirectory = string.Empty;
+        _penumbraConfigDirectory = string.Empty;
         _config.NotePadLastSectionId = null;
         _config.NotePadLastPageId = null;
 
@@ -1162,6 +1180,141 @@ public class SettingsWindow : IDisposable
             }
         }
     }
+
+    private void DrawPenumbraDirectorySettings()
+    {
+        ImGui.Separator();
+        ImGui.TextUnformatted("Penumbra Directories");
+        ImGui.TextDisabled("Override the Penumbra folders used by SyncShell.");
+        ImGui.Spacing();
+
+        DrawDirectoryPicker(
+            "Penumbra Mods Directory",
+            "Leave blank to use Penumbra's configured mods directory.",
+            () => _penumbraModsDirectory,
+            SetPenumbraModsDirectory,
+            _penumbraModsDialog,
+            "PenumbraMods");
+
+        DrawDirectoryPicker(
+            "Penumbra Config Directory",
+            "Should contain default_mod.json. Leave blank to auto-detect.",
+            () => _penumbraConfigDirectory,
+            SetPenumbraConfigDirectory,
+            _penumbraConfigDialog,
+            "PenumbraConfig");
+    }
+
+    private void DrawDirectoryPicker(
+        string label,
+        string helpText,
+        Func<string> getter,
+        Action<string> setter,
+        FileDialogManager dialog,
+        string idSuffix)
+    {
+        var value = getter() ?? string.Empty;
+        if (ImGui.InputText(label, ref value, 260))
+        {
+            setter(value);
+        }
+
+        ImGui.SameLine();
+        if (ImGui.Button($"Browse##{idSuffix}"))
+        {
+            OpenFolderDialog(dialog, label, getter(), setter);
+        }
+
+        var current = getter();
+        if (!string.IsNullOrEmpty(NormalizeDirectory(current)))
+        {
+            ImGui.SameLine();
+            if (ImGui.Button($"Clear##{idSuffix}"))
+            {
+                setter(string.Empty);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(helpText))
+        {
+            ImGui.TextDisabled(helpText);
+        }
+
+        current = getter();
+        var normalized = NormalizeDirectory(current);
+        if (!string.IsNullOrEmpty(normalized) && !Directory.Exists(normalized))
+        {
+            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), "Directory not found; automatic detection will be used instead.");
+        }
+
+        ImGui.Spacing();
+    }
+
+    private void OpenFolderDialog(
+        FileDialogManager dialog,
+        string label,
+        string? currentPath,
+        Action<string> setter)
+    {
+        var initial = NormalizeDirectory(currentPath);
+        if (string.IsNullOrEmpty(initial) || !Directory.Exists(initial))
+        {
+            initial = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        }
+
+        if (string.IsNullOrEmpty(initial) || !Directory.Exists(initial))
+        {
+            initial = Environment.CurrentDirectory;
+        }
+
+        dialog.OpenFolderDialog($"Select {label}", (success, selected) =>
+        {
+            if (!success || string.IsNullOrWhiteSpace(selected))
+            {
+                return;
+            }
+
+            var normalized = NormalizeDirectory(selected);
+            var framework = PluginServices.Instance?.Framework;
+            if (framework != null)
+            {
+                _ = framework.RunOnTick(() => setter(normalized));
+            }
+            else
+            {
+                setter(normalized);
+            }
+        }, initial);
+    }
+
+    private void SetPenumbraModsDirectory(string? path)
+    {
+        var normalized = NormalizeDirectory(path);
+        if (string.Equals(_penumbraModsDirectory, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _penumbraModsDirectory = normalized;
+        _config.PenumbraModsDirectory = normalized;
+        SaveConfig();
+    }
+
+    private void SetPenumbraConfigDirectory(string? path)
+    {
+        var normalized = NormalizeDirectory(path);
+        if (string.Equals(_penumbraConfigDirectory, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _penumbraConfigDirectory = normalized;
+        _config.PenumbraConfigDirectory = normalized;
+        SaveConfig();
+    }
+
+    private static string NormalizeDirectory(string? value)
+        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
 
     private void ClearCachedData()
     {

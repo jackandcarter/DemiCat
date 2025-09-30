@@ -173,7 +173,7 @@ public class SyncshellWindow : IDisposable
 
         _tokenManager = TokenManager.Instance ?? throw new InvalidOperationException("Token manager unavailable");
         var log = services?.Log ?? new NullPluginLog();
-        _resolver = new Resolver(_blobStore, log, services?.PluginInterface);
+        _resolver = new Resolver(config, _blobStore, log, services?.PluginInterface);
         _syncClient = new SyncClient(_config, _tokenManager, _resolver, _blobStore);
         _syncClient.TransferProgress += HandleTransferProgress;
         _syncClient.ApplyCompleted += HandleApplyCompleted;
