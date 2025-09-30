@@ -31,22 +31,23 @@ public class MainWindow : IDisposable
     private readonly HttpClient _httpClient;
     private readonly List<DockItem> _dockItems = new();
 
+    private readonly Action _openSettingsAction;
+    private readonly EventsDockableWindow _eventsWindowHost;
+    private readonly EventCreateDockableWindow _eventCreateWindowHost;
+    private readonly TemplatesDockableWindow _templatesWindowHost;
+    private readonly NotePadDockableWindow _notePadWindowHost;
+    private readonly RequestBoardDockableWindow _requestBoardWindowHost;
+    private readonly OfficerChatDockableWindow _officerWindowHost;
+    private readonly List<DockableWindow> _windowHosts = new();
+    private readonly ChatDockableWindow? _chatWindowHost;
+    private SyncshellDockableWindow? _syncshellWindowHost;
+
     private ISharedImmediateTexture? _dockIconTexture;
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
-    private bool _templatesActive;
     private bool _styleNeedsUpdate = true;
     private bool _hasOfficerAccess;
     private bool _isOpen;
-
-    private bool _eventsOpen;
-    private bool _createOpen;
-    private bool _templatesOpen;
-    private bool _notePadOpen;
-    private bool _requestsOpen;
-    private bool _chatOpen;
-    private bool _officerOpen;
-    private bool _syncshellOpen;
 
     public bool HasOfficerAccess
     {
@@ -57,6 +58,12 @@ public class MainWindow : IDisposable
                 return;
 
             _hasOfficerAccess = value;
+            if (!value)
+            {
+                _officerWindowHost.IsOpen = false;
+            }
+
+            BuildDockItems();
         }
     }
 
@@ -86,6 +93,14 @@ public class MainWindow : IDisposable
     public EventCreateWindow EventCreateWindow => _create;
     public TemplatesWindow TemplatesWindow => _templates;
     public NotePadWindow NotePadWindow => _notePad;
+    public EventsDockableWindow EventsWindowHost => _eventsWindowHost;
+    public EventCreateDockableWindow EventCreateWindowHost => _eventCreateWindowHost;
+    public TemplatesDockableWindow TemplatesWindowHost => _templatesWindowHost;
+    public NotePadDockableWindow NotePadWindowHost => _notePadWindowHost;
+    public RequestBoardDockableWindow RequestBoardWindowHost => _requestBoardWindowHost;
+    public ChatDockableWindow? ChatWindowHost => _chatWindowHost;
+    public OfficerChatDockableWindow OfficerWindowHost => _officerWindowHost;
+    public SyncshellDockableWindow? SyncshellWindowHost => _syncshellWindowHost;
     internal static MainWindow? Instance { get; private set; }
 
     public MainWindow(
@@ -113,8 +128,47 @@ public class MainWindow : IDisposable
         _notePad = notePad;
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
-        _templatesActive = false;
         _isOpen = config.DockVisible;
+
+        _openSettingsAction = () => _settings.IsOpen = true;
+        _eventsWindowHost = new EventsDockableWindow(config, ui, IsLinked, _openSettingsAction);
+        _eventCreateWindowHost = new EventCreateDockableWindow(config, _create, IsLinked, _openSettingsAction);
+        _templatesWindowHost = new TemplatesDockableWindow(config, _templates, IsLinked, _openSettingsAction);
+        _notePadWindowHost = new NotePadDockableWindow(config, _notePad, _openSettingsAction);
+        _requestBoardWindowHost = new RequestBoardDockableWindow(config, _requestBoard, IsLinked, _openSettingsAction);
+        _officerWindowHost = new OfficerChatDockableWindow(config, _officer, IsLinked, () => HasOfficerAccess, _openSettingsAction);
+
+        _windowHosts.Add(_eventsWindowHost);
+        _windowHosts.Add(_eventCreateWindowHost);
+        _windowHosts.Add(_templatesWindowHost);
+        _windowHosts.Add(_notePadWindowHost);
+        _windowHosts.Add(_requestBoardWindowHost);
+        _windowHosts.Add(_officerWindowHost);
+
+        if (_chat != null)
+        {
+            var chatTitle = _chat is FcChatWindow ? "DemiCat FC Chat" : "DemiCat Chat";
+            var linkPrompt = _chat is FcChatWindow ? "Link DemiCat to use FC chat." : "Link DemiCat to use chat.";
+            Func<float> opacityProvider = _chat is FcChatWindow
+                ? () => _config.FcChatOpacity
+                : () => 1f;
+
+            _chatWindowHost = new ChatDockableWindow(
+                _config,
+                chatTitle,
+                _chat,
+                IsLinked,
+                opacityProvider,
+                linkPrompt,
+                _openSettingsAction);
+            _windowHosts.Add(_chatWindowHost);
+        }
+
+        if (_syncshell != null)
+        {
+            _syncshellWindowHost = new SyncshellDockableWindow(_config, _syncshell, IsLinked, _openSettingsAction);
+            _windowHosts.Add(_syncshellWindowHost);
+        }
 
         Instance = this;
 
@@ -135,14 +189,25 @@ public class MainWindow : IDisposable
         _syncshellEnabled = _config.FCSyncShell;
         if (_syncshellEnabled)
         {
+            _syncshell?.Dispose();
             _syncshell = new SyncshellWindow(_config, _httpClient);
+            _syncshellWindowHost = new SyncshellDockableWindow(_config, _syncshell, IsLinked, _openSettingsAction);
+            _windowHosts.Add(_syncshellWindowHost);
+            BuildDockItems();
             PluginServices.Instance?.Framework.RunOnTick(() => { });
         }
         else
         {
             _syncshell?.Dispose();
             _syncshell = null;
-            _syncshellOpen = false;
+            if (_syncshellWindowHost != null)
+            {
+                _syncshellWindowHost.IsOpen = false;
+                _windowHosts.Remove(_syncshellWindowHost);
+                _syncshellWindowHost = null;
+            }
+
+            BuildDockItems();
         }
     }
 
@@ -264,7 +329,13 @@ public class MainWindow : IDisposable
 
     public void ResetFadeTimer()
     {
-        // The dock UI no longer fades, but keep the method for compatibility with existing callers.
+        foreach (var window in _windowHosts)
+        {
+            if (window.SupportsFade)
+            {
+                window.ResetFadeTimer();
+            }
+        }
     }
 
     public void Dispose()
@@ -280,14 +351,10 @@ public class MainWindow : IDisposable
 
     private void CloseAllFeatureWindows()
     {
-        _eventsOpen = false;
-        _createOpen = false;
-        _templatesOpen = false;
-        _notePadOpen = false;
-        _requestsOpen = false;
-        _chatOpen = false;
-        _officerOpen = false;
-        _syncshellOpen = false;
+        foreach (var window in _windowHosts)
+        {
+            window.IsOpen = false;
+        }
     }
 
     private void DrawDockStrip(
@@ -410,227 +477,8 @@ public class MainWindow : IDisposable
         ImGui.EndPopup();
     }
 
-    private void DrawEventsWindow()
-    {
-        if (!_eventsOpen)
-            return;
-
-        var open = _eventsOpen;
-        var colorsPushed = PushContentWindowColors();
-        if (ImGui.Begin("DemiCat Events", ref open, ImGuiWindowFlags.NoCollapse))
-        {
-            if (!IsLinked())
-            {
-                DrawLinkPrompt("Link DemiCat to view events.");
-            }
-            else
-            {
-                _ui.Draw();
-            }
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(colorsPushed);
-        _eventsOpen = open;
-    }
-
-    private void DrawCreateWindow()
-    {
-        if (!_createOpen)
-            return;
-
-        var open = _createOpen;
-        var colorsPushed = PushContentWindowColors();
-        if (ImGui.Begin("Create Event", ref open, ImGuiWindowFlags.NoCollapse))
-        {
-            if (!IsLinked())
-            {
-                DrawLinkPrompt("Link DemiCat to create events.");
-            }
-            else
-            {
-                _create.Draw();
-            }
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(colorsPushed);
-        _createOpen = open;
-    }
-
-    private void DrawTemplatesWindow()
-    {
-        if (!_templatesOpen)
-            return;
-
-        var open = _templatesOpen;
-        var colorsPushed = PushContentWindowColors();
-        if (ImGui.Begin("Templates", ref open, ImGuiWindowFlags.NoCollapse))
-        {
-            if (!IsLinked())
-            {
-                DrawLinkPrompt("Link DemiCat to use templates.");
-                _templatesActive = false;
-            }
-            else
-            {
-                if (!_templatesActive)
-                {
-                    _templates.OnTabActivated();
-                    _templatesActive = true;
-                }
-
-                _templates.Draw();
-            }
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(colorsPushed);
-        _templatesOpen = open;
-        if (!open)
-        {
-            _templatesActive = false;
-        }
-    }
-
-    private void DrawNotePadWindow()
-    {
-        if (!_notePadOpen)
-            return;
-
-        var open = _notePadOpen;
-        var colorsPushed = PushContentWindowColors();
-        if (ImGui.Begin("NotePad", ref open, ImGuiWindowFlags.NoCollapse))
-        {
-            if (!_config.NotePadEnabled)
-            {
-                ImGui.TextUnformatted("NotePad is disabled.");
-            }
-            else
-            {
-                _notePad.Draw();
-            }
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(colorsPushed);
-        _notePadOpen = open;
-    }
-
-    private void DrawRequestBoardWindow()
-    {
-        if (!_requestsOpen)
-            return;
-
-        var open = _requestsOpen;
-        var colorsPushed = PushContentWindowColors();
-        if (ImGui.Begin("Request Board", ref open, ImGuiWindowFlags.NoCollapse))
-        {
-            _requestBoard.Draw();
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(colorsPushed);
-        _requestsOpen = open;
-    }
-
-    private void DrawChatWindow()
-    {
-        if (!_chatOpen || _chat == null)
-            return;
-
-        var open = _chatOpen;
-        var colorsPushed = PushContentWindowColors();
-        var label = _chat is FcChatWindow ? "FC Chat" : "Chat";
-        if (ImGui.Begin($"DemiCat {label}", ref open, ImGuiWindowFlags.NoCollapse))
-        {
-            if (!IsLinked())
-            {
-                var tooltip = _chat is FcChatWindow ? "Link DemiCat to use FC chat." : "Link DemiCat to use chat.";
-                DrawLinkPrompt(tooltip);
-            }
-            else
-            {
-                _chat.Draw();
-            }
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(colorsPushed);
-        _chatOpen = open;
-    }
-
-    private void DrawOfficerWindow()
-    {
-        if (!_officerOpen)
-            return;
-
-        var open = _officerOpen;
-        var colorsPushed = PushContentWindowColors();
-        if (ImGui.Begin("Officer Chat", ref open, ImGuiWindowFlags.NoCollapse))
-        {
-            if (!IsLinked())
-            {
-                DrawLinkPrompt("Link DemiCat to use officer chat.");
-            }
-            else if (!HasOfficerAccess)
-            {
-                ImGui.TextUnformatted("No officer access for this key.");
-            }
-            else
-            {
-                _officer.Draw();
-            }
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(colorsPushed);
-        _officerOpen = open;
-    }
-
-    private void DrawSyncshellWindow()
-    {
-        if (!_syncshellOpen)
-            return;
-
-        if (_syncshell == null)
-        {
-            _syncshellOpen = false;
-            return;
-        }
-
-        var open = _syncshellOpen;
-        var colorsPushed = PushContentWindowColors();
-        if (ImGui.Begin("Syncshell", ref open, ImGuiWindowFlags.NoCollapse))
-        {
-            if (!IsLinked())
-            {
-                DrawLinkPrompt("Link DemiCat to use syncshell.");
-            }
-            else
-            {
-                _syncshell.Draw();
-            }
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(colorsPushed);
-        _syncshellOpen = open;
-    }
-
-    private void DrawLinkPrompt(string message)
-    {
-        ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), message);
-        ImGui.SameLine();
-        if (ImGui.Button("Open Settings"))
-        {
-            _settings.IsOpen = true;
-        }
-    }
-
     private bool IsLinked()
         => TokenManager.Instance?.State == LinkState.Linked;
-
-    private int PushContentWindowColors()
-    {
-        var primary = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
-        var child = AdjustBrightness(primary, 0.9f);
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, WithAlpha(primary, 1f));
-        ImGui.PushStyleColor(ImGuiCol.ChildBg, WithAlpha(child, 1f));
-        return 2;
-    }
 
     private float GetIconScale()
     {
@@ -653,12 +501,12 @@ public class MainWindow : IDisposable
     private Vector4 GetDockBackgroundColor()
     {
         var color = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
-        return WithAlpha(color, Math.Clamp(_config.DockBackgroundAlpha, 0.2f, 1f));
+        return DockableWindow.WithAlpha(color, Math.Clamp(_config.DockBackgroundAlpha, 0.2f, 1f));
     }
 
     private Vector4 GetDockStripColor(Vector4 background)
     {
-        var strip = AdjustBrightness(background, 1.1f);
+        var strip = DockableWindow.AdjustBrightness(background, 1.1f);
         strip.W = background.W;
         return strip;
     }
@@ -687,7 +535,7 @@ public class MainWindow : IDisposable
     {
         _dockItems.Clear();
         var accent = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
-        var mutedAccent = AdjustBrightness(accent, 0.85f);
+        var mutedAccent = DockableWindow.AdjustBrightness(accent, 0.85f);
         var positive = new Vector4(0.35f, 0.75f, 1f, 1f);
         var warning = new Vector4(1f, 0.62f, 0.2f, 1f);
         var neutral = new Vector4(0.8f, 0.8f, 0.8f, 1f);
@@ -699,9 +547,9 @@ public class MainWindow : IDisposable
             "Events",
             () => _config.Events,
             () => IsLinked(),
-            () => _eventsOpen,
-            v => _eventsOpen = v,
-            DrawEventsWindow));
+            () => _eventsWindowHost.IsOpen,
+            v => _eventsWindowHost.IsOpen = v,
+            _eventsWindowHost.Draw));
 
         _dockItems.Add(new DockItem(
             "create",
@@ -710,9 +558,9 @@ public class MainWindow : IDisposable
             "Create Event",
             () => _config.Events,
             () => IsLinked(),
-            () => _createOpen,
-            v => _createOpen = v,
-            DrawCreateWindow));
+            () => _eventCreateWindowHost.IsOpen,
+            v => _eventCreateWindowHost.IsOpen = v,
+            _eventCreateWindowHost.Draw));
 
         _dockItems.Add(new DockItem(
             "templates",
@@ -721,9 +569,9 @@ public class MainWindow : IDisposable
             "Templates",
             () => _config.Templates,
             () => IsLinked(),
-            () => _templatesOpen,
-            v => _templatesOpen = v,
-            DrawTemplatesWindow));
+            () => _templatesWindowHost.IsOpen,
+            v => _templatesWindowHost.IsOpen = v,
+            _templatesWindowHost.Draw));
 
         _dockItems.Add(new DockItem(
             "notepad",
@@ -732,9 +580,9 @@ public class MainWindow : IDisposable
             "NotePad",
             () => true,
             () => _config.NotePadEnabled,
-            () => _notePadOpen,
-            v => _notePadOpen = v,
-            DrawNotePadWindow));
+            () => _notePadWindowHost.IsOpen,
+            v => _notePadWindowHost.IsOpen = v,
+            _notePadWindowHost.Draw));
 
         _dockItems.Add(new DockItem(
             "requests",
@@ -743,22 +591,23 @@ public class MainWindow : IDisposable
             "Request Board",
             () => _config.Requests,
             () => IsLinked(),
-            () => _requestsOpen,
-            v => _requestsOpen = v,
-            DrawRequestBoardWindow));
+            () => _requestBoardWindowHost.IsOpen,
+            v => _requestBoardWindowHost.IsOpen = v,
+            _requestBoardWindowHost.Draw));
 
-        if (_chat != null)
+        var chat = _chat;
+        if (_chatWindowHost != null && chat != null)
         {
             _dockItems.Add(new DockItem(
                 "chat",
                 _dockIconTexture,
                 accent,
-                _chat is FcChatWindow ? "FC Chat" : "Chat",
+                chat is FcChatWindow ? "FC Chat" : "Chat",
                 () => true,
                 () => IsLinked(),
-                () => _chatOpen,
-                v => _chatOpen = v,
-                DrawChatWindow));
+                () => _chatWindowHost.IsOpen,
+                v => _chatWindowHost.IsOpen = v,
+                _chatWindowHost.Draw));
         }
 
         _dockItems.Add(new DockItem(
@@ -768,20 +617,26 @@ public class MainWindow : IDisposable
             "Officer Chat",
             () => HasOfficerAccess,
             () => HasOfficerAccess && IsLinked(),
-            () => _officerOpen,
-            v => _officerOpen = v,
-            DrawOfficerWindow));
+            () => _officerWindowHost.IsOpen,
+            v => _officerWindowHost.IsOpen = v,
+            _officerWindowHost.Draw));
 
         _dockItems.Add(new DockItem(
             "syncshell",
             _dockIconTexture,
             accent,
             "Syncshell",
-            () => _config.FCSyncShell && _syncshell != null,
-            () => _config.FCSyncShell && _syncshell != null && IsLinked(),
-            () => _syncshellOpen,
-            v => _syncshellOpen = v,
-            DrawSyncshellWindow));
+            () => _config.FCSyncShell && _syncshellWindowHost != null,
+            () => _config.FCSyncShell && _syncshellWindowHost != null && IsLinked(),
+            () => _syncshellWindowHost?.IsOpen ?? false,
+            v =>
+            {
+                if (_syncshellWindowHost != null)
+                {
+                    _syncshellWindowHost.IsOpen = v;
+                }
+            },
+            () => _syncshellWindowHost?.Draw()));
 
         _dockItems.Add(new DockItem(
             "settings",
@@ -839,8 +694,8 @@ public class MainWindow : IDisposable
     {
         var style = ImGui.GetStyle();
         var accent = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
-        var accentHovered = AdjustBrightness(accent, 1.1f);
-        var accentActive = AdjustBrightness(accent, 1.2f);
+        var accentHovered = DockableWindow.AdjustBrightness(accent, 1.1f);
+        var accentActive = DockableWindow.AdjustBrightness(accent, 1.2f);
 
         style.Colors[(int)ImGuiCol.ScrollbarGrab] = accent;
         style.Colors[(int)ImGuiCol.ScrollbarGrabHovered] = accentHovered;
@@ -848,19 +703,5 @@ public class MainWindow : IDisposable
         style.Colors[(int)ImGuiCol.Separator] = accent;
         style.Colors[(int)ImGuiCol.SeparatorHovered] = accentHovered;
         style.Colors[(int)ImGuiCol.SeparatorActive] = accentActive;
-    }
-
-    private static Vector4 AdjustBrightness(Vector4 color, float factor)
-    {
-        return new Vector4(
-            Math.Clamp(color.X * factor, 0f, 1f),
-            Math.Clamp(color.Y * factor, 0f, 1f),
-            Math.Clamp(color.Z * factor, 0f, 1f),
-            color.W);
-    }
-
-    private static Vector4 WithAlpha(Vector4 color, float alphaMultiplier)
-    {
-        return new Vector4(color.X, color.Y, color.Z, Math.Clamp(color.W * alphaMultiplier, 0f, 1f));
     }
 }
