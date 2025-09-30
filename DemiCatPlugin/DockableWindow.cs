@@ -10,6 +10,7 @@ public abstract class DockableWindow
 
     private readonly Config _config;
     private readonly Action _openSettings;
+    private bool _hasDrawnHeaderThisFrame;
     private DateTime _lastFadeReset = DateTime.UtcNow;
     private bool _isOpen;
 
@@ -65,6 +66,7 @@ public abstract class DockableWindow
 
         var open = IsOpen;
         var colorsPushed = 0;
+        _hasDrawnHeaderThisFrame = false;
         if (UseThemedColors)
         {
             colorsPushed = PushWindowThemeColors();
@@ -81,6 +83,7 @@ public abstract class DockableWindow
                 ResetFadeTimer();
             }
 
+            DrawHeaderWithSettingsButton();
             DrawContents();
         }
         ImGui.End();
@@ -165,6 +168,36 @@ public abstract class DockableWindow
         {
             _openSettings();
         }
+    }
+
+    protected void DrawHeaderWithSettingsButton()
+    {
+        if (_hasDrawnHeaderThisFrame)
+            return;
+
+        _hasDrawnHeaderThisFrame = true;
+
+        const string label = "Settings";
+        var style = ImGui.GetStyle();
+        var buttonSize = ImGui.CalcTextSize(label);
+        buttonSize.X += style.FramePadding.X * 2f;
+        buttonSize.Y += style.FramePadding.Y * 2f;
+
+        var cursorPos = ImGui.GetCursorPos();
+        var availableWidth = ImGui.GetContentRegionAvail().X;
+        var buttonPosX = cursorPos.X + Math.Max(0f, availableWidth - buttonSize.X);
+
+        ImGui.SetCursorPosX(buttonPosX);
+        ImGui.PushID("SettingsButton");
+        if (ImGui.Button(label))
+        {
+            _openSettings();
+        }
+        ImGui.PopID();
+
+        var nextCursorY = cursorPos.Y + buttonSize.Y + style.ItemSpacing.Y;
+        ImGui.SetCursorPos(new Vector2(cursorPos.X, nextCursorY));
+        ImGui.Separator();
     }
 
     internal static Vector4 AdjustBrightness(Vector4 color, float factor)
