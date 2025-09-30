@@ -214,6 +214,12 @@ public class MainWindow : IDisposable
 
     public void Draw()
     {
+        if (!IsLinked())
+        {
+            CloseAllFeatureWindows();
+            return;
+        }
+
         UpdateSyncshell();
 
         if (_styleNeedsUpdate)
