@@ -11,6 +11,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.SyncShell;
+using DemiCatPlugin;
 using Moq;
 using Xunit;
 
@@ -84,7 +85,7 @@ public class SyncShellResolverTests
             glamState,
             customizeState);
 
-        var resolver = new Resolver(blobStore.Object, Mock.Of<IPluginLog>(), pluginInterface.Object);
+        var resolver = new Resolver(new Config(), blobStore.Object, Mock.Of<IPluginLog>(), pluginInterface.Object);
 
         var manifest = await resolver.BuildManifestAsync().ConfigureAwait(false);
 
@@ -120,6 +121,34 @@ public class SyncShellResolverTests
     }
 
     [Fact]
+    public async Task BuildManifestAsync_UsesConfiguredDirectoriesWhenPluginInterfaceUnavailable()
+    {
+        using var temp = new TempDirectory();
+        var modsDirectory = Path.Combine(temp.Path, "mods");
+        var configDirectory = Path.Combine(temp.Path, "config");
+        Directory.CreateDirectory(modsDirectory);
+        Directory.CreateDirectory(configDirectory);
+        await File.WriteAllTextAsync(Path.Combine(configDirectory, "default_mod.json"), "{}").ConfigureAwait(false);
+
+        var config = new Config
+        {
+            PenumbraModsDirectory = modsDirectory,
+            PenumbraConfigDirectory = configDirectory,
+        };
+
+        var blobStore = new Mock<IBlobStore>();
+        blobStore.Setup(bs => bs.Has(It.IsAny<string>())).Returns(true);
+
+        var resolver = new Resolver(config, blobStore.Object, Mock.Of<IPluginLog>(), null);
+        var manifest = await resolver.BuildManifestAsync().ConfigureAwait(false);
+
+        var collection = Assert.Single(manifest.Collections);
+        Assert.Equal("default", collection.CollectionId);
+        Assert.Empty(collection.Mods);
+        Assert.Empty(collection.Patches);
+    }
+
+    [Fact]
     public void GetMissingBlobs_ReturnsOnlyHashesNotPresent()
     {
         var blobStore = new Mock<IBlobStore>();
@@ -148,7 +177,7 @@ public class SyncShellResolverTests
             }
         };
 
-        var resolver = new Resolver(blobStore.Object, Mock.Of<IPluginLog>(), null);
+        var resolver = new Resolver(new Config(), blobStore.Object, Mock.Of<IPluginLog>(), null);
         var missing = resolver.GetMissingBlobs(manifest).ToList();
 
         Assert.Single(missing);
@@ -225,7 +254,7 @@ public class SyncShellResolverTests
             .Setup(pi => pi.GetIpcSubscriber<string, object?>(It.Is<string>(c => c == "Customize.ApplyProfile")))
             .Returns(customizeApplyMock.Object);
 
-        var resolver = new Resolver(blobStore, Mock.Of<IPluginLog>(), pluginInterface.Object);
+        var resolver = new Resolver(new Config(), blobStore, Mock.Of<IPluginLog>(), pluginInterface.Object);
         await resolver.ApplyManifestAsync("peer-one", manifest).ConfigureAwait(false);
 
         var appliedFile = Path.Combine(modsDirectory, "SyncShell", "peer-one", "mod-one", "assets", "file.bin");

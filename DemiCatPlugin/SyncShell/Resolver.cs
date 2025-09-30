@@ -11,6 +11,7 @@ using System.Threading.Tasks;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
+using DemiCatPlugin;
 
 namespace DemiCatPlugin.SyncShell;
 
@@ -54,6 +55,7 @@ public sealed class Resolver : IResolver
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "XIVLauncherCN", "pluginConfigs", "Penumbra"),
     };
 
+    private readonly Config _config;
     private readonly IBlobStore _blobStore;
     private readonly IPluginLog _log;
     private readonly IDalamudPluginInterface? _pluginInterface;
@@ -61,8 +63,9 @@ public sealed class Resolver : IResolver
     /// <summary>
     /// Initialises a new instance of the <see cref="Resolver"/> class.
     /// </summary>
-    public Resolver(IBlobStore blobStore, IPluginLog log, IDalamudPluginInterface? pluginInterface = null)
+    public Resolver(Config config, IBlobStore blobStore, IPluginLog log, IDalamudPluginInterface? pluginInterface = null)
     {
+        _config = config ?? throw new ArgumentNullException(nameof(config));
         _blobStore = blobStore ?? throw new ArgumentNullException(nameof(blobStore));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _pluginInterface = pluginInterface ?? PluginServices.Instance?.PluginInterface;
@@ -598,13 +601,22 @@ public sealed class Resolver : IResolver
         string? modsDirectory = null;
         string? configDirectory = null;
 
-        try
+        var configuredMods = ValidateConfiguredDirectory(_config.PenumbraModsDirectory, "Penumbra mods directory");
+        if (!string.IsNullOrEmpty(configuredMods))
         {
-            modsDirectory = TryInvokeIpc<string>("Penumbra.GetModsDirectory");
+            modsDirectory = configuredMods;
         }
-        catch (Exception ex)
+
+        if (string.IsNullOrWhiteSpace(modsDirectory))
         {
-            _log.Warning(ex, "Failed to retrieve Penumbra mods directory via IPC");
+            try
+            {
+                modsDirectory = TryInvokeIpc<string>("Penumbra.GetModsDirectory");
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to retrieve Penumbra mods directory via IPC");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(modsDirectory))
@@ -619,14 +631,23 @@ public sealed class Resolver : IResolver
             return null;
         }
 
-        try
+        var configuredConfig = ValidateConfiguredDirectory(_config.PenumbraConfigDirectory, "Penumbra config directory");
+        if (!string.IsNullOrEmpty(configuredConfig))
         {
-            configDirectory = TryInvokeIpc<string>("Penumbra.GetConfigurationDirectory")
-                ?? TryInvokeIpc<string>("Penumbra.GetConfigDirectory");
+            configDirectory = configuredConfig;
         }
-        catch (Exception ex)
+
+        if (string.IsNullOrWhiteSpace(configDirectory))
         {
-            _log.Debug(ex, "Failed to retrieve Penumbra config directory via IPC");
+            try
+            {
+                configDirectory = TryInvokeIpc<string>("Penumbra.GetConfigurationDirectory")
+                    ?? TryInvokeIpc<string>("Penumbra.GetConfigDirectory");
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(ex, "Failed to retrieve Penumbra config directory via IPC");
+            }
         }
 
         if (string.IsNullOrWhiteSpace(configDirectory) || !Directory.Exists(configDirectory))
@@ -664,6 +685,31 @@ public sealed class Resolver : IResolver
 
         var defaultMod = Path.Combine(configDirectory, "default_mod.json");
         return new PenumbraPaths(modsDirectory, configDirectory, defaultMod);
+    }
+
+    private string? ValidateConfiguredDirectory(string? path, string description)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var trimmed = path.Trim();
+        try
+        {
+            if (!Directory.Exists(trimmed))
+            {
+                _log.Warning($"Configured {description} '{trimmed}' does not exist; falling back to automatic detection.");
+                return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, $"Configured {description} '{trimmed}' is invalid; falling back to automatic detection.");
+            return null;
+        }
+
+        return trimmed;
     }
 
     private T? TryInvokeIpc<T>(string channel)
