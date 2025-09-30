@@ -1,5 +1,5 @@
 # DemiCat Monorepo
-Please see the v1.2.2.1 branch for the latest info and stable build release.
+Please see the v1.3.0.0 branch for the latest info and stable build release.
 
 ## Developer Prerequisites
 
