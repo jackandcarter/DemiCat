@@ -145,7 +145,12 @@ public sealed class NotePadWindow : IDisposable
                 var label = $"{title}##{section.Id}";
                 var tabFlags = selected ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
 
+                var textSize = ImGui.CalcTextSize(title);
+                var padding = ImGui.GetStyle().FramePadding.X + 6f;
+                var minWidth = textSize.X + padding * 2f;
+
                 var color = ParseColor(section.Color);
+                ImGui.PushStyleVar(ImGuiStyleVar.TabMinWidthForCloseButton, minWidth);
                 ImGui.PushStyleColor(ImGuiCol.Tab, AdjustTabColor(color, 0.7f));
                 ImGui.PushStyleColor(ImGuiCol.TabActive, AdjustTabColor(color, 1f));
                 ImGui.PushStyleColor(ImGuiCol.TabHovered, AdjustTabColor(color, 1.2f));
@@ -169,6 +174,7 @@ public sealed class NotePadWindow : IDisposable
                 }
 
                 ImGui.PopStyleColor(3);
+                ImGui.PopStyleVar();
 
                 if (ImGui.BeginDragDropSource())
                 {
