@@ -1,12 +1,14 @@
 from __future__ import annotations
 
-import os
-from uuid import uuid4
-from typing import Any, Optional
-from datetime import datetime, timedelta, timezone
-from dataclasses import dataclass
+import asyncio
+import hashlib
 import json
 import logging
+import os
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -56,6 +58,223 @@ class _TransferBudget:
 
 
 _transfer_budgets: dict[int, _TransferBudget] = {}
+
+_peer_discovery_lock: asyncio.Lock = asyncio.Lock()
+_peer_discovery_state: dict[tuple[int, int], dict[str, dict[str, Any]]] = {}
+
+
+def _clone_discovery_asset(asset: dict[str, Any]) -> dict[str, Any]:
+    clone = dict(asset)
+    items = clone.get("items")
+    if isinstance(items, list):
+        clone["items"] = [
+            _clone_discovery_asset(item)
+            for item in items
+            if isinstance(item, dict)
+        ]
+    deps = clone.get("dependencies")
+    if isinstance(deps, list):
+        clone["dependencies"] = [
+            str(dep)
+            for dep in deps
+            if isinstance(dep, (str, int, float))
+        ]
+    return clone
+
+
+def _snapshot_discovery_assets(
+    assets: dict[str, dict[str, Any]]
+) -> dict[str, dict[str, Any]]:
+    return {key: _clone_discovery_asset(value) for key, value in assets.items()}
+
+
+def _normalise_dependencies(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    dependencies: list[str] = []
+    for entry in value:
+        if isinstance(entry, str) and entry.strip():
+            dependencies.append(entry.strip())
+    return dependencies
+
+
+def _derive_mod_asset_id(
+    collection_id: str, mod: dict[str, Any]
+) -> str:
+    mod_id = str(mod.get("modId") or "").strip()
+    mod_hash = str(mod.get("hash") or "").strip()
+    components: list[str] = [collection_id] if collection_id else []
+    if mod_id:
+        components.append(mod_id)
+    elif mod_hash:
+        components.append(mod_hash)
+    if components:
+        return "::".join(components)
+    try:
+        serialised = json.dumps(mod, sort_keys=True)
+    except (TypeError, ValueError):
+        serialised = repr(mod)
+    digest = hashlib.sha256(serialised.encode()).hexdigest()
+    return digest
+
+
+def _derive_patch_asset_id(
+    collection_id: str, mod_id: str | None, patch: dict[str, Any]
+) -> str:
+    patch_path = str(patch.get("path") or "").strip()
+    patch_hash = str(patch.get("hash") or "").strip()
+    components: list[str] = []
+    if collection_id:
+        components.append(collection_id)
+    if mod_id:
+        components.append(str(mod_id))
+    if patch_path:
+        components.append(patch_path)
+    elif patch_hash:
+        components.append(patch_hash)
+    if components:
+        return "::".join(components)
+    try:
+        serialised = json.dumps(patch, sort_keys=True)
+    except (TypeError, ValueError):
+        serialised = repr(patch)
+    digest = hashlib.sha256(serialised.encode()).hexdigest()
+    return digest
+
+
+def build_discovery_assets(
+    manifest: dict[str, Any], uploader: User | None
+) -> dict[str, dict[str, Any]]:
+    assets: dict[str, dict[str, Any]] = {}
+    uploader_label = _display_name(uploader)
+
+    collections = manifest.get("collections") or []
+    for collection in collections:
+        if not isinstance(collection, dict):
+            continue
+        collection_id = str(collection.get("collectionId") or "default").strip()
+
+        mods = collection.get("mods") or []
+        for mod in mods:
+            if not isinstance(mod, dict):
+                continue
+            asset_id = _derive_mod_asset_id(collection_id, mod)
+            if not asset_id:
+                continue
+            entry: dict[str, Any] = {
+                "id": asset_id,
+                "name": (mod.get("name") or mod.get("modId") or asset_id) or asset_id,
+                "kind": str(mod.get("kind") or "MOD").upper(),
+                "uploader": uploader_label,
+            }
+            size = _normalise_size(mod.get("size"))
+            if size > 0:
+                entry["size"] = size
+            created_at = mod.get("createdAt") or mod.get("created_at")
+            if isinstance(created_at, str) and created_at.strip():
+                entry["createdAt"] = created_at
+            updated_at = mod.get("updatedAt") or mod.get("updated_at")
+            if isinstance(updated_at, str) and updated_at.strip():
+                entry["updatedAt"] = updated_at
+            dependencies = _normalise_dependencies(
+                mod.get("dependencies") or mod.get("deps")
+            )
+            if dependencies:
+                entry["dependencies"] = dependencies
+
+            child_items: list[dict[str, Any]] = []
+            files = mod.get("files") or []
+            for file_entry in files:
+                if not isinstance(file_entry, dict):
+                    continue
+                child_id_source = str(
+                    file_entry.get("hash") or file_entry.get("path") or ""
+                ).strip()
+                if not child_id_source:
+                    continue
+                child_id = f"{asset_id}::{child_id_source}"
+                child_payload: dict[str, Any] = {
+                    "id": child_id,
+                    "name": file_entry.get("path") or child_id_source,
+                    "kind": "FILE",
+                    "uploader": uploader_label,
+                }
+                child_size = _normalise_size(file_entry.get("size"))
+                if child_size > 0:
+                    child_payload["size"] = child_size
+                child_items.append(child_payload)
+            patches = mod.get("patches") or []
+            for patch in patches:
+                if not isinstance(patch, dict):
+                    continue
+                patch_id = _derive_patch_asset_id(collection_id, mod.get("modId"), patch)
+                patch_payload: dict[str, Any] = {
+                    "id": patch_id,
+                    "name": patch.get("path") or patch_id,
+                    "kind": "PATCH",
+                    "uploader": uploader_label,
+                }
+                patch_size = _normalise_size(patch.get("size"))
+                if patch_size > 0:
+                    patch_payload["size"] = patch_size
+                child_items.append(patch_payload)
+            if child_items:
+                entry["items"] = child_items
+            assets[asset_id] = entry
+
+        collection_patches = collection.get("patches") or []
+        for patch in collection_patches:
+            if not isinstance(patch, dict):
+                continue
+            patch_id = _derive_patch_asset_id(collection_id, None, patch)
+            if not patch_id:
+                continue
+            entry = {
+                "id": patch_id,
+                "name": patch.get("path") or patch_id,
+                "kind": "PATCH",
+                "uploader": uploader_label,
+            }
+            patch_size = _normalise_size(patch.get("size"))
+            if patch_size > 0:
+                entry["size"] = patch_size
+            assets[patch_id] = entry
+
+    return assets
+
+
+async def compute_discovery_delta(
+    recipient_id: int,
+    uploader_id: int,
+    assets: dict[str, dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[str]]:
+    async with _peer_discovery_lock:
+        previous = _peer_discovery_state.get((recipient_id, uploader_id), {})
+        updated: list[dict[str, Any]] = []
+        for asset_id, payload in assets.items():
+            previous_payload = previous.get(asset_id)
+            if previous_payload != payload:
+                updated.append(_clone_discovery_asset(payload))
+        removed = [asset_id for asset_id in previous.keys() if asset_id not in assets]
+        _peer_discovery_state[(recipient_id, uploader_id)] = _snapshot_discovery_assets(
+            assets
+        )
+    return updated, removed
+
+
+async def get_memberships_for_recipient(
+    member_user_id: int, db: AsyncSession
+) -> list[int]:
+    result = await db.execute(
+        select(SyncshellMember.user_id).where(
+            SyncshellMember.member_user_id == member_user_id
+        )
+    )
+    return list(result.scalars().all())
+
+
+def peer_delta_timestamp() -> str:
+    return _to_iso(datetime.utcnow())
 
 
 def _now_utc() -> datetime:

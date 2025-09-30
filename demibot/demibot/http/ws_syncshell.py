@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from types import SimpleNamespace
@@ -18,6 +19,9 @@ DEFAULT_LIMITS = syncshell_routes.DEFAULT_TRANSFER_LIMITS
 
 HELLO_MESSAGE = {"type": "hello", "payload": {"version": 1, "limits": DEFAULT_LIMITS}}
 
+_CONNECTIONS: dict[int, set[WebSocket]] = {}
+_CONNECTION_LOCK = asyncio.Lock()
+
 
 def _ws_request(ws: WebSocket) -> SimpleNamespace:
     client_host = getattr(getattr(ws, "client", None), "host", "unknown")
@@ -28,6 +32,67 @@ def _ws_request(ws: WebSocket) -> SimpleNamespace:
     )
 
 
+async def _register_connection(user_id: int, websocket: WebSocket) -> None:
+    async with _CONNECTION_LOCK:
+        sockets = _CONNECTIONS.setdefault(user_id, set())
+        sockets.add(websocket)
+
+
+async def _unregister_connection(user_id: int, websocket: WebSocket) -> None:
+    async with _CONNECTION_LOCK:
+        sockets = _CONNECTIONS.get(user_id)
+        if not sockets:
+            return
+        sockets.discard(websocket)
+        if not sockets:
+            _CONNECTIONS.pop(user_id, None)
+
+
+async def _get_connections(user_id: int) -> list[WebSocket]:
+    async with _CONNECTION_LOCK:
+        sockets = list(_CONNECTIONS.get(user_id, ()))
+    return sockets
+
+
+async def _broadcast_peer_delta(
+    uploader_id: int,
+    peer_identifier: str,
+    assets: dict[str, dict[str, Any]],
+    member_ids: list[int],
+) -> None:
+    if not member_ids:
+        return
+    for member_id in member_ids:
+        connections = await _get_connections(member_id)
+        if not connections:
+            continue
+        updated, removed = await syncshell_routes.compute_discovery_delta(
+            member_id, uploader_id, assets
+        )
+        if not updated and not removed:
+            continue
+        payload = {
+            "type": "peerDelta",
+            "payload": {
+                "peerId": peer_identifier,
+                "timestamp": syncshell_routes.peer_delta_timestamp(),
+                "updated": updated,
+                "removed": removed,
+            },
+        }
+        dead: list[WebSocket] = []
+        for peer_socket in connections:
+            try:
+                await peer_socket.send_json(payload)
+            except Exception:
+                LOGGER.warning(
+                    "syncshell failed delivering peer delta to user %s", member_id
+                )
+                dead.append(peer_socket)
+        for peer_socket in dead:
+            await _unregister_connection(member_id, peer_socket)
+
+
 async def _handle_manifest_message(
     websocket: WebSocket, ctx: RequestContext, payload: dict[str, Any]
 ) -> bool:
@@ -36,10 +101,18 @@ async def _handle_manifest_message(
         LOGGER.warning("syncshell manifest payload missing or invalid")
         return True
 
+    discovery_assets: dict[str, dict[str, Any]] = {}
+    member_ids: list[int] = []
     try:
         async with get_session() as db:
             diff, limits = await syncshell_routes.handle_manifest_upload(
                 manifest_payload, ctx, db
+            )
+            discovery_assets = syncshell_routes.build_discovery_assets(
+                manifest_payload, ctx.user
+            )
+            member_ids = await syncshell_routes.get_memberships_for_recipient(
+                ctx.user.id, db
             )
     except HTTPException as exc:
         LOGGER.warning("syncshell manifest rejected: %s", exc.detail)
@@ -80,6 +153,7 @@ async def _handle_manifest_message(
         },
     }
     await websocket.send_json(want_message)
+    await _broadcast_peer_delta(ctx.user.id, peer_id, discovery_assets, member_ids)
     return True
 
 
@@ -102,6 +176,7 @@ async def websocket_endpoint_syncshell(websocket: WebSocket) -> None:
         await websocket.close(code=1008, reason="missing token")
         return
 
+    ctx: RequestContext | None = None
     try:
         async with get_session() as db:
             ctx = await api_key_auth(
@@ -120,6 +195,8 @@ async def websocket_endpoint_syncshell(websocket: WebSocket) -> None:
         return
 
     await websocket.accept()
+    if ctx is not None:
+        await _register_connection(ctx.user.id, websocket)
 
     hello_received = False
     try:
@@ -156,6 +233,8 @@ async def websocket_endpoint_syncshell(websocket: WebSocket) -> None:
             else:
                 LOGGER.debug("syncshell websocket ignoring message type %s", message_type)
     finally:
+        if ctx is not None:
+            await _unregister_connection(ctx.user.id, websocket)
         # Allow the client context manager to handle closure; best effort to
         # ensure the coroutine completes cleanly without raising.
         try:
