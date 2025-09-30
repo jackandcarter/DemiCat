@@ -208,7 +208,7 @@ public class ChatWindow : IDisposable
 
         var context = new EmbedStyleControls.Context
         {
-            ChannelKind = _channelKind,
+            ChannelKindKey = _channelKind,
             EffectiveEmbedColor = GetEffectiveEmbedColor(),
             EmbedColorOverride = GetEmbedColorOverride(),
             Border = _config.GetEmbedBorderSettingsCopy(_channelKind)
