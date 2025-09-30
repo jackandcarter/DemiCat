@@ -2134,6 +2134,8 @@ public class SyncshellWindow : IDisposable
             {
                 LocalStateChangeSource.Penumbra => "Penumbra",
                 LocalStateChangeSource.Glamourer => "Glamourer",
+                LocalStateChangeSource.CustomizePlus => "Customize+",
+                LocalStateChangeSource.SimpleHeels => "SimpleHeels",
                 _ => source.Value.ToString() ?? string.Empty,
             });
         }
@@ -2334,6 +2336,102 @@ public class SyncshellWindow : IDisposable
                 var subscriber = pi.GetIpcSubscriber<int, object?>("Glamourer.StateChanged");
                 subscriber.Subscribe(HandleGlamourerStateInt);
                 return () => subscriber.Unsubscribe(HandleGlamourerStateInt);
+            });
+
+        void HandleCustomizePlusProfileChanged(string _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
+        void HandleCustomizePlusProfileChangedGuid(Guid _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
+        void HandleCustomizePlusProfileChangedObj(object? _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
+        TrySubscribeAny(
+            "Customize.ProfileChanged",
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<string, object?>("Customize.ProfileChanged");
+                subscriber.Subscribe(HandleCustomizePlusProfileChanged);
+                return () => subscriber.Unsubscribe(HandleCustomizePlusProfileChanged);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<Guid, object?>("Customize.ProfileChanged");
+                subscriber.Subscribe(HandleCustomizePlusProfileChangedGuid);
+                return () => subscriber.Unsubscribe(HandleCustomizePlusProfileChangedGuid);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<object?>("Customize.ProfileChanged");
+                subscriber.Subscribe(HandleCustomizePlusProfileChangedObj);
+                return () => subscriber.Unsubscribe(HandleCustomizePlusProfileChangedObj);
+            });
+
+        void HandleCustomizePlusProfileApplied(string _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
+        void HandleCustomizePlusProfileAppliedGuid(Guid _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
+        void HandleCustomizePlusProfileAppliedObj(object? _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
+        TrySubscribeAny(
+            "Customize.ProfileApplied",
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<string, object?>("Customize.ProfileApplied");
+                subscriber.Subscribe(HandleCustomizePlusProfileApplied);
+                return () => subscriber.Unsubscribe(HandleCustomizePlusProfileApplied);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<Guid, object?>("Customize.ProfileApplied");
+                subscriber.Subscribe(HandleCustomizePlusProfileAppliedGuid);
+                return () => subscriber.Unsubscribe(HandleCustomizePlusProfileAppliedGuid);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<object?>("Customize.ProfileApplied");
+                subscriber.Subscribe(HandleCustomizePlusProfileAppliedObj);
+                return () => subscriber.Unsubscribe(HandleCustomizePlusProfileAppliedObj);
+            });
+
+        void HandleSimpleHeelsProfileChanged(string _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
+        void HandleSimpleHeelsProfileChangedGuid(Guid _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
+        void HandleSimpleHeelsProfileChangedObj(object? _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
+        TrySubscribeAny(
+            "SimpleHeels.ProfileChanged",
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<string, object?>("SimpleHeels.ProfileChanged");
+                subscriber.Subscribe(HandleSimpleHeelsProfileChanged);
+                return () => subscriber.Unsubscribe(HandleSimpleHeelsProfileChanged);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<Guid, object?>("SimpleHeels.ProfileChanged");
+                subscriber.Subscribe(HandleSimpleHeelsProfileChangedGuid);
+                return () => subscriber.Unsubscribe(HandleSimpleHeelsProfileChangedGuid);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<object?>("SimpleHeels.ProfileChanged");
+                subscriber.Subscribe(HandleSimpleHeelsProfileChangedObj);
+                return () => subscriber.Unsubscribe(HandleSimpleHeelsProfileChangedObj);
+            });
+
+        void HandleSimpleHeelsProfileApplied(string _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
+        void HandleSimpleHeelsProfileAppliedGuid(Guid _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
+        void HandleSimpleHeelsProfileAppliedObj(object? _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
+        TrySubscribeAny(
+            "SimpleHeels.ProfileApplied",
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<string, object?>("SimpleHeels.ProfileApplied");
+                subscriber.Subscribe(HandleSimpleHeelsProfileApplied);
+                return () => subscriber.Unsubscribe(HandleSimpleHeelsProfileApplied);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<Guid, object?>("SimpleHeels.ProfileApplied");
+                subscriber.Subscribe(HandleSimpleHeelsProfileAppliedGuid);
+                return () => subscriber.Unsubscribe(HandleSimpleHeelsProfileAppliedGuid);
+            },
+            () =>
+            {
+                var subscriber = pi.GetIpcSubscriber<object?>("SimpleHeels.ProfileApplied");
+                subscriber.Subscribe(HandleSimpleHeelsProfileAppliedObj);
+                return () => subscriber.Unsubscribe(HandleSimpleHeelsProfileAppliedObj);
             });
     }
 
@@ -4395,6 +4493,8 @@ public class SyncshellWindow : IDisposable
     {
         Penumbra,
         Glamourer,
+        CustomizePlus,
+        SimpleHeels,
     }
 
     private sealed class MemberPresenceEntry
