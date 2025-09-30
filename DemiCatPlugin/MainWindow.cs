@@ -5,7 +5,6 @@ using System.Net.Http;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
-using Dalamud.Interface.Textures.TextureWraps;
 using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
@@ -31,6 +30,7 @@ public class MainWindow : IDisposable
     private readonly HttpClient _httpClient;
     private readonly List<DockItem> _dockItems = new();
     private readonly HashSet<string> _autoShownDockItems = new();
+    private readonly DockIconLoader _dockIconLoader;
 
     private readonly Action _openSettingsAction;
     private readonly EventsDockableWindow _eventsWindowHost;
@@ -43,7 +43,6 @@ public class MainWindow : IDisposable
     private readonly ChatDockableWindow? _chatWindowHost;
     private SyncshellDockableWindow? _syncshellWindowHost;
 
-    private ISharedImmediateTexture? _dockIconTexture;
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
     private bool _styleNeedsUpdate = true;
@@ -173,7 +172,7 @@ public class MainWindow : IDisposable
 
         Instance = this;
 
-        EnsureDockIconTexture();
+        _dockIconLoader = new DockIconLoader();
         BuildDockItems();
     }
 
@@ -368,7 +367,7 @@ public class MainWindow : IDisposable
             Instance = null;
         }
 
-        _dockIconTexture?.Dispose();
+        _dockIconLoader.Dispose();
         _syncshell?.Dispose();
     }
 
@@ -588,26 +587,6 @@ public class MainWindow : IDisposable
     private static bool ColorsAlmostEqual(Vector4 a, Vector4 b)
         => Vector4.DistanceSquared(a, b) <= 0.0001f;
 
-    private void EnsureDockIconTexture()
-    {
-        if (_dockIconTexture != null)
-            return;
-
-        try
-        {
-            var provider = PluginServices.Instance?.TextureProvider;
-            if (provider == null)
-                return;
-
-            var pixel = new byte[] { 255, 255, 255, 255 };
-            _dockIconTexture = provider.CreateFromRaw(RawImageSpecification.Rgba32(1, 1), pixel);
-        }
-        catch
-        {
-            _dockIconTexture = null;
-        }
-    }
-
     private void BuildDockItems()
     {
         _dockItems.Clear();
@@ -619,7 +598,7 @@ public class MainWindow : IDisposable
 
         _dockItems.Add(new DockItem(
             "events",
-            _dockIconTexture,
+            GetDockIconOrPlaceholder("events"),
             accent,
             "Events",
             () => _config.Events,
@@ -630,7 +609,7 @@ public class MainWindow : IDisposable
 
         _dockItems.Add(new DockItem(
             "create",
-            _dockIconTexture,
+            GetDockIconOrPlaceholder("create"),
             positive,
             "Create Event",
             () => _config.Events,
@@ -641,7 +620,7 @@ public class MainWindow : IDisposable
 
         _dockItems.Add(new DockItem(
             "templates",
-            _dockIconTexture,
+            GetDockIconOrPlaceholder("templates"),
             mutedAccent,
             "Templates",
             () => _config.Templates,
@@ -652,7 +631,7 @@ public class MainWindow : IDisposable
 
         _dockItems.Add(new DockItem(
             "notepad",
-            _dockIconTexture,
+            GetDockIconOrPlaceholder("notepad"),
             neutral,
             "NotePad",
             () => true,
@@ -663,7 +642,7 @@ public class MainWindow : IDisposable
 
         _dockItems.Add(new DockItem(
             "requests",
-            _dockIconTexture,
+            GetDockIconOrPlaceholder("requests"),
             warning,
             "Request Board",
             () => _config.Requests,
@@ -677,7 +656,7 @@ public class MainWindow : IDisposable
         {
             _dockItems.Add(new DockItem(
                 "chat",
-                _dockIconTexture,
+                GetDockIconOrPlaceholder("chat"),
                 accent,
                 chat is FcChatWindow ? "FC Chat" : "Chat",
                 () => true,
@@ -689,7 +668,7 @@ public class MainWindow : IDisposable
 
         _dockItems.Add(new DockItem(
             "officer",
-            _dockIconTexture,
+            GetDockIconOrPlaceholder("officer"),
             positive,
             "Officer Chat",
             () => HasOfficerAccess,
@@ -700,7 +679,7 @@ public class MainWindow : IDisposable
 
         _dockItems.Add(new DockItem(
             "syncshell",
-            _dockIconTexture,
+            GetDockIconOrPlaceholder("syncshell"),
             accent,
             "Syncshell",
             () => _config.FCSyncShell && _syncshellWindowHost != null,
@@ -717,7 +696,7 @@ public class MainWindow : IDisposable
 
         _dockItems.Add(new DockItem(
             "settings",
-            _dockIconTexture,
+            GetDockIconOrPlaceholder("settings"),
             neutral,
             "Settings",
             () => true,
@@ -727,6 +706,11 @@ public class MainWindow : IDisposable
             () => { }));
 
         _autoShownDockItems.RemoveWhere(id => _dockItems.All(item => item.Id != id));
+    }
+
+    private ISharedImmediateTexture? GetDockIconOrPlaceholder(string id)
+    {
+        return _dockIconLoader.Get(id) ?? _dockIconLoader.Placeholder;
     }
 
     private void DrawFeatureWindows()
