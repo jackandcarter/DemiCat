@@ -10,6 +10,7 @@ namespace DemiCatPlugin;
 
 public sealed class NotePadWindow : IDisposable
 {
+    private const int MaxTitleLength = 25;
     private static readonly ImGuiMouseCursor ResizeEwCursor = ResolveResizeEwCursor();
     private static readonly ImGuiTabBarFlags SectionTabBarFlags = ResolveSectionTabBarFlags();
 
@@ -230,8 +231,10 @@ public sealed class NotePadWindow : IDisposable
 
         if (!IsReadOnly && ImGui.BeginPopup($"RenameSection##{section.Id}"))
         {
-            var buffer = _sectionRenameBuffers.GetValueOrDefault(section.Id, section.Name);
-            if (ImGui.InputText("##SectionRename", ref buffer, 128, ImGuiInputTextFlags.EnterReturnsTrue))
+            var buffer = _sectionRenameBuffers.GetValueOrDefault(section.Id, section.Name) ?? string.Empty;
+            var submitted = ImGui.InputText("##SectionRename", ref buffer, 128, ImGuiInputTextFlags.EnterReturnsTrue);
+            buffer = ClampTitleLength(buffer);
+            if (submitted)
             {
                 _ = Task.Run(() => RenameSectionAsync(section.Id, buffer));
                 ImGui.CloseCurrentPopup();
@@ -337,8 +340,10 @@ public sealed class NotePadWindow : IDisposable
 
         if (!IsReadOnly && ImGui.BeginPopup($"RenamePage##{page.Id}"))
         {
-            var buffer = _pageRenameBuffers.GetValueOrDefault(page.Id, page.Title);
-            if (ImGui.InputText("##PageRename", ref buffer, 128, ImGuiInputTextFlags.EnterReturnsTrue))
+            var buffer = _pageRenameBuffers.GetValueOrDefault(page.Id, page.Title) ?? string.Empty;
+            var submitted = ImGui.InputText("##PageRename", ref buffer, 128, ImGuiInputTextFlags.EnterReturnsTrue);
+            buffer = ClampTitleLength(buffer);
+            if (submitted)
             {
                 _ = Task.Run(() => RenamePageAsync(section.Id, page.Id, buffer));
                 ImGui.CloseCurrentPopup();
@@ -502,6 +507,7 @@ public sealed class NotePadWindow : IDisposable
         if (ImGui.BeginPopup("CreateSection"))
         {
             ImGui.InputText("Name", ref _newSectionName, 128);
+            _newSectionName = ClampTitleLength(_newSectionName);
             if (ImGui.Button("Create"))
             {
                 var name = _newSectionName.Trim();
@@ -540,6 +546,7 @@ public sealed class NotePadWindow : IDisposable
         if (ImGui.BeginPopup("CreatePage"))
         {
             ImGui.InputText("Title", ref _newPageTitle, 128);
+            _newPageTitle = ClampTitleLength(_newPageTitle);
             if (ImGui.Button("Create"))
             {
                 var title = _newPageTitle.Trim();
@@ -745,14 +752,20 @@ public sealed class NotePadWindow : IDisposable
 
     private async Task RenameSectionAsync(string sectionId, string name)
     {
-        name = name.Trim();
-        if (string.IsNullOrEmpty(name))
+        var trimmed = (name ?? string.Empty).Trim();
+        var clamped = ClampTitleLength(trimmed);
+        if (string.IsNullOrEmpty(clamped))
         {
             PluginServices.Instance?.ToastGui.ShowError("Section name cannot be empty.");
             return;
         }
 
-        var success = await _service.RenameSectionAsync(sectionId, name, CancellationToken.None).ConfigureAwait(false);
+        if (!string.Equals(trimmed, clamped, StringComparison.Ordinal))
+        {
+            PluginServices.Instance?.ToastGui.ShowInfo($"Section name truncated to {MaxTitleLength} characters.");
+        }
+
+        var success = await _service.RenameSectionAsync(sectionId, clamped, CancellationToken.None).ConfigureAwait(false);
         if (success)
         {
             _config.NotePadLastSectionId = sectionId;
@@ -762,19 +775,35 @@ public sealed class NotePadWindow : IDisposable
 
     private async Task RenamePageAsync(string sectionId, string pageId, string title)
     {
-        title = title.Trim();
-        if (string.IsNullOrEmpty(title))
+        var trimmed = (title ?? string.Empty).Trim();
+        var clamped = ClampTitleLength(trimmed);
+        if (string.IsNullOrEmpty(clamped))
         {
             PluginServices.Instance?.ToastGui.ShowError("Page title cannot be empty.");
             return;
         }
 
-        var success = await _service.RenamePageAsync(sectionId, pageId, title, CancellationToken.None).ConfigureAwait(false);
+        if (!string.Equals(trimmed, clamped, StringComparison.Ordinal))
+        {
+            PluginServices.Instance?.ToastGui.ShowInfo($"Page title truncated to {MaxTitleLength} characters.");
+        }
+
+        var success = await _service.RenamePageAsync(sectionId, pageId, clamped, CancellationToken.None).ConfigureAwait(false);
         if (success)
         {
             _config.NotePadLastPageId = pageId;
             SaveConfig();
         }
+    }
+
+    private static string ClampTitleLength(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return value.Length <= MaxTitleLength ? value : value[..MaxTitleLength];
     }
 
     private void ApplyFormatting(string prefix, string suffix)
