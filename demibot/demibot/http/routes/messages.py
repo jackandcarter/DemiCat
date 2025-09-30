@@ -153,7 +153,50 @@ async def patch_message(
     content = body.get("content")
     if content is None:
         raise HTTPException(status_code=400, detail="content required")
-    return await edit_message_common(channel_id, message_id, content, ctx, db, is_officer=False)
+
+    embed_color = None
+    embed_color_provided = False
+    if "embedColor" in body:
+        embed_color = body["embedColor"]
+        embed_color_provided = True
+    elif "embed_color" in body:
+        embed_color = body["embed_color"]
+        embed_color_provided = True
+
+    embed_border = None
+    embed_border_provided = False
+    if "embedBorder" in body:
+        embed_border = body["embedBorder"]
+        embed_border_provided = True
+    elif "embed_border" in body:
+        embed_border = body["embed_border"]
+        embed_border_provided = True
+
+    if embed_border_provided and isinstance(embed_border, str):
+        stripped = embed_border.strip()
+        if stripped:
+            try:
+                embed_border = json.loads(stripped)
+            except json.JSONDecodeError:
+                embed_border = None
+        else:
+            embed_border = None
+
+    kwargs: dict[str, object] = {}
+    if embed_color_provided:
+        kwargs["embed_color"] = embed_color
+    if embed_border_provided:
+        kwargs["embed_border"] = embed_border
+
+    return await edit_message_common(
+        channel_id,
+        message_id,
+        content,
+        ctx,
+        db,
+        is_officer=False,
+        **kwargs,
+    )
 
 
 @router.delete("/channels/{channel_id}/messages/{message_id}")

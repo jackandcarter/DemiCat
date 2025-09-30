@@ -240,7 +240,7 @@ public class OfficerChatWindow : ChatWindow
 
         try
         {
-            var body = new { content };
+            var body = CreateEditMessageBody(content);
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{messageId}";
             var request = new HttpRequestMessage(HttpMethod.Patch, url)
             {

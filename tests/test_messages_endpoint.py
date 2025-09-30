@@ -153,6 +153,63 @@ async def test_channel_messages_multipart_accepts_message_reference(monkeypatch)
 
 
 @pytest.mark.asyncio
+async def test_patch_message_forwards_embed_style(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def fake_edit_message(
+        channel_id,
+        message_id,
+        content,
+        ctx,
+        db,
+        *,
+        is_officer,
+        embed_color=None,
+        embed_border=None,
+    ):
+        captured["channel_id"] = channel_id
+        captured["message_id"] = message_id
+        captured["content"] = content
+        captured["is_officer"] = is_officer
+        captured["embed_color"] = embed_color
+        captured["embed_border"] = embed_border
+        return {"ok": True}
+
+    monkeypatch.setattr(messages_routes, "edit_message_common", fake_edit_message)
+
+    ctx = RequestContext(
+        user=SimpleNamespace(id=1),
+        guild=SimpleNamespace(id=2),
+        key=None,
+        roles=["chat"],
+    )
+
+    body = {
+        "content": "updated",
+        "embedColor": 0x112233,
+        "embedBorder": {
+            "enabled": True,
+            "glyph": "circle",
+            "color": 0x556677,
+        },
+    }
+
+    resp = await messages_routes.patch_message("55", "66", body, ctx, db=None)
+
+    assert resp == {"ok": True}
+    assert captured["channel_id"] == "55"
+    assert captured["message_id"] == "66"
+    assert captured["content"] == "updated"
+    assert captured["is_officer"] is False
+    assert captured["embed_color"] == 0x112233
+    assert captured["embed_border"] == {
+        "enabled": True,
+        "glyph": "circle",
+        "color": 0x556677,
+    }
+
+
+@pytest.mark.asyncio
 async def test_cache_and_store_webhook_preserves_kind():
     await init_db("sqlite+aiosqlite://")
     messages_common._channel_webhooks.clear()

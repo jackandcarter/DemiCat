@@ -3148,6 +3148,90 @@ def test_posted_message_mapping_and_webhook_usage(monkeypatch):
     asyncio.run(_run())
 
 
+def test_edit_message_reuses_existing_embed_style(monkeypatch):
+    async def _run():
+        await init_db("sqlite+aiosqlite://")
+        async with get_session() as db:
+            await db.execute(text("DELETE FROM posted_messages"))
+            await db.execute(text("DELETE FROM messages"))
+            await db.execute(text("DELETE FROM memberships"))
+            await db.execute(text("DELETE FROM users"))
+            await db.execute(text("DELETE FROM guilds"))
+
+            guild = Guild(id=1, discord_guild_id=100, name="Guild")
+            user = User(id=1, discord_user_id=200, global_name="User")
+            membership = Membership(
+                id=1,
+                guild_id=guild.id,
+                user_id=user.id,
+                nickname="Member",
+                avatar_url=None,
+            )
+            message = Message(
+                discord_message_id=300,
+                channel_id=400,
+                guild_id=guild.id,
+                author_id=user.id,
+                author_name="User",
+                author_avatar_url=None,
+                content_raw="hello",
+                content_display="hello",
+                content="hello",
+                embeds_json=json.dumps(
+                    [
+                        {
+                            "id": "embed1",
+                            "description": "hello",
+                            "color": 0x102030,
+                            "border": {
+                                "enabled": True,
+                                "glyph": "circle",
+                                "color": 0x556677,
+                            },
+                        }
+                    ]
+                ),
+                created_at=datetime.utcnow(),
+            )
+
+            db.add_all([guild, user, membership, message])
+            await db.commit()
+
+            captured: dict[str, object | None] = {}
+
+            def fake_build_bridge_message(**kwargs):
+                captured.update(kwargs)
+                return "bridge", [], [], "nonce"
+
+            async def dummy_broadcast(*args, **kwargs):
+                return None
+
+            monkeypatch.setattr(mc, "build_bridge_message", fake_build_bridge_message)
+            monkeypatch.setattr(mc.manager, "broadcast_text", dummy_broadcast)
+            monkeypatch.setattr(mc, "discord_client", None)
+
+            ctx = RequestContext(user=user, guild=guild, key=DummyKey(), roles=[])
+
+            result = await mc.edit_message(
+                str(message.channel_id),
+                str(message.discord_message_id),
+                "updated",
+                ctx,
+                db,
+                is_officer=False,
+            )
+
+            assert result["ok"] is True
+            assert captured.get("embed_color") == 0x102030
+            assert captured.get("embed_border") == {
+                "enabled": True,
+                "glyph": "circle",
+                "color": 0x556677,
+            }
+
+    asyncio.run(_run())
+
+
 def test_bridge_nonce_persisted_and_reused(monkeypatch):
     async def _run():
         await init_db("sqlite+aiosqlite://")
