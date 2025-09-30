@@ -37,7 +37,8 @@ public class PluginChannelValidationTests
         var frameworkMock = new Mock<IFramework>();
         frameworkMock
             .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
-            .Callback<Action, FrameworkUpdatePriority>((action, _) => action());
+            .Callback<Action, FrameworkUpdatePriority>((action, _) => action())
+            .Returns(Task.CompletedTask);
 
         var toastMock = new Mock<IToastGui>();
 
@@ -172,7 +173,8 @@ public class PluginChannelValidationTests
         var frameworkMock = new Mock<IFramework>();
         frameworkMock
             .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
-            .Callback<Action, FrameworkUpdatePriority>((action, _) => action());
+            .Callback<Action, FrameworkUpdatePriority>((action, _) => action())
+            .Returns(Task.CompletedTask);
 
         var toastMock = new Mock<IToastGui>();
 

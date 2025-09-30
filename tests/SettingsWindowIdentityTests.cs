@@ -25,7 +25,8 @@ public class SettingsWindowIdentityTests
         var frameworkMock = new Mock<IFramework>();
         frameworkMock
             .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
-            .Callback<Action, FrameworkUpdatePriority>((action, _) => action());
+            .Callback<Action, FrameworkUpdatePriority>((action, _) => action())
+            .Returns(Task.CompletedTask);
 
         var pluginInterfaceMock = new Mock<IDalamudPluginInterface>();
         pluginInterfaceMock.Setup(pi => pi.SavePluginConfig(It.IsAny<IPluginConfiguration>()));
@@ -90,7 +91,8 @@ public class SettingsWindowIdentityTests
         var frameworkMock = new Mock<IFramework>();
         frameworkMock
             .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
-            .Callback<Action, FrameworkUpdatePriority>((action, _) => action());
+            .Callback<Action, FrameworkUpdatePriority>((action, _) => action())
+            .Returns(Task.CompletedTask);
 
         var pluginInterfaceMock = new Mock<IDalamudPluginInterface>();
         pluginInterfaceMock.Setup(pi => pi.SavePluginConfig(It.IsAny<IPluginConfiguration>()));

@@ -118,7 +118,8 @@ public class PluginStartWatchersTests
         var frameworkMock = new Mock<IFramework>();
         frameworkMock
             .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
-            .Callback<Action, FrameworkUpdatePriority>((action, _) => action());
+            .Callback<Action, FrameworkUpdatePriority>((action, _) => action())
+            .Returns(Task.CompletedTask);
 
         var config = new Config
         {

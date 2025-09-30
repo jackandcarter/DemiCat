@@ -30,11 +30,12 @@ public class DockVisibilityTokenLifecycleTests
             pluginInterfaceMock
                 .Setup(pi => pi.SavePluginConfig(It.IsAny<IPluginConfiguration>()));
 
-            var logMock = new Mock<IPluginLog>();
-            var frameworkMock = new Mock<IFramework>();
-            frameworkMock
-                .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
-                .Callback<Action, FrameworkUpdatePriority>((action, _) => action());
+        var logMock = new Mock<IPluginLog>();
+        var frameworkMock = new Mock<IFramework>();
+        frameworkMock
+            .Setup(f => f.RunOnTick(It.IsAny<Action>(), It.IsAny<FrameworkUpdatePriority>()))
+            .Callback<Action, FrameworkUpdatePriority>((action, _) => action())
+            .Returns(Task.CompletedTask);
 
             var chatGuiMock = new Mock<IChatGui>();
             chatGuiMock.Setup(c => c.RemoveChatLinkHandler(It.IsAny<uint>()));
