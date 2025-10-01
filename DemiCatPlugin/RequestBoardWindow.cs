@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -16,14 +17,18 @@ public class RequestBoardWindow
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, bool> _conflicts = new();
     private readonly GameDataCache _gameData;
-    private readonly HashSet<string> _itemLoads = new();
-    private readonly HashSet<string> _dutyLoads = new();
+    private readonly ConcurrentDictionary<string, byte> _itemLoads = new();
+    private readonly ConcurrentDictionary<string, byte> _dutyLoads = new();
 
     private string _newTitle = string.Empty;
     private string _newDescription = string.Empty;
     private RequestType _newType = RequestType.Item;
     private RequestUrgency _newUrgency = RequestUrgency.Low;
     private string _createStatus = string.Empty;
+
+    private string? _selectedRequestId;
+    private readonly Dictionary<string, string> _messageDrafts = new();
+    private string? _messagePopupRequestId;
 
     private enum SortMode
     {
@@ -62,37 +67,71 @@ public class RequestBoardWindow
             _sortMode = (SortMode)mode;
 
         var requests = RequestStateService.All;
-        switch (_sortMode)
+        requests = _sortMode switch
         {
-            case SortMode.Type:
-                requests = requests.OrderBy(r => r.Type);
-                break;
-            case SortMode.Name:
-                requests = requests.OrderBy(r => r.Title);
-                break;
-            case SortMode.MostRecent:
-                requests = requests.OrderByDescending(r => r.CreatedAt);
-                break;
+            SortMode.Type => requests.OrderBy(r => r.Type),
+            SortMode.Name => requests.OrderBy(r => r.Title),
+            _ => requests.OrderByDescending(r => r.CreatedAt)
+        };
+        var requestList = requests.ToList();
+
+        if (_selectedRequestId == null && requestList.Count > 0)
+            _selectedRequestId = requestList[0].Id;
+        else if (_selectedRequestId != null && requestList.All(r => r.Id != _selectedRequestId))
+            _selectedRequestId = requestList.Count > 0 ? requestList[0].Id : null;
+
+        var avail = ImGui.GetContentRegionAvail();
+        var spacing = ImGui.GetStyle().ItemSpacing.X;
+        var detailWidth = MathF.Max(320f, avail.X * 0.35f);
+        var listWidth = MathF.Max(0, avail.X - detailWidth - spacing);
+
+        if (listWidth <= 0)
+        {
+            detailWidth = 0;
+            listWidth = avail.X;
         }
 
-        ImGui.BeginChild("##requestList", new Vector2(0, 0), true);
-        foreach (var req in requests)
+        ImGui.BeginGroup();
+        ImGui.BeginChild("##requestCards", new Vector2(listWidth, 0), false, ImGuiWindowFlags.HorizontalScrollbar);
+        foreach (var req in requestList)
         {
+            var isSelected = _selectedRequestId == req.Id;
             ImGui.PushID(req.Id);
-            ImGui.TextWrapped(string.IsNullOrEmpty(req.Description) ? req.Title : req.Description);
-            ImGui.TextUnformatted($"Created By: {req.CreatedBy}");
-            if (req.Status == RequestStatus.Approved)
-            {
-                ImGui.TextUnformatted("[Legacy Status: Approved]");
-            }
-            else if (req.Status == RequestStatus.Denied)
-            {
-                ImGui.TextUnformatted("[Legacy Status: Denied]");
-            }
-            ImGui.Separator();
+            ImGui.PushStyleColor(ImGuiCol.ChildBg, isSelected ? new Vector4(0.18f, 0.28f, 0.38f, 0.45f) : new Vector4(0.13f, 0.13f, 0.13f, 0.25f));
+            ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 6f);
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(12f, 10f));
+            ImGui.BeginChild("card", Vector2.Zero, true);
+            ImGui.TextUnformatted(req.Title);
+            ImGui.TextUnformatted($"Type: {req.Type}   Urgency: {req.Urgency}");
+            ImGui.TextUnformatted($"Status: {req.Status}");
+            var desc = string.IsNullOrWhiteSpace(req.Description) ? "No description provided." : req.Description;
+            ImGui.TextWrapped(desc);
+            ImGui.TextUnformatted($"Created by {req.CreatedBy}");
+            ImGui.EndChild();
+            if (ImGui.IsItemClicked())
+                _selectedRequestId = req.Id;
+            ImGui.PopStyleVar();
+            ImGui.PopStyleVar();
+            ImGui.PopStyleColor();
             ImGui.PopID();
+            ImGui.Spacing();
         }
         ImGui.EndChild();
+        ImGui.EndGroup();
+
+        if (detailWidth > 0)
+        {
+            ImGui.SameLine();
+            ImGui.BeginChild("##requestDetail", new Vector2(detailWidth, 0), true);
+            DrawDetailPane();
+            ImGui.EndChild();
+        }
+        else
+        {
+            DrawDetailPane();
+        }
+
+        DrawMessagePopup();
 
         if (ImGui.BeginPopup("createRequest"))
         {
@@ -126,6 +165,202 @@ public class RequestBoardWindow
         }
     }
 
+    private void DrawDetailPane()
+    {
+        if (string.IsNullOrEmpty(_selectedRequestId) || !RequestStateService.TryGet(_selectedRequestId, out var req))
+        {
+            ImGui.TextUnformatted("Select a request to view details.");
+            return;
+        }
+
+        ImGui.TextUnformatted(req.Title);
+        ImGui.Separator();
+        ImGui.TextUnformatted($"Status: {req.Status}");
+        ImGui.TextUnformatted($"Type: {req.Type}");
+        ImGui.TextUnformatted($"Urgency: {req.Urgency}");
+        if (!string.IsNullOrWhiteSpace(req.CreatedBy))
+            ImGui.TextUnformatted($"Created by {req.CreatedBy}");
+        if (req.CreatedAt != DateTime.MinValue)
+            ImGui.TextUnformatted($"Created at {req.CreatedAt:u}");
+        ImGui.Separator();
+        var desc = string.IsNullOrWhiteSpace(req.Description) ? "No description provided." : req.Description;
+        ImGui.TextWrapped(desc);
+
+        if (_conflicts.TryGetValue(req.Id, out var conflicted) && conflicted)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+            ImGui.TextWrapped("Unable to update request because it was modified elsewhere. Refresh and try again.");
+            ImGui.PopStyleColor();
+        }
+
+        ImGui.Separator();
+
+        DrawActionButtons(req);
+
+        ImGui.Separator();
+
+        DrawRequirements(req);
+    }
+
+    private void DrawActionButtons(RequestState req)
+    {
+        var disabled = TokenManager.Instance?.IsReady() != true;
+        if (disabled)
+            ImGui.BeginDisabled();
+
+        var hasPrimaryAction = false;
+        if (req.Status == RequestStatus.Open)
+        {
+            if (ImGui.Button("Claim"))
+                _ = UpdateAndRefresh(req, RequestStatus.Claimed);
+            hasPrimaryAction = true;
+        }
+        else if (req.Status == RequestStatus.Claimed)
+        {
+            if (ImGui.Button("Start"))
+                _ = UpdateAndRefresh(req, RequestStatus.InProgress);
+            hasPrimaryAction = true;
+        }
+        else if (req.Status == RequestStatus.InProgress)
+        {
+            if (ImGui.Button("Complete"))
+                _ = UpdateAndRefresh(req, RequestStatus.AwaitingConfirm);
+            hasPrimaryAction = true;
+        }
+        else if (req.Status == RequestStatus.AwaitingConfirm)
+        {
+            if (ImGui.Button("Confirm"))
+                _ = UpdateAndRefresh(req, RequestStatus.Completed);
+            hasPrimaryAction = true;
+        }
+
+        if (hasPrimaryAction)
+            ImGui.SameLine();
+
+        if (ImGui.Button("Message"))
+        {
+            _messagePopupRequestId = req.Id;
+            if (!_messageDrafts.ContainsKey(req.Id))
+                _messageDrafts[req.Id] = string.Empty;
+            ImGui.OpenPopup("requestMessage");
+        }
+
+        if (disabled)
+            ImGui.EndDisabled();
+
+        ImGui.SameLine();
+        if (ImGui.Button("Requirements"))
+        {
+            if (req.ItemId.HasValue && req.ItemData == null && _itemLoads.TryAdd(req.Id, 0))
+                _ = LoadItem(req);
+
+            if (req.DutyId.HasValue && req.DutyData == null && _dutyLoads.TryAdd(req.Id, 0))
+                _ = LoadDuty(req);
+        }
+
+        if (req.ItemData == null && !req.ItemId.HasValue && req.DutyData == null && !req.DutyId.HasValue)
+        {
+            ImGui.TextUnformatted("No additional requirements specified.");
+        }
+    }
+
+    private void DrawRequirements(RequestState req)
+    {
+        if (req.ItemData != null)
+        {
+            ImGui.TextUnformatted($"Item: {req.ItemData.Name}");
+            if (req.Quantity > 0)
+                ImGui.TextUnformatted($"Quantity: {req.Quantity}{(req.Hq ? " (HQ)" : string.Empty)}");
+        }
+        else if (req.ItemId.HasValue)
+        {
+            ImGui.TextUnformatted("Item data loading...");
+        }
+
+        if (req.DutyData != null)
+        {
+            ImGui.TextUnformatted($"Duty: {req.DutyData.Name}");
+        }
+        else if (req.DutyId.HasValue)
+        {
+            ImGui.TextUnformatted("Duty data loading...");
+        }
+    }
+
+    private void DrawMessagePopup()
+    {
+        if (!ImGui.BeginPopup("requestMessage"))
+            return;
+
+        if (_messagePopupRequestId == null || !RequestStateService.TryGet(_messagePopupRequestId, out var req))
+        {
+            ImGui.TextUnformatted("No request selected.");
+            if (ImGui.Button("Close"))
+            {
+                ImGui.CloseCurrentPopup();
+                _messagePopupRequestId = null;
+            }
+            ImGui.EndPopup();
+            return;
+        }
+
+        var draft = _messageDrafts.TryGetValue(req.Id, out var existing) ? existing : string.Empty;
+        ImGui.InputTextMultiline("##message", ref draft, 1000, new Vector2(320, 120));
+        _messageDrafts[req.Id] = draft;
+
+        if (ImGui.Button("Send") && !string.IsNullOrWhiteSpace(draft))
+        {
+            _ = CommentAndRefresh(req, draft);
+            _messageDrafts[req.Id] = string.Empty;
+            ImGui.CloseCurrentPopup();
+            _messagePopupRequestId = null;
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Cancel"))
+        {
+            ImGui.CloseCurrentPopup();
+            _messagePopupRequestId = null;
+        }
+
+        ImGui.EndPopup();
+    }
+
+    private async Task UpdateAndRefresh(RequestState req, RequestStatus newStatus)
+    {
+        _conflicts.Remove(req.Id);
+        await Update(req, newStatus);
+        await Refresh(req.Id);
+    }
+
+    private async Task CommentAndRefresh(RequestState req, string message)
+    {
+        await Comment(req, message);
+        await Refresh(req.Id);
+    }
+
+    private async Task Comment(RequestState req, string message)
+    {
+        if (string.IsNullOrWhiteSpace(message) || TokenManager.Instance == null || !ApiHelpers.ValidateApiBaseUrl(_config))
+            return;
+
+        try
+        {
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests/{req.Id}/comment";
+            var body = new { message };
+            var json = JsonSerializer.Serialize(body);
+            var msg = new HttpRequestMessage(HttpMethod.Post, url);
+            ApiHelpers.AddAuthHeader(msg, TokenManager.Instance);
+            msg.Content = new StringContent(json, Encoding.UTF8, "application/json");
+            var resp = await _httpClient.SendAsync(msg);
+            if (!resp.IsSuccessStatusCode)
+                return;
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
     private async Task LoadItem(RequestState req)
     {
         try
@@ -136,7 +371,7 @@ public class RequestBoardWindow
         }
         finally
         {
-            _itemLoads.Remove(req.Id);
+            _itemLoads.TryRemove(req.Id, out _);
         }
     }
 
@@ -150,7 +385,7 @@ public class RequestBoardWindow
         }
         finally
         {
-            _dutyLoads.Remove(req.Id);
+            _dutyLoads.TryRemove(req.Id, out _);
         }
     }
 
