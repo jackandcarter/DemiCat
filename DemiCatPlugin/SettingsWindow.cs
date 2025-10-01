@@ -42,6 +42,7 @@ public class SettingsWindow : IDisposable
 
     private readonly FileDialogManager _penumbraModsDialog = new();
     private readonly FileDialogManager _penumbraConfigDialog = new();
+    private string _penumbraCollectionOverride = string.Empty;
 
     public bool IsOpen;
 
@@ -63,6 +64,7 @@ public class SettingsWindow : IDisposable
         _apiBaseUrl = config.ApiBaseUrl;
         _penumbraModsDirectory = config.PenumbraModsDirectory ?? string.Empty;
         _penumbraConfigDirectory = config.PenumbraConfigDirectory ?? string.Empty;
+        _penumbraCollectionOverride = config.PenumbraCollectionOverride ?? string.Empty;
         _devWindow = new DeveloperWindow(config, pluginInterface);
         _log = log;
         _isLinked = _tokenManager.State == LinkState.Linked;
@@ -96,6 +98,12 @@ public class SettingsWindow : IDisposable
                         ImGui.EndTabItem();
                     }
 
+                    if (ImGui.BeginTabItem("SyncShell Settings"))
+                    {
+                        DrawSyncshellTab();
+                        ImGui.EndTabItem();
+                    }
+
                     ImGui.EndTabBar();
                 }
 
@@ -112,9 +120,6 @@ public class SettingsWindow : IDisposable
 
     private void DrawGeneralTab()
     {
-        _penumbraModsDialog.Draw();
-        _penumbraConfigDialog.Draw();
-
         DrawConnectionIndicator(_isLinked);
         ImGui.Spacing();
 
@@ -179,41 +184,6 @@ public class SettingsWindow : IDisposable
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
                 ImGui.SetTooltip("Link DemiCat to enable chat and presence.");
         }
-
-        var syncEnabled = _config.FCSyncShell;
-        if (!linked)
-            ImGui.BeginDisabled();
-        if (ImGui.Checkbox("Enable FC SyncShell", ref syncEnabled))
-        {
-            _config.FCSyncShell = syncEnabled;
-            SaveConfig();
-            MainWindow?.UpdateSyncshell();
-            _ = Task.Run(PushSettings);
-        }
-        if (!linked)
-        {
-            ImGui.EndDisabled();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Link DemiCat to enable SyncShell.");
-        }
-
-        var overlayVisible = _config.ShowSyncshellProgressOverlay;
-        var overlayDisabled = !_config.FCSyncShell;
-        if (overlayDisabled)
-            ImGui.BeginDisabled();
-        if (ImGui.Checkbox("Show Sync Progress Overlay", ref overlayVisible))
-        {
-            _config.ShowSyncshellProgressOverlay = overlayVisible;
-            SaveConfig();
-        }
-        if (overlayDisabled)
-        {
-            ImGui.EndDisabled();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Enable FC SyncShell to display transfer progress overlay.");
-        }
-
-        DrawPenumbraDirectorySettings();
 
         foreach (var kvp in _categoryToggles.ToList())
         {
@@ -281,6 +251,52 @@ public class SettingsWindow : IDisposable
 
             ImGui.TextColored(color, _syncStatus);
         }
+    }
+
+    private void DrawSyncshellTab()
+    {
+        _penumbraModsDialog.Draw();
+        _penumbraConfigDialog.Draw();
+
+        var linked = _isLinked;
+        ImGui.TextUnformatted("SyncShell Preferences");
+        ImGui.Spacing();
+
+        var syncEnabled = _config.FCSyncShell;
+        if (!linked)
+            ImGui.BeginDisabled();
+        if (ImGui.Checkbox("Enable FC SyncShell", ref syncEnabled))
+        {
+            _config.FCSyncShell = syncEnabled;
+            SaveConfig();
+            MainWindow?.UpdateSyncshell();
+            _ = Task.Run(PushSettings);
+        }
+        if (!linked)
+        {
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Link DemiCat to enable SyncShell.");
+        }
+
+        var overlayVisible = _config.ShowSyncshellProgressOverlay;
+        var overlayDisabled = !_config.FCSyncShell;
+        if (overlayDisabled)
+            ImGui.BeginDisabled();
+        if (ImGui.Checkbox("Show Sync Progress Overlay", ref overlayVisible))
+        {
+            _config.ShowSyncshellProgressOverlay = overlayVisible;
+            SaveConfig();
+        }
+        if (overlayDisabled)
+        {
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Enable FC SyncShell to display transfer progress overlay.");
+        }
+
+        DrawPenumbraDirectorySettings();
+        DrawPenumbraCollectionSettings();
     }
 
     private void DrawAppearanceTab()
@@ -883,8 +899,10 @@ public class SettingsWindow : IDisposable
         _config.PenumbraChoices.Clear();
         _config.PenumbraModsDirectory = string.Empty;
         _config.PenumbraConfigDirectory = string.Empty;
+        _config.PenumbraCollectionOverride = string.Empty;
         _penumbraModsDirectory = string.Empty;
         _penumbraConfigDirectory = string.Empty;
+        _penumbraCollectionOverride = string.Empty;
         _config.NotePadLastSectionId = null;
         _config.NotePadLastPageId = null;
 
@@ -1193,73 +1211,72 @@ public class SettingsWindow : IDisposable
         ImGui.TextDisabled("Override the Penumbra folders used by SyncShell.");
         ImGui.Spacing();
 
-        DrawDirectoryPicker(
+        ImGuiDirectoryPickerHelper.DrawDirectoryPicker(
             "Penumbra Mods Directory",
             "Leave blank to use Penumbra's configured mods directory.",
             () => _penumbraModsDirectory,
             SetPenumbraModsDirectory,
             _penumbraModsDialog,
-            "PenumbraMods");
+            "PenumbraMods",
+            NormalizeDirectory,
+            OpenFolderDialog);
 
-        DrawDirectoryPicker(
+        ImGuiDirectoryPickerHelper.DrawDirectoryPicker(
             "Penumbra Config Directory",
             "Should contain default_mod.json. Leave blank to auto-detect.",
             () => _penumbraConfigDirectory,
             SetPenumbraConfigDirectory,
             _penumbraConfigDialog,
-            "PenumbraConfig");
+            "PenumbraConfig",
+            NormalizeDirectory,
+            OpenFolderDialog);
     }
 
-    private void DrawDirectoryPicker(
-        string label,
-        string helpText,
-        Func<string> getter,
-        Action<string> setter,
-        FileDialogManager dialog,
-        string idSuffix)
+    private void DrawPenumbraCollectionSettings()
     {
-        var value = getter() ?? string.Empty;
-        if (ImGui.InputText(label, ref value, 260))
-        {
-            setter(value);
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button($"Browse##{idSuffix}"))
-        {
-            OpenFolderDialog(dialog, label, getter(), setter);
-        }
-
-        var current = getter();
-        if (!string.IsNullOrEmpty(NormalizeDirectory(current)))
-        {
-            ImGui.SameLine();
-            if (ImGui.Button($"Clear##{idSuffix}"))
-            {
-                setter(string.Empty);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(helpText))
-        {
-            ImGui.TextDisabled(helpText);
-        }
-
-        current = getter();
-        var normalized = NormalizeDirectory(current);
-        if (!string.IsNullOrEmpty(normalized) && !Directory.Exists(normalized))
-        {
-            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), "Directory not found; automatic detection will be used instead.");
-        }
-
+        ImGui.Separator();
+        ImGui.TextUnformatted("Penumbra Collection");
+        ImGui.TextDisabled("Choose the collection used when syncing.");
         ImGui.Spacing();
+
+        var collection = _penumbraCollectionOverride;
+        if (ImGui.InputText("Active collection override", ref collection, 260))
+        {
+            SetPenumbraCollectionOverride(collection);
+        }
+
+        var suggestions = EnumeratePenumbraCollectionSuggestions();
+        var preview = GetCollectionPreview(_penumbraCollectionOverride, suggestions);
+        if (suggestions.Count > 0 && ImGui.BeginCombo("##syncshell-collection", preview))
+        {
+            foreach (var option in suggestions)
+            {
+                var selected = string.Equals(_penumbraCollectionOverride, option.Identifier, StringComparison.OrdinalIgnoreCase);
+                if (ImGui.Selectable(option.Display, selected))
+                {
+                    SetPenumbraCollectionOverride(option.Identifier);
+                    collection = _penumbraCollectionOverride;
+                }
+
+                if (selected)
+                {
+                    ImGui.SetItemDefaultFocus();
+                }
+            }
+
+            ImGui.EndCombo();
+        }
+
+        ImGui.TextDisabled(suggestions.Count > 0
+            ? "Select from detected collections or enter a custom value (e.g. default)."
+            : "Enter the collection name or file (e.g. default or default_mod.json).");
     }
 
     private void OpenFolderDialog(
         FileDialogManager dialog,
         string label,
         string? currentPath,
-        Action<string> setter)
+        Action<string?> setter)
     {
         var initial = NormalizeDirectory(currentPath);
         if (string.IsNullOrEmpty(initial) || !Directory.Exists(initial))
@@ -1303,6 +1320,7 @@ public class SettingsWindow : IDisposable
         _penumbraModsDirectory = normalized;
         _config.PenumbraModsDirectory = normalized;
         SaveConfig();
+        NotifySyncshellPenumbraOverridesChanged();
     }
 
     private void SetPenumbraConfigDirectory(string? path)
@@ -1316,10 +1334,136 @@ public class SettingsWindow : IDisposable
         _penumbraConfigDirectory = normalized;
         _config.PenumbraConfigDirectory = normalized;
         SaveConfig();
+        NotifySyncshellPenumbraOverridesChanged();
+    }
+
+    private void SetPenumbraCollectionOverride(string? value)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+        if (string.Equals(_penumbraCollectionOverride, normalized, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _penumbraCollectionOverride = normalized;
+        _config.PenumbraCollectionOverride = normalized;
+        SaveConfig();
+        NotifySyncshellPenumbraOverridesChanged();
+    }
+
+    private static void NotifySyncshellPenumbraOverridesChanged()
+    {
+        if (MainWindow.RefreshSyncshellPenumbraOverrides())
+        {
+            return;
+        }
+
+        SyncshellWindow.Instance?.OnPenumbraOverridesChanged();
     }
 
     private static string NormalizeDirectory(string? value)
         => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
+
+    private List<CollectionOption> EnumeratePenumbraCollectionSuggestions()
+    {
+        var results = new List<CollectionOption>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var baseDir = NormalizeDirectory(_config.PenumbraConfigDirectory);
+        if (string.IsNullOrEmpty(baseDir) || !Directory.Exists(baseDir))
+        {
+            return results;
+        }
+
+        string Describe(string identifier, string relative)
+            => string.IsNullOrEmpty(relative) ? identifier : $"{identifier} ({relative})";
+
+        void AddSuggestion(string filePath)
+        {
+            if (!File.Exists(filePath))
+            {
+                return;
+            }
+
+            string relative;
+            try
+            {
+                relative = Path.GetRelativePath(baseDir, filePath);
+            }
+            catch
+            {
+                relative = Path.GetFileName(filePath) ?? filePath;
+            }
+
+            var identifier = Path.GetFileNameWithoutExtension(filePath);
+            if (string.IsNullOrEmpty(identifier))
+            {
+                return;
+            }
+
+            if (identifier.EndsWith("_mod", StringComparison.OrdinalIgnoreCase))
+            {
+                var trimmed = identifier[..^4];
+                if (seen.Add(trimmed))
+                {
+                    results.Add(new CollectionOption(trimmed, Describe(trimmed, relative)));
+                }
+            }
+
+            if (seen.Add(identifier))
+            {
+                results.Add(new CollectionOption(identifier, Describe(identifier, relative)));
+            }
+        }
+
+        try
+        {
+            foreach (var file in Directory.EnumerateFiles(baseDir, "*_mod.json", SearchOption.TopDirectoryOnly))
+            {
+                AddSuggestion(file);
+            }
+
+            foreach (var file in Directory.EnumerateFiles(baseDir, "*.json", SearchOption.TopDirectoryOnly))
+            {
+                AddSuggestion(file);
+            }
+
+            var collectionsDir = Path.Combine(baseDir, "collections");
+            if (Directory.Exists(collectionsDir))
+            {
+                foreach (var file in Directory.EnumerateFiles(collectionsDir, "*.json", SearchOption.TopDirectoryOnly))
+                {
+                    AddSuggestion(file);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance?.Log?.Debug(ex, "Failed to enumerate Penumbra collections in {Directory}", baseDir);
+        }
+
+        results.Sort((a, b) => string.Compare(a.Identifier, b.Identifier, StringComparison.OrdinalIgnoreCase));
+        return results;
+    }
+
+    private static string GetCollectionPreview(string? currentValue, IReadOnlyList<CollectionOption> options)
+    {
+        if (string.IsNullOrWhiteSpace(currentValue))
+        {
+            return "Auto-detect (default)";
+        }
+
+        foreach (var option in options)
+        {
+            if (string.Equals(option.Identifier, currentValue, StringComparison.OrdinalIgnoreCase))
+            {
+                return option.Display;
+            }
+        }
+
+        return currentValue;
+    }
+
+    private sealed record CollectionOption(string Identifier, string Display);
 
     private void ClearCachedData()
     {

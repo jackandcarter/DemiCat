@@ -231,6 +231,17 @@ public class MainWindow : IDisposable
         }
     }
 
+    internal static bool RefreshSyncshellPenumbraOverrides()
+    {
+        var instance = Instance;
+        var window = instance?._syncshell;
+        if (window == null)
+            return false;
+
+        window.OnPenumbraOverridesChanged();
+        return true;
+    }
+
     public void Draw()
     {
         if (!IsLinked())
