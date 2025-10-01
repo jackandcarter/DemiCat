@@ -23,7 +23,21 @@ def upgrade() -> None:
         sa.Column("image_url", sa.String(length=255), nullable=False),
     )
 
-    data_path = Path(__file__).resolve().parents[2] / "data" / "unicode_emojis.json"
+    base_path = Path(__file__).resolve()
+    candidate_paths = [
+        base_path.parents[2] / "data" / "unicode_emojis.json",
+        base_path.parents[3] / "data" / "unicode_emojis.json",
+    ]
+
+    for data_path in candidate_paths:
+        if data_path.exists():
+            break
+    else:
+        raise FileNotFoundError(
+            "Unable to locate unicode_emojis.json. Checked: "
+            + ", ".join(str(path) for path in candidate_paths)
+        )
+
     with data_path.open("r", encoding="utf-8") as f:
         try:
             data = json.load(f)
