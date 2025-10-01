@@ -45,6 +45,27 @@ class _DummyHTTPException(Exception):
 
 
 discord_mod.HTTPException = _DummyHTTPException
+
+
+class _DummyWebhook:
+    last_instance = None
+
+    def __init__(self, url: str, client=None) -> None:
+        self.url = url
+        self.client = client
+        self.sent: list[tuple[tuple, dict]] = []
+
+    @classmethod
+    def from_url(cls, url: str, *, client=None):
+        instance = cls(url, client=client)
+        cls.last_instance = instance
+        return instance
+
+    async def send(self, *args, **kwargs):
+        self.sent.append((args, kwargs))
+
+
+discord_mod.Webhook = _DummyWebhook
 sys.modules["discord"] = discord_mod
 sys.modules["discord.abc"] = abc_mod
 ext_mod = _types.ModuleType("discord.ext")
@@ -70,6 +91,7 @@ from demibot.db.session import init_db, get_session
 from demibot.http.deps import RequestContext
 from demibot.http.discord_client import set_discord_client
 import demibot.http.routes.requests as request_routes
+from sqlalchemy import select
 
 async def _setup_db(db_path: str) -> None:
     await init_db(f"sqlite+aiosqlite:///{db_path}")
@@ -127,9 +149,7 @@ def test_requests_delta(db_setup):
     assert third[0]["id"] == "1"
 
 
-def test_notify_posts_to_requests_channel_when_discord_guild_id_present(
-    db_setup, monkeypatch
-):
+def test_notify_posts_to_requests_channel_when_discord_guild_id_present(db_setup):
     async def run():
         async with get_session() as db:
             guild = await db.get(Guild, 1)
@@ -158,11 +178,6 @@ def test_notify_posts_to_requests_channel_when_discord_guild_id_present(
             )
             await db.commit()
             ctx = RequestContext(user=user, guild=guild, key=SimpleNamespace(), roles=[])
-
-            async def fake_send_dm(*args, **kwargs):
-                return None
-
-            monkeypatch.setattr(request_routes, "_send_dm", fake_send_dm)
 
             class DummyChannel:
                 def __init__(self) -> None:
@@ -198,9 +213,7 @@ def test_notify_posts_to_requests_channel_when_discord_guild_id_present(
             dummy_client = DummyClient()
             set_discord_client(dummy_client)
             try:
-                await request_routes._notify(
-                    ctx.guild.discord_guild_id, req, "created", db, ctx.user
-                )
+                await request_routes._notify(ctx, req, "created", db)
             finally:
                 set_discord_client(None)
 
@@ -209,3 +222,210 @@ def test_notify_posts_to_requests_channel_when_discord_guild_id_present(
     sent_messages, calls, expected_id = asyncio.run(run())
     assert calls == [expected_id]
     assert len(sent_messages) == 1
+
+
+def test_create_request_notifies_channel_without_dm(db_setup, monkeypatch):
+    async def run():
+        async with get_session() as db:
+            guild = await db.get(Guild, 1)
+            user = await db.get(User, 1)
+            discord_id = 111111111111111111
+            guild.discord_guild_id = discord_id
+
+            result = await db.execute(
+                select(GuildChannel).where(
+                    GuildChannel.guild_id == guild.id,
+                    GuildChannel.kind == ChannelKind.REQUESTS,
+                )
+            )
+            mapping = result.scalar_one_or_none()
+            if mapping is None:
+                mapping = GuildChannel(
+                    guild_id=guild.id,
+                    channel_id=456,
+                    kind=ChannelKind.REQUESTS,
+                    name="requests",
+                )
+                db.add(mapping)
+            else:
+                mapping.channel_id = 456
+                mapping.name = "requests"
+                mapping.webhook_url = None
+            await db.commit()
+
+            ctx = RequestContext(user=user, guild=guild, key=SimpleNamespace(), roles=[])
+
+            class DummyChannel:
+                def __init__(self) -> None:
+                    self.id = 456
+                    self.name = "requests"
+                    self.sent: list[tuple[tuple, dict]] = []
+
+                async def send(self, *args, **kwargs):
+                    self.sent.append((args, kwargs))
+
+            channel = DummyChannel()
+
+            class DummyGuild:
+                def __init__(self, channel_obj) -> None:
+                    self._channel = channel_obj
+
+                def get_channel(self, channel_id: int):
+                    if channel_id == self._channel.id:
+                        return self._channel
+                    return None
+
+            class DummyClient:
+                def __init__(self, channel_obj) -> None:
+                    self._channel = channel_obj
+                    self.guild_calls: list[int] = []
+
+                def get_guild(self, guild_id: int):
+                    self.guild_calls.append(guild_id)
+                    return DummyGuild(self._channel)
+
+                def get_channel(self, channel_id: int):
+                    if channel_id == self._channel.id:
+                        return self._channel
+                    return None
+
+            dummy_client = DummyClient(channel)
+            set_discord_client(dummy_client)
+
+            async def fake_broadcast(*args, **kwargs):
+                return None
+
+            monkeypatch.setattr(request_routes.manager, "broadcast_text", fake_broadcast)
+
+            body = request_routes.RequestCreateBody(
+                title="Created",
+                description=None,
+                type=RequestType.ITEM,
+                urgency=Urgency.MEDIUM,
+            )
+
+            try:
+                await request_routes.create_request(body=body, ctx=ctx, db=db)
+            finally:
+                set_discord_client(None)
+
+            return channel.sent, dummy_client.guild_calls, discord_id
+
+    sent_messages, calls, expected_id = asyncio.run(run())
+    assert calls == [expected_id]
+    assert len(sent_messages) == 1
+
+
+def test_complete_request_notifies_channel_via_webhook(db_setup, monkeypatch):
+    async def run():
+        async with get_session() as db:
+            guild = await db.get(Guild, 1)
+            user = await db.get(User, 1)
+            discord_id = 222222222222222222
+            guild.discord_guild_id = discord_id
+
+            result = await db.execute(
+                select(GuildChannel).where(
+                    GuildChannel.guild_id == guild.id,
+                    GuildChannel.kind == ChannelKind.REQUESTS,
+                )
+            )
+            mapping = result.scalar_one_or_none()
+            webhook_url = "https://example.com/webhook"
+            if mapping is None:
+                mapping = GuildChannel(
+                    guild_id=guild.id,
+                    channel_id=789,
+                    kind=ChannelKind.REQUESTS,
+                    name="requests",
+                    webhook_url=webhook_url,
+                )
+                db.add(mapping)
+            else:
+                mapping.channel_id = 789
+                mapping.name = "requests"
+                mapping.webhook_url = webhook_url
+            await db.commit()
+
+            req = DbRequest(
+                id=10,
+                guild_id=guild.id,
+                user_id=user.id,
+                assignee_id=user.id,
+                title="Complete",
+                type=RequestType.ITEM,
+                status=RequestStatus.IN_PROGRESS,
+                urgency=Urgency.HIGH,
+            )
+            db.add(req)
+            await db.commit()
+            await db.refresh(req)
+
+            ctx = RequestContext(user=user, guild=guild, key=SimpleNamespace(), roles=[])
+
+            class DummyChannel:
+                def __init__(self) -> None:
+                    self.id = 789
+                    self.name = "requests"
+                    self.sent: list[tuple[tuple, dict]] = []
+
+                async def send(self, *args, **kwargs):
+                    self.sent.append((args, kwargs))
+
+            channel = DummyChannel()
+
+            class DummyGuild:
+                def __init__(self, channel_obj) -> None:
+                    self._channel = channel_obj
+
+                def get_channel(self, channel_id: int):
+                    if channel_id == self._channel.id:
+                        return self._channel
+                    return None
+
+            class DummyClient:
+                def __init__(self, channel_obj) -> None:
+                    self._channel = channel_obj
+                    self.guild_calls: list[int] = []
+
+                def get_guild(self, guild_id: int):
+                    self.guild_calls.append(guild_id)
+                    return DummyGuild(self._channel)
+
+                def get_channel(self, channel_id: int):
+                    if channel_id == self._channel.id:
+                        return self._channel
+                    return None
+
+            dummy_client = DummyClient(channel)
+            set_discord_client(dummy_client)
+
+            async def fake_broadcast(*args, **kwargs):
+                return None
+
+            monkeypatch.setattr(request_routes.manager, "broadcast_text", fake_broadcast)
+
+            # reset webhook capture
+            discord_mod.Webhook.last_instance = None
+
+            body = request_routes.StatusBody(version=req.version)
+
+            try:
+                await request_routes.complete_request(
+                    request_id=req.id, body=body, ctx=ctx, db=db
+                )
+            finally:
+                set_discord_client(None)
+
+            return (
+                channel.sent,
+                dummy_client.guild_calls,
+                discord_id,
+                discord_mod.Webhook.last_instance,
+            )
+
+    sent_messages, calls, expected_id, webhook_instance = asyncio.run(run())
+    assert calls == [expected_id]
+    assert len(sent_messages) == 0
+    assert webhook_instance is not None
+    assert len(webhook_instance.sent) == 1

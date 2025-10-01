@@ -13,18 +13,20 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from ..deps import RequestContext, api_key_auth, get_db
-from ._messages_common import _role_set
+from ._messages_common import (
+    CHANNEL_NOT_CONFIGURED_DETAIL,
+    _role_set,
+    require_guild_channel,
+)
 from ..ws import manager
 from ..discord_client import discord_client
 from ...db.models import (
-    Guild,
     GuildChannel,
     ChannelKind,
     Request as DbRequest,
     RequestStatus,
     RequestType,
     Urgency,
-    User,
 )
 from ...db.models import RequestTombstone
 from ...config import load_config
@@ -116,82 +118,91 @@ async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> N
 
 
 async def _requests_channel(
-    discord_guild_id: int | None,
+    ctx: RequestContext,
     db: AsyncSession,
-) -> discord.abc.Messageable | None:
-    if not discord_client or discord_guild_id is None:
+) -> tuple[GuildChannel, discord.abc.Messageable | None] | None:
+    if not discord_client or ctx.guild.discord_guild_id is None:
         return None
 
-    guild = discord_client.get_guild(discord_guild_id)
-    if not guild:
-        return None
-
-    channel_id = await db.scalar(
-        select(GuildChannel.channel_id)
-        .join(Guild, Guild.id == GuildChannel.guild_id)
-        .where(
-            Guild.discord_guild_id == discord_guild_id,
-            GuildChannel.kind == ChannelKind.REQUESTS,
+    try:
+        guild_channel = await require_guild_channel(
+            ctx,
+            db,
+            channel_kind=ChannelKind.REQUESTS,
         )
-    )
-    if channel_id is None:
-        return None
+    except HTTPException as exc:
+        if (
+            exc.status_code == 400
+            and exc.detail == CHANNEL_NOT_CONFIGURED_DETAIL
+        ):
+            logging.warning(
+                "Requests channel not configured for guild %s", ctx.guild.id
+            )
+            return None
+        raise
 
+    guild = discord_client.get_guild(ctx.guild.discord_guild_id)
     channel = None
-    if hasattr(guild, "get_channel"):
-        channel = guild.get_channel(channel_id)
+    if guild and hasattr(guild, "get_channel"):
+        channel = guild.get_channel(guild_channel.channel_id)
     if channel is None:
         try:
-            channel = discord_client.get_channel(channel_id)
+            channel = discord_client.get_channel(guild_channel.channel_id)
         except Exception:
             channel = None
-    if channel is None:
+    if channel is None and hasattr(discord_client, "fetch_channel"):
         try:
-            channel = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
+            channel = await discord_client.fetch_channel(  # type: ignore[attr-defined]
+                guild_channel.channel_id
+            )
         except Exception:  # pragma: no cover - network errors
             channel = None
-    return channel
-
-
-async def _send_dm(discord_id: int, message: str) -> None:
-    if not discord_client:
-        return
-    try:
-        user = await discord_client.fetch_user(discord_id)
-        await user.send(message)
-    except Exception:  # pragma: no cover - network errors
-        logging.warning("Failed to send DM to %s", discord_id)
+    return guild_channel, channel
 
 
 async def _notify(
-    discord_guild_id: int | None,
+    ctx: RequestContext,
     req: DbRequest,
     action: str,
     db: AsyncSession,
-    ctx_user: User,
 ) -> None:
-    channel = await _requests_channel(discord_guild_id, db)
-    if channel:
-        cfg = load_config()
-        url = f"http://{cfg.server.host}:{cfg.server.port}/board/requests/{req.id}"
-        embed = discord.Embed(
-            title=req.title, url=url, description=req.description or ""
-        )
-        embed.add_field(name="Status", value=req.status.value, inline=False)
+    resolved = await _requests_channel(ctx, db)
+    if not resolved:
+        return
+
+    guild_channel, channel = resolved
+    cfg = load_config()
+    url = f"http://{cfg.server.host}:{cfg.server.port}/board/requests/{req.id}"
+    embed = discord.Embed(title=req.title, url=url, description=req.description or "")
+    embed.add_field(name="Status", value=req.status.value, inline=False)
+
+    sent = False
+    if guild_channel.webhook_url and discord_client:
+        try:
+            webhook = discord.Webhook.from_url(
+                guild_channel.webhook_url,
+                client=discord_client,
+            )
+            username = guild_channel.name or getattr(channel, "name", None)
+            await webhook.send(embed=embed, username=username)
+            sent = True
+        except Exception:  # pragma: no cover - network errors
+            logging.warning(
+                "Failed to post request embed for %s via webhook", req.id
+            )
+
+    if not sent and channel is not None:
         try:
             await channel.send(embed=embed)
+            sent = True
         except Exception:  # pragma: no cover - network errors
             logging.warning("Failed to post request embed for %s", req.id)
-    requester = await db.get(User, req.user_id)
-    if requester:
-        await _send_dm(
-            requester.discord_user_id,
-            f"Your request '{req.title}' was {action}.",
-        )
-    if ctx_user.id != req.user_id:
-        await _send_dm(
-            ctx_user.discord_user_id,
-            f"You {action} the request '{req.title}'.",
+
+    if not sent:
+        logging.warning(
+            "Requests channel %s unavailable for guild %s",
+            guild_channel.channel_id,
+            ctx.guild.id,
         )
 
 
@@ -255,7 +266,7 @@ async def create_request(
     if req is None:
         raise HTTPException(status_code=500)
     await _broadcast(ctx.guild.id, req.id, _dto(req))
-    await _notify(ctx.guild.discord_guild_id, req, "created", db, ctx.user)
+    await _notify(ctx, req, "created", db)
     return {"id": str(req.id)}
 
 
@@ -369,7 +380,7 @@ async def accept_request(
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
-    await _notify(ctx.guild.discord_guild_id, req, "claimed", db, ctx.user)
+    await _notify(ctx, req, "claimed", db)
     return delta
 
 
@@ -420,7 +431,7 @@ async def complete_request(
     )
     delta = _dto(req)
     await _broadcast(ctx.guild.id, req.id, delta)
-    await _notify(ctx.guild.discord_guild_id, req, "completed", db, ctx.user)
+    await _notify(ctx, req, "completed", db)
     return delta
 
 
