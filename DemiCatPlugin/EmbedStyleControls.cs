@@ -10,12 +10,14 @@ namespace DemiCatPlugin;
 public static class EmbedStyleControls
 {
     private static readonly Dictionary<string, string> GlyphSearchTerms = new();
+
     private static readonly string[] OfflineBorderGlyphs =
     {
         "⬛", "⬜", "🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "🟫",
         "⚫", "⚪", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤",
         "◼️", "◻️", "◾", "◽", "▪️", "▫️", "🔶", "🔷", "🔸", "🔹",
         "♦️", "🔺", "🔻"
+
     };
 
     public sealed class Context
@@ -182,6 +184,7 @@ public static class EmbedStyleControls
         var searchKey = GetSearchKey(context);
         if (manager == null || !manager.CanLoadStandard)
         {
+
             if (OfflineBorderGlyphs.Length == 0)
             {
                 ImGui.TextDisabled("Emoji list unavailable. Link DemiCat to load emoji.");
@@ -222,6 +225,7 @@ public static class EmbedStyleControls
                     {
                         break;
                     }
+
                 }
             }
         }
