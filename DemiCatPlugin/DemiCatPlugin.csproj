@@ -46,11 +46,15 @@
     <None Include="Dock\**\*.*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
-  <ItemGroup Condition="Exists('Emoji/NotoColorEmoji.ttf')">
-    <None Include="Emoji/NotoColorEmoji.ttf" CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-  <ItemGroup Condition="!Exists('Emoji/NotoColorEmoji.ttf') and Exists('NotoColorEmoji.ttf')">
-    <None Include="NotoColorEmoji.ttf" CopyToOutputDirectory="PreserveNewest" />
+  <ItemGroup>
+    <None Include="Emoji/NotoColorEmoji.ttf" Condition="Exists('Emoji/NotoColorEmoji.ttf')">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+    <None Include="NotoColorEmoji.ttf" Condition="!Exists('Emoji/NotoColorEmoji.ttf') and Exists('NotoColorEmoji.ttf')">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../DemiCat.UI/DemiCat.UI.csproj" />

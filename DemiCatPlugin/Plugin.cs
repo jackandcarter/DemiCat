@@ -377,10 +377,16 @@ public class Plugin : IDalamudPlugin
 
             if (fontPath == null)
             {
+                var paths = string.Join(", ", candidates);
+                const string message =
+                    "DemiCat could not find its emoji font. Channel icons will fall back to text until the font is restored.";
+
                 _services.Log.Info(
                     "Emoji font not found at any known path ({Paths}). Unicode emoji will use fallback glyphs.",
-                    string.Join(", ", candidates)
+                    paths
                 );
+
+                PluginServices.Instance?.ToastGui.ShowWarning(message);
                 return null;
             }
 
