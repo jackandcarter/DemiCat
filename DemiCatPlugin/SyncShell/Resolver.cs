@@ -783,7 +783,7 @@ public sealed class Resolver : IResolver
             name = name[..^4];
         }
 
-        name = name.Replace('\', '/');
+        name = name.Replace('\\', '/');
         var slashIndex = name.LastIndexOf('/');
         if (slashIndex >= 0)
         {
