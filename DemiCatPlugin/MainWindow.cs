@@ -8,7 +8,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using DemiCatPlugin.Emoji;
-using StbImageSharp;
+using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
@@ -20,6 +20,19 @@ public class MainWindow : IDisposable
     private const float IndicatorRadius = 4f;
     private const string DockWindowTitle = "DemiCat Dock";
     private const string DockDragPayloadType = "DemiCatDockItem";
+
+    private static readonly IReadOnlyDictionary<string, string> FeatureIconFiles =
+        new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["events"] = "Events.png",
+            ["create"] = "Create.png",
+            ["templates"] = "Templates.png",
+            ["notepad"] = "Notepad.png",
+            ["requests"] = "Request.png",
+            ["chat"] = "FCChat.png",
+            ["officer"] = "Officer.png",
+            ["syncshell"] = "SyncShell.png",
+        };
 
     private readonly Config _config;
     private readonly UiRenderer _ui;
@@ -46,6 +59,8 @@ public class MainWindow : IDisposable
     private readonly ChatDockableWindow? _chatWindowHost;
     private SyncshellDockableWindow? _syncshellWindowHost;
 
+    private readonly Dictionary<string, ISharedImmediateTexture> _featureIconTextures =
+        new(StringComparer.OrdinalIgnoreCase);
     private ISharedImmediateTexture? _dockIconTexture;
     private ISharedImmediateTexture? _settingsIconTexture;
     private SyncshellWindow? _syncshell;
@@ -382,16 +397,14 @@ public class MainWindow : IDisposable
             Instance = null;
         }
 
-        try
+        foreach (var texture in _featureIconTextures.Values)
         {
-            (_dockIconTexture?.GetWrapOrEmpty() as IDisposable)?.Dispose();
-            (_settingsIconTexture?.GetWrapOrEmpty() as IDisposable)?.Dispose();
+            DisposeTexture(texture);
         }
-        catch
-        {
-            // Suppress disposal failures; Dalamud will clean these up on exit.
-        }
+        _featureIconTextures.Clear();
 
+        DisposeTexture(_dockIconTexture);
+        DisposeTexture(_settingsIconTexture);
         _dockIconTexture = null;
         _settingsIconTexture = null;
         _syncshell?.Dispose();
@@ -749,7 +762,9 @@ public class MainWindow : IDisposable
     {
         var provider = PluginServices.Instance?.TextureProvider;
         if (provider == null)
+        {
             return;
+        }
 
         if (_dockIconTexture == null)
         {
@@ -769,47 +784,64 @@ public class MainWindow : IDisposable
             }
         }
 
-        if (_settingsIconTexture != null)
-            return;
-
         var pluginDirectory = PluginServices.Instance?.PluginInterface.AssemblyLocation.Directory;
         if (pluginDirectory == null)
+        {
             return;
+        }
 
-        var settingsIconPath = Path.Combine(pluginDirectory.FullName, "settingscog.png");
-        if (!File.Exists(settingsIconPath))
-            return;
+        var dockDirectory = Path.Combine(pluginDirectory.FullName, "Dock");
+        foreach (var (featureId, fileName) in FeatureIconFiles)
+        {
+            if (_featureIconTextures.ContainsKey(featureId))
+            {
+                continue;
+            }
 
-        ImageResult? image = null;
+            var iconPath = Path.Combine(dockDirectory, fileName);
+            var texture = TryLoadTextureFromFile(provider, iconPath);
+            if (texture != null)
+            {
+                _featureIconTextures[featureId] = texture;
+            }
+        }
+
+        if (_settingsIconTexture == null)
+        {
+            var settingsIconPath = Path.Combine(pluginDirectory.FullName, "settingscog.png");
+            _settingsIconTexture = TryLoadTextureFromFile(provider, settingsIconPath);
+        }
+    }
+
+    private static ISharedImmediateTexture? TryLoadTextureFromFile(ITextureProvider provider, string path)
+    {
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
         try
         {
-            var payload = File.ReadAllBytes(settingsIconPath);
-            image = ImageResult.FromMemory(payload, ColorComponents.RedGreenBlueAlpha);
+            return provider.CreateFromFile(path);
         }
         catch
         {
-            return;
+            return null;
         }
+    }
 
-        if (image == null)
-            return;
+    private ISharedImmediateTexture? GetFeatureIcon(string featureId)
+        => _featureIconTextures.TryGetValue(featureId, out var texture) ? texture : _dockIconTexture;
 
-        IDalamudTextureWrap? settingsWrap = null;
+    private static void DisposeTexture(ISharedImmediateTexture? texture)
+    {
         try
         {
-            settingsWrap = provider.CreateFromRaw(
-                RawImageSpecification.Rgba32(image.Width, image.Height),
-                image.Data);
-            _settingsIconTexture = new ForwardingSharedImmediateTexture(settingsWrap);
-            settingsWrap = null;
+            (texture?.GetWrapOrEmpty() as IDisposable)?.Dispose();
         }
         catch
         {
-            _settingsIconTexture = null;
-        }
-        finally
-        {
-            settingsWrap?.Dispose();
+            // Suppress disposal failures; Dalamud will clean these up on exit.
         }
     }
 
@@ -832,7 +864,7 @@ public class MainWindow : IDisposable
 
         AddFeatureItem(new DockItem(
             "events",
-            _dockIconTexture,
+            GetFeatureIcon("events"),
             accent,
             "Events",
             () => _config.Events,
@@ -843,7 +875,7 @@ public class MainWindow : IDisposable
 
         AddFeatureItem(new DockItem(
             "create",
-            _dockIconTexture,
+            GetFeatureIcon("create"),
             positive,
             "Create Event",
             () => _config.Events,
@@ -854,7 +886,7 @@ public class MainWindow : IDisposable
 
         AddFeatureItem(new DockItem(
             "templates",
-            _dockIconTexture,
+            GetFeatureIcon("templates"),
             mutedAccent,
             "Templates",
             () => _config.Templates,
@@ -865,7 +897,7 @@ public class MainWindow : IDisposable
 
         AddFeatureItem(new DockItem(
             "notepad",
-            _dockIconTexture,
+            GetFeatureIcon("notepad"),
             neutral,
             "NotePad",
             () => true,
@@ -876,7 +908,7 @@ public class MainWindow : IDisposable
 
         AddFeatureItem(new DockItem(
             "requests",
-            _dockIconTexture,
+            GetFeatureIcon("requests"),
             warning,
             "Request Board",
             () => _config.Requests,
@@ -890,7 +922,7 @@ public class MainWindow : IDisposable
         {
             AddFeatureItem(new DockItem(
                 "chat",
-                _dockIconTexture,
+                GetFeatureIcon("chat"),
                 accent,
                 chat is FcChatWindow ? "FC Chat" : "Chat",
                 () => true,
@@ -902,7 +934,7 @@ public class MainWindow : IDisposable
 
         AddFeatureItem(new DockItem(
             "officer",
-            _dockIconTexture,
+            GetFeatureIcon("officer"),
             positive,
             "Officer Chat",
             () => HasOfficerAccess,
@@ -913,7 +945,7 @@ public class MainWindow : IDisposable
 
         AddFeatureItem(new DockItem(
             "syncshell",
-            _dockIconTexture,
+            GetFeatureIcon("syncshell"),
             accent,
             "Syncshell",
             () => _config.FCSyncShell && _syncshellWindowHost != null,
