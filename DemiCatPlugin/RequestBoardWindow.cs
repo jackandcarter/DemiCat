@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
@@ -16,8 +17,8 @@ public class RequestBoardWindow
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, bool> _conflicts = new();
     private readonly GameDataCache _gameData;
-    private readonly HashSet<string> _itemLoads = new();
-    private readonly HashSet<string> _dutyLoads = new();
+    private readonly ConcurrentDictionary<string, byte> _itemLoads = new();
+    private readonly ConcurrentDictionary<string, byte> _dutyLoads = new();
 
     private string _newTitle = string.Empty;
     private string _newDescription = string.Empty;
@@ -250,16 +251,11 @@ public class RequestBoardWindow
         ImGui.SameLine();
         if (ImGui.Button("Requirements"))
         {
-            if (req.ItemId.HasValue && req.ItemData == null && !_itemLoads.Contains(req.Id))
-            {
-                _itemLoads.Add(req.Id);
+            if (req.ItemId.HasValue && req.ItemData == null && _itemLoads.TryAdd(req.Id, 0))
                 _ = LoadItem(req);
-            }
-            if (req.DutyId.HasValue && req.DutyData == null && !_dutyLoads.Contains(req.Id))
-            {
-                _dutyLoads.Add(req.Id);
+
+            if (req.DutyId.HasValue && req.DutyData == null && _dutyLoads.TryAdd(req.Id, 0))
                 _ = LoadDuty(req);
-            }
         }
 
         if (req.ItemData == null && !req.ItemId.HasValue && req.DutyData == null && !req.DutyId.HasValue)
@@ -375,7 +371,7 @@ public class RequestBoardWindow
         }
         finally
         {
-            _itemLoads.Remove(req.Id);
+            _itemLoads.TryRemove(req.Id, out _);
         }
     }
 
@@ -389,7 +385,7 @@ public class RequestBoardWindow
         }
         finally
         {
-            _dutyLoads.Remove(req.Id);
+            _dutyLoads.TryRemove(req.Id, out _);
         }
     }
 
