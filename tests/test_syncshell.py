@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from datetime import datetime
+from typing import Any
 
 import pytest
 
@@ -116,6 +117,43 @@ def test_manifest_rate_limit(tmp_path):
             with pytest.raises(syncshell.HTTPException) as exc:
                 await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert exc.value.status_code == 429
+    asyncio.run(_run())
+
+
+def test_manifest_concurrent_upload_budget_upsert(tmp_path):
+    async def _run():
+        session_factory = await _prepare_db()
+        manifest: dict[str, Any] | None = None
+
+        async with session_factory as db:
+            user = User(id=1, discord_user_id=1, global_name="Test")
+            db.add(user)
+            await db.commit()
+
+            ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
+            await syncshell.pair(ctx=ctx, db=db)
+
+            manifest, _ = build_manifest_payload(tmp_path)
+            await syncshell._reset_transfer_budgets(db)
+            db.add(SyncshellManifest(user_id=user.id, manifest_json="{}"))
+            await db.commit()
+            user_id = user.id
+
+        assert manifest is not None
+
+        async def _upload_once() -> dict[str, Any]:
+            async with get_session() as db:
+                db_user = await db.get(User, user_id)
+                assert db_user is not None
+                local_ctx = RequestContext(user=db_user, guild=None, key=object(), roles=[])
+                return await syncshell.upload_manifest(manifest, ctx=local_ctx, db=db)
+
+        first, second = await asyncio.gather(_upload_once(), _upload_once())
+
+        assert first["status"] == "ok"
+        assert second["status"] == "ok"
+
     asyncio.run(_run())
 
 
