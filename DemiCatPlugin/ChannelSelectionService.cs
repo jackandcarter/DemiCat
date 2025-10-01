@@ -7,6 +7,7 @@ public class ChannelSelectionService
 {
     private const string EventSelectionPrefix = "Event:";
     private static readonly string NormalizedEventKind = ChannelKeyHelper.NormalizeKind(ChannelKind.Event);
+    private static readonly string NormalizedRequestsKind = ChannelKeyHelper.NormalizeKind(ChannelKind.Requests);
     private static readonly string NormalizedFcKind = ChannelKeyHelper.NormalizeKind(ChannelKind.FcChat);
     private static readonly string NormalizedOfficerKind = ChannelKeyHelper.NormalizeKind(ChannelKind.OfficerChat);
     private static readonly string NormalizedChatKind = ChannelKeyHelper.NormalizeKind(ChannelKind.Chat);
@@ -58,6 +59,11 @@ public class ChannelSelectionService
         if (normalizedKind == NormalizedEventKind)
         {
             return _config.EventChannelId ?? string.Empty;
+        }
+
+        if (normalizedKind == NormalizedRequestsKind)
+        {
+            return _config.RequestsChannelId ?? string.Empty;
         }
 
         if (normalizedKind == NormalizedFcKind)
@@ -131,6 +137,9 @@ public class ChannelSelectionService
             {
                 case ChannelKind.Event:
                     _config.EventChannelId = id;
+                    break;
+                case ChannelKind.Requests:
+                    _config.RequestsChannelId = id;
                     break;
                 case ChannelKind.FcChat:
                     _config.FcChannelId = id;

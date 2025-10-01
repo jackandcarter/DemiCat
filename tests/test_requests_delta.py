@@ -57,7 +57,9 @@ sys.modules["discord.ext.commands"] = commands_mod
 from types import SimpleNamespace
 
 from demibot.db.models import (
+    ChannelKind,
     Guild,
+    GuildChannel,
     User,
     Request as DbRequest,
     RequestStatus,
@@ -146,6 +148,15 @@ def test_notify_posts_to_requests_channel_when_discord_guild_id_present(
             db.add(req)
             await db.commit()
             await db.refresh(req)
+            db.add(
+                GuildChannel(
+                    guild_id=guild.id,
+                    channel_id=123,
+                    kind=ChannelKind.REQUESTS,
+                    name="requests",
+                )
+            )
+            await db.commit()
             ctx = RequestContext(user=user, guild=guild, key=SimpleNamespace(), roles=[])
 
             async def fake_send_dm(*args, **kwargs):
@@ -155,6 +166,7 @@ def test_notify_posts_to_requests_channel_when_discord_guild_id_present(
 
             class DummyChannel:
                 def __init__(self) -> None:
+                    self.id = 123
                     self.name = "requests"
                     self.sent = []
 
@@ -162,7 +174,18 @@ def test_notify_posts_to_requests_channel_when_discord_guild_id_present(
                     self.sent.append((args, kwargs))
 
             channel = DummyChannel()
-            dummy_guild = SimpleNamespace(text_channels=[channel])
+
+            class DummyGuild:
+                def __init__(self, channel_obj) -> None:
+                    self._channel = channel_obj
+                    self.text_channels = [channel_obj]
+
+                def get_channel(self, channel_id: int):
+                    if channel_id == self._channel.id:
+                        return self._channel
+                    return None
+
+            dummy_guild = DummyGuild(channel)
 
             class DummyClient:
                 def __init__(self) -> None:

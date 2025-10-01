@@ -82,6 +82,7 @@ public class Config : IPluginConfiguration
     public Dictionary<string, long> RestChatCursors { get; set; } = new();
     public Dictionary<string, string> ChannelSelections { get; set; } = new();
     public string EventChannelId { get; set; } = string.Empty;
+    public string RequestsChannelId { get; set; } = string.Empty;
     public string FcChannelId { get; set; } = string.Empty;
     public string FcChannelName { get; set; } = string.Empty;
     public string OfficerChannelId { get; set; } = string.Empty;
@@ -350,6 +351,7 @@ public class Config : IPluginConfiguration
 
             EnsureSelection(ChannelKind.Chat, ChatChannelId);
             EnsureSelection(ChannelKind.Event, EventChannelId);
+            EnsureSelection(ChannelKind.Requests, RequestsChannelId);
             EnsureSelection(ChannelKind.FcChat, FcChannelId);
             EnsureSelection(ChannelKind.OfficerChat, OfficerChannelId);
 
@@ -366,6 +368,8 @@ public class Config : IPluginConfiguration
                     var kinds = new List<string>();
                     if (!string.IsNullOrEmpty(EventChannelId) && channelId == EventChannelId)
                         kinds.Add(ChannelKind.Event);
+                    if (!string.IsNullOrEmpty(RequestsChannelId) && channelId == RequestsChannelId)
+                        kinds.Add(ChannelKind.Requests);
                     if (!string.IsNullOrEmpty(FcChannelId) && channelId == FcChannelId)
                         kinds.Add(ChannelKind.FcChat);
                     if (!string.IsNullOrEmpty(OfficerChannelId) && channelId == OfficerChannelId)

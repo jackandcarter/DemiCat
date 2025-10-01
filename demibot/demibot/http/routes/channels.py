@@ -182,6 +182,7 @@ async def get_channels(
     # Allow fetching a single channel kind for plugin convenience
     single_kinds = {
         ChannelKind.EVENT.value: ChannelKind.EVENT,
+        ChannelKind.REQUESTS.value: ChannelKind.REQUESTS,
         ChannelKind.FC_CHAT.value: ChannelKind.FC_CHAT,
         ChannelKind.OFFICER_CHAT.value: ChannelKind.OFFICER_CHAT,
     }

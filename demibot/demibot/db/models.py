@@ -63,6 +63,7 @@ class InstallStatus(str, Enum):
 class ChannelKind(str, Enum):
     CHAT = "chat"
     EVENT = "event"
+    REQUESTS = "requests"
     FC_CHAT = "fc_chat"
     OFFICER_CHAT = "officer_chat"
     OFFICER_VISIBLE = "officer_visible"

@@ -93,6 +93,7 @@ def test_role_union_deduplication() -> None:
         guild = DummyGuild()
         view = ConfigWizard(guild, "title", "final", "done")
         view.event_channel_ids = [1]
+        view.requests_channel_id = 2
         view.fc_chat_channel_ids = [2]
         view.officer_chat_channel_ids = [3]
         view.officer_role_ids = [42]
