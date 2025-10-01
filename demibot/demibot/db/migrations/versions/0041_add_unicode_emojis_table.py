@@ -1,7 +1,8 @@
 """add unicode emojis table"""
 
-from pathlib import Path
 import json
+import logging
+from pathlib import Path
 
 from alembic import op
 import sqlalchemy as sa
@@ -23,24 +24,28 @@ def upgrade() -> None:
     )
 
     data_path = Path(__file__).resolve().parents[2] / "data" / "unicode_emojis.json"
-    try:
-        with data_path.open("r", encoding="utf-8") as f:
+    with data_path.open("r", encoding="utf-8") as f:
+        try:
             data = json.load(f)
-        emoji_table = table(
-            "unicode_emojis",
-            column("emoji", sa.String),
-            column("name", sa.String),
-            column("image_url", sa.String),
-        )
-        op.bulk_insert(
-            emoji_table,
-            [
-                {"emoji": e.get("emoji"), "name": e.get("name"), "image_url": e.get("imageUrl")}
-                for e in data
-            ],
-        )
-    except Exception:
-        pass
+        except json.JSONDecodeError as exc:
+            logging.getLogger(__name__).exception(
+                "Failed to parse unicode emoji dataset at %s", data_path
+            )
+            raise exc
+
+    emoji_table = table(
+        "unicode_emojis",
+        column("emoji", sa.String),
+        column("name", sa.String),
+        column("image_url", sa.String),
+    )
+    op.bulk_insert(
+        emoji_table,
+        [
+            {"emoji": e.get("emoji"), "name": e.get("name"), "image_url": e.get("imageUrl")}
+            for e in data
+        ],
+    )
 
 
 def downgrade() -> None:
