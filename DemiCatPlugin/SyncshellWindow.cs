@@ -2891,7 +2891,7 @@ public class SyncshellWindow : IDisposable
 
         void HandleCustomizePlusProfileChanged(string _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
         void HandleCustomizePlusProfileChangedGuid(Guid _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
-        void HandleCustomizePlusProfileChangedObj(object? _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
+        void HandleCustomizePlusProfileChangedFallback() => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
         TrySubscribeAny(
             "Customize.ProfileChanged",
             () =>
@@ -2909,7 +2909,7 @@ public class SyncshellWindow : IDisposable
             () =>
             {
                 var subscriber = pi.GetIpcSubscriber<object?>("Customize.ProfileChanged");
-                Action<object?> handler = HandleCustomizePlusProfileChangedObj;
+                Action handler = HandleCustomizePlusProfileChangedFallback;
                 subscriber.Subscribe(handler);
                 return () =>
                 {
@@ -2919,7 +2919,7 @@ public class SyncshellWindow : IDisposable
 
         void HandleCustomizePlusProfileApplied(string _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
         void HandleCustomizePlusProfileAppliedGuid(Guid _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
-        void HandleCustomizePlusProfileAppliedObj(object? _) => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
+        void HandleCustomizePlusProfileAppliedFallback() => HandleLocalStateChanged(LocalStateChangeSource.CustomizePlus);
         TrySubscribeAny(
             "Customize.ProfileApplied",
             () =>
@@ -2937,7 +2937,7 @@ public class SyncshellWindow : IDisposable
             () =>
             {
                 var subscriber = pi.GetIpcSubscriber<object?>("Customize.ProfileApplied");
-                Action<object?> handler = HandleCustomizePlusProfileAppliedObj;
+                Action handler = HandleCustomizePlusProfileAppliedFallback;
                 subscriber.Subscribe(handler);
                 return () =>
                 {
@@ -2947,7 +2947,7 @@ public class SyncshellWindow : IDisposable
 
         void HandleSimpleHeelsProfileChanged(string _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
         void HandleSimpleHeelsProfileChangedGuid(Guid _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
-        void HandleSimpleHeelsProfileChangedObj(object? _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
+        void HandleSimpleHeelsProfileChangedFallback() => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
         TrySubscribeAny(
             "SimpleHeels.ProfileChanged",
             () =>
@@ -2965,7 +2965,7 @@ public class SyncshellWindow : IDisposable
             () =>
             {
                 var subscriber = pi.GetIpcSubscriber<object?>("SimpleHeels.ProfileChanged");
-                Action<object?> handler = HandleSimpleHeelsProfileChangedObj;
+                Action handler = HandleSimpleHeelsProfileChangedFallback;
                 subscriber.Subscribe(handler);
                 return () =>
                 {
@@ -2975,7 +2975,7 @@ public class SyncshellWindow : IDisposable
 
         void HandleSimpleHeelsProfileApplied(string _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
         void HandleSimpleHeelsProfileAppliedGuid(Guid _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
-        void HandleSimpleHeelsProfileAppliedObj(object? _) => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
+        void HandleSimpleHeelsProfileAppliedFallback() => HandleLocalStateChanged(LocalStateChangeSource.SimpleHeels);
         TrySubscribeAny(
             "SimpleHeels.ProfileApplied",
             () =>
@@ -2993,7 +2993,7 @@ public class SyncshellWindow : IDisposable
             () =>
             {
                 var subscriber = pi.GetIpcSubscriber<object?>("SimpleHeels.ProfileApplied");
-                Action<object?> handler = HandleSimpleHeelsProfileAppliedObj;
+                Action handler = HandleSimpleHeelsProfileAppliedFallback;
                 subscriber.Subscribe(handler);
                 return () =>
                 {
