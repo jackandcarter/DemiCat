@@ -2,6 +2,7 @@ import sys
 import types
 from pathlib import Path
 import asyncio
+from datetime import datetime
 
 root = Path(__file__).resolve().parents[1] / "demibot"
 sys.path.append(str(root))
@@ -97,7 +98,7 @@ async def _setup_db(db_path: str) -> None:
     await init_db(f"sqlite+aiosqlite:///{db_path}")
     async with get_session() as db:
         guild = Guild(id=1, discord_guild_id=1, name="Test Guild")
-        user = User(id=1, discord_user_id=1)
+        user = User(id=1, discord_user_id=1, global_name="Test User")
         db.add_all([guild, user])
         await db.commit()
 
@@ -127,6 +128,7 @@ def test_requests_delta(db_setup):
             db.add(req)
             await db.commit()
             await db.refresh(req)
+            created_at = req.created_at
             ctx = RequestContext(user=user, guild=guild, key=SimpleNamespace(), roles=[])
             since = req.updated_at
             # no changes yet
@@ -139,14 +141,45 @@ def test_requests_delta(db_setup):
             # delete request
             await request_routes.delete_request(request_id=req.id, ctx=ctx, db=db)
             res3 = await request_routes.list_request_deltas(since=since2, ctx=ctx, db=db)
-            return res1, res2, res3
-    first, second, third = asyncio.run(run())
+            return res1, res2, res3, created_at
+    first, second, third, created_at = asyncio.run(run())
     assert first == []
     assert len(second) == 1
     assert second[0]["title"] == "Updated"
+    assert second[0]["createdBy"] == "Test User"
+    assert datetime.fromisoformat(second[0]["created"]) == created_at
     assert len(third) == 1
     assert third[0]["deleted"] is True
     assert third[0]["id"] == "1"
+
+
+def test_list_requests_includes_creator_fields(db_setup):
+    async def run():
+        async with get_session() as db:
+            guild = await db.get(Guild, 1)
+            user = await db.get(User, 1)
+            req = DbRequest(
+                id=2,
+                guild_id=guild.id,
+                user_id=user.id,
+                title="List Test",
+                type=RequestType.ITEM,
+                status=RequestStatus.OPEN,
+                urgency=Urgency.MEDIUM,
+            )
+            db.add(req)
+            await db.commit()
+            await db.refresh(req)
+            created_at = req.created_at
+            ctx = RequestContext(user=user, guild=guild, key=SimpleNamespace(), roles=[])
+            results = await request_routes.list_requests(ctx=ctx, db=db)
+            return results, created_at
+
+    results, created_at = asyncio.run(run())
+    assert len(results) == 1
+    payload = results[0]
+    assert payload["createdBy"] == "Test User"
+    assert datetime.fromisoformat(payload["created"]) == created_at
 
 
 def test_notify_posts_to_requests_channel_when_discord_guild_id_present(db_setup):

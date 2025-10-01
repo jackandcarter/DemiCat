@@ -7,7 +7,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 import logging
 import discord
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -57,6 +57,7 @@ class StatusBody(BaseModel):
 
 # lightweight DTO for plugin consumption
 class RequestDto(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
     id: str
     title: str
     description: str | None = None
@@ -69,6 +70,8 @@ class RequestDto(BaseModel):
     hq: bool | None = None
     quantity: int | None = None
     assignee_id: int | None = Field(default=None, alias="assigneeId")
+    created_by: str | None = Field(default=None, alias="createdBy")
+    created: datetime | None = None
 
 
 def _status(status: RequestStatus) -> str:
@@ -80,6 +83,15 @@ def _dto(req: DbRequest) -> dict[str, Any]:
     quantity = req.items[0].quantity if req.items else None
     hq = req.items[0].hq if req.items else None
     duty_id = req.runs[0].run_id if req.runs else None
+    created_by: str | None = None
+    requester = getattr(req, "requester", None)
+    if requester is not None:
+        created_by = (
+            requester.global_name
+            or requester.character_name
+            or (str(requester.discord_user_id) if requester.discord_user_id is not None else None)
+            or str(requester.id)
+        )
     dto = RequestDto(
         id=str(req.id),
         title=req.title,
@@ -93,6 +105,8 @@ def _dto(req: DbRequest) -> dict[str, Any]:
         hq=hq,
         quantity=quantity,
         assignee_id=req.assignee_id,
+        created_by=created_by,
+        created=req.created_at,
     )
     return dto.model_dump(mode="json", by_alias=True, exclude_none=True)
 
@@ -103,7 +117,11 @@ async def _load_request_with_children(
     result = await db.execute(
         select(DbRequest)
         .where(DbRequest.id == request_id)
-        .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
+        .options(
+            selectinload(DbRequest.items),
+            selectinload(DbRequest.runs),
+            selectinload(DbRequest.requester),
+        )
     )
     return result.scalars().one_or_none()
 
@@ -214,7 +232,11 @@ async def list_requests(
     result = await db.execute(
         select(DbRequest)
         .where(DbRequest.guild_id == ctx.guild.id)
-        .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
+        .options(
+            selectinload(DbRequest.items),
+            selectinload(DbRequest.runs),
+            selectinload(DbRequest.requester),
+        )
     )
     return [_dto(r) for r in result.scalars()]
 
@@ -231,7 +253,11 @@ async def list_request_deltas(
             DbRequest.guild_id == ctx.guild.id,
             DbRequest.updated_at > since,
         )
-        .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
+        .options(
+            selectinload(DbRequest.items),
+            selectinload(DbRequest.runs),
+            selectinload(DbRequest.requester),
+        )
     )
     deltas = [_dto(r) for r in result.scalars()]
     tombstones = await db.execute(
@@ -354,7 +380,11 @@ async def _update_status(
     result = await db.execute(
         select(DbRequest)
         .where(DbRequest.id == request_id)
-        .options(selectinload(DbRequest.items), selectinload(DbRequest.runs))
+        .options(
+            selectinload(DbRequest.items),
+            selectinload(DbRequest.runs),
+            selectinload(DbRequest.requester),
+        )
     )
     return result.scalars().one()
 

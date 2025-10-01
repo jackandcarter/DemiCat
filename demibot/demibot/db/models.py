@@ -646,6 +646,10 @@ class Request(Base):
 
     __mapper_args__ = {"version_id_col": version}
 
+    requester: Mapped["User"] = relationship("User", foreign_keys=[user_id])
+    assignee: Mapped[Optional["User"]] = relationship(
+        "User", foreign_keys=[assignee_id]
+    )
     items: Mapped[list["RequestItem"]] = relationship(
         back_populates="request", cascade="all, delete-orphan"
     )
