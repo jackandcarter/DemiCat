@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net.Http;
 using System.Numerics;
@@ -7,6 +8,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using DemiCatPlugin.Emoji;
+using StbImageSharp;
 
 namespace DemiCatPlugin;
 
@@ -45,11 +47,13 @@ public class MainWindow : IDisposable
     private SyncshellDockableWindow? _syncshellWindowHost;
 
     private ISharedImmediateTexture? _dockIconTexture;
+    private ISharedImmediateTexture? _settingsIconTexture;
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
     private bool _styleNeedsUpdate = true;
     private bool _hasOfficerAccess;
     private bool _isOpen;
+    private DockItem? _settingsDockItem;
 
     public bool HasOfficerAccess
     {
@@ -244,8 +248,10 @@ public class MainWindow : IDisposable
             SaveConfig();
         }
 
-        var visibleItems = _dockItems.Where(i => i.IsVisible()).ToList();
-        if (visibleItems.Count == 0)
+        var visibleFeatures = _dockItems.Where(i => i.IsVisible()).ToList();
+        var settingsItem = _settingsDockItem;
+        var settingsVisible = settingsItem?.IsVisible() ?? false;
+        if (!settingsVisible && visibleFeatures.Count == 0)
         {
             return;
         }
@@ -253,9 +259,18 @@ public class MainWindow : IDisposable
         var iconScale = GetIconScale();
         var padding = GetPadding(iconScale);
         var spacing = GetSpacing(iconScale);
+        var separatorThickness = settingsVisible && visibleFeatures.Count > 0
+            ? GetSeparatorThickness(spacing)
+            : 0f;
         var iconSize = new Vector2(BaseIconSize * iconScale, BaseIconSize * iconScale);
         var indicatorHeight = IndicatorRadius * 2f * iconScale + spacing * 0.75f;
-        var iconAreaWidth = iconSize.X * visibleItems.Count + spacing * Math.Max(0, visibleItems.Count - 1);
+        var buttonCount = visibleFeatures.Count + (settingsVisible ? 1 : 0);
+        var spacingCount = Math.Max(0, visibleFeatures.Count - 1);
+        if (settingsVisible && visibleFeatures.Count > 0)
+        {
+            spacingCount += 2;
+        }
+        var iconAreaWidth = iconSize.X * buttonCount + spacing * spacingCount + separatorThickness;
         var iconAreaHeight = iconSize.Y;
         var totalWidth = iconAreaWidth + padding * 2f;
         var totalHeight = iconAreaHeight + padding * 2f + indicatorHeight;
@@ -287,10 +302,9 @@ public class MainWindow : IDisposable
         ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
 
         var open = true;
-        var reordered = false;
         if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
         {
-            reordered = DrawDockStrip(visibleItems, iconSize, spacing, indicatorHeight, stripColor, accentColor);
+            _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, stripColor, accentColor);
             DrawDockContextMenu();
         }
         var windowPos = ImGui.GetWindowPos();
@@ -312,11 +326,6 @@ public class MainWindow : IDisposable
                 _config.DockPositionInitialized = true;
                 SaveConfig();
             }
-        }
-
-        if (reordered)
-        {
-            visibleItems = _dockItems.Where(i => i.IsVisible()).ToList();
         }
 
         DrawFeatureWindows();
@@ -376,6 +385,7 @@ public class MainWindow : IDisposable
         try
         {
             (_dockIconTexture?.GetWrapOrEmpty() as IDisposable)?.Dispose();
+            (_settingsIconTexture?.GetWrapOrEmpty() as IDisposable)?.Dispose();
         }
         catch
         {
@@ -383,6 +393,7 @@ public class MainWindow : IDisposable
         }
 
         _dockIconTexture = null;
+        _settingsIconTexture = null;
         _syncshell?.Dispose();
     }
 
@@ -395,17 +406,38 @@ public class MainWindow : IDisposable
     }
 
     private bool DrawDockStrip(
-        IReadOnlyList<DockItem> items,
+        IReadOnlyList<DockItem> featureItems,
+        DockItem? settingsItem,
         Vector2 iconSize,
         float spacing,
+        float separatorThickness,
         float indicatorHeight,
         Vector4 stripColor,
         Vector4 indicatorColor)
     {
         var drawList = ImGui.GetWindowDrawList();
         var iconStart = ImGui.GetCursorScreenPos();
+        var hasSettings = settingsItem != null && settingsItem.IsVisible();
+        var iconCount = featureItems.Count + (hasSettings ? 1 : 0);
+        if (iconCount == 0)
+        {
+            return false;
+        }
+
+        int CalculateSpacingCount()
+        {
+            var count = Math.Max(0, featureItems.Count - 1);
+            if (hasSettings && featureItems.Count > 0)
+            {
+                count += 2;
+            }
+
+            return count;
+        }
+
         var iconAreaSize = new Vector2(
-            iconSize.X * items.Count + spacing * Math.Max(0, items.Count - 1),
+            iconSize.X * iconCount + spacing * CalculateSpacingCount()
+                + (hasSettings ? separatorThickness : 0f),
             iconSize.Y);
 
         var stripMin = iconStart - new Vector2(spacing * 0.75f, spacing * 0.75f);
@@ -415,14 +447,14 @@ public class MainWindow : IDisposable
         ImGui.SetCursorScreenPos(iconStart);
 
         var reordered = false;
-        for (var i = 0; i < items.Count; i++)
+        for (var i = 0; i < featureItems.Count; i++)
         {
             if (i > 0)
             {
                 ImGui.SameLine(0f, spacing);
             }
 
-            var item = items[i];
+            var item = featureItems[i];
             var enabled = item.IsEnabled();
 
             ImGui.PushID(item.Id);
@@ -490,6 +522,68 @@ public class MainWindow : IDisposable
             }
 
             if (item.GetIsOpen())
+            {
+                var rectMin = ImGui.GetItemRectMin();
+                var rectMax = ImGui.GetItemRectMax();
+                var center = new Vector2((rectMin.X + rectMax.X) * 0.5f, rectMax.Y + IndicatorRadius * ImGui.GetIO().FontGlobalScale * 0.5f);
+                var radius = IndicatorRadius * MathF.Max(1f, iconSize.X / BaseIconSize);
+                center.Y += radius + spacing * 0.1f;
+                drawList.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(indicatorColor));
+            }
+
+            ImGui.PopID();
+        }
+
+        if (hasSettings)
+        {
+            if (featureItems.Count > 0)
+            {
+                ImGui.SameLine(0f, spacing);
+                ImGui.PushID("settings-separator");
+                ImGui.Dummy(new Vector2(separatorThickness, iconSize.Y));
+                var separatorMin = ImGui.GetItemRectMin();
+                var separatorMax = ImGui.GetItemRectMax();
+                var separatorX = (separatorMin.X + separatorMax.X) * 0.5f;
+                drawList.AddLine(
+                    new Vector2(separatorX, separatorMin.Y),
+                    new Vector2(separatorX, separatorMax.Y),
+                    ImGui.GetColorU32(ImGuiCol.Separator));
+                ImGui.PopID();
+                ImGui.SameLine(0f, spacing);
+            }
+            else
+            {
+                ImGui.SetCursorScreenPos(iconStart);
+            }
+
+            var settings = settingsItem!;
+            var enabled = settings.IsEnabled();
+
+            ImGui.PushID(settings.Id);
+
+            if (!enabled)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            var clicked = DrawDockButton(settings, iconSize);
+
+            if (!enabled)
+            {
+                ImGui.EndDisabled();
+            }
+
+            if (clicked && enabled)
+            {
+                settings.SetIsOpen(!settings.GetIsOpen());
+            }
+
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(settings.Tooltip);
+            }
+
+            if (settings.GetIsOpen())
             {
                 var rectMin = ImGui.GetItemRectMin();
                 var rectMax = ImGui.GetItemRectMax();
@@ -603,6 +697,9 @@ public class MainWindow : IDisposable
     private float GetSpacing(float iconScale)
         => BaseSpacing * iconScale;
 
+    private float GetSeparatorThickness(float spacing)
+        => MathF.Max(1f, spacing * 0.35f);
+
     private Vector2 GetDockPosition(Vector2 dockSize)
     {
         if (_config.DockRememberPosition)
@@ -650,35 +747,79 @@ public class MainWindow : IDisposable
 
     private void EnsureDockIconTexture()
     {
-        if (_dockIconTexture != null)
+        var provider = PluginServices.Instance?.TextureProvider;
+        if (provider == null)
             return;
 
-        IDalamudTextureWrap? wrap = null;
+        if (_dockIconTexture == null)
+        {
+            IDalamudTextureWrap? wrap = null;
+            try
+            {
+                var pixel = new byte[] { 255, 255, 255, 255 };
+                var createdWrap = provider.CreateFromRaw(RawImageSpecification.Rgba32(1, 1), pixel);
+                wrap = createdWrap;
+                _dockIconTexture = new ForwardingSharedImmediateTexture(createdWrap);
+                wrap = null;
+            }
+            catch
+            {
+                _dockIconTexture = null;
+                wrap?.Dispose();
+            }
+        }
+
+        if (_settingsIconTexture != null)
+            return;
+
+        var pluginDirectory = PluginServices.Instance?.PluginInterface.AssemblyLocation.Directory;
+        if (pluginDirectory == null)
+            return;
+
+        var settingsIconPath = Path.Combine(pluginDirectory.FullName, "settingscog.png");
+        if (!File.Exists(settingsIconPath))
+            return;
+
+        ImageResult? image = null;
         try
         {
-            var provider = PluginServices.Instance?.TextureProvider;
-            if (provider == null)
-                return;
-
-            var pixel = new byte[] { 255, 255, 255, 255 };
-            var createdWrap = provider.CreateFromRaw(RawImageSpecification.Rgba32(1, 1), pixel);
-            wrap = createdWrap;
-            _dockIconTexture = new ForwardingSharedImmediateTexture(createdWrap);
-            wrap = null;
+            var payload = File.ReadAllBytes(settingsIconPath);
+            image = ImageResult.FromMemory(payload, ColorComponents.RedGreenBlueAlpha);
         }
         catch
         {
-            _dockIconTexture = null;
-            wrap?.Dispose();
+            return;
+        }
+
+        if (image == null)
+            return;
+
+        IDalamudTextureWrap? settingsWrap = null;
+        try
+        {
+            settingsWrap = provider.CreateFromRaw(
+                RawImageSpecification.Rgba32(image.Width, image.Height),
+                image.Data);
+            _settingsIconTexture = new ForwardingSharedImmediateTexture(settingsWrap);
+            settingsWrap = null;
+        }
+        catch
+        {
+            _settingsIconTexture = null;
+        }
+        finally
+        {
+            settingsWrap?.Dispose();
         }
     }
 
     private void BuildDockItems()
     {
         _dockItems.Clear();
+        EnsureDockIconTexture();
         var defaultDockOrder = new List<string>();
 
-        void AddDockItem(DockItem item)
+        void AddFeatureItem(DockItem item)
         {
             _dockItems.Add(item);
             defaultDockOrder.Add(item.Id);
@@ -689,7 +830,7 @@ public class MainWindow : IDisposable
         var warning = new Vector4(1f, 0.62f, 0.2f, 1f);
         var neutral = new Vector4(0.8f, 0.8f, 0.8f, 1f);
 
-        AddDockItem(new DockItem(
+        AddFeatureItem(new DockItem(
             "events",
             _dockIconTexture,
             accent,
@@ -700,7 +841,7 @@ public class MainWindow : IDisposable
             v => _eventsWindowHost.IsOpen = v,
             _eventsWindowHost.Draw));
 
-        AddDockItem(new DockItem(
+        AddFeatureItem(new DockItem(
             "create",
             _dockIconTexture,
             positive,
@@ -711,7 +852,7 @@ public class MainWindow : IDisposable
             v => _eventCreateWindowHost.IsOpen = v,
             _eventCreateWindowHost.Draw));
 
-        AddDockItem(new DockItem(
+        AddFeatureItem(new DockItem(
             "templates",
             _dockIconTexture,
             mutedAccent,
@@ -722,7 +863,7 @@ public class MainWindow : IDisposable
             v => _templatesWindowHost.IsOpen = v,
             _templatesWindowHost.Draw));
 
-        AddDockItem(new DockItem(
+        AddFeatureItem(new DockItem(
             "notepad",
             _dockIconTexture,
             neutral,
@@ -733,7 +874,7 @@ public class MainWindow : IDisposable
             v => _notePadWindowHost.IsOpen = v,
             _notePadWindowHost.Draw));
 
-        AddDockItem(new DockItem(
+        AddFeatureItem(new DockItem(
             "requests",
             _dockIconTexture,
             warning,
@@ -747,7 +888,7 @@ public class MainWindow : IDisposable
         var chat = _chat;
         if (_chatWindowHost != null && chat != null)
         {
-            AddDockItem(new DockItem(
+            AddFeatureItem(new DockItem(
                 "chat",
                 _dockIconTexture,
                 accent,
@@ -759,7 +900,7 @@ public class MainWindow : IDisposable
                 _chatWindowHost.Draw));
         }
 
-        AddDockItem(new DockItem(
+        AddFeatureItem(new DockItem(
             "officer",
             _dockIconTexture,
             positive,
@@ -770,7 +911,7 @@ public class MainWindow : IDisposable
             v => _officerWindowHost.IsOpen = v,
             _officerWindowHost.Draw));
 
-        AddDockItem(new DockItem(
+        AddFeatureItem(new DockItem(
             "syncshell",
             _dockIconTexture,
             accent,
@@ -787,16 +928,18 @@ public class MainWindow : IDisposable
             },
             () => _syncshellWindowHost?.Draw()));
 
-        AddDockItem(new DockItem(
+        var settingsIcon = _settingsIconTexture ?? _dockIconTexture;
+        var settingsTint = _settingsIconTexture != null ? Vector4.One : neutral;
+        _settingsDockItem = new DockItem(
             "settings",
-            _dockIconTexture,
-            neutral,
+            settingsIcon,
+            settingsTint,
             "Settings",
             () => true,
             () => true,
             () => _settings.IsOpen,
             v => _settings.IsOpen = v,
-            () => { }));
+            () => { });
 
         var storedOrder = _config.DockOrder ?? new List<string>();
         var knownIds = new HashSet<string>(defaultDockOrder);
