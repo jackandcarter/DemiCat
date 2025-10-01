@@ -995,12 +995,20 @@ public sealed class NotePadSection
 
 public sealed class NotePadPage
 {
+    private string _color = NotePadColorHelper.DefaultHexColor;
+
     public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public int Version { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
-    public string? Color { get; set; }
+
+    [JsonConverter(typeof(NotePadColorJsonConverter))]
+    public string Color
+    {
+        get => _color;
+        set => _color = NotePadColorHelper.Normalize(value);
+    }
 }
 
 public sealed class NotePadListResponse
