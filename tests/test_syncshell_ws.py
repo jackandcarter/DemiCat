@@ -2,7 +2,9 @@ import asyncio
 import json
 from datetime import datetime, timedelta
 
+import pytest
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from demibot.http.api import create_app
 from demibot.db.models import (
@@ -102,3 +104,47 @@ def test_syncshell_websocket_hello_and_manifest(tmp_path):
 
     stored_manifest = asyncio.run(_fetch_manifest())
     assert stored_manifest["protocolVersion"] == 1
+
+
+def test_syncshell_websocket_manifest_rejected_when_budget_exhausted(tmp_path):
+    asyncio.run(_prepare_db())
+
+    manifest, _ = build_manifest_payload(tmp_path)
+    original_budget = syncshell.TRANSFER_BUDGET_BYTES
+    original_window = syncshell.TRANSFER_BUDGET_WINDOW_SECONDS
+    syncshell.TRANSFER_BUDGET_BYTES = 30
+    syncshell.TRANSFER_BUDGET_WINDOW_SECONDS = 3600
+
+    app = create_app()
+    client = TestClient(app)
+
+    try:
+        asyncio.run(_reset_budgets())
+
+        with client.websocket_connect(
+            "/ws/syncshell", headers={"X-Api-Key": "syncshell-token"}
+        ) as websocket:
+            websocket.send_json(
+                {
+                    "type": "hello",
+                    "payload": {
+                        "version": 1,
+                        "limits": {
+                            "bytesPerSecond": 512 * 1024,
+                            "chunkSizeBytes": 64 * 1024,
+                            "maxOutstandingWants": 64,
+                        },
+                    },
+                }
+            )
+            websocket.receive_json()
+
+            websocket.send_json({"type": "manifest", "payload": {"manifest": manifest}})
+            with pytest.raises(WebSocketDisconnect) as disconnect:
+                websocket.receive_json()
+            assert disconnect.value.code == 1008
+            assert disconnect.value.reason == "transfer budget exhausted"
+    finally:
+        syncshell.TRANSFER_BUDGET_BYTES = original_budget
+        syncshell.TRANSFER_BUDGET_WINDOW_SECONDS = original_window
+        asyncio.run(_reset_budgets())

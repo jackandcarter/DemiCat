@@ -114,8 +114,11 @@ def test_transfer_budget_throttles_when_exceeded(tmp_path):
 
             manifest, _ = build_manifest_payload(tmp_path)
             await syncshell._reset_transfer_budgets(db)
-            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
-            budget = response["limits"]["budget"]
+            with pytest.raises(syncshell.HTTPException) as exc:
+                await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+            assert exc.value.status_code == 429
+
+            budget = await syncshell._get_transfer_budget_payload(ctx.user.id, db)
             assert budget["usedBytes"] >= syncshell.TRANSFER_BUDGET_BYTES
             assert budget["throttleAfterBytes"] == 0
     asyncio.run(_run())
