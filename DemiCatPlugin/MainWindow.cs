@@ -164,7 +164,8 @@ public class MainWindow : IDisposable
                 _chat,
                 IsLinked,
                 opacityProvider,
-                linkPrompt);
+                linkPrompt,
+                Config.FadePreferenceKeys.Chat);
             _windowHosts.Add(_chatWindowHost);
         }
 

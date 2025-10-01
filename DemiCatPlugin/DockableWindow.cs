@@ -24,7 +24,9 @@ public abstract class DockableWindow
 
     protected virtual ImGuiWindowFlags WindowFlags => ImGuiWindowFlags.NoCollapse;
     protected virtual bool UseThemedColors => true;
-    public virtual bool SupportsFade => false;
+    protected virtual string? FadePreferenceKey => null;
+    protected virtual bool FadeEnabledByDefault => false;
+    public virtual bool SupportsFade => _config.IsWindowFadeEnabled(FadePreferenceKey, FadeEnabledByDefault);
     protected virtual float BaseOpacity => 1f;
 
     public bool IsOpen

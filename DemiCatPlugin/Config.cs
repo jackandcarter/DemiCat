@@ -19,6 +19,18 @@ public class Config : IPluginConfiguration
     public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
     public static readonly Vector4 DefaultDockBackgroundColor = new(0.11f, 0.11f, 0.12f, 0.9f);
 
+    public static class FadePreferenceKeys
+    {
+        public const string Events = "events";
+        public const string EventCreate = "create";
+        public const string Templates = "templates";
+        public const string NotePad = "notepad";
+        public const string Requests = "requests";
+        public const string Chat = "chat";
+        public const string OfficerChat = "officer";
+        public const string Syncshell = "syncshell";
+    }
+
     // Required by Dalamud
     public const float MinEmojiTileSize = 16f;
     public const float MaxEmojiTileSize = 64f;
@@ -27,7 +39,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 21;
+    public const int CurrentVersion = 22;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -84,6 +96,9 @@ public class Config : IPluginConfiguration
     public bool ChatFadeOutEnabled { get; set; } = false;
     public int ChatFadeOutDelaySeconds { get; set; } = 10;
     public float ChatFadeOutMinimumAlpha { get; set; } = 0.3f;
+
+    [JsonPropertyName("windowFadePreferences")]
+    public Dictionary<string, bool> WindowFadePreferences { get; set; } = new();
 
     [JsonPropertyName("dockVisible")]
     public bool DockVisible { get; set; } = true;
@@ -632,6 +647,14 @@ public class Config : IPluginConfiguration
             Version = 21;
             ExtensionData = null;
         }
+
+        if (Version < 22)
+        {
+            WindowFadePreferences ??= new Dictionary<string, bool>();
+
+            Version = 22;
+            ExtensionData = null;
+        }
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)
@@ -742,6 +765,41 @@ public class Config : IPluginConfiguration
         {
             DockAutoShow.Remove(id);
         }
+    }
+
+    public bool IsWindowFadeEnabled(string? id, bool defaultValue)
+    {
+        if (!ChatFadeOutEnabled)
+        {
+            return false;
+        }
+
+        if (WindowFadePreferences == null)
+        {
+            WindowFadePreferences = new Dictionary<string, bool>();
+        }
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return defaultValue;
+        }
+
+        return WindowFadePreferences.TryGetValue(id, out var enabled) ? enabled : defaultValue;
+    }
+
+    public void SetWindowFadePreference(string? id, bool enabled)
+    {
+        if (WindowFadePreferences == null)
+        {
+            WindowFadePreferences = new Dictionary<string, bool>();
+        }
+
+        if (string.IsNullOrWhiteSpace(id))
+        {
+            return;
+        }
+
+        WindowFadePreferences[id] = enabled;
     }
 
     internal static uint SanitizeRgb(uint value, uint fallback)

@@ -15,6 +15,8 @@ public sealed class EventsDockableWindow : DockableWindow
         _isLinked = isLinked;
     }
 
+    protected override string? FadePreferenceKey => Config.FadePreferenceKeys.Events;
+
     protected override void OnOpened()
     {
         _ = _ui.StartNetworking();
@@ -51,6 +53,8 @@ public sealed class EventCreateDockableWindow : DockableWindow
         _isLinked = isLinked;
     }
 
+    protected override string? FadePreferenceKey => Config.FadePreferenceKeys.EventCreate;
+
     protected override void OnOpened()
     {
         _window.StartNetworking();
@@ -82,6 +86,8 @@ public sealed class TemplatesDockableWindow : DockableWindow
         _window = window;
         _isLinked = isLinked;
     }
+
+    protected override string? FadePreferenceKey => Config.FadePreferenceKeys.Templates;
 
     protected override void OnOpened()
     {
@@ -127,6 +133,8 @@ public sealed class NotePadDockableWindow : DockableWindow
         _window = window;
     }
 
+    protected override string? FadePreferenceKey => Config.FadePreferenceKeys.NotePad;
+
     protected override void DrawContents()
     {
         DrawHeaderWithSettingsButton();
@@ -152,6 +160,8 @@ public sealed class RequestBoardDockableWindow : DockableWindow
         _window = window;
         _isLinked = isLinked;
     }
+
+    protected override string? FadePreferenceKey => Config.FadePreferenceKeys.Requests;
 
     protected override void DrawContents()
     {
@@ -179,6 +189,8 @@ public sealed class SyncshellDockableWindow : DockableWindow
         _isLinked = isLinked;
     }
 
+    protected override string? FadePreferenceKey => Config.FadePreferenceKeys.Syncshell;
+
     protected override void DrawContents()
     {
         DrawHeaderWithSettingsButton();
@@ -199,6 +211,7 @@ public class ChatDockableWindow : DockableWindow
     private readonly Func<bool> _isLinked;
     private readonly Func<float> _opacityProvider;
     private readonly string _linkPrompt;
+    private readonly string _fadePreferenceKey;
 
     public ChatDockableWindow(
         Config config,
@@ -206,16 +219,20 @@ public class ChatDockableWindow : DockableWindow
         ChatWindow chatWindow,
         Func<bool> isLinked,
         Func<float> opacityProvider,
-        string linkPrompt)
+        string linkPrompt,
+        string fadePreferenceKey)
         : base(config, windowTitle)
     {
         _chatWindow = chatWindow;
         _isLinked = isLinked;
         _opacityProvider = opacityProvider;
         _linkPrompt = linkPrompt;
+        _fadePreferenceKey = fadePreferenceKey;
     }
 
-    public override bool SupportsFade => true;
+    protected override string? FadePreferenceKey => _fadePreferenceKey;
+
+    protected override bool FadeEnabledByDefault => true;
 
     protected override float BaseOpacity => Math.Clamp(_opacityProvider(), 0f, 1f);
 
@@ -270,7 +287,8 @@ public sealed class OfficerChatDockableWindow : ChatDockableWindow
             officerChat,
             isLinked,
             () => config.OfficerChatOpacity,
-            "Link DemiCat to use officer chat.")
+            "Link DemiCat to use officer chat.",
+            Config.FadePreferenceKeys.OfficerChat)
     {
         _officerChat = officerChat;
         _hasOfficerAccess = hasOfficerAccess;
