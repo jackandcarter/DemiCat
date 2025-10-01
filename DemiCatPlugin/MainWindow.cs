@@ -846,6 +846,16 @@ public class MainWindow : IDisposable
         }
     }
 
+    private Vector4 GetIconTint(ISharedImmediateTexture? icon, Vector4 accentTint)
+    {
+        if (icon == null)
+        {
+            return accentTint;
+        }
+
+        return ReferenceEquals(icon, _dockIconTexture) ? accentTint : Vector4.One;
+    }
+
     private void BuildDockItems()
     {
         _dockItems.Clear();
@@ -863,10 +873,11 @@ public class MainWindow : IDisposable
         var warning = new Vector4(1f, 0.62f, 0.2f, 1f);
         var neutral = new Vector4(0.8f, 0.8f, 0.8f, 1f);
 
+        var eventsIcon = GetFeatureIcon("events");
         AddFeatureItem(new DockItem(
             "events",
-            GetFeatureIcon("events"),
-            accent,
+            eventsIcon,
+            GetIconTint(eventsIcon, accent),
             "Events",
             () => _config.Events,
             () => IsLinked(),
@@ -874,10 +885,11 @@ public class MainWindow : IDisposable
             v => _eventsWindowHost.IsOpen = v,
             _eventsWindowHost.Draw));
 
+        var createIcon = GetFeatureIcon("create");
         AddFeatureItem(new DockItem(
             "create",
-            GetFeatureIcon("create"),
-            positive,
+            createIcon,
+            GetIconTint(createIcon, positive),
             "Create Event",
             () => _config.Events,
             () => IsLinked(),
@@ -885,10 +897,11 @@ public class MainWindow : IDisposable
             v => _eventCreateWindowHost.IsOpen = v,
             _eventCreateWindowHost.Draw));
 
+        var templatesIcon = GetFeatureIcon("templates");
         AddFeatureItem(new DockItem(
             "templates",
-            GetFeatureIcon("templates"),
-            mutedAccent,
+            templatesIcon,
+            GetIconTint(templatesIcon, mutedAccent),
             "Templates",
             () => _config.Templates,
             () => IsLinked(),
@@ -896,10 +909,11 @@ public class MainWindow : IDisposable
             v => _templatesWindowHost.IsOpen = v,
             _templatesWindowHost.Draw));
 
+        var notepadIcon = GetFeatureIcon("notepad");
         AddFeatureItem(new DockItem(
             "notepad",
-            GetFeatureIcon("notepad"),
-            neutral,
+            notepadIcon,
+            GetIconTint(notepadIcon, neutral),
             "NotePad",
             () => true,
             () => _config.NotePadEnabled,
@@ -907,10 +921,11 @@ public class MainWindow : IDisposable
             v => _notePadWindowHost.IsOpen = v,
             _notePadWindowHost.Draw));
 
+        var requestsIcon = GetFeatureIcon("requests");
         AddFeatureItem(new DockItem(
             "requests",
-            GetFeatureIcon("requests"),
-            warning,
+            requestsIcon,
+            GetIconTint(requestsIcon, warning),
             "Request Board",
             () => _config.Requests,
             () => IsLinked(),
@@ -921,10 +936,11 @@ public class MainWindow : IDisposable
         var chat = _chat;
         if (_chatWindowHost != null && chat != null)
         {
+            var chatIcon = GetFeatureIcon("chat");
             AddFeatureItem(new DockItem(
                 "chat",
-                GetFeatureIcon("chat"),
-                accent,
+                chatIcon,
+                GetIconTint(chatIcon, accent),
                 chat is FcChatWindow ? "FC Chat" : "Chat",
                 () => true,
                 () => IsLinked(),
@@ -933,10 +949,11 @@ public class MainWindow : IDisposable
                 _chatWindowHost.Draw));
         }
 
+        var officerIcon = GetFeatureIcon("officer");
         AddFeatureItem(new DockItem(
             "officer",
-            GetFeatureIcon("officer"),
-            positive,
+            officerIcon,
+            GetIconTint(officerIcon, positive),
             "Officer Chat",
             () => HasOfficerAccess,
             () => HasOfficerAccess && IsLinked(),
@@ -944,10 +961,11 @@ public class MainWindow : IDisposable
             v => _officerWindowHost.IsOpen = v,
             _officerWindowHost.Draw));
 
+        var syncshellIcon = GetFeatureIcon("syncshell");
         AddFeatureItem(new DockItem(
             "syncshell",
-            GetFeatureIcon("syncshell"),
-            accent,
+            syncshellIcon,
+            GetIconTint(syncshellIcon, accent),
             "Syncshell",
             () => _config.FCSyncShell && _syncshellWindowHost != null,
             () => _config.FCSyncShell && _syncshellWindowHost != null && IsLinked(),
@@ -962,7 +980,7 @@ public class MainWindow : IDisposable
             () => _syncshellWindowHost?.Draw()));
 
         var settingsIcon = _settingsIconTexture ?? _dockIconTexture;
-        var settingsTint = _settingsIconTexture != null ? Vector4.One : neutral;
+        var settingsTint = GetIconTint(settingsIcon, neutral);
         _settingsDockItem = new DockItem(
             "settings",
             settingsIcon,
