@@ -10,6 +10,13 @@ namespace DemiCatPlugin;
 public static class EmbedStyleControls
 {
     private static readonly Dictionary<string, string> GlyphSearchTerms = new();
+    private static readonly string[] FallbackGlyphs =
+    {
+        "⬛",
+        "⬜",
+        "⚫",
+        "🔺"
+    };
 
     public sealed class Context
     {
@@ -176,6 +183,30 @@ public static class EmbedStyleControls
         if (manager == null || !manager.CanLoadStandard)
         {
             ImGui.TextDisabled("Emoji list unavailable. Link DemiCat to load emoji.");
+            ImGui.Spacing();
+            ImGui.TextUnformatted("Quick glyphs:");
+            ImGui.Spacing();
+
+            for (var i = 0; i < FallbackGlyphs.Length; i++)
+            {
+                var glyph = FallbackGlyphs[i];
+                ImGui.PushID(i);
+                if (ImGui.Button(glyph, new Vector2(ImGui.GetFrameHeight(), ImGui.GetFrameHeight())))
+                {
+                    selected = glyph;
+                }
+                ImGui.PopID();
+
+                if (i < FallbackGlyphs.Length - 1)
+                {
+                    ImGui.SameLine();
+                }
+
+                if (!string.IsNullOrEmpty(selected))
+                {
+                    break;
+                }
+            }
         }
         else
         {
