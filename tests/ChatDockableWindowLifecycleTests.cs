@@ -34,14 +34,13 @@ public class ChatDockableWindowLifecycleTests
             () => true,
             () => 1f,
             "Link DemiCat to use chat.",
-            () => { });
+            Config.FadePreferenceKeys.Chat);
 
         var officerDock = new OfficerChatDockableWindow(
             config,
             officerWindow,
             () => true,
-            () => true,
-            () => { });
+            () => true);
 
         chatWindow.StartNetworking();
         officerWindow.StartNetworking();

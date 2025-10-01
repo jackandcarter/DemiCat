@@ -370,6 +370,7 @@ public class SettingsWindow : IDisposable
         {
             _config.FcChatOpacity = Math.Clamp(fcOpacity / 100f, 0f, 1f);
             SaveConfig();
+            MainWindow?.OnAppearanceSettingsChanged();
             MainWindow?.ResetFadeTimer();
         }
         ImGui.EndDisabled();
@@ -382,6 +383,7 @@ public class SettingsWindow : IDisposable
         {
             _config.OfficerChatOpacity = Math.Clamp(officerOpacity / 100f, 0f, 1f);
             SaveConfig();
+            MainWindow?.OnAppearanceSettingsChanged();
             MainWindow?.ResetFadeTimer();
         }
         ImGui.EndDisabled();
@@ -395,6 +397,7 @@ public class SettingsWindow : IDisposable
         {
             _config.ChatFadeOutEnabled = fadeOutEnabled;
             SaveConfig();
+            MainWindow?.OnAppearanceSettingsChanged();
             MainWindow?.ResetFadeTimer();
         }
 
@@ -417,6 +420,7 @@ public class SettingsWindow : IDisposable
                 {
                     _config.ChatFadeOutDelaySeconds = fadeDurations[i];
                     SaveConfig();
+                    MainWindow?.OnAppearanceSettingsChanged();
                     MainWindow?.ResetFadeTimer();
                     currentIndex = i;
                 }
@@ -431,6 +435,7 @@ public class SettingsWindow : IDisposable
         {
             _config.ChatFadeOutMinimumAlpha = Math.Clamp(fadeMinimumAlphaPercent / 100f, 0f, 1f);
             SaveConfig();
+            MainWindow?.OnAppearanceSettingsChanged();
             MainWindow?.ResetFadeTimer();
         }
 

@@ -56,5 +56,29 @@ public class ConfigDefaultsTests
         Assert.Equal(cfg.DockBackgroundColor.W, cfg.DockBackgroundAlpha, 3);
         Assert.NotNull(cfg.DockAutoShow);
         Assert.Empty(cfg.DockAutoShow);
+        Assert.NotNull(cfg.WindowFadePreferences);
+        Assert.Empty(cfg.WindowFadePreferences);
+    }
+
+    [Fact]
+    public void WindowFadePreferences_DefaultsHonored()
+    {
+        var cfg = new Config();
+
+        Assert.False(cfg.IsWindowFadeEnabled(Config.FadePreferenceKeys.Chat, true));
+
+        cfg.ChatFadeOutEnabled = true;
+
+        Assert.True(cfg.IsWindowFadeEnabled(Config.FadePreferenceKeys.Chat, true));
+        Assert.False(cfg.IsWindowFadeEnabled(Config.FadePreferenceKeys.Events, false));
+
+        cfg.SetWindowFadePreference(Config.FadePreferenceKeys.Events, true);
+        Assert.True(cfg.IsWindowFadeEnabled(Config.FadePreferenceKeys.Events, false));
+
+        cfg.SetWindowFadePreference(Config.FadePreferenceKeys.Chat, false);
+        Assert.False(cfg.IsWindowFadeEnabled(Config.FadePreferenceKeys.Chat, true));
+
+        cfg.ChatFadeOutEnabled = false;
+        Assert.False(cfg.IsWindowFadeEnabled(Config.FadePreferenceKeys.Chat, true));
     }
 }
