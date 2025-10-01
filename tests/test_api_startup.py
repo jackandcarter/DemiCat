@@ -15,6 +15,14 @@ class _DummySessionContext:
         return None
 
 
+class _FailingSessionContext:
+    async def __aenter__(self) -> object:
+        raise RuntimeError("session failed")
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:  # pragma: no cover - trivial
+        return None
+
+
 class _FakeLogger:
     def __init__(self) -> None:
         self.warnings: list[tuple[str, dict[str, object]]] = []
@@ -49,5 +57,33 @@ def test_startup_logs_warning_when_transfer_budget_load_fails(monkeypatch):
     assert "boom" in str(data["error"])
 
     reset_mock.assert_awaited_once()
+
+    asyncio.run(app.router.shutdown())
+
+
+def test_startup_handles_failing_session(monkeypatch):
+    fake_logger = _FakeLogger()
+    monkeypatch.setattr(api_module, "logger", fake_logger)
+
+    reset_cache_mock = AsyncMock()
+    monkeypatch.setattr(
+        syncshell_module._transfer_budget_store,
+        "reset_cache",
+        reset_cache_mock,
+    )
+
+    monkeypatch.setattr(api_module, "get_session", lambda: _FailingSessionContext())
+    monkeypatch.setattr(api_module.pkgutil, "iter_modules", lambda *args, **kwargs: [])
+
+    app = api_module.create_app()
+
+    asyncio.run(app.router.startup())
+
+    assert fake_logger.warnings
+    event, data = fake_logger.warnings[0]
+    assert event == "syncshell.transfer_budgets_load_failed"
+    assert "session failed" in str(data.get("error"))
+
+    reset_cache_mock.assert_awaited_once()
 
     asyncio.run(app.router.shutdown())
