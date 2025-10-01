@@ -15,7 +15,6 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.SyncShell;
@@ -90,8 +89,6 @@ public class SyncshellWindow : IDisposable
     private bool _membershipPanelRatiosDirty;
     private float _syncSettingsHeight = DefaultSyncSettingsHeight;
     private bool _syncSettingsHeightDirty;
-    private readonly FileDialogManager _penumbraModsDialog = new();
-    private readonly FileDialogManager _penumbraConfigDialog = new();
     private string _penumbraCollectionOverride = string.Empty;
 
     private bool _autoSyncAllUsers;
@@ -254,8 +251,6 @@ public class SyncshellWindow : IDisposable
     public void Draw()
     {
         PumpClientEvents();
-        _penumbraModsDialog.Draw();
-        _penumbraConfigDialog.Draw();
 
         if (!_config.FCSyncShell)
         {
@@ -605,24 +600,11 @@ public class SyncshellWindow : IDisposable
     private void DrawLocationsTab()
     {
         ImGui.TextUnformatted("Penumbra Locations");
-        ImGui.TextDisabled("Choose the directories and collection used when syncing.");
+        ImGui.TextDisabled("Choose the collection used when syncing.");
         ImGui.Spacing();
 
-        DrawDirectoryPicker(
-            "Penumbra Mods Directory",
-            "Leave blank to use Penumbra's configured mods directory.",
-            () => _config.PenumbraModsDirectory ?? string.Empty,
-            SetPenumbraModsDirectory,
-            _penumbraModsDialog,
-            "SyncshellMods");
-
-        DrawDirectoryPicker(
-            "Penumbra Config Directory",
-            "Should contain default_mod.json. Leave blank to auto-detect.",
-            () => _config.PenumbraConfigDirectory ?? string.Empty,
-            SetPenumbraConfigDirectory,
-            _penumbraConfigDialog,
-            "SyncshellConfig");
+        ImGui.TextDisabled("Configure Penumbra directories in DemiCat Settings under General > Penumbra Directories.");
+        ImGui.Spacing();
 
         var collection = _penumbraCollectionOverride ?? string.Empty;
         if (ImGui.InputText("Active collection override", ref collection, 260))
@@ -655,87 +637,6 @@ public class SyncshellWindow : IDisposable
         ImGui.TextDisabled(suggestions.Count > 0
             ? "Select from detected collections or enter a custom value (e.g. default)."
             : "Enter the collection name or file (e.g. default or default_mod.json).");
-    }
-
-    private void DrawDirectoryPicker(
-        string label,
-        string helpText,
-        Func<string> getter,
-        Action<string?> setter,
-        FileDialogManager dialog,
-        string idSuffix)
-    {
-        var value = getter() ?? string.Empty;
-        if (ImGui.InputText(label, ref value, 260))
-        {
-            setter(value);
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button($"Browse##{idSuffix}"))
-        {
-            OpenFolderDialog(dialog, label, getter(), setter);
-        }
-
-        var current = getter();
-        if (!string.IsNullOrEmpty(NormalizeDirectory(current)))
-        {
-            ImGui.SameLine();
-            if (ImGui.Button($"Clear##{idSuffix}"))
-            {
-                setter(string.Empty);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(helpText))
-        {
-            ImGui.TextDisabled(helpText);
-        }
-
-        current = NormalizeDirectory(getter());
-        if (!string.IsNullOrEmpty(current) && !Directory.Exists(current))
-        {
-            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), "Directory not found; automatic detection will be used instead.");
-        }
-
-        ImGui.Spacing();
-    }
-
-    private void OpenFolderDialog(
-        FileDialogManager dialog,
-        string label,
-        string? currentPath,
-        Action<string?> setter)
-    {
-        var initial = NormalizeDirectory(currentPath);
-        if (string.IsNullOrEmpty(initial) || !Directory.Exists(initial))
-        {
-            initial = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        }
-
-        if (string.IsNullOrEmpty(initial) || !Directory.Exists(initial))
-        {
-            initial = Environment.CurrentDirectory;
-        }
-
-        dialog.OpenFolderDialog($"Select {label}", (success, selected) =>
-        {
-            if (!success || string.IsNullOrWhiteSpace(selected))
-            {
-                return;
-            }
-
-            var normalized = NormalizeDirectory(selected);
-            var framework = PluginServices.Instance?.Framework;
-            if (framework != null)
-            {
-                _ = framework.RunOnTick(() => setter(normalized));
-            }
-            else
-            {
-                setter(normalized);
-            }
-        }, initial);
     }
 
     private void SetPenumbraModsDirectory(string? path)

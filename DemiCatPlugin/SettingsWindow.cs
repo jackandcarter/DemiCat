@@ -1193,73 +1193,32 @@ public class SettingsWindow : IDisposable
         ImGui.TextDisabled("Override the Penumbra folders used by SyncShell.");
         ImGui.Spacing();
 
-        DrawDirectoryPicker(
+        ImGuiDirectoryPickerHelper.DrawDirectoryPicker(
             "Penumbra Mods Directory",
             "Leave blank to use Penumbra's configured mods directory.",
             () => _penumbraModsDirectory,
             SetPenumbraModsDirectory,
             _penumbraModsDialog,
-            "PenumbraMods");
+            "PenumbraMods",
+            NormalizeDirectory,
+            OpenFolderDialog);
 
-        DrawDirectoryPicker(
+        ImGuiDirectoryPickerHelper.DrawDirectoryPicker(
             "Penumbra Config Directory",
             "Should contain default_mod.json. Leave blank to auto-detect.",
             () => _penumbraConfigDirectory,
             SetPenumbraConfigDirectory,
             _penumbraConfigDialog,
-            "PenumbraConfig");
-    }
-
-    private void DrawDirectoryPicker(
-        string label,
-        string helpText,
-        Func<string> getter,
-        Action<string> setter,
-        FileDialogManager dialog,
-        string idSuffix)
-    {
-        var value = getter() ?? string.Empty;
-        if (ImGui.InputText(label, ref value, 260))
-        {
-            setter(value);
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button($"Browse##{idSuffix}"))
-        {
-            OpenFolderDialog(dialog, label, getter(), setter);
-        }
-
-        var current = getter();
-        if (!string.IsNullOrEmpty(NormalizeDirectory(current)))
-        {
-            ImGui.SameLine();
-            if (ImGui.Button($"Clear##{idSuffix}"))
-            {
-                setter(string.Empty);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(helpText))
-        {
-            ImGui.TextDisabled(helpText);
-        }
-
-        current = getter();
-        var normalized = NormalizeDirectory(current);
-        if (!string.IsNullOrEmpty(normalized) && !Directory.Exists(normalized))
-        {
-            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), "Directory not found; automatic detection will be used instead.");
-        }
-
-        ImGui.Spacing();
+            "PenumbraConfig",
+            NormalizeDirectory,
+            OpenFolderDialog);
     }
 
     private void OpenFolderDialog(
         FileDialogManager dialog,
         string label,
         string? currentPath,
-        Action<string> setter)
+        Action<string?> setter)
     {
         var initial = NormalizeDirectory(currentPath);
         if (string.IsNullOrEmpty(initial) || !Directory.Exists(initial))
