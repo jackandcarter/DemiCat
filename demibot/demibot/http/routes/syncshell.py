@@ -14,6 +14,9 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, or_, select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -180,9 +183,9 @@ class _TransferBudgetStore:
             limit = max(0, TRANSFER_BUDGET_BYTES)
 
             budget = self._cache.get(user_id)
-            record = await db.get(SyncshellTransferBudget, user_id)
 
             if budget is None:
+                record = await db.get(SyncshellTransferBudget, user_id)
                 if record is not None:
                     budget = _TransferBudget(
                         window_start=record.window_start or now,
@@ -190,36 +193,11 @@ class _TransferBudgetStore:
                     )
                 else:
                     budget = _TransferBudget(window_start=now, used_bytes=0)
-                    record = SyncshellTransferBudget(
-                        user_id=user_id,
-                        window_start=budget.window_start,
-                        used_bytes=budget.used_bytes,
-                    )
-                    db.add(record)
                 self._cache[user_id] = budget
-            elif record is None:
-                record = SyncshellTransferBudget(
-                    user_id=user_id,
-                    window_start=budget.window_start,
-                    used_bytes=budget.used_bytes,
-                )
-                db.add(record)
-
-            if record is None:
-                # Defensive guard; SQLAlchemy session operations above should always
-                # produce a record, but keep behaviour predictable.
-                record = SyncshellTransferBudget(
-                    user_id=user_id,
-                    window_start=budget.window_start,
-                    used_bytes=budget.used_bytes,
-                )
-                db.add(record)
 
             if now - budget.window_start >= window:
                 budget.window_start = now
                 budget.used_bytes = 0
-                record.window_start = budget.window_start
-                record.used_bytes = budget.used_bytes
 
             incremental = 0
             for entry in diff.get("need", []):
@@ -230,10 +208,13 @@ class _TransferBudgetStore:
             budget.used_bytes += incremental
             if budget.used_bytes < 0:
                 budget.used_bytes = 0
-            record.used_bytes = budget.used_bytes
-            record.window_start = budget.window_start
 
-            await db.flush()
+            await self._persist_budget_record(
+                db,
+                user_id=user_id,
+                window_start=budget.window_start,
+                used_bytes=budget.used_bytes,
+            )
 
             remaining = max(0, limit - budget.used_bytes)
             window_end = budget.window_start + window
@@ -244,6 +225,61 @@ class _TransferBudgetStore:
                 "throttleAfterBytes": remaining,
                 "windowEndsAt": _to_iso(window_end),
             }
+
+    async def _persist_budget_record(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: int,
+        window_start: datetime,
+        used_bytes: int,
+    ) -> None:
+        values = {
+            "user_id": user_id,
+            "window_start": window_start,
+            "used_bytes": used_bytes,
+        }
+
+        bind = db.get_bind()
+        dialect = bind.dialect.name if bind is not None else ""
+
+        if dialect == "sqlite":
+            stmt = sqlite_insert(SyncshellTransferBudget).values(**values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[SyncshellTransferBudget.user_id],
+                set_={
+                    "window_start": window_start,
+                    "used_bytes": used_bytes,
+                },
+            )
+            await db.execute(stmt)
+        elif dialect == "postgresql":
+            stmt = pg_insert(SyncshellTransferBudget).values(**values)
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[SyncshellTransferBudget.user_id],
+                set_={
+                    "window_start": window_start,
+                    "used_bytes": used_bytes,
+                },
+            )
+            await db.execute(stmt)
+        elif dialect in {"mysql", "mariadb"}:
+            stmt = mysql_insert(SyncshellTransferBudget).values(**values)
+            stmt = stmt.on_duplicate_key_update(
+                window_start=window_start,
+                used_bytes=used_bytes,
+            )
+            await db.execute(stmt)
+        else:
+            record = await db.get(SyncshellTransferBudget, user_id)
+            if record is None:
+                record = SyncshellTransferBudget(**values)
+                db.add(record)
+            else:
+                record.window_start = window_start
+                record.used_bytes = used_bytes
+
+        await db.flush()
 
     async def reset(self, db: AsyncSession) -> None:
         async with self._lock:
