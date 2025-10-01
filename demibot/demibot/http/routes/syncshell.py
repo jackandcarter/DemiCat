@@ -23,6 +23,7 @@ from ...db.models import (
     SyncshellInvite,
     SyncshellMember,
     SyncshellPresence,
+    SyncshellScope,
     User,
 )
 from ..vault import presign_upload, presign_download
@@ -63,6 +64,35 @@ _peer_discovery_lock: asyncio.Lock = asyncio.Lock()
 _peer_discovery_state: dict[tuple[int, int], dict[str, dict[str, Any]]] = {}
 
 
+@dataclass(frozen=True)
+class _MemberGrant:
+    member_id: int
+    scope: SyncshellScope
+
+
+def _scope_from_value(value: int | None) -> SyncshellScope:
+    try:
+        scope = SyncshellScope(value or 0)
+    except ValueError:
+        scope = SyncshellScope.HASHES
+    if not scope & SyncshellScope.HASHES:
+        scope |= SyncshellScope.HASHES
+    return scope
+
+
+def _scope_has(scope: SyncshellScope, flag: SyncshellScope) -> bool:
+    return bool(scope & flag)
+
+
+def _scope_to_strings(scope: SyncshellScope) -> list[str]:
+    values = ["hashes"]
+    if _scope_has(scope, SyncshellScope.APPEARANCE):
+        values.append("appearance")
+    if _scope_has(scope, SyncshellScope.ASSETS):
+        values.append("assets")
+    return values
+
+
 def _clone_discovery_asset(asset: dict[str, Any]) -> dict[str, Any]:
     clone = dict(asset)
     items = clone.get("items")
@@ -86,6 +116,50 @@ def _snapshot_discovery_assets(
     assets: dict[str, dict[str, Any]]
 ) -> dict[str, dict[str, Any]]:
     return {key: _clone_discovery_asset(value) for key, value in assets.items()}
+
+
+def _filter_discovery_asset_for_scope(
+    payload: dict[str, Any], scope: SyncshellScope
+) -> dict[str, Any] | None:
+    kind = str(payload.get("kind") or "").upper()
+    if kind == "APPEARANCE" and not _scope_has(scope, SyncshellScope.APPEARANCE):
+        return None
+
+    filtered = {k: v for k, v in payload.items() if k != "items"}
+
+    if not _scope_has(scope, SyncshellScope.ASSETS):
+        if kind in {"FILE", "PATCH"}:
+            return None
+        return filtered
+
+    items = payload.get("items")
+    if isinstance(items, list):
+        child_items: list[dict[str, Any]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            filtered_child = _filter_discovery_asset_for_scope(item, scope)
+            if filtered_child is not None:
+                child_items.append(filtered_child)
+        if child_items:
+            filtered["items"] = child_items
+    return filtered
+
+
+def _filter_discovery_assets_for_scope(
+    assets: dict[str, dict[str, Any]], scope: SyncshellScope
+) -> dict[str, dict[str, Any]]:
+    if _scope_has(scope, SyncshellScope.ASSETS) and _scope_has(
+        scope, SyncshellScope.APPEARANCE
+    ):
+        return _snapshot_discovery_assets(assets)
+
+    filtered: dict[str, dict[str, Any]] = {}
+    for asset_id, payload in assets.items():
+        filtered_payload = _filter_discovery_asset_for_scope(payload, scope)
+        if filtered_payload is not None:
+            filtered[asset_id] = filtered_payload
+    return filtered
 
 
 def _normalise_dependencies(value: Any) -> list[str]:
@@ -263,18 +337,49 @@ async def compute_discovery_delta(
 
 
 async def get_memberships_for_recipient(
-    member_user_id: int, db: AsyncSession
-) -> list[int]:
+    user_id: int, db: AsyncSession
+) -> list[_MemberGrant]:
     result = await db.execute(
-        select(SyncshellMember.user_id).where(
-            SyncshellMember.member_user_id == member_user_id
+        select(SyncshellMember.member_user_id, SyncshellMember.scope).where(
+            SyncshellMember.user_id == user_id
         )
     )
-    return list(result.scalars().all())
+    grants: list[_MemberGrant] = []
+    for member_id, scope_value in result.all():
+        if member_id is None:
+            continue
+        grants.append(
+            _MemberGrant(member_id=member_id, scope=_scope_from_value(scope_value))
+        )
+    return grants
 
 
 def peer_delta_timestamp() -> str:
     return _to_iso(datetime.utcnow())
+
+
+def _scope_from_request_flags(appearance: bool, assets: bool) -> SyncshellScope:
+    scope = SyncshellScope.HASHES
+    if appearance:
+        scope |= SyncshellScope.APPEARANCE
+    if assets:
+        scope |= SyncshellScope.ASSETS
+    return scope
+
+
+async def _user_has_asset_scope(
+    user_id: int, db: AsyncSession, *, as_member: bool
+) -> bool:
+    stmt = select(SyncshellMember.scope)
+    if as_member:
+        stmt = stmt.where(SyncshellMember.member_user_id == user_id)
+    else:
+        stmt = stmt.where(SyncshellMember.user_id == user_id)
+    result = await db.execute(stmt)
+    for value in result.scalars():
+        if _scope_has(_scope_from_value(value), SyncshellScope.ASSETS):
+            return True
+    return False
 
 
 def _now_utc() -> datetime:
@@ -578,6 +683,16 @@ class PresenceUpdateRequest(BaseModel):
     )
 
 
+class ScopeUpdateRequest(BaseModel):
+    appearance: bool = Field(
+        default=False,
+        description="Whether the member may access appearance metadata",
+    )
+    assets: bool = Field(
+        default=False, description="Whether the member may access mod assets"
+    )
+
+
 async def _require_pairing(ctx: RequestContext, db: AsyncSession) -> None:
     pairing = await db.get(SyncshellPairing, ctx.user.id)
     if not pairing or pairing.expires_at < datetime.utcnow():
@@ -601,6 +716,7 @@ async def _ensure_membership(
                 user_id=user_id,
                 member_user_id=member_user_id,
                 created_at=datetime.utcnow(),
+                scope=int(SyncshellScope.HASHES),
             )
         )
 
@@ -895,13 +1011,20 @@ async def list_members(
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
     result = await db.execute(
-        select(SyncshellMember.member_user_id).where(
+        select(SyncshellMember.member_user_id, SyncshellMember.scope).where(
             SyncshellMember.user_id == ctx.user.id
         )
     )
-    member_ids = result.scalars().all()
-    if not member_ids:
+    member_rows = result.all()
+    if not member_rows:
         return {"members": []}
+
+    member_ids = [member_id for member_id, _ in member_rows]
+    scopes = {
+        member_id: _scope_from_value(scope_value)
+        for member_id, scope_value in member_rows
+        if member_id is not None
+    }
 
     user_result = await db.execute(select(User).where(User.id.in_(member_ids)))
     users = {user.id: user for user in user_result.scalars().all()}
@@ -924,10 +1047,39 @@ async def list_members(
                 "active": bool(presence.active) if presence else False,
                 "lastSeen": _to_iso(presence.last_seen) if presence else None,
                 "tokenLinked": presence is not None,
+                "scope": _scope_to_strings(
+                    scopes.get(member_id, SyncshellScope.HASHES)
+                ),
             }
         )
     members.sort(key=lambda entry: entry["displayName"].lower())
     return {"members": members}
+
+
+@router.post("/members/{member_id}/scope")
+async def update_member_scope(
+    member_id: int,
+    payload: ScopeUpdateRequest,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
+
+    membership_result = await db.execute(
+        select(SyncshellMember).where(
+            SyncshellMember.user_id == ctx.user.id,
+            SyncshellMember.member_user_id == member_id,
+        )
+    )
+    membership = membership_result.scalars().first()
+    if membership is None:
+        raise HTTPException(status_code=404, detail="member not found")
+
+    new_scope = _scope_from_request_flags(payload.appearance, payload.assets)
+    membership.scope = int(new_scope)
+    await db.commit()
+    return {"status": "ok", "scope": _scope_to_strings(new_scope)}
 
 
 @router.get("/memberships")
@@ -939,11 +1091,17 @@ async def list_memberships(
     await _check_rate_limit(ctx.user.id, db)
 
     member_result = await db.execute(
-        select(SyncshellMember.member_user_id).where(
+        select(SyncshellMember.member_user_id, SyncshellMember.scope).where(
             SyncshellMember.user_id == ctx.user.id
         )
     )
-    member_ids = list(member_result.scalars().all())
+    member_rows = member_result.all()
+    member_ids = [member_id for member_id, _ in member_rows]
+    scopes = {
+        member_id: _scope_from_value(scope_value)
+        for member_id, scope_value in member_rows
+        if member_id is not None
+    }
 
     presence_map: dict[int, SyncshellPresence] = {}
     if member_ids:
@@ -975,6 +1133,9 @@ async def list_memberships(
             "syncStatus": sync_status,
             "lastSeen": last_seen,
             "tokenLinked": presence is not None,
+            "scope": _scope_to_strings(
+                scopes.get(member_id, SyncshellScope.HASHES)
+            ),
         }
         if synced_at:
             entry["syncedAt"] = synced_at
@@ -1196,6 +1357,8 @@ async def request_asset_upload(
     """Return a pre-signed URL for chunked asset upload."""
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
+    if not await _user_has_asset_scope(ctx.user.id, db, as_member=False):
+        raise HTTPException(status_code=403, detail="asset scope required")
     try:
         url = await presign_upload()
     except Exception as e:  # pragma: no cover - network failure
@@ -1212,6 +1375,8 @@ async def request_asset_download(
     """Return a pre-signed URL for asset download."""
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
+    if not await _user_has_asset_scope(ctx.user.id, db, as_member=True):
+        raise HTTPException(status_code=403, detail="asset scope required")
     try:
         url = await presign_download(asset_id)
     except Exception as e:  # pragma: no cover - network failure

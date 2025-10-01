@@ -1,11 +1,18 @@
 import asyncio
 import logging
+from datetime import datetime
 
 import pytest
 
 from demibot.db.session import init_db, get_session
 import demibot.db.session as db_session
-from demibot.db.models import User, SyncshellPairing, SyncshellManifest
+from demibot.db.models import (
+    User,
+    SyncshellPairing,
+    SyncshellManifest,
+    SyncshellMember,
+    SyncshellScope,
+)
 from demibot.http.deps import RequestContext
 
 from .syncshell_import import syncshell
@@ -24,7 +31,27 @@ def test_pair_token_persistence_and_expiry(tmp_path):
         session_factory = await _prepare_db()
         async with session_factory as db:
             user = User(id=1, discord_user_id=1, global_name="Test")
-            db.add(user)
+            member = User(id=2, discord_user_id=2, global_name="Member")
+            db.add_all([user, member])
+            await db.commit()
+
+            now = datetime.utcnow()
+            db.add_all(
+                [
+                    SyncshellMember(
+                        user_id=user.id,
+                        member_user_id=member.id,
+                        created_at=now,
+                        scope=int(SyncshellScope.HASHES | SyncshellScope.ASSETS),
+                    ),
+                    SyncshellMember(
+                        user_id=member.id,
+                        member_user_id=user.id,
+                        created_at=now,
+                        scope=int(SyncshellScope.HASHES | SyncshellScope.ASSETS),
+                    ),
+                ]
+            )
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
@@ -55,7 +82,27 @@ def test_manifest_rate_limit(tmp_path):
         session_factory = await _prepare_db()
         async with session_factory as db:
             user = User(id=1, discord_user_id=1, global_name="Test")
-            db.add(user)
+            member = User(id=2, discord_user_id=2, global_name="Member")
+            db.add_all([user, member])
+            await db.commit()
+
+            now = datetime.utcnow()
+            db.add_all(
+                [
+                    SyncshellMember(
+                        user_id=user.id,
+                        member_user_id=member.id,
+                        created_at=now,
+                        scope=int(SyncshellScope.HASHES | SyncshellScope.ASSETS),
+                    ),
+                    SyncshellMember(
+                        user_id=member.id,
+                        member_user_id=user.id,
+                        created_at=now,
+                        scope=int(SyncshellScope.HASHES | SyncshellScope.ASSETS),
+                    ),
+                ]
+            )
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
@@ -96,7 +143,27 @@ def test_asset_upload_download_and_rate_limit(tmp_path):
         session_factory = await _prepare_db()
         async with session_factory as db:
             user = User(id=1, discord_user_id=1, global_name="Test")
-            db.add(user)
+            member = User(id=2, discord_user_id=2, global_name="Member")
+            db.add_all([user, member])
+            await db.commit()
+
+            now = datetime.utcnow()
+            db.add_all(
+                [
+                    SyncshellMember(
+                        user_id=user.id,
+                        member_user_id=member.id,
+                        created_at=now,
+                        scope=int(SyncshellScope.HASHES | SyncshellScope.ASSETS),
+                    ),
+                    SyncshellMember(
+                        user_id=member.id,
+                        member_user_id=user.id,
+                        created_at=now,
+                        scope=int(SyncshellScope.HASHES | SyncshellScope.ASSETS),
+                    ),
+                ]
+            )
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
@@ -124,6 +191,41 @@ def test_asset_upload_download_and_rate_limit(tmp_path):
             with pytest.raises(syncshell.HTTPException) as exc:
                 await syncshell.request_asset_upload(ctx=ctx, db=db)
             assert exc.value.status_code == 429
+    asyncio.run(_run())
+
+
+def test_asset_scope_required_for_presign(tmp_path):
+    async def _run():
+        session_factory = await _prepare_db()
+        async with session_factory as db:
+            owner = User(id=1, discord_user_id=1, global_name="Owner")
+            grantor = User(id=2, discord_user_id=2, global_name="Grantor")
+            db.add_all([owner, grantor])
+            await db.commit()
+
+            db.add(
+                SyncshellMember(
+                    user_id=grantor.id,
+                    member_user_id=owner.id,
+                    created_at=datetime.utcnow(),
+                    scope=int(SyncshellScope.HASHES),
+                )
+            )
+            await db.commit()
+
+            ctx = RequestContext(user=owner, guild=None, key=object(), roles=[])
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
+            syncshell.RATE_LIMIT = 4
+            await syncshell.pair(ctx=ctx, db=db)
+
+            with pytest.raises(syncshell.HTTPException) as download_error:
+                await syncshell.request_asset_download("hash", ctx=ctx, db=db)
+            assert download_error.value.status_code == 403
+
+            with pytest.raises(syncshell.HTTPException) as upload_error:
+                await syncshell.request_asset_upload(ctx=ctx, db=db)
+            assert upload_error.value.status_code == 403
+
     asyncio.run(_run())
 
 
