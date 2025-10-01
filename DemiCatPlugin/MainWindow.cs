@@ -34,7 +34,6 @@ public class MainWindow : IDisposable
     private string? _draggingDockItemId;
     private readonly HashSet<string> _autoShownDockItems = new();
 
-    private readonly Action _openSettingsAction;
     private readonly EventsDockableWindow _eventsWindowHost;
     private readonly EventCreateDockableWindow _eventCreateWindowHost;
     private readonly TemplatesDockableWindow _templatesWindowHost;
@@ -133,13 +132,12 @@ public class MainWindow : IDisposable
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
         _isOpen = config.DockVisible;
 
-        _openSettingsAction = () => _settings.IsOpen = true;
-        _eventsWindowHost = new EventsDockableWindow(config, ui, IsLinked, _openSettingsAction);
-        _eventCreateWindowHost = new EventCreateDockableWindow(config, _create, IsLinked, _openSettingsAction);
-        _templatesWindowHost = new TemplatesDockableWindow(config, _templates, IsLinked, _openSettingsAction);
-        _notePadWindowHost = new NotePadDockableWindow(config, _notePad, _openSettingsAction);
-        _requestBoardWindowHost = new RequestBoardDockableWindow(config, _requestBoard, IsLinked, _openSettingsAction);
-        _officerWindowHost = new OfficerChatDockableWindow(config, _officer, IsLinked, () => HasOfficerAccess, _openSettingsAction);
+        _eventsWindowHost = new EventsDockableWindow(config, ui, IsLinked);
+        _eventCreateWindowHost = new EventCreateDockableWindow(config, _create, IsLinked);
+        _templatesWindowHost = new TemplatesDockableWindow(config, _templates, IsLinked);
+        _notePadWindowHost = new NotePadDockableWindow(config, _notePad);
+        _requestBoardWindowHost = new RequestBoardDockableWindow(config, _requestBoard, IsLinked);
+        _officerWindowHost = new OfficerChatDockableWindow(config, _officer, IsLinked, () => HasOfficerAccess);
 
         _windowHosts.Add(_eventsWindowHost);
         _windowHosts.Add(_eventCreateWindowHost);
@@ -162,14 +160,13 @@ public class MainWindow : IDisposable
                 _chat,
                 IsLinked,
                 opacityProvider,
-                linkPrompt,
-                _openSettingsAction);
+                linkPrompt);
             _windowHosts.Add(_chatWindowHost);
         }
 
         if (_syncshell != null)
         {
-            _syncshellWindowHost = new SyncshellDockableWindow(_config, _syncshell, IsLinked, _openSettingsAction);
+            _syncshellWindowHost = new SyncshellDockableWindow(_config, _syncshell, IsLinked);
             _windowHosts.Add(_syncshellWindowHost);
         }
 
@@ -194,7 +191,7 @@ public class MainWindow : IDisposable
         {
             _syncshell?.Dispose();
             _syncshell = new SyncshellWindow(_config, _httpClient);
-            _syncshellWindowHost = new SyncshellDockableWindow(_config, _syncshell, IsLinked, _openSettingsAction);
+            _syncshellWindowHost = new SyncshellDockableWindow(_config, _syncshell, IsLinked);
             _windowHosts.Add(_syncshellWindowHost);
             BuildDockItems();
             PluginServices.Instance?.Framework.RunOnTick(() => { });

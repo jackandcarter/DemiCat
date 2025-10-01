@@ -9,21 +9,18 @@ public abstract class DockableWindow
     private static readonly TimeSpan FadeDuration = TimeSpan.FromSeconds(1.5);
 
     private readonly Config _config;
-    private readonly Action _openSettings;
     private bool _hasDrawnHeaderThisFrame;
     private DateTime _lastFadeReset = DateTime.UtcNow;
     private bool _isOpen;
 
-    protected DockableWindow(Config config, string windowTitle, Action openSettings)
+    protected DockableWindow(Config config, string windowTitle)
     {
         _config = config;
         WindowTitle = windowTitle;
-        _openSettings = openSettings;
     }
 
     protected Config Config => _config;
     protected string WindowTitle { get; }
-    protected Action OpenSettings => _openSettings;
 
     protected virtual ImGuiWindowFlags WindowFlags => ImGuiWindowFlags.NoCollapse;
     protected virtual bool UseThemedColors => true;
@@ -163,11 +160,8 @@ public abstract class DockableWindow
     protected void DrawLinkPrompt(string message)
     {
         ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), message);
-        ImGui.SameLine();
-        if (ImGui.Button("Open Settings"))
-        {
-            _openSettings();
-        }
+        ImGui.Spacing();
+        ImGui.TextWrapped("Use the DemiCat dock icon to open the settings window when configuration is required.");
     }
 
     protected void DrawHeaderWithSettingsButton()
@@ -177,27 +171,12 @@ public abstract class DockableWindow
 
         _hasDrawnHeaderThisFrame = true;
 
-        const string label = "Settings";
         var style = ImGui.GetStyle();
-        var buttonSize = ImGui.CalcTextSize(label);
-        buttonSize.X += style.FramePadding.X * 2f;
-        buttonSize.Y += style.FramePadding.Y * 2f;
-
         var cursorPos = ImGui.GetCursorPos();
-        var availableWidth = ImGui.GetContentRegionAvail().X;
-        var buttonPosX = cursorPos.X + Math.Max(0f, availableWidth - buttonSize.X);
-
-        ImGui.SetCursorPosX(buttonPosX);
-        ImGui.PushID("SettingsButton");
-        if (ImGui.Button(label))
-        {
-            _openSettings();
-        }
-        ImGui.PopID();
-
-        var nextCursorY = cursorPos.Y + buttonSize.Y + style.ItemSpacing.Y;
-        ImGui.SetCursorPos(new Vector2(cursorPos.X, nextCursorY));
+        var headerHeight = ImGui.GetFrameHeight() + style.ItemSpacing.Y;
+        ImGui.SetCursorPos(new Vector2(cursorPos.X, cursorPos.Y + headerHeight));
         ImGui.Separator();
+        ImGui.Spacing();
     }
 
     internal static Vector4 AdjustBrightness(Vector4 color, float factor)
