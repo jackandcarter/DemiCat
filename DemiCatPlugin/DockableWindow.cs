@@ -29,6 +29,7 @@ public abstract class DockableWindow
     public virtual bool SupportsFade => _config.IsWindowFadeEnabled(FadePreferenceKey, FadeEnabledByDefault);
     protected virtual float BaseOpacity => 1f;
     protected virtual Vector2? InitialSize => null;
+    protected virtual float WindowCornerRadius => 14f;
 
     public bool IsOpen
     {
@@ -80,6 +81,7 @@ public abstract class DockableWindow
             colorsPushed = PushWindowThemeColors();
         }
 
+        var pushedCornerRadius = TryPushWindowCornerRadius();
         var pushedAlpha = TryPushWindowOpacityOverride(ComputeEffectiveOpacity());
 
         if (ImGui.Begin(WindowTitle, ref open, WindowFlags))
@@ -97,6 +99,11 @@ public abstract class DockableWindow
         ImGui.End();
 
         if (pushedAlpha)
+        {
+            ImGui.PopStyleVar();
+        }
+
+        if (pushedCornerRadius)
         {
             ImGui.PopStyleVar();
         }
@@ -149,6 +156,19 @@ public abstract class DockableWindow
 
     private static float Lerp(float a, float b, float t)
         => a + (b - a) * t;
+
+    private bool TryPushWindowCornerRadius()
+    {
+        var radius = MathF.Max(WindowCornerRadius, 0f);
+        if (radius <= 0f)
+        {
+            return false;
+        }
+
+        var scale = ImGui.GetIO().FontGlobalScale;
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, radius * MathF.Max(scale, 0.01f));
+        return true;
+    }
 
     private static bool TryPushWindowOpacityOverride(float alpha)
     {

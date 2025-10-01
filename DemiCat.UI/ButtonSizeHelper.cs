@@ -14,4 +14,15 @@ public static class ButtonSizeHelper
         var width = label.Length * 8 + 24;
         return Math.Min(width, Max);
     }
+
+    public static float ResolveWidth(int? explicitWidth, string label)
+    {
+        if (explicitWidth.HasValue && explicitWidth.Value > 0)
+        {
+            return Math.Min(explicitWidth.Value, Max);
+        }
+
+        var computed = ComputeWidth(label);
+        return Math.Max(1, computed);
+    }
 }
