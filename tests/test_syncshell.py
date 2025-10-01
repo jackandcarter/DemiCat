@@ -63,7 +63,7 @@ def test_pair_token_persistence_and_expiry(tmp_path):
             assert pairing and pairing.token == token
 
             manifest, _ = build_manifest_payload(tmp_path)
-            syncshell._transfer_budgets.clear()
+            await syncshell._reset_transfer_budgets(db)
             response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert response["status"] == "ok"
             assert response["diff"]["need"]
@@ -110,7 +110,7 @@ def test_manifest_rate_limit(tmp_path):
             syncshell.RATE_LIMIT = 2
             await syncshell.pair(ctx=ctx, db=db)
             manifest, _ = build_manifest_payload(tmp_path)
-            syncshell._transfer_budgets.clear()
+            await syncshell._reset_transfer_budgets(db)
             first = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert first["diff"]["need"]
             with pytest.raises(syncshell.HTTPException) as exc:
@@ -210,7 +210,7 @@ def test_asset_upload_download_and_rate_limit(tmp_path):
 
             await syncshell.pair(ctx=ctx, db=db)
             manifest, _ = build_manifest_payload(tmp_path)
-            syncshell._transfer_budgets.clear()
+            await syncshell._reset_transfer_budgets(db)
             response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             assert response["diff"]["need"]
             up = await syncshell.request_asset_upload(ctx=ctx, db=db)
@@ -277,7 +277,7 @@ def test_manifest_corrupt_previous_logs_warning(tmp_path, caplog):
             await db.commit()
 
             manifest, _ = build_manifest_payload(tmp_path)
-            syncshell._transfer_budgets.clear()
+            await syncshell._reset_transfer_budgets(db)
 
             caplog.set_level(logging.WARNING, logger="demibot.http.routes.syncshell")
             response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)

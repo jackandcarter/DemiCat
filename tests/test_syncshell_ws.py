@@ -20,6 +20,11 @@ from .syncshell_import import syncshell
 from .syncshell_test_utils import build_manifest_payload
 
 
+async def _reset_budgets() -> None:
+    async with get_session() as db:
+        await syncshell._reset_transfer_budgets(db)
+
+
 async def _prepare_db() -> None:
     db_session._engine = None
     db_session._Session = None
@@ -53,7 +58,7 @@ def test_syncshell_websocket_hello_and_manifest(tmp_path):
     app = create_app()
     client = TestClient(app)
 
-    syncshell._transfer_budgets.clear()
+    asyncio.run(_reset_budgets())
 
     with client.websocket_connect(
         "/ws/syncshell", headers={"X-Api-Key": "syncshell-token"}

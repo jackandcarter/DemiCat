@@ -26,7 +26,7 @@ def test_manifest_blob_hashes_persist(tmp_path):
             await syncshell.pair(ctx=ctx, db=db)
 
             manifest, blob_hash = build_manifest_payload(tmp_path)
-            syncshell._transfer_budgets.clear()
+            await syncshell._reset_transfer_budgets(db)
             response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
             need_hashes = {entry["hash"] for entry in response["diff"]["need"]}
             assert blob_hash in need_hashes
