@@ -823,7 +823,7 @@ public class MainWindow : IDisposable
 
         try
         {
-            return provider.CreateFromFile(path);
+            return provider.GetFromFileAbsolute(path);
         }
         catch
         {

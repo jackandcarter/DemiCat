@@ -386,7 +386,7 @@ public class Plugin : IDalamudPlugin
                     paths
                 );
 
-                PluginServices.Instance?.ToastGui.ShowWarning(message);
+                PluginServices.Instance?.ToastGui.ShowError(message);
                 return null;
             }
 
