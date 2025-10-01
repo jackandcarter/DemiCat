@@ -15,7 +15,6 @@ using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
-using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.SyncShell;
@@ -90,10 +89,6 @@ public class SyncshellWindow : IDisposable
     private bool _membershipPanelRatiosDirty;
     private float _syncSettingsHeight = DefaultSyncSettingsHeight;
     private bool _syncSettingsHeightDirty;
-    private readonly FileDialogManager _penumbraModsDialog = new();
-    private readonly FileDialogManager _penumbraConfigDialog = new();
-    private string _penumbraCollectionOverride = string.Empty;
-
     private bool _autoSyncAllUsers;
     private bool _manualSyncAllUsers;
     private bool _manualSyncCustom;
@@ -231,7 +226,6 @@ public class SyncshellWindow : IDisposable
         _autoSyncAllUsers = _config.SyncshellAutoSyncAllUsers;
         _manualSyncAllUsers = _config.SyncshellManualSyncAllUsers;
         _manualSyncCustom = _config.SyncshellManualSyncCustom;
-        _penumbraCollectionOverride = _config.PenumbraCollectionOverride ?? string.Empty;
         EnforceSyncPreferenceInvariant(saveIfChanged: true);
 
         _syncClient.UpdatePenumbraOverrides(PenumbraResolveOptions.FromConfig(_config));
@@ -251,11 +245,15 @@ public class SyncshellWindow : IDisposable
         RequestMembershipRefresh();
     }
 
+    public void OnPenumbraOverridesChanged()
+    {
+        PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+        _syncClient.UpdatePenumbraOverrides(PenumbraResolveOptions.FromConfig(_config));
+    }
+
     public void Draw()
     {
         PumpClientEvents();
-        _penumbraModsDialog.Draw();
-        _penumbraConfigDialog.Draw();
 
         if (!_config.FCSyncShell)
         {
@@ -419,12 +417,6 @@ public class SyncshellWindow : IDisposable
         {
             SetSyncPaused(!_syncPaused);
         }
-                ImGui.EndTabItem();
-            }
-
-            if (ImGui.BeginTabItem("Locations"))
-            {
-                DrawLocationsTab();
                 ImGui.EndTabItem();
             }
 
@@ -602,288 +594,6 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private void DrawLocationsTab()
-    {
-        ImGui.TextUnformatted("Penumbra Locations");
-        ImGui.TextDisabled("Choose the directories and collection used when syncing.");
-        ImGui.Spacing();
-
-        DrawDirectoryPicker(
-            "Penumbra Mods Directory",
-            "Leave blank to use Penumbra's configured mods directory.",
-            () => _config.PenumbraModsDirectory ?? string.Empty,
-            SetPenumbraModsDirectory,
-            _penumbraModsDialog,
-            "SyncshellMods");
-
-        DrawDirectoryPicker(
-            "Penumbra Config Directory",
-            "Should contain default_mod.json. Leave blank to auto-detect.",
-            () => _config.PenumbraConfigDirectory ?? string.Empty,
-            SetPenumbraConfigDirectory,
-            _penumbraConfigDialog,
-            "SyncshellConfig");
-
-        var collection = _penumbraCollectionOverride ?? string.Empty;
-        if (ImGui.InputText("Active collection override", ref collection, 260))
-        {
-            SetPenumbraCollectionOverride(collection);
-        }
-
-        var suggestions = EnumerateCollectionSuggestions();
-        var preview = GetCollectionPreview(_penumbraCollectionOverride, suggestions);
-        if (suggestions.Count > 0 && ImGui.BeginCombo("##syncshell-collection", preview))
-        {
-            foreach (var option in suggestions)
-            {
-                var selected = string.Equals(_penumbraCollectionOverride, option.Identifier, StringComparison.OrdinalIgnoreCase);
-                if (ImGui.Selectable(option.Display, selected))
-                {
-                    SetPenumbraCollectionOverride(option.Identifier);
-                    collection = _penumbraCollectionOverride;
-                }
-
-                if (selected)
-                {
-                    ImGui.SetItemDefaultFocus();
-                }
-            }
-
-            ImGui.EndCombo();
-        }
-
-        ImGui.TextDisabled(suggestions.Count > 0
-            ? "Select from detected collections or enter a custom value (e.g. default)."
-            : "Enter the collection name or file (e.g. default or default_mod.json).");
-    }
-
-    private void DrawDirectoryPicker(
-        string label,
-        string helpText,
-        Func<string> getter,
-        Action<string?> setter,
-        FileDialogManager dialog,
-        string idSuffix)
-    {
-        var value = getter() ?? string.Empty;
-        if (ImGui.InputText(label, ref value, 260))
-        {
-            setter(value);
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button($"Browse##{idSuffix}"))
-        {
-            OpenFolderDialog(dialog, label, getter(), setter);
-        }
-
-        var current = getter();
-        if (!string.IsNullOrEmpty(NormalizeDirectory(current)))
-        {
-            ImGui.SameLine();
-            if (ImGui.Button($"Clear##{idSuffix}"))
-            {
-                setter(string.Empty);
-            }
-        }
-
-        if (!string.IsNullOrWhiteSpace(helpText))
-        {
-            ImGui.TextDisabled(helpText);
-        }
-
-        current = NormalizeDirectory(getter());
-        if (!string.IsNullOrEmpty(current) && !Directory.Exists(current))
-        {
-            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), "Directory not found; automatic detection will be used instead.");
-        }
-
-        ImGui.Spacing();
-    }
-
-    private void OpenFolderDialog(
-        FileDialogManager dialog,
-        string label,
-        string? currentPath,
-        Action<string?> setter)
-    {
-        var initial = NormalizeDirectory(currentPath);
-        if (string.IsNullOrEmpty(initial) || !Directory.Exists(initial))
-        {
-            initial = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        }
-
-        if (string.IsNullOrEmpty(initial) || !Directory.Exists(initial))
-        {
-            initial = Environment.CurrentDirectory;
-        }
-
-        dialog.OpenFolderDialog($"Select {label}", (success, selected) =>
-        {
-            if (!success || string.IsNullOrWhiteSpace(selected))
-            {
-                return;
-            }
-
-            var normalized = NormalizeDirectory(selected);
-            var framework = PluginServices.Instance?.Framework;
-            if (framework != null)
-            {
-                _ = framework.RunOnTick(() => setter(normalized));
-            }
-            else
-            {
-                setter(normalized);
-            }
-        }, initial);
-    }
-
-    private void SetPenumbraModsDirectory(string? path)
-    {
-        var normalized = NormalizeDirectory(path);
-        if (string.Equals(_config.PenumbraModsDirectory, normalized, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _config.PenumbraModsDirectory = normalized;
-        PersistPenumbraOverrides();
-    }
-
-    private void SetPenumbraConfigDirectory(string? path)
-    {
-        var normalized = NormalizeDirectory(path);
-        if (string.Equals(_config.PenumbraConfigDirectory, normalized, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _config.PenumbraConfigDirectory = normalized;
-        PersistPenumbraOverrides();
-    }
-
-    private void SetPenumbraCollectionOverride(string? value)
-    {
-        var normalized = string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
-        if (string.Equals(_penumbraCollectionOverride, normalized, StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _penumbraCollectionOverride = normalized;
-        _config.PenumbraCollectionOverride = normalized;
-        PersistPenumbraOverrides();
-    }
-
-    private void PersistPenumbraOverrides()
-    {
-        PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
-        _syncClient.UpdatePenumbraOverrides(PenumbraResolveOptions.FromConfig(_config));
-    }
-
-    private static string NormalizeDirectory(string? value)
-        => string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim();
-
-    private string GetCollectionPreview(string? currentValue, IReadOnlyList<CollectionOption> options)
-    {
-        if (string.IsNullOrWhiteSpace(currentValue))
-        {
-            return "Auto-detect (default)";
-        }
-
-        foreach (var option in options)
-        {
-            if (string.Equals(option.Identifier, currentValue, StringComparison.OrdinalIgnoreCase))
-            {
-                return option.Display;
-            }
-        }
-
-        return currentValue;
-    }
-
-    private List<CollectionOption> EnumerateCollectionSuggestions()
-    {
-        var results = new List<CollectionOption>();
-        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        var baseDir = NormalizeDirectory(_config.PenumbraConfigDirectory);
-        if (string.IsNullOrEmpty(baseDir) || !Directory.Exists(baseDir))
-        {
-            return results;
-        }
-
-        string Describe(string identifier, string relative)
-            => string.IsNullOrEmpty(relative) ? identifier : $"{identifier} ({relative})";
-
-        void AddSuggestion(string filePath)
-        {
-            if (!File.Exists(filePath))
-            {
-                return;
-            }
-
-            string relative;
-            try
-            {
-                relative = Path.GetRelativePath(baseDir, filePath);
-            }
-            catch
-            {
-                relative = Path.GetFileName(filePath) ?? filePath;
-            }
-
-            var identifier = Path.GetFileNameWithoutExtension(filePath);
-            if (string.IsNullOrEmpty(identifier))
-            {
-                return;
-            }
-
-            if (identifier.EndsWith("_mod", StringComparison.OrdinalIgnoreCase))
-            {
-                var trimmed = identifier[..^4];
-                if (seen.Add(trimmed))
-                {
-                    results.Add(new CollectionOption(trimmed, Describe(trimmed, relative)));
-                }
-            }
-
-            if (seen.Add(identifier))
-            {
-                results.Add(new CollectionOption(identifier, Describe(identifier, relative)));
-            }
-        }
-
-        try
-        {
-            foreach (var file in Directory.EnumerateFiles(baseDir, "*_mod.json", SearchOption.TopDirectoryOnly))
-            {
-                AddSuggestion(file);
-            }
-
-            foreach (var file in Directory.EnumerateFiles(baseDir, "*.json", SearchOption.TopDirectoryOnly))
-            {
-                AddSuggestion(file);
-            }
-
-            var collectionsDir = Path.Combine(baseDir, "collections");
-            if (Directory.Exists(collectionsDir))
-            {
-                foreach (var file in Directory.EnumerateFiles(collectionsDir, "*.json", SearchOption.TopDirectoryOnly))
-                {
-                    AddSuggestion(file);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            PluginServices.Instance?.Log?.Debug(ex, "Failed to enumerate Penumbra collections in {Directory}", baseDir);
-        }
-
-        results.Sort((a, b) => string.Compare(a.Identifier, b.Identifier, StringComparison.OrdinalIgnoreCase));
-        return results;
-    }
-
-    private sealed record CollectionOption(string Identifier, string Display);
 
     private void DrawMembershipSplitter(int index, float splitterHeight, float totalPanelHeight)
     {
