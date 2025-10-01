@@ -84,15 +84,21 @@ def create_app() -> FastAPI:
 
     @app.on_event("startup")
     async def _load_syncshell_transfer_budgets() -> None:
-        async with get_session() as db:
-            try:
-                await syncshell_module.load_transfer_budgets(db)
-            except Exception as exc:  # pragma: no cover - exercised in tests
-                logger.warning(
-                    "syncshell.transfer_budgets_load_failed",
-                    error=str(exc),
-                )
+        db = None
+        try:
+            async with get_session() as db_session:
+                db = db_session
+                await syncshell_module.load_transfer_budgets(db_session)
+        except Exception as exc:  # pragma: no cover - exercised in tests
+            logger.warning(
+                "syncshell.transfer_budgets_load_failed",
+                error=str(exc),
+            )
+
+            if db is not None:
                 await syncshell_module._transfer_budget_store.reset(db)
+            else:
+                await syncshell_module._transfer_budget_store.reset_cache()
 
     # Dynamically include routers from all modules in the routes package
     from . import routes as routes_pkg

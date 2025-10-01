@@ -358,11 +358,14 @@ class _TransferBudgetStore:
         await db.flush()
 
     async def reset(self, db: AsyncSession) -> None:
+        await self.reset_cache()
+        await db.execute(delete(SyncshellTransferBudget))
+        await db.flush()
+
+    async def reset_cache(self) -> None:
         async with self._lock:
             self._cache.clear()
             self._loaded = False
-        await db.execute(delete(SyncshellTransferBudget))
-        await db.flush()
 
 
 _transfer_budget_store = _TransferBudgetStore()
