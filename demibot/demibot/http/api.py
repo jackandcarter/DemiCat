@@ -19,9 +19,11 @@ from starlette.requests import Request
 
 import structlog
 
+from .deps import get_session
 from .ws import websocket_endpoint
 from .ws_chat import websocket_endpoint_chat
 from .ws_syncshell import websocket_endpoint_syncshell
+from .routes import syncshell as syncshell_module
 
 
 logger = structlog.get_logger()
@@ -79,6 +81,11 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         """Simple health check endpoint."""
         return {"status": "ok"}
+
+    @app.on_event("startup")
+    async def _load_syncshell_transfer_budgets() -> None:
+        async with get_session() as db:
+            await syncshell_module.load_transfer_budgets(db)
 
     # Dynamically include routers from all modules in the routes package
     from . import routes as routes_pkg

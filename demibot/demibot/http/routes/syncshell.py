@@ -13,7 +13,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext, api_key_auth, get_db
@@ -24,6 +24,7 @@ from ...db.models import (
     SyncshellInvite,
     SyncshellMember,
     SyncshellPresence,
+    SyncshellTransferBudget,
     SyncshellScope,
     User,
 )
@@ -140,7 +141,128 @@ class _TransferBudget:
     used_bytes: int = 0
 
 
-_transfer_budgets: dict[int, _TransferBudget] = {}
+class _TransferBudgetStore:
+    def __init__(self) -> None:
+        self._cache: dict[int, _TransferBudget] = {}
+        self._loaded: bool = False
+        self._lock: asyncio.Lock = asyncio.Lock()
+
+    async def _load_unlocked(self, db: AsyncSession) -> None:
+        now = datetime.utcnow()
+        self._cache.clear()
+        result = await db.execute(select(SyncshellTransferBudget))
+        for record in result.scalars():
+            window_start = record.window_start or now
+            used_bytes = int(record.used_bytes or 0)
+            self._cache[record.user_id] = _TransferBudget(
+                window_start=window_start,
+                used_bytes=used_bytes,
+            )
+        self._loaded = True
+
+    async def load(self, db: AsyncSession) -> None:
+        async with self._lock:
+            if not self._loaded:
+                await self._load_unlocked(db)
+
+    async def update(
+        self,
+        user_id: int,
+        diff: dict[str, list[dict[str, Any]]],
+        db: AsyncSession,
+    ) -> dict[str, Any]:
+        async with self._lock:
+            if not self._loaded:
+                await self._load_unlocked(db)
+
+            now = datetime.utcnow()
+            window = timedelta(seconds=max(1, TRANSFER_BUDGET_WINDOW_SECONDS))
+            limit = max(0, TRANSFER_BUDGET_BYTES)
+
+            budget = self._cache.get(user_id)
+            record = await db.get(SyncshellTransferBudget, user_id)
+
+            if budget is None:
+                if record is not None:
+                    budget = _TransferBudget(
+                        window_start=record.window_start or now,
+                        used_bytes=int(record.used_bytes or 0),
+                    )
+                else:
+                    budget = _TransferBudget(window_start=now, used_bytes=0)
+                    record = SyncshellTransferBudget(
+                        user_id=user_id,
+                        window_start=budget.window_start,
+                        used_bytes=budget.used_bytes,
+                    )
+                    db.add(record)
+                self._cache[user_id] = budget
+            elif record is None:
+                record = SyncshellTransferBudget(
+                    user_id=user_id,
+                    window_start=budget.window_start,
+                    used_bytes=budget.used_bytes,
+                )
+                db.add(record)
+
+            if record is None:
+                # Defensive guard; SQLAlchemy session operations above should always
+                # produce a record, but keep behaviour predictable.
+                record = SyncshellTransferBudget(
+                    user_id=user_id,
+                    window_start=budget.window_start,
+                    used_bytes=budget.used_bytes,
+                )
+                db.add(record)
+
+            if now - budget.window_start >= window:
+                budget.window_start = now
+                budget.used_bytes = 0
+                record.window_start = budget.window_start
+                record.used_bytes = budget.used_bytes
+
+            incremental = 0
+            for entry in diff.get("need", []):
+                size = entry.get("size")
+                if isinstance(size, int) and size > 0:
+                    incremental += size
+
+            budget.used_bytes += incremental
+            if budget.used_bytes < 0:
+                budget.used_bytes = 0
+            record.used_bytes = budget.used_bytes
+            record.window_start = budget.window_start
+
+            await db.flush()
+
+            remaining = max(0, limit - budget.used_bytes)
+            window_end = budget.window_start + window
+
+            return {
+                "limitBytes": limit,
+                "usedBytes": budget.used_bytes,
+                "throttleAfterBytes": remaining,
+                "windowEndsAt": _to_iso(window_end),
+            }
+
+    async def reset(self, db: AsyncSession) -> None:
+        async with self._lock:
+            self._cache.clear()
+            self._loaded = False
+        await db.execute(delete(SyncshellTransferBudget))
+        await db.flush()
+
+
+_transfer_budget_store = _TransferBudgetStore()
+
+
+async def load_transfer_budgets(db: AsyncSession) -> None:
+    await _transfer_budget_store.load(db)
+
+
+async def _reset_transfer_budgets(db: AsyncSession) -> None:
+    await _transfer_budget_store.reset(db)
+
 
 _peer_discovery_lock: asyncio.Lock = asyncio.Lock()
 _peer_discovery_state: dict[tuple[int, int], dict[str, dict[str, Any]]] = {}
@@ -651,36 +773,10 @@ def _compute_manifest_diff(
     return {"need": need_list, "remove": remove_list, "conflicts": conflicts}
 
 
-def _update_transfer_budget(
-    user_id: int, diff: dict[str, list[dict[str, Any]]]
+async def _update_transfer_budget(
+    user_id: int, diff: dict[str, list[dict[str, Any]]], db: AsyncSession
 ) -> dict[str, Any]:
-    limit = max(0, TRANSFER_BUDGET_BYTES)
-    window = timedelta(seconds=max(1, TRANSFER_BUDGET_WINDOW_SECONDS))
-    now = _now_utc()
-
-    budget = _transfer_budgets.get(user_id)
-    if not budget or now - budget.window_start >= window:
-        budget = _TransferBudget(window_start=now, used_bytes=0)
-        _transfer_budgets[user_id] = budget
-
-    incremental = 0
-    for entry in diff.get("need", []):
-        size = entry.get("size")
-        if isinstance(size, int) and size > 0:
-            incremental += size
-
-    budget.used_bytes += incremental
-    if budget.used_bytes < 0:
-        budget.used_bytes = 0
-
-    remaining = max(0, limit - budget.used_bytes)
-    window_end = budget.window_start + window
-    return {
-        "limitBytes": limit,
-        "usedBytes": budget.used_bytes,
-        "throttleAfterBytes": remaining,
-        "windowEndsAt": _to_iso(window_end),
-    }
+    return await _transfer_budget_store.update(user_id, diff, db)
 
 
 async def handle_manifest_upload(
@@ -716,10 +812,12 @@ async def handle_manifest_upload(
         record = SyncshellManifest(user_id=ctx.user.id, manifest_json=manifest_json)
         db.add(record)
 
+    budget_payload = await _update_transfer_budget(ctx.user.id, diff, db)
+
     await db.commit()
 
     limits_payload = {
-        "budget": _update_transfer_budget(ctx.user.id, diff),
+        "budget": budget_payload,
         "transfer": dict(DEFAULT_TRANSFER_LIMITS),
     }
     return diff, limits_payload
