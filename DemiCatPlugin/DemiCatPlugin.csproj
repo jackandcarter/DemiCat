@@ -11,9 +11,9 @@
     <RootNamespace>DemiCatPlugin</RootNamespace>
 
     <!-- Keep these in sync with manifest -->
-    <Version>1.2.2.1</Version>
-    <AssemblyVersion>1.2.2.1</AssemblyVersion>
-    <FileVersion>1.2.2.1</FileVersion>
+    <Version>1.2.2.2</Version>
+    <AssemblyVersion>1.2.2.2</AssemblyVersion>
+    <FileVersion>1.2.2.2</FileVersion>
 
     <NoWarn>CA1416</NoWarn>
   </PropertyGroup>
