@@ -1320,7 +1320,7 @@ public class SettingsWindow : IDisposable
         _penumbraModsDirectory = normalized;
         _config.PenumbraModsDirectory = normalized;
         SaveConfig();
-        SyncshellWindow.Instance?.OnPenumbraOverridesChanged();
+        SyncshellWindow.NotifyPenumbraOverridesChanged(_config);
     }
 
     private void SetPenumbraConfigDirectory(string? path)
@@ -1334,7 +1334,7 @@ public class SettingsWindow : IDisposable
         _penumbraConfigDirectory = normalized;
         _config.PenumbraConfigDirectory = normalized;
         SaveConfig();
-        SyncshellWindow.Instance?.OnPenumbraOverridesChanged();
+        SyncshellWindow.NotifyPenumbraOverridesChanged(_config);
     }
 
     private void SetPenumbraCollectionOverride(string? value)
@@ -1348,7 +1348,7 @@ public class SettingsWindow : IDisposable
         _penumbraCollectionOverride = normalized;
         _config.PenumbraCollectionOverride = normalized;
         SaveConfig();
-        SyncshellWindow.Instance?.OnPenumbraOverridesChanged();
+        SyncshellWindow.NotifyPenumbraOverridesChanged(_config);
     }
 
     private static string NormalizeDirectory(string? value)

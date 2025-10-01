@@ -28,6 +28,9 @@ public class SyncshellWindow : IDisposable
 {
     public static SyncshellWindow? Instance { get; private set; }
 
+    private static readonly object PenumbraOverrideLock = new();
+    private static PenumbraResolveOptions? _pendingPenumbraOverrides;
+
     private static readonly TimeSpan DefaultPairingLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan PairingRefreshSkew = TimeSpan.FromSeconds(15);
     private static readonly string[] PairingLifetimeProperties = { "expiresIn", "expires_in", "ttl" };
@@ -230,14 +233,25 @@ public class SyncshellWindow : IDisposable
 
         _syncClient.UpdatePenumbraOverrides(PenumbraResolveOptions.FromConfig(_config));
 
+        PenumbraResolveOptions? pendingOverrides;
+        lock (PenumbraOverrideLock)
+        {
+            pendingOverrides = _pendingPenumbraOverrides;
+            _pendingPenumbraOverrides = null;
+            Instance = this;
+        }
+
+        if (pendingOverrides != null)
+        {
+            _syncClient.UpdatePenumbraOverrides(pendingOverrides);
+        }
+
         _assetsFile = Path.Combine(configDir, "assets.json");
         _installedFile = Path.Combine(configDir, "installed.json");
         _bundlesFile = Path.Combine(configDir, "bundles.json");
         LoadCaches();
 
         _ = TrimCacheAsync();
-
-        Instance = this;
 
         SubscribeToStateChanges();
         _tokenManager.RegisterWatcher(HandleTokenLinked, HandleTokenUnlinked);
@@ -249,6 +263,21 @@ public class SyncshellWindow : IDisposable
     {
         PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
         _syncClient.UpdatePenumbraOverrides(PenumbraResolveOptions.FromConfig(_config));
+    }
+
+    public static void NotifyPenumbraOverridesChanged(Config config)
+    {
+        var overrides = PenumbraResolveOptions.FromConfig(config);
+        lock (PenumbraOverrideLock)
+        {
+            if (Instance != null)
+            {
+                Instance._syncClient.UpdatePenumbraOverrides(overrides);
+                return;
+            }
+
+            _pendingPenumbraOverrides = overrides;
+        }
     }
 
     public void Draw()
@@ -4744,8 +4773,11 @@ public class SyncshellWindow : IDisposable
         _manifestPushLock.Dispose();
         _pairingLock.Dispose();
         _bundleFetchLock.Dispose();
-        if (Instance == this)
-            Instance = null;
+        lock (PenumbraOverrideLock)
+        {
+            if (Instance == this)
+                Instance = null;
+        }
     }
 
     private static string FormatSize(long size)
