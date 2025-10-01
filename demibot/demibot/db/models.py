@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from enum import Enum
+from enum import Enum, IntFlag
 from typing import Optional
 
 from sqlalchemy import (
@@ -66,6 +66,12 @@ class ChannelKind(str, Enum):
     FC_CHAT = "fc_chat"
     OFFICER_CHAT = "officer_chat"
     OFFICER_VISIBLE = "officer_visible"
+
+
+class SyncshellScope(IntFlag):
+    HASHES = 1
+    APPEARANCE = 2
+    ASSETS = 4
 
 
 class Guild(Base):
@@ -373,6 +379,11 @@ class SyncshellMember(Base):
         BIGINT(unsigned=True), ForeignKey("users.id"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    scope: Mapped[int] = mapped_column(
+        Integer,
+        default=int(SyncshellScope.HASHES),
+        nullable=False,
+    )
 
 
 class SyncshellPresence(Base):

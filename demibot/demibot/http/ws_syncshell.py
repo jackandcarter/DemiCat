@@ -58,16 +58,19 @@ async def _broadcast_peer_delta(
     uploader_id: int,
     peer_identifier: str,
     assets: dict[str, dict[str, Any]],
-    member_ids: list[int],
+    member_grants: list[syncshell_routes._MemberGrant],
 ) -> None:
-    if not member_ids:
+    if not member_grants:
         return
-    for member_id in member_ids:
-        connections = await _get_connections(member_id)
+    for grant in member_grants:
+        connections = await _get_connections(grant.member_id)
         if not connections:
             continue
+        filtered_assets = syncshell_routes._filter_discovery_assets_for_scope(
+            assets, grant.scope
+        )
         updated, removed = await syncshell_routes.compute_discovery_delta(
-            member_id, uploader_id, assets
+            grant.member_id, uploader_id, filtered_assets
         )
         if not updated and not removed:
             continue
@@ -86,11 +89,12 @@ async def _broadcast_peer_delta(
                 await peer_socket.send_json(payload)
             except Exception:
                 LOGGER.warning(
-                    "syncshell failed delivering peer delta to user %s", member_id
+                    "syncshell failed delivering peer delta to user %s",
+                    grant.member_id,
                 )
                 dead.append(peer_socket)
         for peer_socket in dead:
-            await _unregister_connection(member_id, peer_socket)
+            await _unregister_connection(grant.member_id, peer_socket)
 
 
 async def _handle_manifest_message(
@@ -102,7 +106,7 @@ async def _handle_manifest_message(
         return True
 
     discovery_assets: dict[str, dict[str, Any]] = {}
-    member_ids: list[int] = []
+    member_grants: list[syncshell_routes._MemberGrant] = []
     try:
         async with get_session() as db:
             diff, limits = await syncshell_routes.handle_manifest_upload(
@@ -111,7 +115,7 @@ async def _handle_manifest_message(
             discovery_assets = syncshell_routes.build_discovery_assets(
                 manifest_payload, ctx.user
             )
-            member_ids = await syncshell_routes.get_memberships_for_recipient(
+            member_grants = await syncshell_routes.get_memberships_for_recipient(
                 ctx.user.id, db
             )
     except HTTPException as exc:
@@ -153,7 +157,9 @@ async def _handle_manifest_message(
         },
     }
     await websocket.send_json(want_message)
-    await _broadcast_peer_delta(ctx.user.id, peer_id, discovery_assets, member_ids)
+    await _broadcast_peer_delta(
+        ctx.user.id, peer_id, discovery_assets, member_grants
+    )
     return True
 
 

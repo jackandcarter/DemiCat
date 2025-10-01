@@ -131,6 +131,7 @@ public class SyncshellWindow : IDisposable
     private readonly Dictionary<string, Config.SyncshellInviteState> _inviteStateByTarget = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Config.SyncshellInviteState> _inviteStateByRequestId = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pendingApprovalInFlight = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _scopeUpdateInFlight = new(StringComparer.OrdinalIgnoreCase);
     private string _inviteTarget = string.Empty;
     private readonly List<MemberPresenceEntry> _inviteSuggestions = new();
     private int _inviteSuggestionIndex = -1;
@@ -1157,7 +1158,58 @@ public class SyncshellWindow : IDisposable
                 ImGui.SameLine();
                 ImGui.TextDisabled("[Token not linked]");
             }
+
+            DrawMemberScopeControls(member);
         }
+    }
+
+    private void DrawMemberScopeControls(MemberPresenceEntry member)
+    {
+        if (string.IsNullOrWhiteSpace(member.Id))
+        {
+            return;
+        }
+
+        ImGui.Indent();
+        ImGui.PushID($"syncshell-scope-{member.Id}");
+
+        var inFlight = _scopeUpdateInFlight.Contains(member.Id);
+        if (inFlight)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        var shareAppearance = member.Scope.Appearance;
+        if (ImGui.Checkbox("Share appearance", ref shareAppearance))
+        {
+            RequestScopeUpdate(member, shareAppearance, member.Scope.Assets);
+        }
+        if (shareAppearance)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(1f, 0.82f, 0.4f, 1f), "Shares character appearance data.");
+        }
+
+        var shareAssets = member.Scope.Assets;
+        if (ImGui.Checkbox("Share assets", ref shareAssets))
+        {
+            RequestScopeUpdate(member, member.Scope.Appearance, shareAssets);
+        }
+        if (shareAssets)
+        {
+            ImGui.SameLine();
+            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), "Allows this member to download your mod files.");
+        }
+
+        if (inFlight)
+        {
+            ImGui.EndDisabled();
+            ImGui.TextDisabled("Updating member permissions...");
+        }
+
+        ImGui.PopID();
+        ImGui.Unindent();
+        ImGui.Spacing();
     }
 
     private void DrawInviteEntryContent()
@@ -1814,6 +1866,170 @@ public class SyncshellWindow : IDisposable
         Interlocked.CompareExchange(ref _membershipRefreshRequested, 1, 0);
     }
 
+    private void RequestScopeUpdate(MemberPresenceEntry member, bool shareAppearance, bool shareAssets)
+    {
+        if (string.IsNullOrWhiteSpace(member.Id))
+        {
+            return;
+        }
+
+        var memberId = member.Id.Trim();
+        if (memberId.Length == 0)
+        {
+            return;
+        }
+
+        if (!_scopeUpdateInFlight.Add(memberId))
+        {
+            return;
+        }
+
+        var previousAppearance = member.Scope.Appearance;
+        var previousAssets = member.Scope.Assets;
+
+        member.Scope.Hashes = true;
+        member.Scope.Appearance = shareAppearance;
+        member.Scope.Assets = shareAssets;
+
+        _ = UpdateMemberScopeAsync(
+            memberId,
+            shareAppearance,
+            shareAssets,
+            previousAppearance,
+            previousAssets,
+            member);
+    }
+
+    private async Task UpdateMemberScopeAsync(
+        string memberId,
+        bool shareAppearance,
+        bool shareAssets,
+        bool previousAppearance,
+        bool previousAssets,
+        MemberPresenceEntry member)
+    {
+        try
+        {
+            if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            var baseUrl = _config.ApiBaseUrl.TrimEnd('/');
+            var response = await SendWithPairingRetryAsync(() =>
+            {
+                var payload = new { appearance = shareAppearance, assets = shareAssets };
+                var request = new HttpRequestMessage(
+                    HttpMethod.Post,
+                    $"{baseUrl}/api/syncshell/members/{memberId}/scope")
+                {
+                    Content = new StringContent(
+                        JsonSerializer.Serialize(payload),
+                        Encoding.UTF8,
+                        "application/json"),
+                };
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
+                return request;
+            }).ConfigureAwait(false);
+
+            if (response == null)
+            {
+                throw new HttpRequestException("SyncShell pairing is unavailable.");
+            }
+
+            bool? responseAppearance = null;
+            bool? responseAssets = null;
+
+            using (response)
+            {
+                if (!response.IsSuccessStatusCode)
+                {
+                    var detail = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    throw new HttpRequestException(
+                        $"Failed to update member scope: {(int)response.StatusCode} {detail}",
+                        null,
+                        response.StatusCode);
+                }
+
+                var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    try
+                    {
+                        using var document = JsonDocument.Parse(content);
+                        if (document.RootElement.TryGetProperty("scope", out var scopeElement) &&
+                            scopeElement.ValueKind == JsonValueKind.Array)
+                        {
+                            var appearance = false;
+                            var assets = false;
+                            var hashes = false;
+                            foreach (var scopeValue in scopeElement.EnumerateArray())
+                            {
+                                if (scopeValue.ValueKind != JsonValueKind.String)
+                                    continue;
+
+                                switch (scopeValue.GetString()?.Trim().ToLowerInvariant())
+                                {
+                                    case "hashes":
+                                        hashes = true;
+                                        break;
+                                    case "appearance":
+                                        appearance = true;
+                                        break;
+                                    case "assets":
+                                        assets = true;
+                                        break;
+                                }
+                            }
+
+                            if (hashes)
+                            {
+                                responseAppearance = appearance;
+                                responseAssets = assets;
+                            }
+                            else
+                            {
+                                responseAppearance = false;
+                                responseAssets = false;
+                            }
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // Ignore malformed responses and rely on optimistic state.
+                    }
+                }
+            }
+
+            _uiThreadActions.Enqueue(() =>
+            {
+                if (responseAppearance.HasValue)
+                {
+                    member.Scope.Appearance = responseAppearance.Value;
+                }
+                if (responseAssets.HasValue)
+                {
+                    member.Scope.Assets = responseAssets.Value;
+                }
+                _scopeUpdateInFlight.Remove(memberId);
+                RequestMembershipRefresh();
+            });
+        }
+        catch (Exception ex)
+        {
+            var services = PluginServices.Instance;
+            services?.Log.Warning(ex, "Failed to update SyncShell member scope");
+
+            _uiThreadActions.Enqueue(() =>
+            {
+                member.Scope.Appearance = previousAppearance;
+                member.Scope.Assets = previousAssets;
+                _scopeUpdateInFlight.Remove(memberId);
+                services?.ToastGui.ShowError("Failed to update member scope – check logs.");
+            });
+        }
+    }
+
     private async Task RefreshMembershipOverviewAsync(bool force = false)
     {
         if (_disposed || !_config.FCSyncShell)
@@ -2086,7 +2302,7 @@ public class SyncshellWindow : IDisposable
 
     private static MemberPresenceEntry ParseMemberEntry(JsonElement element)
     {
-        return new MemberPresenceEntry
+        var entry = new MemberPresenceEntry
         {
             Id = GetString(element, "id", "memberId", "userId"),
             DisplayName = GetString(element, "displayName", "name", "nickname"),
@@ -2096,6 +2312,34 @@ public class SyncshellWindow : IDisposable
             SyncedAt = GetDateTime(element, "syncedAt", "since", "synced_at"),
             TokenLinked = GetBoolean(element, "tokenLinked", "token_linked"),
         };
+
+        if (TryGetProperty(element, "scope", out var scopeElement) && scopeElement.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var scopeValue in scopeElement.EnumerateArray())
+            {
+                if (scopeValue.ValueKind != JsonValueKind.String)
+                    continue;
+
+                var value = scopeValue.GetString();
+                if (string.IsNullOrWhiteSpace(value))
+                    continue;
+
+                switch (value.Trim().ToLowerInvariant())
+                {
+                    case "hashes":
+                        entry.Scope.Hashes = true;
+                        break;
+                    case "appearance":
+                        entry.Scope.Appearance = true;
+                        break;
+                    case "assets":
+                        entry.Scope.Assets = true;
+                        break;
+                }
+            }
+        }
+
+        return entry;
     }
 
     private static PendingApprovalEntry ParsePendingApproval(JsonElement element)
@@ -4820,6 +5064,17 @@ public class SyncshellWindow : IDisposable
         SimpleHeels,
     }
 
+    private sealed class MemberScope
+    {
+        public bool Hashes { get; set; } = true;
+
+        public bool Appearance { get; set; }
+            = false;
+
+        public bool Assets { get; set; }
+            = false;
+    }
+
     private sealed class MemberPresenceEntry
     {
         public string Id { get; set; } = string.Empty;
@@ -4840,6 +5095,8 @@ public class SyncshellWindow : IDisposable
 
         public bool TokenLinked { get; set; }
             = false;
+
+        public MemberScope Scope { get; } = new MemberScope();
     }
 
     private sealed class PendingApprovalEntry
