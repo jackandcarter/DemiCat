@@ -409,7 +409,6 @@ public sealed class NotePadWindow : IDisposable
             ImGui.EndDisabled();
             _editorContent = content;
             _editorVersion = page.Version;
-            DrawPreview(content);
             return;
         }
 
@@ -437,8 +436,6 @@ public sealed class NotePadWindow : IDisposable
         {
             _ = SavePageAsync(section.Id, page.Id, force: true);
         }
-
-        DrawPreview(_editorContent);
     }
 
     private void DrawFormattingToolbar()
@@ -828,21 +825,6 @@ public sealed class NotePadWindow : IDisposable
         _editorContent = text ?? string.Empty;
         _dirty = true;
         _lastEditUtc = DateTime.UtcNow;
-    }
-
-    private void DrawPreview(string content)
-    {
-        if (string.IsNullOrEmpty(content))
-        {
-            return;
-        }
-
-        ImGui.Spacing();
-        ImGui.Separator();
-        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Formatted Preview");
-        ImGui.PushTextWrapPos();
-        ImGui.TextUnformatted(MarkdownFormatter.Format(content));
-        ImGui.PopTextWrapPos();
     }
 
     private int OnEditorEdited(ref ImGuiInputTextCallbackData data)
