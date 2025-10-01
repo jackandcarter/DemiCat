@@ -77,43 +77,58 @@ public class SettingsWindow : IDisposable
     {
         if (IsOpen)
         {
-            ImGui.SetNextWindowSize(DefaultWindowSize, ImGuiCond.FirstUseEver);
-            if (ImGui.Begin("DemiCat Settings", ref IsOpen))
+            var colorPushCount = 0;
+            try
             {
-                if (!_settingsLoaded)
+                var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
+                primaryColor.W = 1f;
+                ImGui.PushStyleColor(ImGuiCol.WindowBg, primaryColor);
+                ImGui.PushStyleColor(ImGuiCol.ChildBg, primaryColor);
+                colorPushCount = 2;
+
+                ImGui.SetNextWindowSize(DefaultWindowSize, ImGuiCond.FirstUseEver);
+                if (ImGui.Begin("DemiCat Settings", ref IsOpen))
                 {
-                    _settingsLoaded = true;
-                    _ = Task.Run(LoadSettings);
-                }
+                    if (!_settingsLoaded)
+                    {
+                        _settingsLoaded = true;
+                        _ = Task.Run(LoadSettings);
+                    }
 
-                if (ImGui.BeginTabBar("SettingsTabs"))
+                    if (ImGui.BeginTabBar("SettingsTabs"))
+                    {
+                        if (ImGui.BeginTabItem("General"))
+                        {
+                            DrawGeneralTab();
+                            ImGui.EndTabItem();
+                        }
+
+                        if (ImGui.BeginTabItem("Appearance"))
+                        {
+                            DrawAppearanceTab();
+                            ImGui.EndTabItem();
+                        }
+
+                        if (ImGui.BeginTabItem("SyncShell Settings"))
+                        {
+                            DrawSyncshellTab();
+                            ImGui.EndTabItem();
+                        }
+
+                        ImGui.EndTabBar();
+                    }
+
+                    ImGui.End();
+                }
+                else
                 {
-                    if (ImGui.BeginTabItem("General"))
-                    {
-                        DrawGeneralTab();
-                        ImGui.EndTabItem();
-                    }
-
-                    if (ImGui.BeginTabItem("Appearance"))
-                    {
-                        DrawAppearanceTab();
-                        ImGui.EndTabItem();
-                    }
-
-                    if (ImGui.BeginTabItem("SyncShell Settings"))
-                    {
-                        DrawSyncshellTab();
-                        ImGui.EndTabItem();
-                    }
-
-                    ImGui.EndTabBar();
+                    ImGui.End();
                 }
-
-                ImGui.End();
             }
-            else
+            finally
             {
-                ImGui.End();
+                if (colorPushCount > 0)
+                    ImGui.PopStyleColor(colorPushCount);
             }
         }
 
