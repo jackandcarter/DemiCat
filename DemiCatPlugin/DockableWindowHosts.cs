@@ -8,8 +8,8 @@ public sealed class EventsDockableWindow : DockableWindow
     private readonly UiRenderer _ui;
     private readonly Func<bool> _isLinked;
 
-    public EventsDockableWindow(Config config, UiRenderer ui, Func<bool> isLinked, Action openSettings)
-        : base(config, "DemiCat Events", openSettings)
+    public EventsDockableWindow(Config config, UiRenderer ui, Func<bool> isLinked)
+        : base(config, "DemiCat Events")
     {
         _ui = ui;
         _isLinked = isLinked;
@@ -44,8 +44,8 @@ public sealed class EventCreateDockableWindow : DockableWindow
     private readonly EventCreateWindow _window;
     private readonly Func<bool> _isLinked;
 
-    public EventCreateDockableWindow(Config config, EventCreateWindow window, Func<bool> isLinked, Action openSettings)
-        : base(config, "Create Event", openSettings)
+    public EventCreateDockableWindow(Config config, EventCreateWindow window, Func<bool> isLinked)
+        : base(config, "Create Event")
     {
         _window = window;
         _isLinked = isLinked;
@@ -76,8 +76,8 @@ public sealed class TemplatesDockableWindow : DockableWindow
     private readonly Func<bool> _isLinked;
     private bool _activated;
 
-    public TemplatesDockableWindow(Config config, TemplatesWindow window, Func<bool> isLinked, Action openSettings)
-        : base(config, "Templates", openSettings)
+    public TemplatesDockableWindow(Config config, TemplatesWindow window, Func<bool> isLinked)
+        : base(config, "Templates")
     {
         _window = window;
         _isLinked = isLinked;
@@ -121,8 +121,8 @@ public sealed class NotePadDockableWindow : DockableWindow
 {
     private readonly NotePadWindow _window;
 
-    public NotePadDockableWindow(Config config, NotePadWindow window, Action openSettings)
-        : base(config, "NotePad", openSettings)
+    public NotePadDockableWindow(Config config, NotePadWindow window)
+        : base(config, "NotePad")
     {
         _window = window;
     }
@@ -133,7 +133,7 @@ public sealed class NotePadDockableWindow : DockableWindow
 
         if (!Config.NotePadEnabled)
         {
-            ImGui.TextUnformatted("NotePad is disabled.");
+            ImGui.TextWrapped("NotePad is disabled. Enable it from the settings accessed via the DemiCat dock icon.");
             return;
         }
 
@@ -146,8 +146,8 @@ public sealed class RequestBoardDockableWindow : DockableWindow
     private readonly RequestBoardWindow _window;
     private readonly Func<bool> _isLinked;
 
-    public RequestBoardDockableWindow(Config config, RequestBoardWindow window, Func<bool> isLinked, Action openSettings)
-        : base(config, "Request Board", openSettings)
+    public RequestBoardDockableWindow(Config config, RequestBoardWindow window, Func<bool> isLinked)
+        : base(config, "Request Board")
     {
         _window = window;
         _isLinked = isLinked;
@@ -172,8 +172,8 @@ public sealed class SyncshellDockableWindow : DockableWindow
     private readonly SyncshellWindow _window;
     private readonly Func<bool> _isLinked;
 
-    public SyncshellDockableWindow(Config config, SyncshellWindow window, Func<bool> isLinked, Action openSettings)
-        : base(config, "Syncshell", openSettings)
+    public SyncshellDockableWindow(Config config, SyncshellWindow window, Func<bool> isLinked)
+        : base(config, "Syncshell")
     {
         _window = window;
         _isLinked = isLinked;
@@ -206,9 +206,8 @@ public class ChatDockableWindow : DockableWindow
         ChatWindow chatWindow,
         Func<bool> isLinked,
         Func<float> opacityProvider,
-        string linkPrompt,
-        Action openSettings)
-        : base(config, windowTitle, openSettings)
+        string linkPrompt)
+        : base(config, windowTitle)
     {
         _chatWindow = chatWindow;
         _isLinked = isLinked;
@@ -264,16 +263,14 @@ public sealed class OfficerChatDockableWindow : ChatDockableWindow
         Config config,
         OfficerChatWindow officerChat,
         Func<bool> isLinked,
-        Func<bool> hasOfficerAccess,
-        Action openSettings)
+        Func<bool> hasOfficerAccess)
         : base(
             config,
             "Officer Chat",
             officerChat,
             isLinked,
             () => config.OfficerChatOpacity,
-            "Link DemiCat to use officer chat.",
-            openSettings)
+            "Link DemiCat to use officer chat.")
     {
         _officerChat = officerChat;
         _hasOfficerAccess = hasOfficerAccess;
