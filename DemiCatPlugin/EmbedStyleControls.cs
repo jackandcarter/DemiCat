@@ -10,6 +10,13 @@ namespace DemiCatPlugin;
 public static class EmbedStyleControls
 {
     private static readonly Dictionary<string, string> GlyphSearchTerms = new();
+    private static readonly string[] OfflineBorderGlyphs =
+    {
+        "⬛", "⬜", "🟥", "🟧", "🟨", "🟩", "🟦", "🟪", "🟫",
+        "⚫", "⚪", "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤",
+        "◼️", "◻️", "◾", "◽", "▪️", "▫️", "🔶", "🔷", "🔸", "🔹",
+        "♦️", "🔺", "🔻"
+    };
 
     public sealed class Context
     {
@@ -175,7 +182,48 @@ public static class EmbedStyleControls
         var searchKey = GetSearchKey(context);
         if (manager == null || !manager.CanLoadStandard)
         {
-            ImGui.TextDisabled("Emoji list unavailable. Link DemiCat to load emoji.");
+            if (OfflineBorderGlyphs.Length == 0)
+            {
+                ImGui.TextDisabled("Emoji list unavailable. Link DemiCat to load emoji.");
+            }
+            else
+            {
+                ImGui.TextDisabled("Emoji list unavailable. Using built-in symbols.");
+                ImGui.Separator();
+
+                var tileSize = Math.Clamp(context.EmojiTileSize, Config.MinEmojiTileSize, Config.MaxEmojiTileSize);
+                var avail = Math.Max(1f, ImGui.GetContentRegionAvail().X);
+                var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (tileSize + 4f)));
+                var column = 0;
+
+                for (var i = 0; i < OfflineBorderGlyphs.Length; i++)
+                {
+                    if (column >= columns)
+                    {
+                        ImGui.NewLine();
+                        column = 0;
+                    }
+
+                    var glyph = OfflineBorderGlyphs[i];
+                    ImGui.PushID(i);
+                    if (ImGui.Button(glyph, new Vector2(tileSize, tileSize)))
+                    {
+                        selected = glyph;
+                    }
+                    ImGui.PopID();
+
+                    column++;
+                    if (column < columns)
+                    {
+                        ImGui.SameLine();
+                    }
+
+                    if (!string.IsNullOrEmpty(selected))
+                    {
+                        break;
+                    }
+                }
+            }
         }
         else
         {
