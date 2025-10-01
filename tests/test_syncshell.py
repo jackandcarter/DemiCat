@@ -261,6 +261,77 @@ def test_asset_upload_download_and_rate_limit(tmp_path):
     asyncio.run(_run())
 
 
+def test_asset_presign_rejected_when_budget_exhausted(tmp_path):
+    async def _run():
+        session_factory = await _prepare_db()
+        async with session_factory as db:
+            user = User(id=10, discord_user_id=10, global_name="Budgetless")
+            member = User(id=11, discord_user_id=11, global_name="Member")
+            db.add_all([user, member])
+            await db.commit()
+
+            now = datetime.utcnow()
+            db.add_all(
+                [
+                    SyncshellMember(
+                        user_id=user.id,
+                        member_user_id=member.id,
+                        created_at=now,
+                        scope=int(SyncshellScope.HASHES | SyncshellScope.ASSETS),
+                    ),
+                    SyncshellMember(
+                        user_id=member.id,
+                        member_user_id=user.id,
+                        created_at=now,
+                        scope=int(SyncshellScope.HASHES | SyncshellScope.ASSETS),
+                    ),
+                ]
+            )
+            await db.commit()
+
+            ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
+            original_budget = syncshell.TRANSFER_BUDGET_BYTES
+            original_window = syncshell.TRANSFER_BUDGET_WINDOW_SECONDS
+            syncshell.TRANSFER_BUDGET_BYTES = 30
+            syncshell.TRANSFER_BUDGET_WINDOW_SECONDS = 3600
+
+            async def fail_upload():
+                raise AssertionError("presign_upload should not be called")
+
+            async def fail_download(asset_id):
+                raise AssertionError("presign_download should not be called")
+
+            original_presign_upload = syncshell.presign_upload
+            original_presign_download = syncshell.presign_download
+            syncshell.presign_upload = fail_upload
+            syncshell.presign_download = fail_download
+
+            try:
+                await syncshell.pair(ctx=ctx, db=db)
+                manifest, _ = build_manifest_payload(tmp_path)
+                await syncshell._reset_transfer_budgets(db)
+
+                with pytest.raises(syncshell.HTTPException) as manifest_exc:
+                    await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+                assert manifest_exc.value.status_code == 429
+
+                with pytest.raises(syncshell.HTTPException) as upload_exc:
+                    await syncshell.request_asset_upload(ctx=ctx, db=db)
+                assert upload_exc.value.status_code == 429
+
+                with pytest.raises(syncshell.HTTPException) as download_exc:
+                    await syncshell.request_asset_download("asset", ctx=ctx, db=db)
+                assert download_exc.value.status_code == 429
+            finally:
+                syncshell.TRANSFER_BUDGET_BYTES = original_budget
+                syncshell.TRANSFER_BUDGET_WINDOW_SECONDS = original_window
+                syncshell.presign_upload = original_presign_upload
+                syncshell.presign_download = original_presign_download
+
+    asyncio.run(_run())
+
+
 def test_asset_scope_required_for_presign(tmp_path):
     async def _run():
         session_factory = await _prepare_db()

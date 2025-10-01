@@ -150,6 +150,63 @@ class _TransferBudgetStore:
         self._loaded: bool = False
         self._lock: asyncio.Lock = asyncio.Lock()
 
+    async def _get_budget_locked(
+        self, user_id: int, db: AsyncSession, *, now: datetime
+    ) -> tuple[_TransferBudget, bool]:
+        budget = self._cache.get(user_id)
+        created = False
+
+        if budget is None:
+            record = await db.get(SyncshellTransferBudget, user_id)
+            if record is not None:
+                budget = _TransferBudget(
+                    window_start=record.window_start or now,
+                    used_bytes=int(record.used_bytes or 0),
+                )
+            else:
+                budget = _TransferBudget(window_start=now, used_bytes=0)
+                created = True
+            self._cache[user_id] = budget
+
+        return budget, created
+
+    async def _refresh_window_locked(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: int,
+        budget: _TransferBudget,
+        now: datetime,
+        window: timedelta,
+    ) -> bool:
+        if now - budget.window_start >= window:
+            budget.window_start = now
+            budget.used_bytes = 0
+            await self._persist_budget_record(
+                db,
+                user_id=user_id,
+                window_start=budget.window_start,
+                used_bytes=budget.used_bytes,
+            )
+            return True
+        return False
+
+    @staticmethod
+    def _serialise_budget_payload(
+        *,
+        budget: _TransferBudget,
+        limit: int,
+        window: timedelta,
+    ) -> dict[str, Any]:
+        remaining = max(0, limit - budget.used_bytes)
+        window_end = budget.window_start + window
+        return {
+            "limitBytes": limit,
+            "usedBytes": budget.used_bytes,
+            "throttleAfterBytes": remaining,
+            "windowEndsAt": _to_iso(window_end),
+        }
+
     async def _load_unlocked(self, db: AsyncSession) -> None:
         now = datetime.utcnow()
         self._cache.clear()
@@ -182,22 +239,15 @@ class _TransferBudgetStore:
             window = timedelta(seconds=max(1, TRANSFER_BUDGET_WINDOW_SECONDS))
             limit = max(0, TRANSFER_BUDGET_BYTES)
 
-            budget = self._cache.get(user_id)
+            budget, created = await self._get_budget_locked(user_id, db, now=now)
 
-            if budget is None:
-                record = await db.get(SyncshellTransferBudget, user_id)
-                if record is not None:
-                    budget = _TransferBudget(
-                        window_start=record.window_start or now,
-                        used_bytes=int(record.used_bytes or 0),
-                    )
-                else:
-                    budget = _TransferBudget(window_start=now, used_bytes=0)
-                self._cache[user_id] = budget
-
-            if now - budget.window_start >= window:
-                budget.window_start = now
-                budget.used_bytes = 0
+            refreshed = await self._refresh_window_locked(
+                db,
+                user_id=user_id,
+                budget=budget,
+                now=now,
+                window=window,
+            )
 
             incremental = 0
             for entry in diff.get("need", []):
@@ -209,22 +259,48 @@ class _TransferBudgetStore:
             if budget.used_bytes < 0:
                 budget.used_bytes = 0
 
-            await self._persist_budget_record(
-                db,
-                user_id=user_id,
-                window_start=budget.window_start,
-                used_bytes=budget.used_bytes,
+            if created or incremental != 0:
+                await self._persist_budget_record(
+                    db,
+                    user_id=user_id,
+                    window_start=budget.window_start,
+                    used_bytes=budget.used_bytes,
+                )
+
+            return self._serialise_budget_payload(
+                budget=budget, limit=limit, window=window
             )
 
-            remaining = max(0, limit - budget.used_bytes)
-            window_end = budget.window_start + window
+    async def get_payload(self, user_id: int, db: AsyncSession) -> dict[str, Any]:
+        async with self._lock:
+            if not self._loaded:
+                await self._load_unlocked(db)
 
-            return {
-                "limitBytes": limit,
-                "usedBytes": budget.used_bytes,
-                "throttleAfterBytes": remaining,
-                "windowEndsAt": _to_iso(window_end),
-            }
+            now = datetime.utcnow()
+            window = timedelta(seconds=max(1, TRANSFER_BUDGET_WINDOW_SECONDS))
+            limit = max(0, TRANSFER_BUDGET_BYTES)
+
+            budget, created = await self._get_budget_locked(user_id, db, now=now)
+
+            refreshed = await self._refresh_window_locked(
+                db,
+                user_id=user_id,
+                budget=budget,
+                now=now,
+                window=window,
+            )
+
+            if created and not refreshed:
+                await self._persist_budget_record(
+                    db,
+                    user_id=user_id,
+                    window_start=budget.window_start,
+                    used_bytes=budget.used_bytes,
+                )
+
+            return self._serialise_budget_payload(
+                budget=budget, limit=limit, window=window
+            )
 
     async def _persist_budget_record(
         self,
@@ -815,6 +891,27 @@ async def _update_transfer_budget(
     return await _transfer_budget_store.update(user_id, diff, db)
 
 
+async def _get_transfer_budget_payload(user_id: int, db: AsyncSession) -> dict[str, Any]:
+    return await _transfer_budget_store.get_payload(user_id, db)
+
+
+def _ensure_budget_remaining(budget_payload: dict[str, Any]) -> None:
+    throttle_after = budget_payload.get("throttleAfterBytes")
+    try:
+        remaining = int(throttle_after)
+    except (TypeError, ValueError):
+        return
+    if remaining <= 0:
+        raise HTTPException(status_code=429, detail="transfer budget exhausted")
+
+
+async def _require_available_budget(user_id: int, db: AsyncSession) -> dict[str, Any]:
+    budget_payload = await _get_transfer_budget_payload(user_id, db)
+    await db.commit()
+    _ensure_budget_remaining(budget_payload)
+    return budget_payload
+
+
 async def handle_manifest_upload(
     manifest: dict[str, Any], ctx: RequestContext, db: AsyncSession
 ) -> tuple[dict[str, list[dict[str, Any]]], dict[str, Any]]:
@@ -851,6 +948,8 @@ async def handle_manifest_upload(
     budget_payload = await _update_transfer_budget(ctx.user.id, diff, db)
 
     await db.commit()
+
+    _ensure_budget_remaining(budget_payload)
 
     limits_payload = {
         "budget": budget_payload,
@@ -1580,6 +1679,7 @@ async def request_asset_upload(
     """Return a pre-signed URL for chunked asset upload."""
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
+    await _require_available_budget(ctx.user.id, db)
     if not await _user_has_asset_scope(ctx.user.id, db, as_member=False):
         raise HTTPException(status_code=403, detail="asset scope required")
     try:
@@ -1598,6 +1698,7 @@ async def request_asset_download(
     """Return a pre-signed URL for asset download."""
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
+    await _require_available_budget(ctx.user.id, db)
     if not await _user_has_asset_scope(ctx.user.id, db, as_member=True):
         raise HTTPException(status_code=403, detail="asset scope required")
     try:
