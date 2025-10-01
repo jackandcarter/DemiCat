@@ -68,6 +68,7 @@ internal static class RoleCache
                 ?? new GuildRolesResponseDto();
             var roles = payload.Roles ?? new List<RoleDto>();
             var mentionRoleIds = payload.MentionRoleIds ?? new List<string>();
+            var requestsChannelId = payload.RequestsChannelId;
 
             _roles = roles;
             _lastErrorMessage = null;
@@ -76,6 +77,7 @@ internal static class RoleCache
             {
                 config.GuildRoles = roles;
                 config.MentionRoleIds = mentionRoleIds;
+                config.RequestsChannelId = requestsChannelId ?? string.Empty;
                 PluginServices.Instance!.PluginInterface.SavePluginConfig(config);
             });
         }

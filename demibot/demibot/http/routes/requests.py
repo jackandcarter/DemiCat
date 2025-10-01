@@ -16,7 +16,16 @@ from ..deps import RequestContext, api_key_auth, get_db
 from ._messages_common import _role_set
 from ..ws import manager
 from ..discord_client import discord_client
-from ...db.models import Request as DbRequest, RequestStatus, RequestType, Urgency, User
+from ...db.models import (
+    Guild,
+    GuildChannel,
+    ChannelKind,
+    Request as DbRequest,
+    RequestStatus,
+    RequestType,
+    Urgency,
+    User,
+)
 from ...db.models import RequestTombstone
 from ...config import load_config
 
@@ -108,16 +117,40 @@ async def _broadcast(guild_id: int, request_id: int, delta: dict[str, Any]) -> N
 
 async def _requests_channel(
     discord_guild_id: int | None,
+    db: AsyncSession,
 ) -> discord.abc.Messageable | None:
     if not discord_client or discord_guild_id is None:
         return None
+
     guild = discord_client.get_guild(discord_guild_id)
     if not guild:
         return None
-    for channel in guild.text_channels:
-        if channel.name == "requests":
-            return channel
-    return None
+
+    channel_id = await db.scalar(
+        select(GuildChannel.channel_id)
+        .join(Guild, Guild.id == GuildChannel.guild_id)
+        .where(
+            Guild.discord_guild_id == discord_guild_id,
+            GuildChannel.kind == ChannelKind.REQUESTS,
+        )
+    )
+    if channel_id is None:
+        return None
+
+    channel = None
+    if hasattr(guild, "get_channel"):
+        channel = guild.get_channel(channel_id)
+    if channel is None:
+        try:
+            channel = discord_client.get_channel(channel_id)
+        except Exception:
+            channel = None
+    if channel is None:
+        try:
+            channel = await discord_client.fetch_channel(channel_id)  # type: ignore[attr-defined]
+        except Exception:  # pragma: no cover - network errors
+            channel = None
+    return channel
 
 
 async def _send_dm(discord_id: int, message: str) -> None:
@@ -137,7 +170,7 @@ async def _notify(
     db: AsyncSession,
     ctx_user: User,
 ) -> None:
-    channel = await _requests_channel(discord_guild_id)
+    channel = await _requests_channel(discord_guild_id, db)
     if channel:
         cfg = load_config()
         url = f"http://{cfg.server.host}:{cfg.server.port}/board/requests/{req.id}"

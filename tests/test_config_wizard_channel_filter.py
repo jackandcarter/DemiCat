@@ -86,7 +86,7 @@ def test_selected_channels_are_hidden_across_steps():
         await view.render(DummyInteraction(), initial=True)
         assert _channel_labels(view) == {"two", "three"}
 
-        view.fc_chat_channel_ids = [2]
+        view.requests_channel_id = 2
         view.step = 2
         await view.render(DummyInteraction(), initial=True)
         assert _channel_labels(view) == {"three"}

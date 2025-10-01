@@ -395,6 +395,7 @@ class ConfigWizard(discord.ui.View):
         self.success_message = success_message
         self.step = 0
         self.event_channel_ids: list[int] = []
+        self.requests_channel_id: int | None = None
         self.fc_chat_channel_ids: list[int] = []
         self.officer_chat_channel_ids: list[int] = []
         self.officer_role_ids: list[int] = []
@@ -423,6 +424,39 @@ class ConfigWizard(discord.ui.View):
         )
         self.finish_button.callback = self.on_finish
 
+    def _channel_selected_ids(self, step: int) -> list[int]:
+        if step == 0:
+            return list(self.event_channel_ids)
+        if step == 1:
+            return [self.requests_channel_id] if self.requests_channel_id is not None else []
+        if step == 2:
+            return list(self.fc_chat_channel_ids)
+        if step == 3:
+            return list(self.officer_chat_channel_ids)
+        return []
+
+    def _toggle_channel_selection(self, step: int, channel_id: int) -> None:
+        if step == 0:
+            if channel_id in self.event_channel_ids:
+                self.event_channel_ids.remove(channel_id)
+            else:
+                self.event_channel_ids.append(channel_id)
+        elif step == 1:
+            if self.requests_channel_id == channel_id:
+                self.requests_channel_id = None
+            else:
+                self.requests_channel_id = channel_id
+        elif step == 2:
+            if channel_id in self.fc_chat_channel_ids:
+                self.fc_chat_channel_ids.remove(channel_id)
+            else:
+                self.fc_chat_channel_ids.append(channel_id)
+        elif step == 3:
+            if channel_id in self.officer_chat_channel_ids:
+                self.officer_chat_channel_ids.remove(channel_id)
+            else:
+                self.officer_chat_channel_ids.append(channel_id)
+
     async def render(
         self,
         inter: discord.Interaction,
@@ -433,29 +467,23 @@ class ConfigWizard(discord.ui.View):
         self.clear_items()
         step_descriptions = [
             "Select the event channels to be used in the plugin",
+            "Select the requests channel to be used in the plugin",
             "Select the FC chat channels to be used in the plugin",
             "Select the officer chat channels to be used in the plugin",
             "Select the roles that should be treated as officers",
             "Select the roles that can be mentioned",
         ]
+        total_steps = len(step_descriptions)
         embed = discord.Embed(
             title=self.title,
-            description=f"Step {self.step + 1} / 5\n{step_descriptions[self.step]}",
+            description=f"Step {self.step + 1} / {total_steps}\n{step_descriptions[self.step]}",
         )
-        if self.step in (0, 1, 2):
-            selected_map = {
-                0: self.event_channel_ids,
-                1: self.fc_chat_channel_ids,
-                2: self.officer_chat_channel_ids,
-            }
-            selected = selected_map[self.step]
+        channel_step_count = 4
+        if self.step < channel_step_count:
+            selected_ids = self._channel_selected_ids(self.step)
             used_ids: set[int] = set()
-            if self.step > 0:
-                used_ids.update(self.event_channel_ids)
-            if self.step > 1:
-                used_ids.update(self.fc_chat_channel_ids)
-            if self.step > 2:
-                used_ids.update(self.officer_chat_channel_ids)
+            for previous_step in range(self.step):
+                used_ids.update(self._channel_selected_ids(previous_step))
             channels = [ch for ch in self.channels if ch.id not in used_ids]
             max_page = max((len(channels) - 1) // self.page_size, 0)
             self.channel_page = min(self.channel_page, max_page)
@@ -464,16 +492,13 @@ class ConfigWizard(discord.ui.View):
             for ch in channels[start:end]:
                 style = (
                     discord.ButtonStyle.primary
-                    if ch.id in selected
+                    if ch.id in selected_ids
                     else discord.ButtonStyle.secondary
                 )
                 button = discord.ui.Button(label=ch.name, style=style)
 
                 async def channel_cb(i: discord.Interaction, cid=ch.id) -> None:
-                    if cid in selected:
-                        selected.remove(cid)
-                    else:
-                        selected.append(cid)
+                    self._toggle_channel_selection(self.step, cid)
                     await self.render(i)
 
                 button.callback = channel_cb
@@ -482,8 +507,8 @@ class ConfigWizard(discord.ui.View):
                 self.add_item(self.page_prev_button)
             if end < len(channels):
                 self.add_item(self.page_next_button)
-            self.next_button.disabled = len(selected) == 0
-        elif self.step == 3:
+            self.next_button.disabled = len(selected_ids) == 0
+        elif self.step == channel_step_count:
             officer_select = discord.ui.RoleSelect(
                 placeholder="Select officer roles",
                 min_values=1,
@@ -501,6 +526,7 @@ class ConfigWizard(discord.ui.View):
 
             officer_select.callback = officer_cb
             self.add_item(officer_select)
+            self.next_button.disabled = len(self.officer_role_ids) == 0
         else:
             mention_select = discord.ui.RoleSelect(
                 placeholder="Select mentionable roles",
@@ -521,7 +547,7 @@ class ConfigWizard(discord.ui.View):
             self.add_item(mention_select)
         if self.step > 0:
             self.add_item(self.back_button)
-        if self.step < 4:
+        if self.step < total_steps - 1:
             self.add_item(self.next_button)
         else:
             self.finish_button.disabled = len(self.mention_role_ids) == 0
@@ -546,17 +572,22 @@ class ConfigWizard(discord.ui.View):
                 "Select at least one event channel", ephemeral=True
             )
             return
-        if self.step == 1 and not self.fc_chat_channel_ids:
+        if self.step == 1 and self.requests_channel_id is None:
+            await interaction.response.send_message(
+                "Select a requests channel", ephemeral=True
+            )
+            return
+        if self.step == 2 and not self.fc_chat_channel_ids:
             await interaction.response.send_message(
                 "Select at least one FC chat channel", ephemeral=True
             )
             return
-        if self.step == 2 and not self.officer_chat_channel_ids:
+        if self.step == 3 and not self.officer_chat_channel_ids:
             await interaction.response.send_message(
                 "Select at least one officer chat channel", ephemeral=True
             )
             return
-        if self.step == 3 and not self.officer_role_ids:
+        if self.step == 4 and not self.officer_role_ids:
             await interaction.response.send_message(
                 "Select at least one officer role", ephemeral=True
             )
@@ -578,6 +609,7 @@ class ConfigWizard(discord.ui.View):
         if not all(
             [
                 self.event_channel_ids,
+                [self.requests_channel_id] if self.requests_channel_id else [],
                 self.fc_chat_channel_ids,
                 self.officer_chat_channel_ids,
                 self.officer_role_ids,
@@ -588,11 +620,21 @@ class ConfigWizard(discord.ui.View):
                 "All selections are required", ephemeral=True
             )
             return
-        if (
-            set(self.event_channel_ids) & set(self.fc_chat_channel_ids)
-            or set(self.event_channel_ids) & set(self.officer_chat_channel_ids)
-            or set(self.fc_chat_channel_ids) & set(self.officer_chat_channel_ids)
-        ):
+        channel_sets = [
+            set(self.event_channel_ids),
+            {self.requests_channel_id} if self.requests_channel_id else set(),
+            set(self.fc_chat_channel_ids),
+            set(self.officer_chat_channel_ids),
+        ]
+        duplicate = False
+        for idx, current in enumerate(channel_sets):
+            for other in channel_sets[idx + 1 :]:
+                if current & other:
+                    duplicate = True
+                    break
+            if duplicate:
+                break
+        if duplicate:
             await interaction.response.send_message(
                 "Each channel may only be selected once", ephemeral=True
             )
@@ -675,6 +717,8 @@ class ConfigWizard(discord.ui.View):
                 desired_channel_map: dict[int, ChannelKind] = {}
                 for cid in self.event_channel_ids:
                     desired_channel_map[cid] = ChannelKind.EVENT
+                if self.requests_channel_id is not None:
+                    desired_channel_map[self.requests_channel_id] = ChannelKind.REQUESTS
                 for cid in self.fc_chat_channel_ids:
                     desired_channel_map[cid] = ChannelKind.FC_CHAT
                 for cid in self.officer_chat_channel_ids:
@@ -688,6 +732,7 @@ class ConfigWizard(discord.ui.View):
                 duplicate_channels: list[GuildChannel] = []
                 replaceable_kinds = {
                     ChannelKind.EVENT,
+                    ChannelKind.REQUESTS,
                     ChannelKind.FC_CHAT,
                     ChannelKind.OFFICER_CHAT,
                 }
@@ -750,6 +795,7 @@ class ConfigWizard(discord.ui.View):
         summary = (
             f"{self.success_message}\n"
             f"Event channels: {', '.join(f'<#{c}>' for c in self.event_channel_ids)}\n"
+            f"Requests channel: <#{self.requests_channel_id}>\n"
             f"FC chat channels: {', '.join(f'<#{c}>' for c in self.fc_chat_channel_ids)}\n"
             f"Officer chat channels: {', '.join(f'<#{c}>' for c in self.officer_chat_channel_ids)}\n"
             f"Officer roles: {', '.join(f'<@&{r}>' for r in self.officer_role_ids)}\n"

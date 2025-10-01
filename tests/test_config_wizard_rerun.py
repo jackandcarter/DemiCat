@@ -222,6 +222,7 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
         # First run of the wizard
         view1 = ConfigWizard(guild, "title", "final", "done")
         view1.event_channel_ids = [1]
+        view1.requests_channel_id = 4
         view1.fc_chat_channel_ids = [2]
         view1.officer_chat_channel_ids = [3]
         view1.officer_role_ids = [42]
@@ -247,6 +248,7 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
         # Change only the FC chat selection to ensure the previous FC
         # channel rows are replaced cleanly while leaving other kinds intact.
         view2.event_channel_ids = [1]
+        view2.requests_channel_id = 4
         view2.fc_chat_channel_ids = [5]
         view2.officer_chat_channel_ids = [3]
         view2.officer_role_ids = [42]
@@ -261,7 +263,7 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
                     )
                 )
             ).scalars().all()
-            assert len(chans) == 3
+            assert len(chans) == 4
             fc_channels = [
                 chan.channel_id for chan in chans if chan.kind == ChannelKind.FC_CHAT
             ]
@@ -277,6 +279,7 @@ def test_rerun_setup_wizard_no_integrity_error() -> None:
             }
             assert channel_map == {
                 (1, ChannelKind.EVENT): "one",
+                (4, ChannelKind.REQUESTS): "four",
                 (3, ChannelKind.OFFICER_CHAT): "three",
                 (5, ChannelKind.FC_CHAT): "five",
             }
@@ -300,6 +303,7 @@ def test_second_wizard_run_preserves_existing_webhook() -> None:
 
         view1 = ConfigWizard(guild, "title", "final", "done")
         view1.event_channel_ids = [101]
+        view1.requests_channel_id = 404
         view1.fc_chat_channel_ids = [202]
         view1.officer_chat_channel_ids = [303]
         view1.officer_role_ids = [84]
@@ -324,6 +328,7 @@ def test_second_wizard_run_preserves_existing_webhook() -> None:
 
         view2 = ConfigWizard(guild, "title", "final", "done")
         view2.event_channel_ids = [101]
+        view2.requests_channel_id = 404
         view2.fc_chat_channel_ids = [202]
         view2.officer_chat_channel_ids = [303]
         view2.officer_role_ids = [84]
@@ -406,6 +411,7 @@ def test_existing_chat_channel_promoted_to_fc_chat() -> None:
 
         view = ConfigWizard(guild, "title", "final", "done")
         view.event_channel_ids = [1001]
+        view.requests_channel_id = 4004
         view.fc_chat_channel_ids = [fc_channel_id]
         view.officer_chat_channel_ids = [3003]
         view.officer_role_ids = [21]

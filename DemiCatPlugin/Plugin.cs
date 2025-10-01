@@ -588,6 +588,7 @@ public class Plugin : IDalamudPlugin
         {
             ChannelKind.Chat,
             ChannelKind.Event,
+            ChannelKind.Requests,
             ChannelKind.FcChat,
             ChannelKind.OfficerChat
         };

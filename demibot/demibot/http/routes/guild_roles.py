@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..deps import RequestContext, api_key_auth, get_db
 from ._messages_common import _role_set
 from ..discord_client import discord_client
-from ...db.models import GuildConfig, Role
+from ...db.models import GuildConfig, GuildChannel, Role, ChannelKind
 from ...discordbot.utils import is_premium_subscriber_role
 
 router = APIRouter(prefix="/api")
@@ -27,6 +27,16 @@ async def get_guild_roles(
         if rid
     ]
 
+    requests_channel_id_row = await db.scalar(
+        select(GuildChannel.channel_id).where(
+            GuildChannel.guild_id == ctx.guild.id,
+            GuildChannel.kind == ChannelKind.REQUESTS,
+        )
+    )
+    requests_channel_id = (
+        str(requests_channel_id_row) if requests_channel_id_row is not None else None
+    )
+
     mention_ids: set[int] | None = None
     roles = _role_set(ctx)
     if "officer" not in roles:
@@ -40,6 +50,7 @@ async def get_guild_roles(
             return {
                 "roles": [],
                 "mention_role_ids": mention_role_ids,
+                "requests_channel_id": requests_channel_id,
             }
 
     stmt = select(Role).where(Role.guild_id == ctx.guild.id)
@@ -60,8 +71,9 @@ async def get_guild_roles(
                 },
             }
             for role in rows
-        ],
+            ],
             "mention_role_ids": mention_role_ids,
+            "requests_channel_id": requests_channel_id,
         }
 
     if discord_client:
@@ -100,9 +112,11 @@ async def get_guild_roles(
             return {
                 "roles": roles_out,
                 "mention_role_ids": mention_role_ids,
+                "requests_channel_id": requests_channel_id,
             }
     return {
         "roles": [],
         "mention_role_ids": mention_role_ids,
+        "requests_channel_id": requests_channel_id,
     }
 
