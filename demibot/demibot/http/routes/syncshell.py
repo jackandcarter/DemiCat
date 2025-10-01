@@ -7,6 +7,7 @@ import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Optional
 from uuid import uuid4
 
@@ -30,6 +31,87 @@ from ..vault import presign_upload, presign_download
 
 
 logger = logging.getLogger(__name__)
+
+
+def _normalise_denylist_entries(raw: str | None) -> set[str]:
+    entries: set[str] = set()
+    if not raw:
+        return entries
+    raw = raw.strip()
+    if not raw:
+        return entries
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        parts: list[str] = []
+        for line in raw.splitlines():
+            parts.extend(segment.strip() for segment in line.split(","))
+    else:
+        values: list[str] = []
+        if isinstance(parsed, str):
+            values = [parsed]
+        elif isinstance(parsed, list):
+            values = [item for item in parsed if isinstance(item, str)]
+        elif isinstance(parsed, dict):
+            for key in (
+                "mods",
+                "modIds",
+                "mod_ids",
+                "hashes",
+                "signatures",
+                "entries",
+                "values",
+                "items",
+            ):
+                value = parsed.get(key)
+                if isinstance(value, list):
+                    values.extend(item for item in value if isinstance(item, str))
+                elif isinstance(value, str):
+                    values.append(value)
+            if not values:
+                for value in parsed.values():
+                    if isinstance(value, str):
+                        values.append(value)
+                    elif isinstance(value, list):
+                        values.extend(item for item in value if isinstance(item, str))
+        else:
+            values = []
+        parts = [item.strip() for item in values if isinstance(item, str)]
+    for part in parts:
+        if part:
+            entries.add(part.casefold())
+    return entries
+
+
+def _load_denylist() -> frozenset[str]:
+    entries: set[str] = set()
+    entries.update(_normalise_denylist_entries(os.getenv("SYNC_SHELL_DENYLIST")))
+    path_value = os.getenv("SYNC_SHELL_DENYLIST_FILE")
+    if path_value:
+        try:
+            denylist_text = Path(path_value).read_text(encoding="utf-8")
+        except OSError as exc:  # pragma: no cover - configuration issue
+            logger.warning(
+                "syncshell.denylist.read_failed path=%s error=%s", path_value, exc
+            )
+        else:
+            entries.update(_normalise_denylist_entries(denylist_text))
+    return frozenset(entries)
+
+
+def _is_denylisted(*identifiers: Any) -> bool:
+    if not identifiers:
+        return False
+    for identifier in identifiers:
+        if not isinstance(identifier, str):
+            continue
+        candidate = identifier.strip()
+        if candidate and candidate.casefold() in SYNC_SHELL_DENYLIST:
+            return True
+    return False
+
+
+SYNC_SHELL_DENYLIST: frozenset[str] = _load_denylist()
 
 
 router = APIRouter(prefix="/api/syncshell", tags=["syncshell"])
@@ -415,12 +497,14 @@ def _extract_manifest_assets(manifest: Any) -> dict[tuple[Any, ...], dict[str, A
             if not isinstance(mod, dict):
                 continue
             mod_id = mod.get("modId") or ""
+            mod_hash = mod.get("hash")
+            mod_denied = _is_denylisted(mod_id, mod_hash)
             mod_key = ("mod", collection_id, mod_id)
             assets[mod_key] = {
                 "kind": "mod",
                 "collectionId": collection_id,
                 "modId": mod_id,
-                "hash": mod.get("hash"),
+                "hash": mod_hash,
                 "size": _normalise_size(mod.get("size")),
                 "transferable": False,
             }
@@ -430,15 +514,17 @@ def _extract_manifest_assets(manifest: Any) -> dict[tuple[Any, ...], dict[str, A
                 if not isinstance(file_entry, dict):
                     continue
                 path = file_entry.get("path") or ""
+                file_hash = file_entry.get("hash")
+                file_denied = mod_denied or _is_denylisted(file_hash)
                 file_key = ("file", collection_id, mod_id, path)
                 assets[file_key] = {
                     "kind": "file",
                     "collectionId": collection_id,
                     "modId": mod_id,
                     "path": path,
-                    "hash": file_entry.get("hash"),
+                    "hash": file_hash,
                     "size": _normalise_size(file_entry.get("size")),
-                    "transferable": True,
+                    "transferable": not file_denied,
                 }
 
             patches = mod.get("patches") or []
@@ -446,15 +532,17 @@ def _extract_manifest_assets(manifest: Any) -> dict[tuple[Any, ...], dict[str, A
                 if not isinstance(patch, dict):
                     continue
                 path = patch.get("path") or ""
+                patch_hash = patch.get("hash")
+                patch_denied = mod_denied or _is_denylisted(patch_hash)
                 patch_key = ("mod_patch", collection_id, mod_id, path)
                 assets[patch_key] = {
                     "kind": "mod_patch",
                     "collectionId": collection_id,
                     "modId": mod_id,
                     "path": path,
-                    "hash": patch.get("hash"),
+                    "hash": patch_hash,
                     "size": _normalise_size(patch.get("size")),
-                    "transferable": True,
+                    "transferable": not patch_denied,
                 }
 
         collection_patches = collection.get("patches") or []
@@ -462,14 +550,15 @@ def _extract_manifest_assets(manifest: Any) -> dict[tuple[Any, ...], dict[str, A
             if not isinstance(patch, dict):
                 continue
             path = patch.get("path") or ""
+            patch_hash = patch.get("hash")
             patch_key = ("patch", collection_id, path)
             assets[patch_key] = {
                 "kind": "patch",
                 "collectionId": collection_id,
                 "path": path,
-                "hash": patch.get("hash"),
+                "hash": patch_hash,
                 "size": _normalise_size(patch.get("size")),
-                "transferable": True,
+                "transferable": not _is_denylisted(patch_hash),
             }
 
     return assets
