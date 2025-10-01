@@ -28,6 +28,7 @@ public abstract class DockableWindow
     protected virtual bool FadeEnabledByDefault => false;
     public virtual bool SupportsFade => _config.IsWindowFadeEnabled(FadePreferenceKey, FadeEnabledByDefault);
     protected virtual float BaseOpacity => 1f;
+    protected virtual Vector2? InitialSize => null;
 
     public bool IsOpen
     {
@@ -62,6 +63,14 @@ public abstract class DockableWindow
     {
         if (!IsOpen)
             return;
+
+        if (InitialSize is { } initialSize)
+        {
+            var sanitizedSize = new Vector2(
+                MathF.Max(initialSize.X, 1f),
+                MathF.Max(initialSize.Y, 1f));
+            ImGui.SetNextWindowSize(sanitizedSize, ImGuiCond.FirstUseEver);
+        }
 
         var open = IsOpen;
         var colorsPushed = 0;

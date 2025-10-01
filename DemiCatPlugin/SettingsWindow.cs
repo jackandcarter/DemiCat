@@ -25,6 +25,7 @@ public class SettingsWindow : IDisposable
     private readonly Func<Task> _startNetworking;
     private readonly DeveloperWindow _devWindow;
     private readonly IPluginLog _log;
+    private static readonly Vector2 DefaultWindowSize = new(960f, 720f);
 
     private string _apiKey = string.Empty;
     private string _apiBaseUrl = string.Empty;
@@ -76,6 +77,7 @@ public class SettingsWindow : IDisposable
     {
         if (IsOpen)
         {
+            ImGui.SetNextWindowSize(DefaultWindowSize, ImGuiCond.FirstUseEver);
             if (ImGui.Begin("DemiCat Settings", ref IsOpen))
             {
                 if (!_settingsLoaded)
