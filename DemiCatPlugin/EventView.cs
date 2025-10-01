@@ -13,6 +13,7 @@ using Dalamud.Bindings.ImGui;
 using StbImageSharp;
 using System.Diagnostics;
 using System.Linq;
+using DemiCat.UI;
 using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
@@ -516,8 +517,8 @@ public class EventView : IDisposable
                         ImGui.PushStyleColor(ImGuiCol.ButtonActive, EmbedPreviewRenderer.Lighten(color, 1.2f));
                     }
 
-                    var w = button.Width ?? -1;
-                    if (ImGui.Button($"{button.Label}##{id}{_dto.Id}", new Vector2(w, 0)))
+                    var width = ButtonSizeHelper.ResolveWidth(button.Width, button.Label);
+                    if (ImGui.Button($"{button.Label}##{id}{_dto.Id}", new Vector2(width, 0)))
                     {
                         if (!string.IsNullOrEmpty(button.Url))
                         {
@@ -538,15 +539,18 @@ public class EventView : IDisposable
         }
         else if (IsApolloEvent(_dto))
         {
-            if (ImGui.Button($"Yes##rsvpYes{_dto.Id}", new Vector2(-1, 0)))
+            var yesSize = new Vector2(ButtonSizeHelper.ResolveWidth(null, "Yes"), 0f);
+            if (ImGui.Button($"Yes##rsvpYes{_dto.Id}", yesSize))
             {
                 _ = SendInteraction("rsvp:yes");
             }
-            if (ImGui.Button($"Maybe##rsvpMaybe{_dto.Id}", new Vector2(-1, 0)))
+            var maybeSize = new Vector2(ButtonSizeHelper.ResolveWidth(null, "Maybe"), 0f);
+            if (ImGui.Button($"Maybe##rsvpMaybe{_dto.Id}", maybeSize))
             {
                 _ = SendInteraction("rsvp:maybe");
             }
-            if (ImGui.Button($"No##rsvpNo{_dto.Id}", new Vector2(-1, 0)))
+            var noSize = new Vector2(ButtonSizeHelper.ResolveWidth(null, "No"), 0f);
+            if (ImGui.Button($"No##rsvpNo{_dto.Id}", noSize))
             {
                 _ = SendInteraction("rsvp:no");
             }

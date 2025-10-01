@@ -5,6 +5,7 @@ using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using DiscordHelper;
+using DemiCat.UI;
 using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
@@ -162,8 +163,8 @@ public static class EmbedPreviewRenderer
                         ImGui.PushStyleColor(ImGuiCol.ButtonActive, Lighten(color, 1.2f));
                     }
 
-                    var w = button.Width ?? -1;
-                    if (ImGui.Button($"{button.Label}##{id}{dto.Id}", new Vector2(w, 0)))
+                    var width = ButtonSizeHelper.ResolveWidth(button.Width, button.Label);
+                    if (ImGui.Button($"{button.Label}##{id}{dto.Id}", new Vector2(width, 0)))
                     {
                         if (!string.IsNullOrEmpty(button.Url))
                         {
