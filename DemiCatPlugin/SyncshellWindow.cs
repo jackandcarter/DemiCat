@@ -574,9 +574,12 @@ public class SyncshellWindow : IDisposable
         var availableHeight = ImGui.GetContentRegionAvail().Y;
         var totalSplitterHeight = splitterHeight * (MembershipPanelCount - 1);
         var minTotalHeight = MinMembershipPanelHeight * MembershipPanelCount;
-        var panelAreaHeight = availableHeight > 0f
-            ? MathF.Max(minTotalHeight, availableHeight - totalSplitterHeight)
-            : minTotalHeight;
+        var panelAreaHeight = minTotalHeight;
+        if (availableHeight > 0f)
+        {
+            var desiredHeight = MathF.Max(minTotalHeight, availableHeight - totalSplitterHeight);
+            panelAreaHeight = MathF.Min(desiredHeight, availableHeight);
+        }
 
         UpdateMembershipPanelHeights(panelAreaHeight);
 
@@ -586,7 +589,7 @@ public class SyncshellWindow : IDisposable
         DrawMembershipSplitter(1, splitterHeight, panelAreaHeight);
         DrawMembershipPanel("Invite member", _membershipPanelHeights[2], DrawInviteEntryContent);
         DrawMembershipSplitter(2, splitterHeight, panelAreaHeight);
-        DrawMembershipPanel("Pending approvals", _membershipPanelHeights[3], DrawPendingApprovalsContent);
+        DrawMembershipPanel("Pending approvals", _membershipPanelHeights[3], DrawPendingApprovalsContent, true);
 
         if (_membershipPanelRatiosDirty)
         {
@@ -810,10 +813,11 @@ public class SyncshellWindow : IDisposable
         return ImGuiMouseCursor.ResizeAll;
     }
 
-    private static void DrawMembershipPanel(string label, float height, Action content)
+    private static void DrawMembershipPanel(string label, float height, Action content, bool fillRemaining = false)
     {
         var id = $"syncshell-panel-{label.Replace(' ', '-').ToLowerInvariant()}";
-        ImGui.BeginChild(id, new Vector2(-1, height), true);
+        var size = fillRemaining ? new Vector2(-1, 0f) : new Vector2(-1, height);
+        ImGui.BeginChild(id, size, true);
         ImGui.TextUnformatted(label);
         ImGui.Separator();
         content();
