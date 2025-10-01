@@ -119,6 +119,35 @@ def test_manifest_rate_limit(tmp_path):
     asyncio.run(_run())
 
 
+def test_manifest_denylist_blocks_transfers(monkeypatch, tmp_path):
+    manifest, _ = build_manifest_payload(tmp_path)
+    monkeypatch.setattr(syncshell, "SYNC_SHELL_DENYLIST", frozenset({"sample-mod"}))
+
+    assets = syncshell._extract_manifest_assets(manifest)
+    file_key = ("file", "default", "sample-mod", "character.mtrl")
+    assert file_key in assets
+    assert assets[file_key]["hash"]
+    assert assets[file_key]["transferable"] is False
+
+    diff = syncshell._compute_manifest_diff(None, manifest)
+    assert diff["need"] == []
+
+
+def test_manifest_denylist_blocks_signatures(monkeypatch, tmp_path):
+    manifest, file_hash = build_manifest_payload(tmp_path)
+    mod_hash = manifest["collections"][0]["mods"][0]["hash"]
+    monkeypatch.setattr(syncshell, "SYNC_SHELL_DENYLIST", frozenset({mod_hash, file_hash}))
+
+    assets = syncshell._extract_manifest_assets(manifest)
+    file_key = ("file", "default", "sample-mod", "character.mtrl")
+    mod_key = ("mod", "default", "sample-mod")
+    assert assets[file_key]["transferable"] is False
+    assert assets[mod_key]["hash"] == mod_hash
+
+    diff = syncshell._compute_manifest_diff(None, manifest)
+    assert diff["need"] == []
+
+
 def test_manifest_too_large(tmp_path):
     async def _run():
         session_factory = await _prepare_db()
