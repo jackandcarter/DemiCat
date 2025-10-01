@@ -1,4 +1,5 @@
 using System;
+using System.Numerics;
 using Dalamud.Bindings.ImGui;
 
 namespace DemiCatPlugin;
@@ -16,6 +17,7 @@ public sealed class EventsDockableWindow : DockableWindow
     }
 
     protected override string? FadePreferenceKey => Config.FadePreferenceKeys.Events;
+    protected override Vector2? InitialSize => new(960f, 680f);
 
     protected override void OnOpened()
     {
@@ -54,6 +56,7 @@ public sealed class EventCreateDockableWindow : DockableWindow
     }
 
     protected override string? FadePreferenceKey => Config.FadePreferenceKeys.EventCreate;
+    protected override Vector2? InitialSize => new(980f, 720f);
 
     protected override void OnOpened()
     {
@@ -88,6 +91,7 @@ public sealed class TemplatesDockableWindow : DockableWindow
     }
 
     protected override string? FadePreferenceKey => Config.FadePreferenceKeys.Templates;
+    protected override Vector2? InitialSize => new(1040f, 720f);
 
     protected override void OnOpened()
     {
@@ -134,6 +138,7 @@ public sealed class NotePadDockableWindow : DockableWindow
     }
 
     protected override string? FadePreferenceKey => Config.FadePreferenceKeys.NotePad;
+    protected override Vector2? InitialSize => new(1100f, 720f);
 
     protected override void DrawContents()
     {
@@ -162,6 +167,7 @@ public sealed class RequestBoardDockableWindow : DockableWindow
     }
 
     protected override string? FadePreferenceKey => Config.FadePreferenceKeys.Requests;
+    protected override Vector2? InitialSize => new(940f, 680f);
 
     protected override void DrawContents()
     {
@@ -190,6 +196,7 @@ public sealed class SyncshellDockableWindow : DockableWindow
     }
 
     protected override string? FadePreferenceKey => Config.FadePreferenceKeys.Syncshell;
+    protected override Vector2? InitialSize => new(1100f, 740f);
 
     protected override void DrawContents()
     {
@@ -231,6 +238,7 @@ public class ChatDockableWindow : DockableWindow
     }
 
     protected override string? FadePreferenceKey => _fadePreferenceKey;
+    protected override Vector2? InitialSize => new(840f, 720f);
 
     protected override bool FadeEnabledByDefault => true;
 
