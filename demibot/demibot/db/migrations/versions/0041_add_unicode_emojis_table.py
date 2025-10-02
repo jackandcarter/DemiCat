@@ -19,7 +19,11 @@ def _get_emoji_table() -> sa.Table:
     return sa.Table(
         "unicode_emojis",
         sa.MetaData(),
-        sa.Column("emoji", sa.String(length=16), primary_key=True),
+        sa.Column(
+            "emoji",
+            sa.String(length=16, collation="utf8mb4_bin"),
+            primary_key=True,
+        ),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("image_url", sa.String(length=255), nullable=False),
     )
@@ -59,9 +63,22 @@ def upgrade() -> None:
     if not table_exists:
         op.create_table(
             "unicode_emojis",
-            sa.Column("emoji", sa.String(length=16), primary_key=True),
+            sa.Column(
+                "emoji",
+                sa.String(length=16, collation="utf8mb4_bin"),
+                primary_key=True,
+            ),
             sa.Column("name", sa.String(length=255), nullable=False),
             sa.Column("image_url", sa.String(length=255), nullable=False),
+            mysql_charset="utf8mb4",
+        )
+    elif bind.dialect.name == "mysql":
+        op.alter_column(
+            "unicode_emojis",
+            "emoji",
+            existing_type=sa.String(length=16),
+            type_=sa.String(length=16, collation="utf8mb4_bin"),
+            existing_nullable=False,
         )
 
     emoji_table = _get_emoji_table()
@@ -86,7 +103,7 @@ def upgrade() -> None:
         op.bulk_insert(
             table(
                 "unicode_emojis",
-                column("emoji", sa.String(length=16)),
+                column("emoji", sa.String(length=16, collation="utf8mb4_bin")),
                 column("name", sa.String(length=255)),
                 column("image_url", sa.String(length=255)),
             ),
