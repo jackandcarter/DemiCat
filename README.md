@@ -1,6 +1,6 @@
 # DemiCat
 
-DemiCat pairs a rich Dalamud plugin with the DemiBot backend so Final Fantasy XIV free companies can plan events, mirror Discord conversations, share officer requests, and synchronize appearance mods with Syncshell.
+DemiCat pairs a rich Dalamud plugin with the DemiBot backend so Final Fantasy XIV free companies can plan events, mirror Discord conversations, share in game requests, and synchronize appearance mods with Syncshell.
 
 ## Quick links
 
