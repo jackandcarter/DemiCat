@@ -16,8 +16,21 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.create_table(
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    table_exists = inspector.has_table("unicode_emojis")
+
+    if not table_exists:
+        op.create_table(
+            "unicode_emojis",
+            sa.Column("emoji", sa.String(length=16), primary_key=True),
+            sa.Column("name", sa.String(length=255), nullable=False),
+            sa.Column("image_url", sa.String(length=255), nullable=False),
+        )
+
+    emoji_table = sa.Table(
         "unicode_emojis",
+        sa.MetaData(),
         sa.Column("emoji", sa.String(length=16), primary_key=True),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("image_url", sa.String(length=255), nullable=False),
@@ -47,19 +60,31 @@ def upgrade() -> None:
             )
             raise exc
 
-    emoji_table = table(
-        "unicode_emojis",
-        column("emoji", sa.String),
-        column("name", sa.String),
-        column("image_url", sa.String),
-    )
-    op.bulk_insert(
-        emoji_table,
-        [
-            {"emoji": e.get("emoji"), "name": e.get("name"), "image_url": e.get("imageUrl")}
-            for e in data
-        ],
-    )
+    existing_emojis = set()
+    if table_exists:
+        result = bind.execute(sa.select(emoji_table.c.emoji))
+        existing_emojis = {row[0] for row in result}
+
+    rows_to_insert = [
+        {
+            "emoji": e.get("emoji"),
+            "name": e.get("name"),
+            "image_url": e.get("imageUrl"),
+        }
+        for e in data
+        if e.get("emoji") and e.get("emoji") not in existing_emojis
+    ]
+
+    if rows_to_insert:
+        op.bulk_insert(
+            table(
+                "unicode_emojis",
+                column("emoji", sa.String(length=16)),
+                column("name", sa.String(length=255)),
+                column("image_url", sa.String(length=255)),
+            ),
+            rows_to_insert,
+        )
 
 
 def downgrade() -> None:
