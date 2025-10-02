@@ -7,7 +7,9 @@ from demibot.config import CONFIG_PATH, AppConfig, DatabaseConfig, DiscordConfig
 
 def run_wizard() -> None:
     token = input("Discord bot token: ")
-    db_url = input("Database URL [mysql+aiomysql://demibot:Admin@127.0.0.1:3306/demibot]: ") or "mysql+aiomysql://demibot:Admin@127.0.0.1:3306/demibot"
+    db_url = input(
+        "Database URL [mysql+aiomysql://demibot:Admin@127.0.0.1:3306/demibot?charset=utf8mb4]: "
+    ) or "mysql+aiomysql://demibot:Admin@127.0.0.1:3306/demibot?charset=utf8mb4"
     host = input("HTTP host [127.0.0.1]: ") or "127.0.0.1"
     port = int(input("HTTP port [8123]: ") or "8123")
 

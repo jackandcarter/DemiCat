@@ -78,8 +78,8 @@ if [ ! -d .venv ]; then
 fi
 # shellcheck disable=SC1091
 source .venv/bin/activate
-: "${DEMIBOT_FORCED_URL:=mysql+pymysql://demibot:Admin@127.0.0.1:3306/demibot}"
-: "${DEMIBOT_DATABASE_URL:=mysql+aiomysql://demibot:Admin@127.0.0.1:3306/demibot}"
+: "${DEMIBOT_FORCED_URL:=mysql+pymysql://demibot:Admin@127.0.0.1:3306/demibot?charset=utf8mb4}"
+: "${DEMIBOT_DATABASE_URL:=mysql+aiomysql://demibot:Admin@127.0.0.1:3306/demibot?charset=utf8mb4}"
 export DEMIBOT_FORCED_URL DEMIBOT_DATABASE_URL
 pip install --upgrade pip
 

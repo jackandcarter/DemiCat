@@ -104,7 +104,7 @@ else:
         os.getenv("DEMIBOT_DATABASE_URL")
         or os.getenv("DATABASE_URL")
         or config.get_main_option("sqlalchemy.url")
-        or "mysql+pymysql://demibot:Admin@127.0.0.1:3306/demibot"
+        or "mysql+pymysql://demibot:Admin@127.0.0.1:3306/demibot?charset=utf8mb4"
     )
 
 norm_url = _normalize_sqlalchemy_url(chosen)
