@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -143,5 +144,37 @@ public class EmojiFormatterTests
         var normalized = EmojiFormatter.Normalize(manager, token);
 
         Assert.Equal(token, normalized);
+    }
+
+    [Fact]
+    public void NormalizeCustomTokensUsesLookupWhenAvailable()
+    {
+        SetupPluginServices();
+        using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, "[]"));
+        var config = new Config { ApiBaseUrl = "http://host", GuildId = "1" };
+        using var manager = new EmojiManager(client, new TokenManager(), config);
+
+        var lookupField = typeof(EmojiManager).GetField("_customLookup", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var customField = typeof(EmojiManager).GetField("_custom", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var emoji = new CustomEmoji("77", "sparkles", false, "http://image");
+        lookupField.SetValue(manager, new Dictionary<string, CustomEmoji>(StringComparer.Ordinal) { ["77"] = emoji });
+        customField.SetValue(manager, new[] { emoji });
+
+        var normalized = EmojiFormatter.NormalizeCustomTokens(manager, "Say custom:77!");
+
+        Assert.Equal("Say <:sparkles:77>!", normalized);
+    }
+
+    [Fact]
+    public void NormalizeCustomTokensFallsBackWithoutLookup()
+    {
+        SetupPluginServices();
+        using var client = new HttpClient(new StubHandler(HttpStatusCode.OK, "[]"));
+        var config = new Config { ApiBaseUrl = "http://host", GuildId = "1" };
+        using var manager = new EmojiManager(client, new TokenManager(), config);
+
+        var normalized = EmojiFormatter.NormalizeCustomTokens(manager, "custom:88 testing");
+
+        Assert.Equal("<:emoji:88> testing", normalized);
     }
 }

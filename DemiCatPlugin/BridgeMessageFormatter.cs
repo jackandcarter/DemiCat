@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using DiscordHelper;
+using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
@@ -33,6 +34,7 @@ public static class BridgeMessageFormatter
         public uint? EmbedColor { get; init; }
         public DateTimeOffset Timestamp { get; init; } = DateTimeOffset.UtcNow;
         public Config.EmbedBorderSettings? EmbedBorder { get; init; }
+        public EmojiManager? EmojiManager { get; init; }
     }
 
     public sealed class BridgeFormattedAttachment
@@ -74,6 +76,7 @@ public static class BridgeMessageFormatter
         var content = resolution.Content;
         var displayContent = ChatWindow.ReplaceMentionTokens(content, resolution.Mentions);
         displayContent = displayContent.Replace("@\u200B", "@");
+        displayContent = EmojiFormatter.NormalizeCustomTokens(options.EmojiManager, displayContent);
 
         var warnings = new List<string>();
         var errors = new List<string>();
