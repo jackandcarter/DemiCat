@@ -33,15 +33,15 @@ FC and officer chat panes stream Discord messages in real time, complete with em
 
 ### Event planning workflow
 
-The Create Event window lets officers pick channels, schedule start times with a picker, format descriptions with Markdown + emoji, attach artwork, configure banner colors, and define RSVP buttons. Mentionable roles come from the backend, presets can be saved/loaded, repeats generate schedules, and previews render the final embed before posting.
+The Create Event window lets users pick channels, schedule start times with a picker, format descriptions with Markdown + emoji, attach artwork, configure banner colors, and define RSVP buttons. Mentionable roles come from the backend, presets can be saved/loaded, repeats generate schedules, and previews render the final embed before posting.
 
 ### Templates & presets
 
-Template management fetches event templates over WebSocket, lists them with live channel selection, and lets officers preview, post, delete, or tweak button rows and mention roles without leaving the plugin. Time overrides and chat-bridge updates keep template broadcasts synchronized with Discord.
+Template management fetches event templates over WebSocket, lists them with live channel selection, and lets users preview, post, delete, or tweak button rows and mention roles without leaving the plugin. Time overrides and chat-bridge updates keep template broadcasts synchronized with Discord.
 
 ### Request board
 
-The request board pulls officer tasks, sorts by type/name/recency, and offers an inline modal to add new requests with type and urgency. Status updates propagate via the backend so legacy approval fields stay visible during migration.
+The request board is a member help area for those looking to hire out work, posts sort by type/name/recency, and offers an inline modal to add new requests with type and urgency. Status updates propagate via the backend so legacy approval fields stay visible during migration.
 
 ### Collaborative note pad
 
