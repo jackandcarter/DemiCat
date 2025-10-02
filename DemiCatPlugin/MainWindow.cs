@@ -9,6 +9,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using DemiCatPlugin.Emoji;
 using Dalamud.Plugin.Services;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -309,7 +310,6 @@ public class MainWindow : IDisposable
         }
 
         var dockBgColor = GetDockBackgroundColor();
-        var stripColor = GetDockStripColor(dockBgColor);
         var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
 
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, MathF.Max(14f, padding * 1.5f));
@@ -320,7 +320,7 @@ public class MainWindow : IDisposable
         var open = true;
         if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
         {
-            _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, stripColor, accentColor);
+            _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor);
             DrawDockContextMenu();
         }
         var windowPos = ImGui.GetWindowPos();
@@ -426,8 +426,7 @@ public class MainWindow : IDisposable
         float spacing,
         float separatorThickness,
         float indicatorHeight,
-        Vector4 stripColor,
-        Vector4 indicatorColor)
+        Vector4 accentColor)
     {
         var drawList = ImGui.GetWindowDrawList();
         var iconStart = ImGui.GetCursorScreenPos();
@@ -456,7 +455,9 @@ public class MainWindow : IDisposable
 
         var stripMin = iconStart - new Vector2(spacing * 0.75f, spacing * 0.75f);
         var stripMax = iconStart + iconAreaSize + new Vector2(spacing * 0.75f, indicatorHeight + spacing * 0.75f);
-        drawList.AddRectFilled(stripMin, stripMax, ImGui.ColorConvertFloat4ToU32(stripColor), MathF.Max(spacing * 2f, 18f));
+        var borderThickness = MathF.Max(1f, spacing * 0.15f);
+        var rounding = MathF.Max(spacing * 2f, 18f);
+        drawList.AddRect(stripMin, stripMax, ImGui.ColorConvertFloat4ToU32(accentColor), rounding, ImDrawFlags.None, borderThickness);
 
         ImGui.SetCursorScreenPos(iconStart);
 
@@ -542,7 +543,7 @@ public class MainWindow : IDisposable
                 var center = new Vector2((rectMin.X + rectMax.X) * 0.5f, rectMax.Y + IndicatorRadius * ImGui.GetIO().FontGlobalScale * 0.5f);
                 var radius = IndicatorRadius * MathF.Max(1f, iconSize.X / BaseIconSize);
                 center.Y += radius + spacing * 0.1f;
-                drawList.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(indicatorColor));
+                drawList.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(accentColor));
             }
 
             ImGui.PopID();
@@ -604,7 +605,7 @@ public class MainWindow : IDisposable
                 var center = new Vector2((rectMin.X + rectMax.X) * 0.5f, rectMax.Y + IndicatorRadius * ImGui.GetIO().FontGlobalScale * 0.5f);
                 var radius = IndicatorRadius * MathF.Max(1f, iconSize.X / BaseIconSize);
                 center.Y += radius + spacing * 0.1f;
-                drawList.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(indicatorColor));
+                drawList.AddCircleFilled(center, radius, ImGui.ColorConvertFloat4ToU32(accentColor));
             }
 
             ImGui.PopID();
@@ -747,13 +748,6 @@ public class MainWindow : IDisposable
         }
 
         return sanitized;
-    }
-
-    private Vector4 GetDockStripColor(Vector4 background)
-    {
-        var strip = DockableWindow.AdjustBrightness(background, 1.1f);
-        strip.W = background.W;
-        return strip;
     }
 
     private static bool ColorsAlmostEqual(Vector4 a, Vector4 b)
