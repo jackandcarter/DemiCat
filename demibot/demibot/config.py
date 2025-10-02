@@ -15,7 +15,7 @@ from pathlib import Path
 import json
 import logging
 import getpass
-from urllib.parse import quote_plus
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse, urlunparse
 
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
@@ -56,10 +56,18 @@ class DatabaseConfig:
     @property
     def url(self) -> str:
         cfg = self.active()
-        return (
+        base_url = (
             f"mysql+aiomysql://{quote_plus(cfg.user)}:{quote_plus(cfg.password)}"
             f"@{cfg.host}:{cfg.port}/{cfg.database}"
         )
+
+        parsed = urlparse(base_url)
+        query_params = parse_qsl(parsed.query, keep_blank_values=True)
+        if not any(key.lower() == "charset" for key, _ in query_params):
+            query_params.append(("charset", "utf8mb4"))
+
+        new_query = urlencode(query_params, doseq=True)
+        return urlunparse(parsed._replace(query=new_query))
 
 
 @dataclass
