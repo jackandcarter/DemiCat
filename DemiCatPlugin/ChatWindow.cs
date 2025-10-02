@@ -1523,6 +1523,7 @@ public class ChatWindow : IDisposable
         var text = msg.Content ?? string.Empty;
         text = ReplaceMentionTokens(text, msg.Mentions);
         text = MarkdownFormatter.Format(text);
+        text = EmojiFormatter.NormalizeCustomTokens(_emojiManager, text);
         var parts = Regex.Split(text, "(<a?:[a-zA-Z0-9_]+:\\d+>)");
         ImGui.PushTextWrapPos();
         var first = true;
@@ -2667,7 +2668,8 @@ public class ChatWindow : IDisposable
             WorldName = worldName,
             EmbedColor = GetEmbedColorOverride(),
             EmbedBorder = _config.GetEmbedBorderSettingsCopy(_channelKind),
-            Timestamp = DateTimeOffset.UtcNow
+            Timestamp = DateTimeOffset.UtcNow,
+            EmojiManager = _emojiManager
         };
     }
 

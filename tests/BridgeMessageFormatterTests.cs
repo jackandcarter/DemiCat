@@ -1,13 +1,20 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
+using System.Net;
+using System.Net.Http;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
 using DemiCatPlugin;
+using DemiCatPlugin.Emoji;
 using Xunit;
 
 public class BridgeMessageFormatterTests
 {
     private static readonly DateTimeOffset FixedTimestamp = new(2024, 1, 2, 3, 4, 5, TimeSpan.Zero);
 
-    private static BridgeMessageFormatter.BridgeFormatterOptions CreateOptions()
+    private static BridgeMessageFormatter.BridgeFormatterOptions CreateOptions(EmojiManager? manager = null)
         => new()
         {
             UseCharacterName = false,
@@ -18,7 +25,8 @@ public class BridgeMessageFormatterTests
             AuthorName = "You",
             CharacterName = "Tester",
             WorldName = "World",
-            EmbedBorder = Config.EmbedBorderSettings.CreateDefault(ChannelKind.FcChat)
+            EmbedBorder = Config.EmbedBorderSettings.CreateDefault(ChannelKind.FcChat),
+            EmojiManager = manager
         };
 
     [Fact]
@@ -116,5 +124,38 @@ public class BridgeMessageFormatterTests
         Assert.Equal(input, embed.Description);
         Assert.Equal(input, result.DisplayContent);
         Assert.Contains(result.Warnings, w => w.Contains("border", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Format_NormalizesCustomEmojiDisplayContent()
+    {
+        using var manager = CreateEmojiManager();
+        var options = CreateOptions(manager);
+
+        var result = BridgeMessageFormatter.Format("Hello custom:42", Array.Empty<string>(), options);
+
+        Assert.Equal("Hello <:party:42>", result.DisplayContent);
+    }
+
+    private static EmojiManager CreateEmojiManager()
+    {
+        var handler = new NullHandler();
+        var client = new HttpClient(handler);
+        var manager = new EmojiManager(client, new TokenManager(), new Config());
+
+        var lookupField = typeof(EmojiManager).GetField("_customLookup", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var customField = typeof(EmojiManager).GetField("_custom", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var emoji = new CustomEmoji("42", "party", false, "http://image");
+        var lookup = new Dictionary<string, CustomEmoji>(StringComparer.Ordinal) { ["42"] = emoji };
+        lookupField.SetValue(manager, lookup);
+        customField.SetValue(manager, new[] { emoji });
+
+        return manager;
+    }
+
+    private sealed class NullHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
     }
 }

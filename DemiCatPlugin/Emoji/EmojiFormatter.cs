@@ -1,4 +1,5 @@
 using System;
+using System.Text.RegularExpressions;
 
 namespace DemiCatPlugin.Emoji;
 
@@ -6,6 +7,7 @@ public static class EmojiFormatter
 {
     public const string CustomPrefix = "custom:";
     private const string DefaultCustomName = "emoji";
+    private static readonly Regex CustomTokenPattern = new($"{CustomPrefix}[0-9]+", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
     public static string CreateUnicodeToken(UnicodeEmoji emoji) => CreateUnicodeToken(emoji.Emoji);
 
@@ -14,6 +16,21 @@ public static class EmojiFormatter
     public static string CreateCustomToken(CustomEmoji emoji) => CreateCustomToken(emoji.Id);
 
     public static string CreateCustomToken(string id) => string.Concat(CustomPrefix, id);
+
+    public static string NormalizeCustomTokens(EmojiManager? manager, string text)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return text;
+        }
+
+        if (!CustomTokenPattern.IsMatch(text))
+        {
+            return text;
+        }
+
+        return CustomTokenPattern.Replace(text, match => NormalizeCustomToken(manager, match.Value));
+    }
 
     public static bool TryParseCustomToken(string value, out string id)
         => TryParseCustomToken(value, out id, out _, out _);
@@ -69,6 +86,28 @@ public static class EmojiFormatter
         {
             var prefix = animated ? "<a:" : "<:";
             return $"{prefix}{name}:{id}>";
+        }
+
+        return $"<:{DefaultCustomName}:{id}>";
+    }
+
+    private static string NormalizeCustomToken(EmojiManager? manager, string token)
+    {
+        if (!TryParseCustomToken(token, out var id, out var fallbackName, out var animated))
+        {
+            return token;
+        }
+
+        if (manager != null && manager.TryGetCustomEmoji(id, out var emoji) && emoji != null)
+        {
+            var prefix = emoji.Animated ? "<a:" : "<:";
+            return $"{prefix}{emoji.Name}:{emoji.Id}>";
+        }
+
+        if (!string.IsNullOrEmpty(fallbackName))
+        {
+            var prefix = animated ? "<a:" : "<:";
+            return $"{prefix}{fallbackName}:{id}>";
         }
 
         return $"<:{DefaultCustomName}:{id}>";
