@@ -15,20 +15,8 @@ branch_labels = None
 depends_on = None
 
 
-def upgrade() -> None:
-    bind = op.get_bind()
-    inspector = sa.inspect(bind)
-    table_exists = inspector.has_table("unicode_emojis")
-
-    if not table_exists:
-        op.create_table(
-            "unicode_emojis",
-            sa.Column("emoji", sa.String(length=16), primary_key=True),
-            sa.Column("name", sa.String(length=255), nullable=False),
-            sa.Column("image_url", sa.String(length=255), nullable=False),
-        )
-
-    emoji_table = sa.Table(
+def _get_emoji_table() -> sa.Table:
+    return sa.Table(
         "unicode_emojis",
         sa.MetaData(),
         sa.Column("emoji", sa.String(length=16), primary_key=True),
@@ -36,6 +24,8 @@ def upgrade() -> None:
         sa.Column("image_url", sa.String(length=255), nullable=False),
     )
 
+
+def _load_unicode_emoji_data() -> list[dict]:
     base_path = Path(__file__).resolve()
     candidate_paths = [
         base_path.parents[2] / "data" / "unicode_emojis.json",
@@ -53,12 +43,29 @@ def upgrade() -> None:
 
     with data_path.open("r", encoding="utf-8") as f:
         try:
-            data = json.load(f)
+            return json.load(f)
         except json.JSONDecodeError as exc:
             logging.getLogger(__name__).exception(
                 "Failed to parse unicode emoji dataset at %s", data_path
             )
             raise exc
+
+
+def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    table_exists = inspector.has_table("unicode_emojis")
+
+    if not table_exists:
+        op.create_table(
+            "unicode_emojis",
+            sa.Column("emoji", sa.String(length=16), primary_key=True),
+            sa.Column("name", sa.String(length=255), nullable=False),
+            sa.Column("image_url", sa.String(length=255), nullable=False),
+        )
+
+    emoji_table = _get_emoji_table()
+    data = _load_unicode_emoji_data()
 
     existing_emojis = set()
     if table_exists:
@@ -88,4 +95,43 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("unicode_emojis")
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+
+    if not inspector.has_table("unicode_emojis"):
+        return
+
+    columns = inspector.get_columns("unicode_emojis")
+    expected_columns = {"emoji", "name", "image_url"}
+    column_names = {column["name"] for column in columns}
+
+    if column_names != expected_columns:
+        logging.getLogger(__name__).info(
+            "Skipping drop of unicode_emojis; table schema does not match migration-created version."
+        )
+        return
+
+    emoji_table = _get_emoji_table()
+
+    try:
+        data = _load_unicode_emoji_data()
+    except FileNotFoundError:
+        logging.getLogger(__name__).warning(
+            "Skipping drop of unicode_emojis; unable to locate unicode_emojis.json for verification."
+        )
+        return
+
+    dataset_emojis = {
+        entry.get("emoji") for entry in data if entry.get("emoji")
+    }
+
+    existing_emojis = {
+        row[0] for row in bind.execute(sa.select(emoji_table.c.emoji))
+    }
+
+    if existing_emojis.issubset(dataset_emojis):
+        op.drop_table("unicode_emojis")
+    else:
+        logging.getLogger(__name__).info(
+            "Skipping drop of unicode_emojis; table contains emojis outside the dataset and may predate this migration."
+        )
