@@ -92,7 +92,7 @@ public class RequestBoardWindow
         }
 
         ImGui.BeginGroup();
-        ImGui.BeginChild("##requestCards", new Vector2(listWidth, 0), false, ImGuiWindowFlags.HorizontalScrollbar);
+        ImGui.BeginChild("##requestCards", new Vector2(listWidth, 0), false, ImGuiWindowFlags.None);
         foreach (var req in requestList)
         {
             var isSelected = _selectedRequestId == req.Id;
@@ -101,7 +101,7 @@ public class RequestBoardWindow
             ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 6f);
             ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(12f, 10f));
             ImGui.BeginChild("card", Vector2.Zero, true);
-            ImGui.TextUnformatted(req.Title);
+            ImGui.TextWrapped(req.Title);
             ImGui.TextUnformatted($"Type: {req.Type}   Urgency: {req.Urgency}");
             ImGui.TextUnformatted($"Status: {req.Status}");
             var desc = string.IsNullOrWhiteSpace(req.Description) ? "No description provided." : req.Description;
