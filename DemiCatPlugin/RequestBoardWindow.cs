@@ -26,7 +26,6 @@ public class RequestBoardWindow
     private RequestUrgency _newUrgency = RequestUrgency.Low;
     private string _createStatus = string.Empty;
 
-    private string? _selectedRequestId;
     private readonly Dictionary<string, string> _messageDrafts = new();
     private string? _messagePopupRequestId;
 
@@ -75,60 +74,56 @@ public class RequestBoardWindow
         };
         var requestList = requests.ToList();
 
-        if (_selectedRequestId == null && requestList.Count > 0)
-            _selectedRequestId = requestList[0].Id;
-        else if (_selectedRequestId != null && requestList.All(r => r.Id != _selectedRequestId))
-            _selectedRequestId = requestList.Count > 0 ? requestList[0].Id : null;
-
-        var avail = ImGui.GetContentRegionAvail();
-        var spacing = ImGui.GetStyle().ItemSpacing.X;
-        var detailWidth = MathF.Max(320f, avail.X * 0.35f);
-        var listWidth = MathF.Max(0, avail.X - detailWidth - spacing);
-
-        if (listWidth <= 0)
+        if (requestList.Count == 0)
         {
-            detailWidth = 0;
-            listWidth = avail.X;
-        }
-
-        ImGui.BeginGroup();
-        ImGui.BeginChild("##requestCards", new Vector2(listWidth, 0), false, ImGuiWindowFlags.None);
-        foreach (var req in requestList)
-        {
-            var isSelected = _selectedRequestId == req.Id;
-            ImGui.PushID(req.Id);
-            ImGui.PushStyleColor(ImGuiCol.ChildBg, isSelected ? new Vector4(0.18f, 0.28f, 0.38f, 0.45f) : new Vector4(0.13f, 0.13f, 0.13f, 0.25f));
-            ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 6f);
-            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(12f, 10f));
-            ImGui.BeginChild("card", Vector2.Zero, true);
-            ImGui.TextWrapped(req.Title);
-            ImGui.TextUnformatted($"Type: {req.Type}   Urgency: {req.Urgency}");
-            ImGui.TextUnformatted($"Status: {req.Status}");
-            var desc = string.IsNullOrWhiteSpace(req.Description) ? "No description provided." : req.Description;
-            ImGui.TextWrapped(desc);
-            ImGui.TextUnformatted($"Created by {req.CreatedBy}");
-            ImGui.EndChild();
-            if (ImGui.IsItemClicked())
-                _selectedRequestId = req.Id;
-            ImGui.PopStyleVar();
-            ImGui.PopStyleVar();
-            ImGui.PopStyleColor();
-            ImGui.PopID();
-            ImGui.Spacing();
-        }
-        ImGui.EndChild();
-        ImGui.EndGroup();
-
-        if (detailWidth > 0)
-        {
-            ImGui.SameLine();
-            ImGui.BeginChild("##requestDetail", new Vector2(detailWidth, 0), true);
-            DrawDetailPane();
-            ImGui.EndChild();
+            ImGui.TextUnformatted("No requests available.");
         }
         else
         {
-            DrawDetailPane();
+            ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 8f);
+            ImGui.PushStyleVar(ImGuiStyleVar.ChildBorderSize, 1f);
+            ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(0.35f, 0.45f, 0.55f, 0.5f));
+
+            foreach (var req in requestList)
+            {
+                ImGui.PushID(req.Id);
+                ImGui.PushStyleColor(ImGuiCol.ChildBg, UrgencyColor(req.Urgency));
+                ImGui.BeginChild("card", new Vector2(-1, 0), true);
+
+                ImGui.TextUnformatted(req.Title);
+                ImGui.Spacing();
+                ImGui.TextUnformatted($"Status: {req.Status}   Type: {req.Type}   Urgency: {req.Urgency}");
+                if (!string.IsNullOrWhiteSpace(req.CreatedBy))
+                    ImGui.TextUnformatted($"Created by {req.CreatedBy}");
+                if (req.CreatedAt != DateTime.MinValue)
+                    ImGui.TextUnformatted($"Created at {req.CreatedAt:u}");
+
+                ImGui.Separator();
+                var desc = string.IsNullOrWhiteSpace(req.Description) ? "No description provided." : req.Description;
+                ImGui.TextWrapped(desc);
+
+                if (_conflicts.TryGetValue(req.Id, out var conflicted) && conflicted)
+                {
+                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+                    ImGui.TextWrapped("Unable to update request because it was modified elsewhere. Refresh and try again.");
+                    ImGui.PopStyleColor();
+                }
+
+                ImGui.Spacing();
+                DrawActionButtons(req);
+
+                ImGui.Separator();
+                DrawRequirements(req);
+
+                ImGui.EndChild();
+                ImGui.PopStyleColor();
+                ImGui.PopID();
+                ImGui.Spacing();
+            }
+
+            ImGui.PopStyleColor();
+            ImGui.PopStyleVar();
+            ImGui.PopStyleVar();
         }
 
         DrawMessagePopup();
@@ -165,77 +160,27 @@ public class RequestBoardWindow
         }
     }
 
-    private void DrawDetailPane()
-    {
-        if (string.IsNullOrEmpty(_selectedRequestId) || !RequestStateService.TryGet(_selectedRequestId, out var req))
-        {
-            ImGui.TextUnformatted("Select a request to view details.");
-            return;
-        }
-
-        ImGui.TextUnformatted(req.Title);
-        ImGui.Separator();
-        ImGui.TextUnformatted($"Status: {req.Status}");
-        ImGui.TextUnformatted($"Type: {req.Type}");
-        ImGui.TextUnformatted($"Urgency: {req.Urgency}");
-        if (!string.IsNullOrWhiteSpace(req.CreatedBy))
-            ImGui.TextUnformatted($"Created by {req.CreatedBy}");
-        if (req.CreatedAt != DateTime.MinValue)
-            ImGui.TextUnformatted($"Created at {req.CreatedAt:u}");
-        ImGui.Separator();
-        var desc = string.IsNullOrWhiteSpace(req.Description) ? "No description provided." : req.Description;
-        ImGui.TextWrapped(desc);
-
-        if (_conflicts.TryGetValue(req.Id, out var conflicted) && conflicted)
-        {
-            ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
-            ImGui.TextWrapped("Unable to update request because it was modified elsewhere. Refresh and try again.");
-            ImGui.PopStyleColor();
-        }
-
-        ImGui.Separator();
-
-        DrawActionButtons(req);
-
-        ImGui.Separator();
-
-        DrawRequirements(req);
-    }
-
     private void DrawActionButtons(RequestState req)
     {
         var disabled = TokenManager.Instance?.IsReady() != true;
         if (disabled)
             ImGui.BeginDisabled();
 
-        var hasPrimaryAction = false;
-        if (req.Status == RequestStatus.Open)
+        var primaryAction = req.Status switch
         {
-            if (ImGui.Button("Claim"))
-                _ = UpdateAndRefresh(req, RequestStatus.Claimed);
-            hasPrimaryAction = true;
-        }
-        else if (req.Status == RequestStatus.Claimed)
-        {
-            if (ImGui.Button("Start"))
-                _ = UpdateAndRefresh(req, RequestStatus.InProgress);
-            hasPrimaryAction = true;
-        }
-        else if (req.Status == RequestStatus.InProgress)
-        {
-            if (ImGui.Button("Complete"))
-                _ = UpdateAndRefresh(req, RequestStatus.AwaitingConfirm);
-            hasPrimaryAction = true;
-        }
-        else if (req.Status == RequestStatus.AwaitingConfirm)
-        {
-            if (ImGui.Button("Confirm"))
-                _ = UpdateAndRefresh(req, RequestStatus.Completed);
-            hasPrimaryAction = true;
-        }
+            RequestStatus.Open => (Label: "Claim", Next: RequestStatus.Claimed),
+            RequestStatus.Claimed => (Label: "Start", Next: RequestStatus.InProgress),
+            RequestStatus.InProgress => (Label: "Complete", Next: RequestStatus.AwaitingConfirm),
+            RequestStatus.AwaitingConfirm => (Label: "Confirm", Next: RequestStatus.Completed),
+            _ => ((string Label, RequestStatus Next)?)null
+        };
 
-        if (hasPrimaryAction)
-            ImGui.SameLine();
+        if (primaryAction.HasValue)
+        {
+            if (ImGui.Button(primaryAction.Value.Label))
+                _ = UpdateAndRefresh(req, primaryAction.Value.Next);
+            SameLineIfRoom("Message");
+        }
 
         if (ImGui.Button("Message"))
         {
@@ -245,10 +190,7 @@ public class RequestBoardWindow
             ImGui.OpenPopup("requestMessage");
         }
 
-        if (disabled)
-            ImGui.EndDisabled();
-
-        ImGui.SameLine();
+        SameLineIfRoom("Requirements");
         if (ImGui.Button("Requirements"))
         {
             if (req.ItemId.HasValue && req.ItemData == null && _itemLoads.TryAdd(req.Id, 0))
@@ -258,11 +200,30 @@ public class RequestBoardWindow
                 _ = LoadDuty(req);
         }
 
+        if (disabled)
+            ImGui.EndDisabled();
+
         if (req.ItemData == null && !req.ItemId.HasValue && req.DutyData == null && !req.DutyId.HasValue)
         {
             ImGui.TextUnformatted("No additional requirements specified.");
         }
     }
+
+    private static void SameLineIfRoom(string nextLabel)
+    {
+        var style = ImGui.GetStyle();
+        var nextWidth = ImGui.CalcTextSize(nextLabel).X + style.FramePadding.X * 2f;
+        if (ImGui.GetContentRegionAvail().X > nextWidth + style.ItemSpacing.X)
+            ImGui.SameLine();
+    }
+
+    private static Vector4 UrgencyColor(RequestUrgency urgency) => urgency switch
+    {
+        RequestUrgency.Low => new Vector4(0.13f, 0.16f, 0.21f, 0.35f),
+        RequestUrgency.Medium => new Vector4(0.2f, 0.17f, 0.13f, 0.4f),
+        RequestUrgency.High => new Vector4(0.26f, 0.12f, 0.12f, 0.45f),
+        _ => new Vector4(0.16f, 0.16f, 0.16f, 0.35f)
+    };
 
     private void DrawRequirements(RequestState req)
     {
