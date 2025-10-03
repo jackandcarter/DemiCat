@@ -11,7 +11,7 @@
   "LoadSync": false,
   "CanUnloadAsync": false,
   "LoadPriority": 0,
-  "IconUrl": "https://raw.githubusercontent.com/jackandcarter/DemiCat/main/DemiCatPlugin/icon.png",
+  "IconUrl": "https://the-demiurge.com/icon.png",
   "Punchline": "Discord-linked FC tools and chat.",
   "AcceptsFeedback": true
 }
