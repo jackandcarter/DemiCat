@@ -457,12 +457,33 @@ public class MainWindow : IDisposable
         var stripMax = iconStart + iconAreaSize + new Vector2(spacing * 0.75f, indicatorHeight + spacing * 0.75f);
         var borderThickness = MathF.Max(1f, spacing * 0.15f);
         var rounding = MathF.Max(spacing * 2f, 18f);
+        var maxAllowedRounding = MathF.Min((stripMax.X - stripMin.X) * 0.5f, (stripMax.Y - stripMin.Y) * 0.5f);
+        if (rounding > maxAllowedRounding)
+        {
+            rounding = maxAllowedRounding;
+        }
         if (_config.DockGradientEnabled)
         {
             var (gradientTop, gradientBottom) = GetDockGradientColors();
-            var topColor = ImGui.ColorConvertFloat4ToU32(gradientTop);
-            var bottomColor = ImGui.ColorConvertFloat4ToU32(gradientBottom);
-            drawList.AddRectFilledMultiColor(stripMin, stripMax, topColor, topColor, bottomColor, bottomColor);
+            var vertexStartIndex = drawList.VtxBuffer.Size;
+            drawList.PathRect(stripMin, stripMax, rounding, ImDrawFlags.RoundCornersAll);
+            drawList.PathFillConvex(ImGui.ColorConvertFloat4ToU32(Vector4.One));
+
+            var vertexEndIndex = drawList.VtxBuffer.Size;
+            if (vertexEndIndex > vertexStartIndex)
+            {
+                var height = Math.Max(1e-3f, stripMax.Y - stripMin.Y);
+                var topColor = gradientTop;
+                var bottomColor = gradientBottom;
+                for (var i = vertexStartIndex; i < vertexEndIndex; i++)
+                {
+                    var vertex = drawList.VtxBuffer[i];
+                    var position = vertex.pos;
+                    var t = Math.Clamp((position.Y - stripMin.Y) / height, 0f, 1f);
+                    var color = Vector4.Lerp(topColor, bottomColor, t);
+                    vertex.col = ImGui.ColorConvertFloat4ToU32(color);
+                }
+            }
         }
         else
         {
