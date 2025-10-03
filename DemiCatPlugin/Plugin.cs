@@ -222,7 +222,7 @@ public class Plugin : IDalamudPlugin
 
     private void OnMewCommand(string command, string arguments)
     {
-        _mainWindow.IsOpen = true;
+        _mainWindow.IsOpen = !_mainWindow.IsOpen;
     }
 
     private void DrawOverlay()
