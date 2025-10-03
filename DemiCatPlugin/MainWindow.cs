@@ -9,7 +9,6 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using DemiCatPlugin.Emoji;
 using Dalamud.Plugin.Services;
-using ImGuiNET;
 
 namespace DemiCatPlugin;
 
