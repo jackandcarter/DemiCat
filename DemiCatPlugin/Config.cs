@@ -18,6 +18,8 @@ public class Config : IPluginConfiguration
     public static readonly Vector4 DefaultPrimaryWindowColor = new(0.11f, 0.11f, 0.12f, 1f);
     public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
     public static readonly Vector4 DefaultDockBackgroundColor = new(0.11f, 0.11f, 0.12f, 0.9f);
+    public static readonly Vector4 DefaultDockGradientTopColor = new(0.16f, 0.16f, 0.17f, 0.9f);
+    public static readonly Vector4 DefaultDockGradientBottomColor = new(0.08f, 0.08f, 0.09f, 0.9f);
 
     public static class FadePreferenceKeys
     {
@@ -39,7 +41,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 22;
+    public const int CurrentVersion = 23;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -115,6 +117,15 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("dockBackgroundColor")]
     public Vector4 DockBackgroundColor { get; set; } = DefaultDockBackgroundColor;
+
+    [JsonPropertyName("dockGradientEnabled")]
+    public bool DockGradientEnabled { get; set; }
+
+    [JsonPropertyName("dockGradientTopColor")]
+    public Vector4 DockGradientTopColor { get; set; } = DefaultDockGradientTopColor;
+
+    [JsonPropertyName("dockGradientBottomColor")]
+    public Vector4 DockGradientBottomColor { get; set; } = DefaultDockGradientBottomColor;
 
     [JsonPropertyName("dockPosition")]
     public Vector2 DockPosition { get; set; } = Vector2.Zero;
@@ -659,6 +670,15 @@ public class Config : IPluginConfiguration
             Version = 22;
             ExtensionData = null;
         }
+        if (Version < 23)
+        {
+            DockGradientTopColor = SanitizeDockGradientColor(DockGradientTopColor);
+            DockGradientBottomColor = SanitizeDockGradientColor(DockGradientBottomColor);
+            DockGradientEnabled = false;
+
+            Version = 23;
+            ExtensionData = null;
+        }
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)
@@ -872,4 +892,7 @@ public class Config : IPluginConfiguration
         sanitized.W = Math.Clamp(sanitized.W, 0.1f, 1f);
         return sanitized;
     }
+
+    internal static Vector4 SanitizeDockGradientColor(Vector4 color)
+        => SanitizeDockBackgroundColor(color);
 }
