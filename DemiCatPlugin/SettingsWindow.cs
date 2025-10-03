@@ -509,7 +509,8 @@ public class SettingsWindow : IDisposable
         }
 
         var dockColor = _config.DockBackgroundColor;
-        if (ImGui.ColorEdit4("Dock background color", ref dockColor, ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.AlphaPreviewHalf))
+        var colorEditFlags = ImGuiColorEditFlags.AlphaBar | ImGuiColorEditFlags.AlphaPreviewHalf;
+        if (ImGui.ColorEdit4("Dock background color", ref dockColor, colorEditFlags))
         {
             var sanitized = Config.SanitizeDockBackgroundColor(dockColor);
             if (!ColorsAlmostEqual(sanitized, _config.DockBackgroundColor))
@@ -519,6 +520,49 @@ public class SettingsWindow : IDisposable
                 SaveConfig();
                 MainWindow?.OnAppearanceSettingsChanged();
             }
+        }
+
+        var gradientEnabled = _config.DockGradientEnabled;
+        if (ImGui.Checkbox("Enable dock gradient", ref gradientEnabled))
+        {
+            _config.DockGradientEnabled = gradientEnabled;
+            SaveConfig();
+            MainWindow?.OnAppearanceSettingsChanged();
+        }
+
+        var shouldDisableGradientOptions = !gradientEnabled;
+        if (shouldDisableGradientOptions)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        var gradientTop = _config.DockGradientTopColor;
+        if (ImGui.ColorEdit4("Gradient top color", ref gradientTop, colorEditFlags))
+        {
+            var sanitized = Config.SanitizeDockGradientColor(gradientTop);
+            if (!ColorsAlmostEqual(sanitized, _config.DockGradientTopColor))
+            {
+                _config.DockGradientTopColor = sanitized;
+                SaveConfig();
+                MainWindow?.OnAppearanceSettingsChanged();
+            }
+        }
+
+        var gradientBottom = _config.DockGradientBottomColor;
+        if (ImGui.ColorEdit4("Gradient bottom color", ref gradientBottom, colorEditFlags))
+        {
+            var sanitized = Config.SanitizeDockGradientColor(gradientBottom);
+            if (!ColorsAlmostEqual(sanitized, _config.DockGradientBottomColor))
+            {
+                _config.DockGradientBottomColor = sanitized;
+                SaveConfig();
+                MainWindow?.OnAppearanceSettingsChanged();
+            }
+        }
+
+        if (shouldDisableGradientOptions)
+        {
+            ImGui.EndDisabled();
         }
 
         ImGui.Spacing();

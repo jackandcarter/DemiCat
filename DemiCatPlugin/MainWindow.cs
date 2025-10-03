@@ -320,7 +320,7 @@ public class MainWindow : IDisposable
         var open = true;
         if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
         {
-            _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor);
+            _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor, dockBgColor);
             DrawDockContextMenu();
         }
         var windowPos = ImGui.GetWindowPos();
@@ -426,7 +426,8 @@ public class MainWindow : IDisposable
         float spacing,
         float separatorThickness,
         float indicatorHeight,
-        Vector4 accentColor)
+        Vector4 accentColor,
+        Vector4 dockBackgroundColor)
     {
         var drawList = ImGui.GetWindowDrawList();
         var iconStart = ImGui.GetCursorScreenPos();
@@ -457,6 +458,17 @@ public class MainWindow : IDisposable
         var stripMax = iconStart + iconAreaSize + new Vector2(spacing * 0.75f, indicatorHeight + spacing * 0.75f);
         var borderThickness = MathF.Max(1f, spacing * 0.15f);
         var rounding = MathF.Max(spacing * 2f, 18f);
+        if (_config.DockGradientEnabled)
+        {
+            var (gradientTop, gradientBottom) = GetDockGradientColors();
+            var topColor = ImGui.ColorConvertFloat4ToU32(gradientTop);
+            var bottomColor = ImGui.ColorConvertFloat4ToU32(gradientBottom);
+            drawList.AddRectFilledMultiColor(stripMin, stripMax, topColor, topColor, bottomColor, bottomColor);
+        }
+        else
+        {
+            drawList.AddRectFilled(stripMin, stripMax, ImGui.ColorConvertFloat4ToU32(dockBackgroundColor), rounding);
+        }
         drawList.AddRect(stripMin, stripMax, ImGui.ColorConvertFloat4ToU32(accentColor), rounding, ImDrawFlags.None, borderThickness);
 
         ImGui.SetCursorScreenPos(iconStart);
@@ -748,6 +760,32 @@ public class MainWindow : IDisposable
         }
 
         return sanitized;
+    }
+
+    private (Vector4 Top, Vector4 Bottom) GetDockGradientColors()
+    {
+        var top = Config.SanitizeDockGradientColor(_config.DockGradientTopColor);
+        var bottom = Config.SanitizeDockGradientColor(_config.DockGradientBottomColor);
+        var changed = false;
+
+        if (!ColorsAlmostEqual(top, _config.DockGradientTopColor))
+        {
+            _config.DockGradientTopColor = top;
+            changed = true;
+        }
+
+        if (!ColorsAlmostEqual(bottom, _config.DockGradientBottomColor))
+        {
+            _config.DockGradientBottomColor = bottom;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            SaveConfig();
+        }
+
+        return (top, bottom);
     }
 
     private static bool ColorsAlmostEqual(Vector4 a, Vector4 b)
