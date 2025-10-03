@@ -70,13 +70,14 @@ public sealed class NotePadWindow : IDisposable
 
         var sections = _service.Sections;
         EnsureSectionSelection(sections);
+
+        DrawSectionTabs(sections);
+
         var selectedSection = sections.FirstOrDefault(s => string.Equals(s.Id, _selectedSectionId, StringComparison.Ordinal));
         EnsurePageSelection(selectedSection);
         var selectedPage = selectedSection?.Pages.FirstOrDefault(p => string.Equals(p.Id, _selectedPageId, StringComparison.Ordinal));
 
         DrawConflictModal(selectedPage);
-
-        DrawSectionTabs(sections);
         ImGui.Separator();
 
         var region = ImGui.GetContentRegionAvail();
