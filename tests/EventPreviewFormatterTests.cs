@@ -166,6 +166,26 @@ public class EventPreviewFormatterTests
             });
     }
 
+    [Fact]
+    public void NullColorFallsBackToDefault()
+    {
+        var result = EventPreviewFormatter.Build(
+            "Fallback Color",
+            "Uses default when null",
+            Timestamp,
+            null,
+            null,
+            null,
+            null,
+            Enumerable.Empty<EmbedFieldDto>(),
+            Enumerable.Empty<EmbedButtonDto>(),
+            Enumerable.Empty<ulong>(),
+            creatorLabel: FcCreatorLabel,
+            embedId: "fallback-color-preview");
+
+        Assert.Equal(Config.GetDefaultEmbedColor(null), result.Embed.Color);
+    }
+
     private static void AssertPreviewMatches(JsonElement expected, EventPreviewFormatter.Result actual)
     {
         Assert.Equal(expected.GetProperty("content").GetString(), actual.Content);

@@ -74,6 +74,8 @@ public static class EventPreviewFormatter
 
         var footer = NormalizeFooter(creatorLabel);
 
+        var embedColor = color ?? Config.GetDefaultEmbedColor(null);
+
         var embed = new EmbedDto
         {
             Id = string.IsNullOrWhiteSpace(embedId) ? "preview" : embedId!,
@@ -82,7 +84,7 @@ public static class EventPreviewFormatter
             Url = string.IsNullOrWhiteSpace(url) ? null : url,
             ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl,
             ThumbnailUrl = string.IsNullOrWhiteSpace(thumbnailUrl) ? null : thumbnailUrl,
-            Color = color,
+            Color = embedColor,
             Timestamp = timestamp,
             Fields = fieldList.Count > 0 ? fieldList : null,
             Buttons = buttonList.Count > 0 ? buttonList : null,
