@@ -32,6 +32,9 @@
     <Reference Include="Lumina.Excel.GeneratedSheets" Condition="Exists('$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll')">
       <HintPath>$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll</HintPath>
     </Reference>
+    <Reference Include="ImGui.NET">
+      <HintPath>$(DalamudLibPath)/ImGui.NET.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
   <PropertyGroup Condition="Exists('$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll')">
