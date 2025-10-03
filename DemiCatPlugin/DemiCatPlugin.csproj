@@ -25,6 +25,10 @@
     <PackageReference Include="Glamourer.Api" Version="2.6.0" />
   </ItemGroup>
 
+  <ItemGroup Condition="!Exists('$(DalamudLibPath)/ImGui.NET.dll')">
+    <PackageReference Include="ImGui.NET" Version="1.90.8.1" />
+  </ItemGroup>
+
   <ItemGroup>
     <Reference Include="Lumina.Excel">
       <HintPath>$(DalamudLibPath)/Lumina.Excel.dll</HintPath>
@@ -32,10 +36,8 @@
     <Reference Include="Lumina.Excel.GeneratedSheets" Condition="Exists('$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll')">
       <HintPath>$(DalamudLibPath)/Lumina.Excel.GeneratedSheets.dll</HintPath>
     </Reference>
-
-    <Reference Include="ImGui.NET">
+    <Reference Include="ImGui.NET" Condition="Exists('$(DalamudLibPath)/ImGui.NET.dll')">
       <HintPath>$(DalamudLibPath)/ImGui.NET.dll</HintPath>
-
     </Reference>
   </ItemGroup>
 
