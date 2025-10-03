@@ -477,11 +477,12 @@ public class MainWindow : IDisposable
                 var bottomColor = gradientBottom;
                 for (var i = vertexStartIndex; i < vertexEndIndex; i++)
                 {
-                    ref var vertex = ref drawList.VtxBuffer[i];
+                    var vertex = drawList.VtxBuffer[i];
                     var position = vertex.Pos;
                     var t = Math.Clamp((position.Y - stripMin.Y) / height, 0f, 1f);
                     var color = Vector4.Lerp(topColor, bottomColor, t);
                     vertex.Col = ImGui.ColorConvertFloat4ToU32(color);
+                    drawList.VtxBuffer[i] = vertex;
                 }
             }
         }
