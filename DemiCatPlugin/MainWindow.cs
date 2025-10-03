@@ -861,7 +861,7 @@ public class MainWindow : IDisposable
 
         if (_settingsIconTexture == null)
         {
-            var settingsIconPath = Path.Combine(pluginDirectory.FullName, "settingscog.png");
+            var settingsIconPath = Path.Combine(dockDirectory, "settingscog.png");
             _settingsIconTexture = TryLoadTextureFromFile(provider, settingsIconPath);
         }
     }
