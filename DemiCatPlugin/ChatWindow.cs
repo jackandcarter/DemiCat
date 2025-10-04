@@ -10,7 +10,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Globalization;
-using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
 using ImGuiNET;
