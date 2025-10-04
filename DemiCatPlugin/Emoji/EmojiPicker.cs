@@ -284,11 +284,11 @@ public sealed class EmojiPicker
                 var wrap = texture.GetWrapOrEmpty();
                 if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0 &&
                     ImGui.ImageButton(
+                        $"##emoji{emoji.Id}",
                         wrap.ToImGuiHandle(),
                         new Vector2(_tileSize, _tileSize),
                         Vector2.Zero,
                         Vector2.One,
-                        0,
                         Vector4.Zero,
                         Vector4.One))
                 {

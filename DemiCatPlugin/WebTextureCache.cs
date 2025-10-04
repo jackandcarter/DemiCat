@@ -122,22 +122,18 @@ public static class WebTextureCache
         if (tex == null) return;
         var wrap = tex.GetWrapOrEmpty();
 
-        // In this binding, ImageButton takes (ImTextureID, Vector2) and
-        // IDs are provided via PushID/PopID (not a string label param).
-        ImGui.PushID(id);
         if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0 &&
             ImGui.ImageButton(
+                $"##{id}",
                 wrap.ToImGuiHandle(),
                 size,
                 Vector2.Zero,
                 Vector2.One,
-                0,
                 Vector4.Zero,
                 Vector4.One))
         {
             onClick();
         }
-        ImGui.PopID();
     }
 
 }

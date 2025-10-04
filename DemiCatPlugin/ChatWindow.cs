@@ -1853,11 +1853,11 @@ public class ChatWindow : IDisposable
                     if (reaction.Texture != null && TryGetTextureWrap(reaction.Texture, out var wrap))
                     {
                         if (ImGui.ImageButton(
+                                $"##react{msg.Id}{reaction.EmojiId ?? reaction.Emoji}",
                                 wrap.ToImGuiHandle(),
                                 new Vector2(20, 20),
                                 Vector2.Zero,
                                 Vector2.One,
-                                0,
                                 Vector4.Zero,
                                 Vector4.One))
                         {
