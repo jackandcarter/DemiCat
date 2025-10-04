@@ -139,9 +139,18 @@ internal sealed class ImageLoader : IDisposable
             await _decodeSemaphore.WaitAsync(cancellationToken).ConfigureAwait(false);
             try
             {
-                using var image = await Image.LoadAsync<Rgba32>(memoryStream, cancellationToken).ConfigureAwait(false);
-                ResizeToFit(image);
-                return await _textureFactory.CreateAsync(image, cancellationToken).ConfigureAwait(false);
+                using var img = await Image.LoadAsync(memoryStream, cancellationToken).ConfigureAwait(false);
+                if (img.Frames.Count > 1)
+                {
+                    for (var i = img.Frames.Count - 1; i >= 1; i--)
+                    {
+                        img.Frames.RemoveFrame(i);
+                    }
+                }
+
+                using var rgba = img.CloneAs<Rgba32>();
+                ResizeToFit(rgba);
+                return await _textureFactory.CreateAsync(rgba, cancellationToken).ConfigureAwait(false);
             }
             finally
             {
