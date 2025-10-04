@@ -39,9 +39,13 @@ public class ChannelService
             linkedCts.CancelAfter(TimeSpan.FromSeconds(10));
             try
             {
-                using var response = await _httpClient.SendAsync(request, linkedCts.Token);
+                using var response = await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    linkedCts.Token
+                );
                 response.EnsureSuccessStatusCode();
-                var stream = await response.Content.ReadAsStreamAsync(linkedCts.Token);
+                await using var stream = await response.Content.ReadAsStreamAsync(linkedCts.Token);
                 var channels = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream, JsonOpts, linkedCts.Token) ?? new List<ChannelDto>();
                 foreach (var channel in channels)
                 {
@@ -91,10 +95,14 @@ public class ChannelService
 
         try
         {
-            using var response = await _httpClient.SendAsync(request, linkedCts.Token);
+            using var response = await _httpClient.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                linkedCts.Token
+            );
             response.EnsureSuccessStatusCode();
 
-            var stream = await response.Content.ReadAsStreamAsync(linkedCts.Token);
+            await using var stream = await response.Content.ReadAsStreamAsync(linkedCts.Token);
             var result = await JsonSerializer.DeserializeAsync<ChannelValidationResponse>(
                 stream,
                 JsonOpts,

@@ -3495,10 +3495,13 @@ public class ChatWindow : IDisposable
                     appliedStoredCursor = true;
                 }
 
-                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 ApiHelpers.AddAuthHeader(request, _tokenManager);
 
-                var response = await _httpClient.SendAsync(request);
+                using var response = await _httpClient.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead
+                );
                 if (!response.IsSuccessStatusCode)
                 {
                     var responseBody = await response.Content.ReadAsStringAsync();
@@ -3511,7 +3514,7 @@ public class ChatWindow : IDisposable
                     break;
                 }
 
-                var stream = await response.Content.ReadAsStreamAsync();
+                await using var stream = await response.Content.ReadAsStreamAsync();
 
                 var msgs = await JsonSerializer.DeserializeAsync<List<DiscordMessageDto>>(stream, JsonOpts) ?? new List<DiscordMessageDto>();
 
