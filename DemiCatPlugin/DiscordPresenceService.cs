@@ -170,10 +170,45 @@ public class DiscordPresenceService : IDisposable
             }
             var stream = await response.Content.ReadAsStreamAsync();
             var list = await JsonSerializer.DeserializeAsync<List<PresenceDto>>(stream) ?? new List<PresenceDto>();
+            var desiredOrder = new Dictionary<string, int>(list.Count, StringComparer.Ordinal);
+            for (var i = 0; i < list.Count; i++)
+            {
+                var dto = list[i];
+                desiredOrder[dto.Id] = i;
+            }
+
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                _presences.Clear();
-                _presences.AddRange(list);
+                foreach (var dto in list)
+                {
+                    ApplyPresenceUpdate(dto);
+                }
+
+                for (var i = _presences.Count - 1; i >= 0; i--)
+                {
+                    var presence = _presences[i];
+                    if (!desiredOrder.ContainsKey(presence.Id))
+                    {
+                        _presences.RemoveAt(i);
+                    }
+                }
+
+                _presences.Sort((a, b) =>
+                {
+                    var hasA = desiredOrder.TryGetValue(a.Id, out var indexA);
+                    var hasB = desiredOrder.TryGetValue(b.Id, out var indexB);
+                    if (hasA && hasB)
+                    {
+                        return indexA.CompareTo(indexB);
+                    }
+
+                    if (hasA)
+                        return -1;
+                    if (hasB)
+                        return 1;
+
+                    return string.CompareOrdinal(a.Id, b.Id);
+                });
             });
             _loaded = true;
         }
