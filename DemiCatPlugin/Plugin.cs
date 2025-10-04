@@ -126,7 +126,7 @@ public class Plugin : IDalamudPlugin
             _notePadWindow
         );
 
-        _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
+        _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient, _channelService);
         _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
 
         _channelSelection.ChannelChanged += HandleChannelSelectionValidation;
@@ -495,6 +495,7 @@ public class Plugin : IDalamudPlugin
                 {
                     var guildChanged = !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal);
                     _config.GuildId = normalizedResponseGuild;
+                    ChannelWatcher.Instance?.InvalidateCache();
                     _services.PluginInterface.SavePluginConfig(_config);
 
                     _chatWindow.OnGuildUpdated();

@@ -817,6 +817,7 @@ public class SettingsWindow : IDisposable
                 if (!string.Equals(_config.GuildId, normalizedGuild, StringComparison.Ordinal))
                 {
                     _config.GuildId = normalizedGuild;
+                    ChannelWatcher.Instance?.InvalidateCache();
                     configChanged = true;
                 }
             }
@@ -949,6 +950,7 @@ public class SettingsWindow : IDisposable
         }
 
         _config.GuildId = string.Empty;
+        ChannelWatcher.Instance?.InvalidateCache();
         _config.GuildRoles.Clear();
         _config.ChannelSelections.Clear();
         _config.ChatChannelId = string.Empty;

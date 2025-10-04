@@ -1043,6 +1043,131 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             .ToArray();
     }
 
+    private void ApplyEventChannels(IReadOnlyList<ChannelDto> channels)
+    {
+        _channels.Clear();
+        foreach (var channel in channels)
+        {
+            if (channel != null)
+            {
+                _channels.Add(channel);
+            }
+        }
+        UpdateChannelDisplayNames();
+
+        var guildId = _config.GuildId;
+        var selectedChannelId = _channelSelection.GetChannel(ChannelKind.Event, guildId, out var hasStoredSelection);
+        var usedFallback = !hasStoredSelection && !string.IsNullOrEmpty(selectedChannelId);
+        var targetIndex = -1;
+        if (!string.IsNullOrEmpty(selectedChannelId))
+        {
+            targetIndex = _channels.FindIndex(c => c != null && c.Id == selectedChannelId);
+        }
+
+        string? ensureChannelId = null;
+        if (targetIndex >= 0)
+        {
+            _selectedIndex = targetIndex;
+            if (usedFallback)
+            {
+                ensureChannelId = selectedChannelId;
+            }
+        }
+        else if (_channels.Count > 0)
+        {
+            _selectedIndex = 0;
+            ensureChannelId = _channels[_selectedIndex]?.Id;
+        }
+        else
+        {
+            _selectedIndex = -1;
+        }
+
+        if (_channels.Count > 0 && (_selectedIndex < 0 || _selectedIndex >= _channels.Count))
+        {
+            _selectedIndex = Math.Clamp(_selectedIndex, 0, _channels.Count - 1);
+            ensureChannelId ??= _channels[_selectedIndex]?.Id;
+        }
+
+        if (!string.IsNullOrEmpty(ensureChannelId))
+        {
+            _channelSelection.SetChannel(ChannelKind.Event, guildId, ensureChannelId);
+        }
+
+        _channelsLoaded = true;
+        _channelFetchFailed = false;
+        _channelErrorMessage = string.Empty;
+    }
+
+    internal Task ApplyChannelRefreshResult(ChannelRefreshResult result)
+    {
+        switch (result.Error)
+        {
+            case ChannelRefreshError.None:
+            case ChannelRefreshError.FeatureDisabled:
+            {
+                ResetPermissionToast();
+                var channels = result.Channels ?? Array.Empty<ChannelDto>();
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    ApplyEventChannels(channels);
+                });
+            }
+            case ChannelRefreshError.TokenMissing:
+            {
+                ResetPermissionToast();
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    ResetChannels();
+                    _channelFetchFailed = false;
+                    _channelErrorMessage = string.Empty;
+                });
+            }
+            case ChannelRefreshError.InvalidApiUrl:
+            {
+                ResetPermissionToast();
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Invalid API URL";
+                    _channelsLoaded = true;
+                });
+            }
+            case ChannelRefreshError.Unauthorized:
+            {
+                ResetPermissionToast();
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Authentication failed";
+                    _channelsLoaded = true;
+                });
+            }
+            case ChannelRefreshError.Forbidden:
+            {
+                ShowPermissionToast();
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = ForbiddenMessage;
+                    _channelsLoaded = true;
+                });
+            }
+            case ChannelRefreshError.Generic:
+            {
+                ResetPermissionToast();
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Failed to load channels";
+                    _channelsLoaded = true;
+                });
+            }
+            default:
+                return Task.CompletedTask;
+        }
+    }
+
     private void SaveConfig()
     {
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
@@ -1112,55 +1237,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 channel.EnsureKind(ChannelKind.Event);
             }
             if (await ChannelNameResolver.Resolve(eventChannels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            ResetPermissionToast();
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                _channels.Clear();
-                _channels.AddRange(eventChannels);
-                UpdateChannelDisplayNames();
-
-                var guildId = _config.GuildId;
-                var selectedChannelId = _channelSelection.GetChannel(ChannelKind.Event, guildId, out var hasStoredSelection);
-                var usedFallback = !hasStoredSelection && !string.IsNullOrEmpty(selectedChannelId);
-                var targetIndex = -1;
-                if (!string.IsNullOrEmpty(selectedChannelId))
-                {
-                    targetIndex = _channels.FindIndex(c => c != null && c.Id == selectedChannelId);
-                }
-
-                string? ensureChannelId = null;
-                if (targetIndex >= 0)
-                {
-                    _selectedIndex = targetIndex;
-                    if (usedFallback)
-                    {
-                        ensureChannelId = selectedChannelId;
-                    }
-                }
-                else if (_channels.Count > 0)
-                {
-                    _selectedIndex = 0;
-                    ensureChannelId = _channels[_selectedIndex]?.Id;
-                }
-                else
-                {
-                    _selectedIndex = -1;
-                }
-
-                if (_channels.Count > 0 && (_selectedIndex < 0 || _selectedIndex >= _channels.Count))
-                {
-                    _selectedIndex = Math.Clamp(_selectedIndex, 0, _channels.Count - 1);
-                    ensureChannelId ??= _channels[_selectedIndex]?.Id;
-                }
-
-                if (!string.IsNullOrEmpty(ensureChannelId))
-                {
-                    _channelSelection.SetChannel(ChannelKind.Event, guildId, ensureChannelId);
-                }
-                _channelsLoaded = true;
-                _channelFetchFailed = false;
-                _channelErrorMessage = string.Empty;
+                ApplyEventChannels(eventChannels);
             });
-            ResetPermissionToast();
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
