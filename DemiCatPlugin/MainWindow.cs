@@ -532,7 +532,7 @@ public class MainWindow : IDisposable
             if (ImGui.BeginDragDropSource())
             {
                 _draggingDockItemId = item.Id;
-                ImGui.SetDragDropPayload(DockDragPayloadType, ReadOnlySpan<byte>.Empty);
+                ImGui.SetDragDropPayload(DockDragPayloadType, ReadOnlySpan<byte>.Empty, ImGuiCond.None);
                 ImGui.TextUnformatted(item.Tooltip);
                 ImGui.EndDragDropSource();
             }
