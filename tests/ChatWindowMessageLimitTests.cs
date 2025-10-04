@@ -26,7 +26,7 @@ public class ChatWindowMessageLimitTests
 
         handler.EnqueueResponse(SerializeMessages(71, 120));
         handler.EnqueueResponse(SerializeMessages(21, 70));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         var msgs = GetMessages(window);
         Assert.Equal(100, msgs.Count);
@@ -41,7 +41,7 @@ public class ChatWindowMessageLimitTests
 
         handler.Requests.Clear();
         handler.EnqueueResponse(SerializeMessages(121, 130));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         msgs = GetMessages(window);
         Assert.Equal(100, msgs.Count);
@@ -67,7 +67,7 @@ public class ChatWindowMessageLimitTests
         var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
 
         handler.EnqueueResponse(SerializeMessages(1, 20));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         Assert.Single(handler.Requests);
         Assert.DoesNotContain("after=", handler.Requests[0].Query);
@@ -88,10 +88,10 @@ public class ChatWindowMessageLimitTests
         var window = new ChatWindow(config, client, null, tm, channelService);
 
         handler.EnqueueResponse(SerializeMessages(1, 20));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         handler.EnqueueResponse(SerializeMessages(201, 203));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         var msgs = GetMessages(window);
         Assert.Equal(23, msgs.Count);
@@ -118,7 +118,7 @@ public class ChatWindowMessageLimitTests
         var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
 
         handler.EnqueueResponse(SerializeMessages(1, 5));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         var initial = GetMessages(window);
         Assert.Equal(5, initial.Count);
@@ -126,7 +126,7 @@ public class ChatWindowMessageLimitTests
 
         handler.Requests.Clear();
         handler.EnqueueResponse("[]");
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         var refreshed = GetMessages(window);
         Assert.Equal(5, refreshed.Count);
@@ -150,7 +150,7 @@ public class ChatWindowMessageLimitTests
         var window = new ChatWindow(config, client, null, tm, channelService);
 
         handler.EnqueueResponse(SerializeMessages(1, 3));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         var initial = GetMessages(window);
         Assert.Equal(3, initial.Count);
@@ -163,7 +163,7 @@ public class ChatWindowMessageLimitTests
 
         handler.Requests.Clear();
         handler.EnqueueResponse("[]");
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         var refreshed = GetMessages(window);
         Assert.Empty(refreshed);
@@ -187,7 +187,7 @@ public class ChatWindowMessageLimitTests
 
         handler.EnqueueResponse(SerializeMessages(71, 120));
         handler.EnqueueResponse(SerializeMessages(21, 70));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         Assert.Equal(2, handler.Requests.Count);
         Assert.DoesNotContain("after=", handler.Requests[0].Query);

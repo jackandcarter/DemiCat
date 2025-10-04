@@ -85,6 +85,8 @@ public class ChatWindow : IDisposable
     private string? _lastSubscribedGuildId;
     private bool _pendingRefreshAfterSubscribe;
     private bool _pendingInitialScroll = true;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private volatile bool _refreshQueued;
     private bool _wasAtBottomLastFrame = true;
     private float _chatTopPadding;
     private int _selectionStart;
@@ -419,7 +421,7 @@ public class ChatWindow : IDisposable
         _bridge.ResyncRequested += (ch, cur) =>
             PluginServices.Instance!.Framework.RunOnTick(async () =>
             {
-                if (ch == CurrentChannelId) await RefreshMessages();
+                if (ch == CurrentChannelId) await RequestRefreshMessagesAsync();
             });
 
         _channelSelection.ChannelChanged += HandleChannelSelectionChanged;
@@ -509,7 +511,7 @@ public class ChatWindow : IDisposable
         {
             if (_pendingRefreshAfterSubscribe)
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshMessages());
+                _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RequestRefreshMessagesAsync());
                 _pendingRefreshAfterSubscribe = false;
             }
 
@@ -525,7 +527,7 @@ public class ChatWindow : IDisposable
 
         if (_pendingRefreshAfterSubscribe)
         {
-            _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshMessages());
+            _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RequestRefreshMessagesAsync());
             _pendingRefreshAfterSubscribe = false;
         }
 
@@ -3161,7 +3163,33 @@ public class ChatWindow : IDisposable
         }
     }
 
+    public Task RequestRefreshMessagesAsync()
+        => RefreshMessages();
+
     public virtual async Task RefreshMessages()
+    {
+        if (!await _refreshGate.WaitAsync(0).ConfigureAwait(false))
+        {
+            _refreshQueued = true;
+            return;
+        }
+
+        try
+        {
+            do
+            {
+                _refreshQueued = false;
+                await RefreshMessagesCore().ConfigureAwait(false);
+            }
+            while (_refreshQueued);
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    protected virtual async Task RefreshMessagesCore()
     {
         var channelId = CurrentChannelId;
         if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(channelId))
