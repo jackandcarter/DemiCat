@@ -32,6 +32,8 @@ public class EventCreateWindow
     private int _descriptionSelectionStart;
     private int _descriptionSelectionEnd;
     private bool _focusDescriptionNextFrame;
+    private static EventCreateWindow? _activeDescriptionCallbackOwner;
+    private static readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _descriptionEditedCallback = &OnDescriptionEdited;
     private string _time = string.Empty;
     private string _imageUrl = string.Empty;
     private string _url = string.Empty;
@@ -228,15 +230,26 @@ public class EventCreateWindow
                         ImGui.SetKeyboardFocusHere();
                         _focusDescriptionNextFrame = false;
                     }
-                    ImGui.InputTextMultiline(
-                        "##Description",
-                        ref _description,
-                        4096u,
-                        new Vector2(avail.X, descHeight),
-                        ImGuiInputTextFlags.CallbackAlways,
-                        OnDescriptionEdited,
-                        IntPtr.Zero
-                    );
+                    unsafe
+                    {
+                        _activeDescriptionCallbackOwner = this;
+                        try
+                        {
+                            ImGui.InputTextMultiline(
+                                "##Description",
+                                ref _description,
+                                4096u,
+                                new Vector2(avail.X, descHeight),
+                                ImGuiInputTextFlags.CallbackAlways,
+                                _descriptionEditedCallback,
+                                IntPtr.Zero
+                            );
+                        }
+                        finally
+                        {
+                            _activeDescriptionCallbackOwner = null;
+                        }
+                    }
                     _descriptionEmojiPopup.Draw();
                 },
                 alignLabel: false,
@@ -451,7 +464,10 @@ public class EventCreateWindow
             {
                 var field = _fields[i];
                 ImGui.InputText($"Name##{i}", ref field.Name, 256);
-                ImGui.InputTextMultiline($"Value##{i}", ref field.Value, 1024u, new Vector2(400, 60));
+                unsafe
+                {
+                    ImGui.InputTextMultiline($"Value##{i}", ref field.Value, 1024u, new Vector2(400, 60));
+                }
                 ImGui.Checkbox($"Inline##{i}", ref field.Inline);
                 if (ImGui.Button($"Remove##{i}"))
                 {
@@ -947,15 +963,21 @@ public class EventCreateWindow
         _focusDescriptionNextFrame = true;
     }
 
-    private unsafe int OnDescriptionEdited(ImGuiInputTextCallbackData* data)
+    private static unsafe int OnDescriptionEdited(ImGuiInputTextCallbackData* data)
     {
         if (data == null)
         {
             return 0;
         }
 
-        _descriptionSelectionStart = data->SelectionStart;
-        _descriptionSelectionEnd = data->SelectionEnd;
+        var owner = _activeDescriptionCallbackOwner;
+        if (owner == null)
+        {
+            return 0;
+        }
+
+        owner._descriptionSelectionStart = data->SelectionStart;
+        owner._descriptionSelectionEnd = data->SelectionEnd;
         return 0;
     }
 

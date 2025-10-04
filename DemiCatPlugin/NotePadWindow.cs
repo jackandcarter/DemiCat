@@ -39,6 +39,8 @@ public sealed class NotePadWindow : IDisposable
     private bool _sectionOrderDirty;
     private bool _pageOrderDirty;
     private bool _focusEditorNextFrame;
+    private static NotePadWindow? _activeEditorCallbackOwner;
+    private static readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _editorEditedCallback = &OnEditorEdited;
     private string _newSectionName = string.Empty;
     private string _newPageTitle = string.Empty;
     private bool _showNewSectionPopup;
@@ -407,13 +409,16 @@ public sealed class NotePadWindow : IDisposable
             var capacity = (uint)Math.Max(1024, content.Length + 512);
             var readOnlyContent = content;
             ImGui.BeginDisabled();
-            ImGui.InputTextMultiline(
-                "##NotePadEditorReadOnly",
-                ref readOnlyContent,
-                capacity,
-                new Vector2(-1, -1),
-                ImGuiInputTextFlags.ReadOnly
-            );
+            unsafe
+            {
+                ImGui.InputTextMultiline(
+                    "##NotePadEditorReadOnly",
+                    ref readOnlyContent,
+                    capacity,
+                    new Vector2(-1, -1),
+                    ImGuiInputTextFlags.ReadOnly
+                );
+            }
             ImGui.EndDisabled();
             _editorContent = content;
             _editorVersion = page.Version;
@@ -429,15 +434,27 @@ public sealed class NotePadWindow : IDisposable
 
         ImGui.PushItemWidth(-1);
         var flags = ImGuiInputTextFlags.AllowTabInput | ImGuiInputTextFlags.CallbackAlways | ImGuiInputTextFlags.CallbackHistory;
-        var edited = ImGui.InputTextMultiline(
-            "##NotePadEditor",
-            ref _editorContent,
-            editorCapacity,
-            new Vector2(-1, -1),
-            flags,
-            OnEditorEdited,
-            IntPtr.Zero
-        );
+        bool edited;
+        unsafe
+        {
+            _activeEditorCallbackOwner = this;
+            try
+            {
+                edited = ImGui.InputTextMultiline(
+                    "##NotePadEditor",
+                    ref _editorContent,
+                    editorCapacity,
+                    new Vector2(-1, -1),
+                    flags,
+                    _editorEditedCallback,
+                    IntPtr.Zero
+                );
+            }
+            finally
+            {
+                _activeEditorCallbackOwner = null;
+            }
+        }
         ImGui.PopItemWidth();
 
         if (edited)
@@ -841,15 +858,21 @@ public sealed class NotePadWindow : IDisposable
         _lastEditUtc = DateTime.UtcNow;
     }
 
-    private unsafe int OnEditorEdited(ImGuiInputTextCallbackData* data)
+    private static unsafe int OnEditorEdited(ImGuiInputTextCallbackData* data)
     {
         if (data == null)
         {
             return 0;
         }
 
-        _selectionStart = data->SelectionStart;
-        _selectionEnd = data->SelectionEnd;
+        var owner = _activeEditorCallbackOwner;
+        if (owner == null)
+        {
+            return 0;
+        }
+
+        owner._selectionStart = data->SelectionStart;
+        owner._selectionEnd = data->SelectionEnd;
         return 0;
     }
 

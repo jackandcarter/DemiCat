@@ -21,7 +21,6 @@ using DemiCatPlugin.SyncShell;
 using Penumbra.Api.Enums;
 using Serilog;
 using Serilog.Events;
-using ImGuiInputTextCallback = ImGuiNET.ImGuiInputTextCallback;
 using ImGuiInputTextCallbackData = ImGuiNET.ImGuiInputTextCallbackData;
 using ImGuiMouseCursor = ImGuiNET.ImGuiMouseCursor;
 
@@ -143,7 +142,8 @@ public class SyncshellWindow : IDisposable
     private Vector2 _inviteSuggestionWindowSize;
     private bool _inviteSuggestionFiltered;
     private bool _focusInviteInputNextFrame;
-    private readonly ImGuiInputTextCallback _inviteInputCallback;
+    private static SyncshellWindow? _activeInviteCallbackOwner;
+    private readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _inviteInputCallback;
     private int _inviteInFlight;
     private DateTimeOffset _lastMembershipFetch;
     private bool _membershipNeedsRefresh = true;
@@ -211,7 +211,10 @@ public class SyncshellWindow : IDisposable
         }
         InitializeMembershipPanelRatios();
 
-        _inviteInputCallback = OnInviteInputEdited;
+        unsafe
+        {
+            _inviteInputCallback = &OnInviteInputEdited;
+        }
 
         foreach (var inviteEntry in state.Invites.ToList())
         {
@@ -969,14 +972,26 @@ public class SyncshellWindow : IDisposable
             _focusInviteInputNextFrame = false;
         }
         ImGui.SetNextItemWidth(-150f);
-        var submitted = ImGui.InputTextWithHint(
-            "##syncshell-invite",
-            "Character name",
-            ref invite,
-            64,
-            ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
-            _inviteInputCallback
-        );
+        bool submitted;
+        unsafe
+        {
+            _activeInviteCallbackOwner = this;
+            try
+            {
+                submitted = ImGui.InputTextWithHint(
+                    "##syncshell-invite",
+                    "Character name",
+                    ref invite,
+                    64,
+                    ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
+                    _inviteInputCallback
+                );
+            }
+            finally
+            {
+                _activeInviteCallbackOwner = null;
+            }
+        }
         invite ??= string.Empty;
         _inviteTarget = invite;
         var anchorMin = ImGui.GetItemRectMin();
@@ -1348,14 +1363,20 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private unsafe int OnInviteInputEdited(ImGuiInputTextCallbackData* data)
+    private static unsafe int OnInviteInputEdited(ImGuiInputTextCallbackData* data)
     {
         if (data == null)
         {
             return 0;
         }
 
-        _inviteSuggestionsDirty = true;
+        var owner = _activeInviteCallbackOwner;
+        if (owner == null)
+        {
+            return 0;
+        }
+
+        owner._inviteSuggestionsDirty = true;
         return 0;
     }
 
