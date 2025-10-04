@@ -38,6 +38,8 @@ public class AvatarCache : IDisposable
 
         lock (_lock)
         {
+            RemoveExpiredEntriesLocked();
+
             if (_cache.TryGetValue(url, out var entry))
             {
                 if (entry.Texture != null && entry.Expiration > DateTime.UtcNow)
@@ -65,6 +67,8 @@ public class AvatarCache : IDisposable
             var tex = new ForwardingSharedImmediateTexture(wrap);
             lock (_lock)
             {
+                if (_cache.TryGetValue(url, out var existing) && existing.Texture?.GetWrapOrEmpty() is IDisposable oldWrap)
+                    oldWrap.Dispose();
                 _cache[url] = new CacheEntry
                 {
                     Texture = tex,
@@ -80,6 +84,35 @@ public class AvatarCache : IDisposable
                 _cache.Remove(url);
             }
             return null;
+        }
+    }
+
+    private void RemoveExpiredEntriesLocked()
+    {
+        var now = DateTime.UtcNow;
+        List<string>? expired = null;
+
+        foreach (var (key, entry) in _cache)
+        {
+            if (entry.Pending != null)
+                continue;
+
+            if (entry.Expiration != default && entry.Expiration <= now)
+            {
+                expired ??= new List<string>();
+                expired.Add(key);
+            }
+        }
+
+        if (expired == null)
+            return;
+
+        foreach (var key in expired)
+        {
+            if (_cache.TryGetValue(key, out var entry) && entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
+                wrap.Dispose();
+
+            _cache.Remove(key);
         }
     }
 
