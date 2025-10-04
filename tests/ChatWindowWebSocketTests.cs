@@ -630,7 +630,7 @@ public class ChatWindowWebSocketTests
         var window = new ChatWindow(config, restClient, null, tm, channelService);
         var cursorKey = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "1");
 
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         Assert.True(config.RestChatCursors.TryGetValue(cursorKey, out var restCursor));
         Assert.Equal(5, restCursor);

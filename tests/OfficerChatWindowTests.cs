@@ -32,7 +32,7 @@ public class OfficerChatWindowTests
 
         handler.EnqueueResponse(SerializeMessages(71, 120));
         handler.EnqueueResponse(SerializeMessages(21, 70));
-        await window.RefreshMessages();
+        await window.RequestRefreshMessagesAsync();
 
         var msgs = GetMessages(window);
         Assert.Equal(100, msgs.Count);

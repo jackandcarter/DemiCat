@@ -1204,11 +1204,11 @@ public class SettingsWindow : IDisposable
             {
                 if (_config.EnableFcChat)
                 {
-                    _ = ChatWindow?.RefreshMessages();
+                    _ = ChatWindow?.RequestRefreshMessagesAsync();
                 }
                 if (OfficerPermissions.HasAccess(_config))
                 {
-                    _ = OfficerChatWindow?.RefreshMessages();
+                    _ = OfficerChatWindow?.RequestRefreshMessagesAsync();
                 }
             }
             catch (Exception ex)
