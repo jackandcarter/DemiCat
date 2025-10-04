@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -15,13 +14,16 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
 using ImGuiNET;
-using StbImageSharp;
 using System.IO;
 using DiscordHelper;
 using System.Diagnostics;
 using Dalamud.Interface.ImGuiFileDialog;
 using DemiCatPlugin.Emoji;
 using DemiCatPlugin.Avatars;
+using DemiCatPlugin.Images;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
 
 namespace DemiCatPlugin;
 
@@ -103,15 +105,12 @@ public class ChatWindow : IDisposable
     private MentionDrawerState? _mentionDrawerState;
     private int _imageMaxDecodeWidth = Config.DefaultImageMaxDecodeWidth;
     private int _imageMaxDecodeHeight = Config.DefaultImageMaxDecodeHeight;
-    private long _imageBytesBudget = Config.DefaultImageBytesInFlightBudget;
     private int _preloadRowsAhead = Config.DefaultPreloadRowsAhead;
     private bool _lazyLoadEmbedsEnabled;
     private bool _allowTextureLoads = true;
     private readonly Dictionary<string, (Vector2 Min, Vector2 Max)> _messageRectCache = new();
-    private SemaphoreSlim _imageDownloadSemaphore = new(Config.DefaultImageDownloadConcurrency, Config.DefaultImageDownloadConcurrency);
-    private SemaphoreSlim _imageDecodeSemaphore = new(Config.DefaultImageDecodeConcurrency, Config.DefaultImageDecodeConcurrency);
-    private int _imageDownloadSemaphoreCapacity = Config.DefaultImageDownloadConcurrency;
-    private int _imageDecodeSemaphoreCapacity = Config.DefaultImageDecodeConcurrency;
+    private IImmediateTextureFactory? _textureFactory;
+    private ImageLoader? _imageLoader;
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -2915,24 +2914,82 @@ public class ChatWindow : IDisposable
             return;
 
         _attachmentPreviewTextures[path] = null;
-        _ = Task.Run(() =>
+        _ = Task.Run(async () =>
         {
             try
             {
-                var bytes = File.ReadAllBytes(path);
-                using var stream = new MemoryStream(bytes);
-                var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
-                    RawImageSpecification.Rgba32(image.Width, image.Height),
-                    image.Data);
-                var texture = new ForwardingSharedImmediateTexture(wrap);
-                PluginServices.Instance!.Framework.RunOnTick(() => _attachmentPreviewTextures[path] = texture);
+                var factory = _textureFactory;
+                if (factory == null)
+                {
+                    var framework = PluginServices.Instance?.Framework;
+                    if (framework != null)
+                    {
+                        _ = framework.RunOnTick(() => _attachmentPreviewTextures.Remove(path));
+                    }
+                    else
+                    {
+                        _attachmentPreviewTextures.Remove(path);
+                    }
+                    return;
+                }
+
+                await using var stream = File.OpenRead(path);
+                using var image = await Image.LoadAsync<Rgba32>(stream).ConfigureAwait(false);
+                ResizeAttachmentImage(image);
+                var texture = await factory.CreateAsync(image).ConfigureAwait(false);
+                if (texture == null)
+                {
+                    var framework = PluginServices.Instance?.Framework;
+                    if (framework != null)
+                    {
+                        _ = framework.RunOnTick(() => _attachmentPreviewTextures.Remove(path));
+                    }
+                    else
+                    {
+                        _attachmentPreviewTextures.Remove(path);
+                    }
+                    return;
+                }
+
+                var frameworkInstance = PluginServices.Instance?.Framework;
+                if (frameworkInstance != null)
+                {
+                    _ = frameworkInstance.RunOnTick(() => _attachmentPreviewTextures[path] = texture);
+                }
+                else
+                {
+                    _attachmentPreviewTextures[path] = texture;
+                }
             }
             catch
             {
-                PluginServices.Instance?.Framework.RunOnTick(() => _attachmentPreviewTextures.Remove(path));
+                var framework = PluginServices.Instance?.Framework;
+                if (framework != null)
+                {
+                    _ = framework.RunOnTick(() => _attachmentPreviewTextures.Remove(path));
+                }
+                else
+                {
+                    _attachmentPreviewTextures.Remove(path);
+                }
             }
         });
+    }
+
+    private void ResizeAttachmentImage(Image<Rgba32> image)
+    {
+        if (image.Width <= _imageMaxDecodeWidth && image.Height <= _imageMaxDecodeHeight)
+        {
+            return;
+        }
+
+        image.Mutate(ctx => ctx.Resize(new ResizeOptions
+        {
+            Mode = ResizeMode.Max,
+            Size = new Size(_imageMaxDecodeWidth, _imageMaxDecodeHeight),
+            Sampler = KnownResamplers.Lanczos3,
+            Compand = true
+        }));
     }
 
     private void CleanupAttachmentPreviews(IEnumerable<string> activePaths)
@@ -3697,8 +3754,7 @@ public class ChatWindow : IDisposable
             DisposeMessageTextures(message);
         }
         ClearTextureCache();
-        _imageDownloadSemaphore?.Dispose();
-        _imageDecodeSemaphore?.Dispose();
+        DisposeImageLoader();
     }
 
     protected void SaveConfig()
@@ -3999,90 +4055,60 @@ public class ChatWindow : IDisposable
             return;
         }
 
+        var loader = _imageLoader;
+        if (loader == null || _textureFactory == null)
+        {
+            set(null);
+            return;
+        }
+
         var node = _textureLru.AddFirst(url);
         _textureCache[url] = new TextureCacheEntry(null, node);
         EnforceTextureCacheCapacity();
 
         _ = Task.Run(async () =>
         {
-            var downloadSemaphore = _imageDownloadSemaphore;
-            var decodeSemaphore = _imageDecodeSemaphore;
+            ISharedImmediateTexture? texture = null;
             try
             {
-                await downloadSemaphore.WaitAsync().ConfigureAwait(false);
-                try
-                {
-                    using var response = await _httpClient
-                        .SendAsync(new HttpRequestMessage(HttpMethod.Get, url), HttpCompletionOption.ResponseHeadersRead)
-                        .ConfigureAwait(false);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        var framework = PluginServices.Instance!.Framework;
-                        _ = framework.RunOnTick(() =>
-                        {
-                            RemoveTextureEntry(url);
-                            set(null);
-                        });
-                        return;
-                    }
-
-                    var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
-                    if (_imageBytesBudget > 0 && bytes.LongLength > _imageBytesBudget)
-                    {
-                        var framework = PluginServices.Instance!.Framework;
-                        _ = framework.RunOnTick(() =>
-                        {
-                            RemoveTextureEntry(url);
-                            set(null);
-                        });
-                        return;
-                    }
-
-                    await decodeSemaphore.WaitAsync().ConfigureAwait(false);
-                    try
-                    {
-                        using var stream = new MemoryStream(bytes);
-                        var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                        if ((_imageMaxDecodeWidth > 0 && image.Width > _imageMaxDecodeWidth) ||
-                            (_imageMaxDecodeHeight > 0 && image.Height > _imageMaxDecodeHeight))
-                        {
-                            var framework = PluginServices.Instance!.Framework;
-                            _ = framework.RunOnTick(() =>
-                            {
-                                RemoveTextureEntry(url);
-                                set(null);
-                            });
-                            return;
-                        }
-
-                        var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
-                            RawImageSpecification.Rgba32(image.Width, image.Height),
-                            image.Data);
-                        var texture = new ForwardingSharedImmediateTexture(wrap);
-                        if (_textureCache.TryGetValue(url, out var entry))
-                        {
-                            entry.Texture = texture;
-                        }
-                        _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
-                    }
-                    finally
-                    {
-                        decodeSemaphore.Release();
-                    }
-                }
-                finally
-                {
-                    downloadSemaphore.Release();
-                }
+                texture = await loader.LoadIntoTextureAsync(url).ConfigureAwait(false);
             }
             catch
             {
-                var framework = PluginServices.Instance!.Framework;
-                _ = framework.RunOnTick(() =>
+                texture = null;
+            }
+
+            void Complete()
+            {
+                if (texture == null)
                 {
                     RemoveTextureEntry(url);
                     set(null);
-                });
+                    return;
+                }
+
+                if (!_textureCache.TryGetValue(url, out var entry))
+                {
+                    if (texture.GetWrapOrEmpty() is IDisposable wrap)
+                    {
+                        wrap.Dispose();
+                    }
+                    set(null);
+                    return;
+                }
+
+                entry.Texture = texture;
+                set(texture);
+            }
+
+            var framework = PluginServices.Instance?.Framework;
+            if (framework != null)
+            {
+                _ = framework.RunOnTick(Complete);
+            }
+            else
+            {
+                Complete();
             }
         });
     }
@@ -4122,21 +4148,18 @@ public class ChatWindow : IDisposable
         {
             _config.ImageDownloadConcurrency = sanitizedDownloadConcurrency;
         }
-        ReplaceSemaphore(ref _imageDownloadSemaphore, ref _imageDownloadSemaphoreCapacity, sanitizedDownloadConcurrency);
 
         var sanitizedDecodeConcurrency = Config.SanitizeImageDecodeConcurrency(_config.ImageDecodeConcurrency);
         if (_config.ImageDecodeConcurrency != sanitizedDecodeConcurrency)
         {
             _config.ImageDecodeConcurrency = sanitizedDecodeConcurrency;
         }
-        ReplaceSemaphore(ref _imageDecodeSemaphore, ref _imageDecodeSemaphoreCapacity, sanitizedDecodeConcurrency);
 
         var sanitizedBudget = Config.SanitizeImageBytesInFlightBudget(_config.ImageBytesInFlightBudget);
         if (_config.ImageBytesInFlightBudget != sanitizedBudget)
         {
             _config.ImageBytesInFlightBudget = sanitizedBudget;
         }
-        _imageBytesBudget = sanitizedBudget;
 
         var sanitizedPreload = Config.SanitizePreloadRowsAhead(_config.PreloadRowsAhead);
         if (_config.PreloadRowsAhead != sanitizedPreload)
@@ -4146,6 +4169,8 @@ public class ChatWindow : IDisposable
         _preloadRowsAhead = sanitizedPreload;
 
         _lazyLoadEmbedsEnabled = _config.LazyLoadEmbeds;
+
+        RebuildImageLoader(sanitizedDownloadConcurrency, sanitizedDecodeConcurrency, sanitizedBudget);
     }
 
     private int MaxMessages => Config.SanitizeChatMaxMessages(_config.ChatMaxMessages);
@@ -4247,39 +4272,35 @@ public class ChatWindow : IDisposable
         return rowsAway <= _preloadRowsAhead;
     }
 
-    private void ReplaceSemaphore(ref SemaphoreSlim semaphore, ref int capacityField, int concurrency)
+    private void RebuildImageLoader(int downloadConcurrency, int decodeConcurrency, long byteBudget)
     {
-        var old = semaphore;
-        var previousCapacity = capacityField;
-        capacityField = concurrency;
-        semaphore = new SemaphoreSlim(concurrency, concurrency);
-        if (old == null)
+        var services = PluginServices.Instance;
+        if (services?.TextureProvider == null)
         {
+            DisposeImageLoader();
             return;
         }
 
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                if (previousCapacity > 0)
-                {
-                    while (old.CurrentCount < previousCapacity)
-                    {
-                        await Task.Delay(100).ConfigureAwait(false);
-                    }
-                }
-                old.Dispose();
-            }
-            catch (ObjectDisposedException)
-            {
-                // already disposed
-            }
-            catch
-            {
-                // ignored
-            }
-        });
+        var newFactory = new ImmediateTextureFactory(services.TextureProvider);
+        var newLoader = new ImageLoader(
+            _httpClient,
+            newFactory,
+            downloadConcurrency,
+            decodeConcurrency,
+            byteBudget,
+            _imageMaxDecodeWidth,
+            _imageMaxDecodeHeight);
+
+        var oldLoader = Interlocked.Exchange(ref _imageLoader, newLoader);
+        _textureFactory = newFactory;
+        oldLoader?.Dispose();
+    }
+
+    private void DisposeImageLoader()
+    {
+        var oldLoader = Interlocked.Exchange(ref _imageLoader, null);
+        oldLoader?.Dispose();
+        _textureFactory = null;
     }
 
     private readonly struct TextureLoadScope : IDisposable
