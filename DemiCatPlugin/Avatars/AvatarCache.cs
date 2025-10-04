@@ -14,6 +14,8 @@ public class AvatarCache : IDisposable
     private readonly ITextureProvider _textureProvider;
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, CacheEntry> _cache = new();
+    private readonly LinkedList<string> _lru = new();
+    private readonly int _capacity = 256;
     private readonly TimeSpan _ttl = TimeSpan.FromHours(12);
     private readonly object _lock = new();
 
@@ -22,6 +24,7 @@ public class AvatarCache : IDisposable
         public ISharedImmediateTexture? Texture;
         public DateTime Expiration;
         public Task<ISharedImmediateTexture?>? Pending;
+        public LinkedListNode<string>? Node;
     }
 
     public AvatarCache(ITextureProvider textureProvider, HttpClient httpClient)
@@ -43,13 +46,22 @@ public class AvatarCache : IDisposable
             if (_cache.TryGetValue(url, out var entry))
             {
                 if (entry.Texture != null && entry.Expiration > DateTime.UtcNow)
+                {
+                    MoveToFrontLocked(entry);
                     return Task.FromResult<ISharedImmediateTexture?>(entry.Texture);
+                }
                 if (entry.Pending != null)
                     return entry.Pending;
             }
 
             var task = FetchAsync(url);
-            _cache[url] = new CacheEntry { Pending = task };
+            var node = _lru.AddFirst(url);
+            _cache[url] = new CacheEntry
+            {
+                Pending = task,
+                Node = node
+            };
+            EvictIfNeededLocked();
             return task;
         }
     }
@@ -67,13 +79,16 @@ public class AvatarCache : IDisposable
             var tex = new ForwardingSharedImmediateTexture(wrap);
             lock (_lock)
             {
-                if (_cache.TryGetValue(url, out var existing) && existing.Texture?.GetWrapOrEmpty() is IDisposable oldWrap)
+                if (!_cache.TryGetValue(url, out var existing))
+                    return tex;
+
+                if (existing.Texture?.GetWrapOrEmpty() is IDisposable oldWrap)
                     oldWrap.Dispose();
-                _cache[url] = new CacheEntry
-                {
-                    Texture = tex,
-                    Expiration = DateTime.UtcNow + _ttl
-                };
+
+                existing.Texture = tex;
+                existing.Pending = null;
+                existing.Expiration = DateTime.UtcNow + _ttl;
+                MoveToFrontLocked(existing);
             }
             return tex;
         }
@@ -81,7 +96,10 @@ public class AvatarCache : IDisposable
         {
             lock (_lock)
             {
-                _cache.Remove(url);
+                if (_cache.TryGetValue(url, out var entry))
+                {
+                    RemoveEntryLocked(url, entry, disposeTexture: true);
+                }
             }
             return null;
         }
@@ -109,11 +127,46 @@ public class AvatarCache : IDisposable
 
         foreach (var key in expired)
         {
-            if (_cache.TryGetValue(key, out var entry) && entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
-                wrap.Dispose();
-
-            _cache.Remove(key);
+            if (_cache.TryGetValue(key, out var entry))
+                RemoveEntryLocked(key, entry, disposeTexture: true);
         }
+    }
+
+    private void EvictIfNeededLocked()
+    {
+        while (_cache.Count > _capacity && _lru.Last is { } last)
+        {
+            var key = last.Value;
+            _lru.RemoveLast();
+            if (_cache.TryGetValue(key, out var entry))
+                RemoveEntryLocked(key, entry, disposeTexture: true);
+        }
+    }
+
+    private void MoveToFrontLocked(CacheEntry entry)
+    {
+        if (entry.Node == null)
+            return;
+
+        if (entry.Node.List != _lru)
+        {
+            entry.Node = _lru.AddFirst(entry.Node.Value);
+            return;
+        }
+
+        _lru.Remove(entry.Node);
+        _lru.AddFirst(entry.Node);
+    }
+
+    private void RemoveEntryLocked(string key, CacheEntry entry, bool disposeTexture)
+    {
+        if (disposeTexture && entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
+            wrap.Dispose();
+
+        if (entry.Node != null && entry.Node.List == _lru)
+            _lru.Remove(entry.Node);
+
+        _cache.Remove(key);
     }
 
     private static string DefaultAvatarUrl(string? userId)
@@ -129,11 +182,14 @@ public class AvatarCache : IDisposable
     {
         lock (_lock)
         {
-            foreach (var entry in _cache.Values)
+            var keys = new List<string>(_cache.Keys);
+            foreach (var key in keys)
             {
-                if (entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
-                    wrap.Dispose();
+                if (_cache.TryGetValue(key, out var entry))
+                    RemoveEntryLocked(key, entry, disposeTexture: true);
             }
+
+            _lru.Clear();
             _cache.Clear();
         }
     }
