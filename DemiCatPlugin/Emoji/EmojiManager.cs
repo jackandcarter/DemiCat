@@ -205,7 +205,11 @@ public sealed class EmojiManager : IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApiHelpers.AddAuthHeader(req, _tokens);
 
-        using var res = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        using var res = await _httpClient.SendAsync(
+            req,
+            HttpCompletionOption.ResponseHeadersRead,
+            ct
+        ).ConfigureAwait(false);
         if (res.StatusCode == HttpStatusCode.Unauthorized)
         {
             _tokens.Clear("Invalid API key");
@@ -234,7 +238,11 @@ public sealed class EmojiManager : IDisposable
         using var req = new HttpRequestMessage(HttpMethod.Get, url);
         ApiHelpers.AddAuthHeader(req, _tokens);
 
-        using var res = await _httpClient.SendAsync(req, ct).ConfigureAwait(false);
+        using var res = await _httpClient.SendAsync(
+            req,
+            HttpCompletionOption.ResponseHeadersRead,
+            ct
+        ).ConfigureAwait(false);
         if (res.StatusCode == HttpStatusCode.Unauthorized)
         {
             _tokens.Clear("Invalid API key");
