@@ -905,9 +905,12 @@ public class ChatWindow : IDisposable
 
         if (ImGui.BeginPopup("editMessage"))
         {
-            var editBuf = ImGuiTextUtil.MakeUtf8Buffer(_editContent, 2048);
-            ImGui.InputTextMultiline("##editContent", editBuf, new Vector2(400, ImGui.GetTextLineHeight() * 5));
-            _editContent = ImGuiTextUtil.ReadUtf8Buffer(editBuf);
+            _ = ImGui.InputTextMultiline(
+                "##editContent",
+                ref _editContent,
+                2048u,
+                new Vector2(400, ImGui.GetTextLineHeight() * 5)
+            );
 
             if (ImGui.Button("Save"))
             {
@@ -999,7 +1002,6 @@ public class ChatWindow : IDisposable
         ImGui.SameLine();
         if (ImGui.SmallButton("Link")) WrapSelection("[", "](url)");
 
-        var inputBuf = ImGuiTextUtil.MakeUtf8Buffer(_input, 2048);
         var availableWidth = ImGui.GetContentRegionAvail().X;
         var framePadding = style.FramePadding.X * 2f;
         var emojiButtonWidth = 0f;
@@ -1028,10 +1030,12 @@ public class ChatWindow : IDisposable
         }
         _ = ImGui.InputTextMultiline(
             "##chatInput",
-            inputBuf,
+            ref _input,
+            2048u,
             new Vector2(inputWidth, inputHeight),
             ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
-            new ImGui.ImGuiInputTextCallbackDelegate(OnInputEdited)
+            OnInputEdited,
+            IntPtr.Zero
         );
         if (MentionsEnabled)
         {
@@ -1039,7 +1043,6 @@ public class ChatWindow : IDisposable
             mentionState.AnchorMin = ImGui.GetItemRectMin();
             mentionState.AnchorMax = ImGui.GetItemRectMax();
         }
-        _input = ImGuiTextUtil.ReadUtf8Buffer(inputBuf);
 
         var composerActive = ImGui.IsItemActive();
         var inputEdited = ImGui.IsItemEdited();
@@ -1518,11 +1521,16 @@ public class ChatWindow : IDisposable
         ImGui.TextUnformatted(text);
     }
 
-    // Correct signature for Dalamud's callback: ref struct, returns int
-    private int OnInputEdited(ref ImGuiInputTextCallbackData data)
+    // Correct signature for Dalamud's callback: unsafe pointer, returns int
+    private unsafe int OnInputEdited(ImGuiInputTextCallbackData* data)
     {
-        _selectionStart = data.SelectionStart;
-        _selectionEnd = data.SelectionEnd;
+        if (data == null)
+        {
+            return 0;
+        }
+
+        _selectionStart = data->SelectionStart;
+        _selectionEnd = data->SelectionEnd;
         return 0;
     }
 

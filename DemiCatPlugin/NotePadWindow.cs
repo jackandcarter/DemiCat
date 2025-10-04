@@ -404,16 +404,23 @@ public sealed class NotePadWindow : IDisposable
         if (IsReadOnly)
         {
             var content = page.Content ?? string.Empty;
-            var readOnlyBuffer = ImGuiTextUtil.MakeUtf8Buffer(content, Math.Max(1024, content.Length + 512));
+            var capacity = (uint)Math.Max(1024, content.Length + 512);
+            var readOnlyContent = content;
             ImGui.BeginDisabled();
-            ImGui.InputTextMultiline("##NotePadEditorReadOnly", readOnlyBuffer, new Vector2(-1, -1), ImGuiInputTextFlags.ReadOnly);
+            ImGui.InputTextMultiline(
+                "##NotePadEditorReadOnly",
+                ref readOnlyContent,
+                capacity,
+                new Vector2(-1, -1),
+                ImGuiInputTextFlags.ReadOnly
+            );
             ImGui.EndDisabled();
             _editorContent = content;
             _editorVersion = page.Version;
             return;
         }
 
-        var buffer = ImGuiTextUtil.MakeUtf8Buffer(_editorContent, Math.Max(1024, _editorContent.Length + 512));
+        var editorCapacity = (uint)Math.Max(1024, _editorContent.Length + 512);
         if (_focusEditorNextFrame)
         {
             ImGui.SetKeyboardFocusHere();
@@ -422,13 +429,19 @@ public sealed class NotePadWindow : IDisposable
 
         ImGui.PushItemWidth(-1);
         var flags = ImGuiInputTextFlags.AllowTabInput | ImGuiInputTextFlags.CallbackAlways | ImGuiInputTextFlags.CallbackHistory;
-        var edited = ImGui.InputTextMultiline("##NotePadEditor", buffer, new Vector2(-1, -1), flags, new ImGui.ImGuiInputTextCallbackDelegate(OnEditorEdited));
+        var edited = ImGui.InputTextMultiline(
+            "##NotePadEditor",
+            ref _editorContent,
+            editorCapacity,
+            new Vector2(-1, -1),
+            flags,
+            OnEditorEdited,
+            IntPtr.Zero
+        );
         ImGui.PopItemWidth();
 
-        var newValue = ImGuiTextUtil.ReadUtf8Buffer(buffer);
-        if (!string.Equals(newValue, _editorContent, StringComparison.Ordinal))
+        if (edited)
         {
-            _editorContent = newValue;
             _dirty = true;
             _lastEditUtc = DateTime.UtcNow;
         }
@@ -828,10 +841,15 @@ public sealed class NotePadWindow : IDisposable
         _lastEditUtc = DateTime.UtcNow;
     }
 
-    private int OnEditorEdited(ref ImGuiInputTextCallbackData data)
+    private unsafe int OnEditorEdited(ImGuiInputTextCallbackData* data)
     {
-        _selectionStart = data.SelectionStart;
-        _selectionEnd = data.SelectionEnd;
+        if (data == null)
+        {
+            return 0;
+        }
+
+        _selectionStart = data->SelectionStart;
+        _selectionEnd = data->SelectionEnd;
         return 0;
     }
 
