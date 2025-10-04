@@ -14,16 +14,16 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using Dalamud.Plugin.Ipc;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.SyncShell;
 using Penumbra.Api.Enums;
 using Serilog;
 using Serilog.Events;
-using ImGuiInputTextCallback = Dalamud.Bindings.ImGui.ImGuiInputTextCallback;
-using ImGuiInputTextCallbackData = Dalamud.Bindings.ImGui.ImGuiInputTextCallbackData;
-using ImGuiMouseCursor = Dalamud.Bindings.ImGui.ImGuiMouseCursor;
+using ImGuiInputTextCallback = ImGuiNET.ImGuiInputTextCallback;
+using ImGuiInputTextCallbackData = ImGuiNET.ImGuiInputTextCallbackData;
+using ImGuiMouseCursor = ImGuiNET.ImGuiMouseCursor;
 
 namespace DemiCatPlugin;
 

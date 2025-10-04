@@ -1,4 +1,4 @@
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using DemiCat.UI;
 
 namespace DemiCatPlugin;

@@ -2,7 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using DemiCatPlugin;
 
 namespace DemiCatPlugin.Emoji;
