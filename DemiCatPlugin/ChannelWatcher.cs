@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -6,6 +7,7 @@ using System.Net.WebSockets;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text;
+using System.Linq;
 
 namespace DemiCatPlugin;
 
@@ -13,6 +15,7 @@ public class ChannelWatcher : IDisposable
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
+    private readonly ChannelService _channelService;
     private readonly UiRenderer _ui;
     private readonly EventCreateWindow _eventCreateWindow;
     private readonly TemplatesWindow _templatesWindow;
@@ -24,6 +27,10 @@ public class ChannelWatcher : IDisposable
     private DateTime _lastRefresh = DateTime.MinValue;
     private readonly TimeSpan _refreshCooldown = TimeSpan.FromSeconds(2);
     private int _retryAttempt;
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private readonly Dictionary<string, ChannelRefreshResult> _channelCache = new(StringComparer.OrdinalIgnoreCase);
+    private DateTime _channelCacheTimestamp = DateTime.MinValue;
+    private string _cachedGuildId = string.Empty;
     private string? _lastErrorSignature;
     private DateTime _lastErrorLog;
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
@@ -34,7 +41,7 @@ public class ChannelWatcher : IDisposable
 
     internal bool IsRunning => _cts != null;
 
-    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, TemplatesWindow templatesWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager, HttpClient httpClient)
+    public ChannelWatcher(Config config, UiRenderer ui, EventCreateWindow eventCreateWindow, TemplatesWindow templatesWindow, ChatWindow chatWindow, OfficerChatWindow officerChatWindow, TokenManager tokenManager, HttpClient httpClient, ChannelService channelService)
     {
         _config = config;
         _ui = ui;
@@ -44,8 +51,10 @@ public class ChannelWatcher : IDisposable
         _officerChatWindow = officerChatWindow;
         _tokenManager = tokenManager;
         _httpClient = httpClient;
+        _channelService = channelService;
 
         Instance = this;
+        _tokenManager.OnUnlinked += HandleTokenUnlinked;
     }
 
     public async Task Start()
@@ -380,20 +389,183 @@ public class ChannelWatcher : IDisposable
         if (!force && DateTime.UtcNow - _lastRefresh < _refreshCooldown)
             return;
 
-        _ = SafeRefresh(_ui.RefreshChannels);
-        _ = SafeRefresh(_eventCreateWindow.RefreshChannels);
-        _ = SafeRefresh(_templatesWindow.RefreshChannels);
-        if (_config.SyncedChat && _config.EnableFcChat)
-            _ = SafeRefresh(_chatWindow.RefreshChannels);
-        if (OfficerPermissions.HasAccess(_config))
-            _ = SafeRefresh(_officerChatWindow.RefreshChannels);
-
-        _lastRefresh = DateTime.UtcNow;
+        _ = SafeRefresh(() => RefreshConsumersAsync(force));
     }
 
     public void TriggerRefresh(bool force = false)
     {
         RefreshChannelsIfNeeded(force);
+    }
+
+    public void InvalidateCache()
+    {
+        lock (_channelCache)
+        {
+            _channelCache.Clear();
+            _channelCacheTimestamp = DateTime.MinValue;
+            _cachedGuildId = string.Empty;
+        }
+    }
+
+    private void HandleTokenUnlinked(string? _)
+    {
+        InvalidateCache();
+    }
+
+    private async Task RefreshConsumersAsync(bool force)
+    {
+        await _refreshGate.WaitAsync().ConfigureAwait(false);
+        try
+        {
+            var results = await GetChannelDataAsync(force).ConfigureAwait(false);
+
+            var eventResult = GetResult(results, ChannelKind.Event);
+            var fcResult = GetResult(results, ChannelKind.FcChat);
+            var officerResult = GetResult(results, ChannelKind.OfficerChat);
+
+            var tasks = new List<Task>
+            {
+                SafeRefresh(() => _ui.ApplyChannelRefreshResult(eventResult)),
+                SafeRefresh(() => _eventCreateWindow.ApplyChannelRefreshResult(eventResult)),
+                SafeRefresh(() => _templatesWindow.ApplyChannelRefreshResult(eventResult)),
+                SafeRefresh(() => _chatWindow.ApplyChannelRefreshResult(fcResult)),
+                SafeRefresh(() => _officerChatWindow.ApplyChannelRefreshResult(officerResult))
+            };
+
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+            _lastRefresh = DateTime.UtcNow;
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    private ChannelRefreshResult GetResult(Dictionary<string, ChannelRefreshResult> results, string kind)
+    {
+        if (results.TryGetValue(kind, out var result))
+        {
+            return result;
+        }
+
+        return ChannelRefreshResult.Failure(kind, ChannelRefreshError.Generic);
+    }
+
+    private async Task<Dictionary<string, ChannelRefreshResult>> GetChannelDataAsync(bool force)
+    {
+        var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(_config.GuildId);
+        var now = DateTime.UtcNow;
+
+        lock (_channelCache)
+        {
+            if (!force
+                && _channelCacheTimestamp != DateTime.MinValue
+                && string.Equals(_cachedGuildId, normalizedGuild, StringComparison.Ordinal)
+                && now - _channelCacheTimestamp < _refreshCooldown)
+            {
+                return new Dictionary<string, ChannelRefreshResult>(_channelCache, StringComparer.OrdinalIgnoreCase);
+            }
+        }
+
+        var results = await FetchChannelDataAsync().ConfigureAwait(false);
+
+        lock (_channelCache)
+        {
+            _channelCache.Clear();
+            foreach (var kvp in results)
+            {
+                _channelCache[kvp.Key] = kvp.Value;
+            }
+            _channelCacheTimestamp = now;
+            _cachedGuildId = normalizedGuild;
+        }
+
+        return results;
+    }
+
+    private async Task<Dictionary<string, ChannelRefreshResult>> FetchChannelDataAsync()
+    {
+        var results = new Dictionary<string, ChannelRefreshResult>(StringComparer.OrdinalIgnoreCase);
+
+        if (!_tokenManager.IsReady())
+        {
+            results[ChannelKind.Event] = ChannelRefreshResult.Failure(ChannelKind.Event, ChannelRefreshError.TokenMissing);
+            results[ChannelKind.FcChat] = ChannelRefreshResult.Failure(ChannelKind.FcChat, ChannelRefreshError.TokenMissing);
+            results[ChannelKind.OfficerChat] = ChannelRefreshResult.Failure(ChannelKind.OfficerChat, ChannelRefreshError.TokenMissing);
+            return results;
+        }
+
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
+        {
+            PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
+            results[ChannelKind.Event] = ChannelRefreshResult.Failure(ChannelKind.Event, ChannelRefreshError.InvalidApiUrl);
+            results[ChannelKind.FcChat] = ChannelRefreshResult.Failure(ChannelKind.FcChat, ChannelRefreshError.InvalidApiUrl);
+            results[ChannelKind.OfficerChat] = ChannelRefreshResult.Failure(ChannelKind.OfficerChat, ChannelRefreshError.InvalidApiUrl);
+            return results;
+        }
+
+        results[ChannelKind.Event] = await FetchKindAsync(ChannelKind.Event).ConfigureAwait(false);
+
+        if (_config.SyncedChat && _config.EnableFcChat)
+        {
+            results[ChannelKind.FcChat] = await FetchKindAsync(ChannelKind.FcChat).ConfigureAwait(false);
+        }
+        else
+        {
+            results[ChannelKind.FcChat] = ChannelRefreshResult.FeatureDisabled(ChannelKind.FcChat);
+        }
+
+        if (OfficerPermissions.HasAccess(_config))
+        {
+            results[ChannelKind.OfficerChat] = await FetchKindAsync(ChannelKind.OfficerChat).ConfigureAwait(false);
+        }
+        else
+        {
+            results[ChannelKind.OfficerChat] = ChannelRefreshResult.FeatureDisabled(ChannelKind.OfficerChat);
+        }
+
+        return results;
+    }
+
+    private async Task<ChannelRefreshResult> FetchKindAsync(string kind)
+    {
+        try
+        {
+            var channels = await FetchChannelsForKindAsync(kind, refreshed: false).ConfigureAwait(false);
+            return ChannelRefreshResult.Success(kind, channels);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, ex.StatusCode);
+            _ = Task.Run(() => _tokenManager.Clear("Invalid API key"));
+            return ChannelRefreshResult.Failure(kind, ChannelRefreshError.Unauthorized);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
+        {
+            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, ex.StatusCode);
+            return ChannelRefreshResult.Failure(kind, ChannelRefreshError.Forbidden);
+        }
+        catch (HttpRequestException ex)
+        {
+            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, ex.StatusCode);
+            return ChannelRefreshResult.Failure(kind, ChannelRefreshError.Generic);
+        }
+        catch (Exception ex)
+        {
+            PluginServices.Instance!.Log.Error(ex, "Error fetching channels for {Kind}", kind);
+            return ChannelRefreshResult.Failure(kind, ChannelRefreshError.Generic);
+        }
+    }
+
+    private async Task<IReadOnlyList<ChannelDto>> FetchChannelsForKindAsync(string kind, bool refreshed, CancellationToken ct = default)
+    {
+        var channels = (await _channelService.FetchAsync(kind, ct).ConfigureAwait(false)).ToList();
+        if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => Task.CompletedTask).ConfigureAwait(false))
+        {
+            return await FetchChannelsForKindAsync(kind, true, ct).ConfigureAwait(false);
+        }
+
+        return channels;
     }
 
     private Uri BuildWebSocketUri()
@@ -412,6 +584,7 @@ public class ChannelWatcher : IDisposable
         _cts?.Dispose();
         _cts = null;
         _task = null;
+        _tokenManager.OnUnlinked -= HandleTokenUnlinked;
         if (Instance == this) Instance = null;
     }
 }

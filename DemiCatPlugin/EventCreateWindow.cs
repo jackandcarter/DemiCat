@@ -1396,6 +1396,100 @@ public class EventCreateWindow
         public int? Size { get; set; }
     }
 
+    private void ApplyEventChannels(IReadOnlyList<ChannelDto> channels)
+    {
+        _channels.Clear();
+        foreach (var channel in channels)
+        {
+            if (channel != null)
+            {
+                _channels.Add(channel);
+            }
+        }
+        UpdateChannelDisplayNames();
+        var current = ChannelId;
+        if (!string.IsNullOrEmpty(current))
+        {
+            _selectedIndex = _channels.FindIndex(c => c.Id == current);
+            if (_selectedIndex < 0)
+            {
+                _selectedIndex = 0;
+            }
+        }
+        if (_channels.Count > 0)
+        {
+            _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, _channels[_selectedIndex].Id);
+        }
+        _channelsLoaded = true;
+        _channelFetchFailed = false;
+        _channelErrorMessage = string.Empty;
+    }
+
+    internal Task ApplyChannelRefreshResult(ChannelRefreshResult result)
+    {
+        switch (result.Error)
+        {
+            case ChannelRefreshError.None:
+            case ChannelRefreshError.FeatureDisabled:
+            {
+                var channels = result.Channels ?? Array.Empty<ChannelDto>();
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    ApplyEventChannels(channels);
+                });
+            }
+            case ChannelRefreshError.TokenMissing:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelsLoaded = false;
+                    _channelFetchFailed = false;
+                    _channelErrorMessage = string.Empty;
+                    _channels.Clear();
+                    UpdateChannelDisplayNames();
+                });
+            }
+            case ChannelRefreshError.InvalidApiUrl:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Invalid API URL";
+                    _channelsLoaded = true;
+                });
+            }
+            case ChannelRefreshError.Unauthorized:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Authentication failed";
+                    _channelsLoaded = true;
+                });
+            }
+            case ChannelRefreshError.Forbidden:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Forbidden – check API key/roles";
+                    _channelsLoaded = true;
+                });
+            }
+            case ChannelRefreshError.Generic:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Failed to load channels";
+                    _channelsLoaded = true;
+                });
+            }
+            default:
+                return Task.CompletedTask;
+        }
+    }
+
     public Task RefreshChannels()
     {
         if (!_config.Events)

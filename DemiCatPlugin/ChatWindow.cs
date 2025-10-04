@@ -1381,6 +1381,7 @@ public class ChatWindow : IDisposable
             {
                 normalizedStoredGuild = ChannelKeyHelper.NormalizeGuildId(channelWithGuild.GuildId);
                 _config.GuildId = normalizedStoredGuild;
+                ChannelWatcher.Instance?.InvalidateCache();
                 SaveConfig();
                 hasStoredGuild = true;
             }
@@ -3526,6 +3527,80 @@ public class ChatWindow : IDisposable
         }
         _channelsLoaded = false;
         return FetchChannels();
+    }
+
+    internal virtual Task ApplyChannelRefreshResult(ChannelRefreshResult result)
+    {
+        switch (result.Error)
+        {
+            case ChannelRefreshError.None:
+            case ChannelRefreshError.FeatureDisabled:
+            {
+                var channels = result.Channels ?? Array.Empty<ChannelDto>();
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    SetChannels(channels);
+                    _channelsLoaded = true;
+                    _channelsLoading = false;
+                    _channelFetchFailed = false;
+                    _channelErrorMessage = string.Empty;
+                });
+            }
+            case ChannelRefreshError.TokenMissing:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelsLoaded = false;
+                    _channelsLoading = false;
+                    _channelFetchFailed = false;
+                    _channelErrorMessage = string.Empty;
+                    _channels.Clear();
+                    UpdateChannelDisplayNames();
+                });
+            }
+            case ChannelRefreshError.InvalidApiUrl:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Invalid API URL";
+                    _channelsLoaded = true;
+                    _channelsLoading = false;
+                });
+            }
+            case ChannelRefreshError.Unauthorized:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Authentication failed";
+                    _channelsLoaded = true;
+                    _channelsLoading = false;
+                });
+            }
+            case ChannelRefreshError.Forbidden:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Forbidden – check API key/roles";
+                    _channelsLoaded = true;
+                    _channelsLoading = false;
+                });
+            }
+            case ChannelRefreshError.Generic:
+            {
+                return PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Failed to load channels";
+                    _channelsLoaded = true;
+                    _channelsLoading = false;
+                });
+            }
+            default:
+                return Task.CompletedTask;
+        }
     }
 
     protected virtual async Task FetchChannels(bool refreshed = false)
