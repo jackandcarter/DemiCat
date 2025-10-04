@@ -111,6 +111,7 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, (Vector2 Min, Vector2 Max)> _messageRectCache = new();
     private IImmediateTextureFactory? _textureFactory;
     private ImageLoader? _imageLoader;
+    private CancellationTokenSource _imageCts;
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -448,6 +449,7 @@ public class ChatWindow : IDisposable
             });
 
         _channelSelection.ChannelChanged += HandleChannelSelectionChanged;
+        _imageCts = new CancellationTokenSource();
         ReconfigureImageLoader();
     }
 
@@ -587,6 +589,10 @@ public class ChatWindow : IDisposable
             return;
         PluginServices.Instance!.Framework.RunOnTick(() =>
         {
+            _imageCts.Cancel();
+            _imageCts.Dispose();
+            _imageCts = new CancellationTokenSource();
+
             _pendingInitialScroll = true;
             _wasAtBottomLastFrame = true;
             _chatTopPadding = 0f;
@@ -3779,6 +3785,9 @@ public class ChatWindow : IDisposable
     public void Dispose()
     {
         StopNetworking();
+        _imageCts.Cancel();
+        _imageCts.Dispose();
+        _imageCts = new CancellationTokenSource();
         _channelSelection.ChannelChanged -= HandleChannelSelectionChanged;
         _bridge.Dispose();
         foreach (var message in _messages)
@@ -4098,20 +4107,51 @@ public class ChatWindow : IDisposable
         _textureCache[url] = new TextureCacheEntry(null, node);
         EnforceTextureCacheCapacity();
 
+        var token = _imageCts.Token;
+        if (token.IsCancellationRequested)
+        {
+            RemoveTextureEntry(url);
+            return;
+        }
+
         _ = Task.Run(async () =>
         {
             ISharedImmediateTexture? texture = null;
             try
             {
-                texture = await loader.LoadIntoTextureAsync(url).ConfigureAwait(false);
+                texture = await loader.LoadIntoTextureAsync(url, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                return;
             }
             catch
             {
                 texture = null;
             }
 
+            if (token.IsCancellationRequested)
+            {
+                if (texture?.GetWrapOrEmpty() is IDisposable wrapCanceled)
+                {
+                    wrapCanceled.Dispose();
+                }
+                RemoveTextureEntry(url);
+                return;
+            }
+
             void Complete()
             {
+                if (token.IsCancellationRequested)
+                {
+                    if (texture?.GetWrapOrEmpty() is IDisposable wrapCanceled)
+                    {
+                        wrapCanceled.Dispose();
+                    }
+                    RemoveTextureEntry(url);
+                    return;
+                }
+
                 if (texture == null)
                 {
                     RemoveTextureEntry(url);
@@ -4142,7 +4182,7 @@ public class ChatWindow : IDisposable
             {
                 Complete();
             }
-        });
+        }, token);
     }
 
     public virtual void ReconfigureImageLoader()
