@@ -44,31 +44,33 @@ public class EventView : IDisposable
         _dto = dto;
         _content = content;
         SetWarnings(warnings);
-        LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t);
-        LoadTexture(dto.FooterIconUrl, t => _footerIcon = t);
-        LoadTexture(dto.ThumbnailUrl, t => _thumbnail = t);
-        LoadTexture(dto.ImageUrl, t => _image = t);
+        LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t, () => _dto.AuthorIconUrl);
+        LoadTexture(dto.FooterIconUrl, t => _footerIcon = t, () => _dto.FooterIconUrl);
+        LoadTexture(dto.ThumbnailUrl, t => _thumbnail = t, () => _dto.ThumbnailUrl);
+        LoadTexture(dto.ImageUrl, t => _image = t, () => _dto.ImageUrl);
     }
 
     public void Update(EmbedDto dto, string? content = null, IEnumerable<string>? warnings = null)
     {
-        if (_dto.AuthorIconUrl != dto.AuthorIconUrl)
-        {
-            LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t);
-        }
-        if (_dto.FooterIconUrl != dto.FooterIconUrl)
-        {
-            LoadTexture(dto.FooterIconUrl, t => _footerIcon = t);
-        }
-        if (_dto.ThumbnailUrl != dto.ThumbnailUrl)
-        {
-            LoadTexture(dto.ThumbnailUrl, t => _thumbnail = t);
-        }
-        if (_dto.ImageUrl != dto.ImageUrl)
-        {
-            LoadTexture(dto.ImageUrl, t => _image = t);
-        }
+        var previousDto = _dto;
         _dto = dto;
+
+        if (!string.Equals(previousDto.AuthorIconUrl, dto.AuthorIconUrl, StringComparison.Ordinal))
+        {
+            ReloadTexture(ref _authorIcon, dto.AuthorIconUrl, () => _dto.AuthorIconUrl);
+        }
+        if (!string.Equals(previousDto.FooterIconUrl, dto.FooterIconUrl, StringComparison.Ordinal))
+        {
+            ReloadTexture(ref _footerIcon, dto.FooterIconUrl, () => _dto.FooterIconUrl);
+        }
+        if (!string.Equals(previousDto.ThumbnailUrl, dto.ThumbnailUrl, StringComparison.Ordinal))
+        {
+            ReloadTexture(ref _thumbnail, dto.ThumbnailUrl, () => _dto.ThumbnailUrl);
+        }
+        if (!string.Equals(previousDto.ImageUrl, dto.ImageUrl, StringComparison.Ordinal))
+        {
+            ReloadTexture(ref _image, dto.ImageUrl, () => _dto.ImageUrl);
+        }
         _content = content;
         SetWarnings(warnings);
     }
@@ -582,7 +584,19 @@ public class EventView : IDisposable
         return false;
     }
 
-    private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)
+    private static void DisposeTexture(ref ISharedImmediateTexture? texture)
+    {
+        (texture as IDisposable)?.Dispose();
+        texture = null;
+    }
+
+    private void ReloadTexture(ref ISharedImmediateTexture? texture, string? url, Func<string?> getLatestUrl)
+    {
+        DisposeTexture(ref texture);
+        LoadTexture(url, t => texture = t, getLatestUrl);
+    }
+
+    private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set, Func<string?> getLatestUrl)
     {
         if (string.IsNullOrEmpty(url))
         {
@@ -592,6 +606,7 @@ public class EventView : IDisposable
 
         _ = Task.Run(async () =>
         {
+            ForwardingSharedImmediateTexture? texture = null;
             try
             {
                 var bytes = await _httpClient.GetByteArrayAsync(url).ConfigureAwait(false);
@@ -600,13 +615,24 @@ public class EventView : IDisposable
                 var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
                     RawImageSpecification.Rgba32(image.Width, image.Height),
                     image.Data);
-                var texture = new ForwardingSharedImmediateTexture(wrap);
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
+                texture = new ForwardingSharedImmediateTexture(wrap);
             }
             catch
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(null));
+                texture = null;
             }
+
+            var capturedTexture = texture;
+            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                if (!string.Equals(getLatestUrl(), url, StringComparison.Ordinal))
+                {
+                    (capturedTexture as IDisposable)?.Dispose();
+                    return;
+                }
+
+                set(capturedTexture);
+            });
         });
     }
 
