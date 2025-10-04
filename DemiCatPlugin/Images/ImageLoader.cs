@@ -144,7 +144,7 @@ internal sealed class ImageLoader : IDisposable
                 {
                     for (var i = img.Frames.Count - 1; i >= 1; i--)
                     {
-                        using var frame = img.Frames.RemoveFrame(i);
+                        img.Frames.RemoveFrame(i);
                     }
                 }
 
