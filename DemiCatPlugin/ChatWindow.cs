@@ -30,6 +30,7 @@ public class ChatWindow : IDisposable
     protected readonly HttpClient _httpClient;
     protected readonly List<DiscordMessageDto> _messages = new();
     protected readonly List<ChannelDto> _channels = new();
+    private string[] _channelDisplayNames = Array.Empty<string>();
     protected int _selectedIndex;
     protected bool _channelsLoaded;
     protected bool _channelsLoading;
@@ -609,7 +610,7 @@ public class ChatWindow : IDisposable
 
         if (_channels.Count > 0)
         {
-            var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
+            var channelNames = _channelDisplayNames;
             var previousIndex = _selectedIndex;
             var activeChannelId = CurrentChannelId;
             string? selectedChannelId = null;
@@ -1409,6 +1410,7 @@ public class ChatWindow : IDisposable
     {
         _channels.Clear();
         _channels.AddRange(channels);
+        UpdateChannelDisplayNames();
         if (_channels.Count == 0)
         {
             _selectedIndex = 0;
@@ -1429,6 +1431,19 @@ public class ChatWindow : IDisposable
 
         var newId = _channels[_selectedIndex].Id;
         _channelSelection.SetChannel(_channelKind, _config.GuildId, newId);
+    }
+
+    private void UpdateChannelDisplayNames()
+    {
+        if (_channels.Count == 0)
+        {
+            _channelDisplayNames = Array.Empty<string>();
+            return;
+        }
+
+        _channelDisplayNames = _channels
+            .Select(c => c.ParentId == null ? c.Name : "  " + c.Name)
+            .ToArray();
     }
 
     internal void OnGuildUpdated()

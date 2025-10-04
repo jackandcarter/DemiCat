@@ -30,6 +30,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private ClientWebSocket? _webSocket;
     private CancellationTokenSource? _pollCts;
     private readonly List<ChannelDto> _channels = new();
+    private string[] _channelDisplayNames = Array.Empty<string>();
     private bool _channelsLoaded;
     private bool _channelFetchFailed;
     private string _channelErrorMessage = string.Empty;
@@ -891,9 +892,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             return;
         }
 
-        var channelNames = _channels
-            .Select(c => c?.Name ?? c?.Id ?? string.Empty)
-            .ToArray();
+        var channelNames = _channelDisplayNames;
 
         if (channelNames.Length == 0)
         {
@@ -1022,12 +1021,26 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     {
         _channelsLoaded = false;
         _channels.Clear();
+        UpdateChannelDisplayNames();
     }
 
     public Task RefreshChannels()
     {
         ResetChannels();
         return FetchChannels();
+    }
+
+    private void UpdateChannelDisplayNames()
+    {
+        if (_channels.Count == 0)
+        {
+            _channelDisplayNames = Array.Empty<string>();
+            return;
+        }
+
+        _channelDisplayNames = _channels
+            .Select(c => c?.Name ?? c?.Id ?? string.Empty)
+            .ToArray();
     }
 
     private void SaveConfig()
@@ -1103,6 +1116,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             {
                 _channels.Clear();
                 _channels.AddRange(eventChannels);
+                UpdateChannelDisplayNames();
 
                 var guildId = _config.GuildId;
                 var selectedChannelId = _channelSelection.GetChannel(ChannelKind.Event, guildId, out var hasStoredSelection);

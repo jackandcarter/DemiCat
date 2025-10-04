@@ -33,6 +33,7 @@ public class TemplatesWindow
     private EventView? _previewEvent;
     private string? _lastResult;
     private readonly List<ChannelDto> _channels = new();
+    private string[] _channelDisplayNames = Array.Empty<string>();
     private bool _channelsLoaded;
     private bool _channelsLoading;
     private bool _channelFetchFailed;
@@ -149,7 +150,7 @@ public class TemplatesWindow
         }
         if (_channels.Count > 0)
         {
-            var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
+            var channelNames = _channelDisplayNames;
             {
                 using var emojiFont = _emojiManager.PushEmojiFont();
                 if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
@@ -481,6 +482,7 @@ public class TemplatesWindow
     {
         _channels.Clear();
         _channels.AddRange(ChannelDtoExtensions.SortForDisplay(channels));
+        UpdateChannelDisplayNames();
         var current = ChannelId;
         if (!string.IsNullOrEmpty(current))
         {
@@ -491,6 +493,19 @@ public class TemplatesWindow
         {
             _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, _channels[_channelIndex].Id);
         }
+    }
+
+    private void UpdateChannelDisplayNames()
+    {
+        if (_channels.Count == 0)
+        {
+            _channelDisplayNames = Array.Empty<string>();
+            return;
+        }
+
+        _channelDisplayNames = _channels
+            .Select(c => c.ParentId == null ? c.Name : "  " + c.Name)
+            .ToArray();
     }
 
     private async Task LoadRoles()
