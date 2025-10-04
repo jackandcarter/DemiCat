@@ -473,16 +473,25 @@ public class MainWindow : IDisposable
             if (vertexEndIndex > vertexStartIndex)
             {
                 var height = Math.Max(1e-3f, stripMax.Y - stripMin.Y);
+                var vertexCount = vertexEndIndex - vertexStartIndex;
                 var topColor = gradientTop;
                 var bottomColor = gradientBottom;
-                for (var i = vertexStartIndex; i < vertexEndIndex; i++)
+
+                unsafe
                 {
-                    var vertex = drawList.VtxBuffer[i];
-                    var position = vertex.Pos;
-                    var t = Math.Clamp((position.Y - stripMin.Y) / height, 0f, 1f);
-                    var color = Vector4.Lerp(topColor, bottomColor, t);
-                    vertex.Col = ImGui.ColorConvertFloat4ToU32(color);
-                    drawList.VtxBuffer[i] = vertex;
+                    var drawListPtr = drawList.NativePtr;
+                    var vertexBuffer = drawListPtr->VtxBuffer;
+                    var vertices = new Span<ImDrawVert>(vertexBuffer.Data, vertexBuffer.Size);
+                    var gradientVertices = vertices.Slice(vertexStartIndex, vertexCount);
+
+                    for (var i = 0; i < gradientVertices.Length; i++)
+                    {
+                        ref var vertex = ref gradientVertices[i];
+                        var position = vertex.Pos;
+                        var t = Math.Clamp((position.Y - stripMin.Y) / height, 0f, 1f);
+                        var color = Vector4.Lerp(topColor, bottomColor, t);
+                        vertex.Col = ImGui.ColorConvertFloat4ToU32(color);
+                    }
                 }
             }
         }
