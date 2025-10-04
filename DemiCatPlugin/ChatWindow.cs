@@ -66,8 +66,6 @@ public class ChatWindow : IDisposable
     {
         PropertyNameCaseInsensitive = true
     };
-    private const int TextureCacheCapacity = 100;
-    private const int MaxMessages = 100;
     private const float DefaultComposeSplitRatio = 0.35f;
     private const float MinComposeSplitRatio = 0.2f;
     private const float MaxComposeSplitRatio = 0.8f;
@@ -102,6 +100,17 @@ public class ChatWindow : IDisposable
     private const float MentionDrawerBaseOffset = 4f;
     private const float MentionDrawerTravelDistance = 10f;
     private MentionDrawerState? _mentionDrawerState;
+    private int _chatMaxMessages = Config.DefaultChatMaxMessages;
+    private int _textureCacheCapacity = Config.DefaultTextureCacheCapacity;
+    private int _imageMaxDecodeWidth = Config.DefaultImageMaxDecodeWidth;
+    private int _imageMaxDecodeHeight = Config.DefaultImageMaxDecodeHeight;
+    private long _imageBytesBudget = Config.DefaultImageBytesInFlightBudget;
+    private int _preloadRowsAhead = Config.DefaultPreloadRowsAhead;
+    private bool _lazyLoadEmbedsEnabled;
+    private bool _allowTextureLoads = true;
+    private readonly Dictionary<string, (Vector2 Min, Vector2 Max)> _messageRectCache = new();
+    private SemaphoreSlim _imageDownloadSemaphore = new(Config.DefaultImageDownloadConcurrency, Config.DefaultImageDownloadConcurrency);
+    private SemaphoreSlim _imageDecodeSemaphore = new(Config.DefaultImageDecodeConcurrency, Config.DefaultImageDecodeConcurrency);
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -425,6 +434,7 @@ public class ChatWindow : IDisposable
             });
 
         _channelSelection.ChannelChanged += HandleChannelSelectionChanged;
+        ReconfigureImageLoader();
     }
 
 #if TEST
@@ -712,6 +722,8 @@ public class ChatWindow : IDisposable
         {
             var msg = _messages[i];
             ImGui.PushID(msg.Id);
+            var shouldLoadTextures = ShouldLoadRowTextures(msg.Id);
+            using var textureScope = new TextureLoadScope(this, shouldLoadTextures);
             using var emojiFont = _emojiManager.PushEmojiFont();
             var drawList = ImGui.GetWindowDrawList();
             drawList.ChannelsSplit(2);
@@ -912,6 +924,10 @@ public class ChatWindow : IDisposable
             var rowMax = ImGui.GetItemRectMax();
             var rowHovered = ImGui.IsItemHovered(hoverFlags);
             _messageHoverStates[msg.Id] = rowHovered;
+            if (!string.IsNullOrEmpty(msg.Id))
+            {
+                _messageRectCache[msg.Id] = (rowMin, rowMax);
+            }
 
             if (ImGui.BeginPopupContextItem("messageContext"))
             {
@@ -3449,6 +3465,10 @@ public class ChatWindow : IDisposable
 
     private void DisposeMessageTextures(DiscordMessageDto msg)
     {
+        if (!string.IsNullOrEmpty(msg.Id))
+        {
+            _messageRectCache.Remove(msg.Id);
+        }
         msg.AvatarTexture = null;
         if (msg.Attachments != null)
         {
@@ -3497,6 +3517,8 @@ public class ChatWindow : IDisposable
             DisposeMessageTextures(message);
         }
         ClearTextureCache();
+        _imageDownloadSemaphore?.Dispose();
+        _imageDecodeSemaphore?.Dispose();
     }
 
     protected void SaveConfig()
@@ -3783,6 +3805,12 @@ public class ChatWindow : IDisposable
             return;
         }
 
+        if (_lazyLoadEmbedsEnabled && !_allowTextureLoads)
+        {
+            set(null);
+            return;
+        }
+
         if (_textureCache.TryGetValue(url, out var cached))
         {
             _textureLru.Remove(cached.Node);
@@ -3793,43 +3821,289 @@ public class ChatWindow : IDisposable
 
         var node = _textureLru.AddFirst(url);
         _textureCache[url] = new TextureCacheEntry(null, node);
+        EnforceTextureCacheCapacity();
 
-        if (_textureCache.Count > TextureCacheCapacity)
+        _ = Task.Run(async () =>
+        {
+            var downloadSemaphore = _imageDownloadSemaphore;
+            var decodeSemaphore = _imageDecodeSemaphore;
+            try
+            {
+                await downloadSemaphore.WaitAsync().ConfigureAwait(false);
+                try
+                {
+                    using var response = await _httpClient
+                        .SendAsync(new HttpRequestMessage(HttpMethod.Get, url), HttpCompletionOption.ResponseHeadersRead)
+                        .ConfigureAwait(false);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var framework = PluginServices.Instance!.Framework;
+                        _ = framework.RunOnTick(() =>
+                        {
+                            RemoveTextureEntry(url);
+                            set(null);
+                        });
+                        return;
+                    }
+
+                    var bytes = await response.Content.ReadAsByteArrayAsync().ConfigureAwait(false);
+                    if (_imageBytesBudget > 0 && bytes.LongLength > _imageBytesBudget)
+                    {
+                        var framework = PluginServices.Instance!.Framework;
+                        _ = framework.RunOnTick(() =>
+                        {
+                            RemoveTextureEntry(url);
+                            set(null);
+                        });
+                        return;
+                    }
+
+                    await decodeSemaphore.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        using var stream = new MemoryStream(bytes);
+                        var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+                        if ((_imageMaxDecodeWidth > 0 && image.Width > _imageMaxDecodeWidth) ||
+                            (_imageMaxDecodeHeight > 0 && image.Height > _imageMaxDecodeHeight))
+                        {
+                            var framework = PluginServices.Instance!.Framework;
+                            _ = framework.RunOnTick(() =>
+                            {
+                                RemoveTextureEntry(url);
+                                set(null);
+                            });
+                            return;
+                        }
+
+                        var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
+                            RawImageSpecification.Rgba32(image.Width, image.Height),
+                            image.Data);
+                        var texture = new ForwardingSharedImmediateTexture(wrap);
+                        if (_textureCache.TryGetValue(url, out var entry))
+                        {
+                            entry.Texture = texture;
+                        }
+                        _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
+                    }
+                    finally
+                    {
+                        decodeSemaphore.Release();
+                    }
+                }
+                finally
+                {
+                    downloadSemaphore.Release();
+                }
+            }
+            catch
+            {
+                var framework = PluginServices.Instance!.Framework;
+                _ = framework.RunOnTick(() =>
+                {
+                    RemoveTextureEntry(url);
+                    set(null);
+                });
+            }
+        });
+    }
+
+    public virtual void ReconfigureImageLoader()
+    {
+        var sanitizedMaxMessages = Config.SanitizeChatMaxMessages(_config.ChatMaxMessages);
+        if (_config.ChatMaxMessages != sanitizedMaxMessages)
+        {
+            _config.ChatMaxMessages = sanitizedMaxMessages;
+        }
+        _chatMaxMessages = sanitizedMaxMessages;
+        TrimMessages();
+
+        var sanitizedCache = Config.SanitizeTextureCacheCapacity(_config.TextureCacheCapacity);
+        if (_config.TextureCacheCapacity != sanitizedCache)
+        {
+            _config.TextureCacheCapacity = sanitizedCache;
+        }
+        _textureCacheCapacity = sanitizedCache;
+        EnforceTextureCacheCapacity();
+
+        var sanitizedDecodeWidth = Config.SanitizeImageDecodeDimension(_config.ImageMaxDecodeWidth);
+        if (_config.ImageMaxDecodeWidth != sanitizedDecodeWidth)
+        {
+            _config.ImageMaxDecodeWidth = sanitizedDecodeWidth;
+        }
+        _imageMaxDecodeWidth = sanitizedDecodeWidth;
+
+        var sanitizedDecodeHeight = Config.SanitizeImageDecodeDimension(_config.ImageMaxDecodeHeight);
+        if (_config.ImageMaxDecodeHeight != sanitizedDecodeHeight)
+        {
+            _config.ImageMaxDecodeHeight = sanitizedDecodeHeight;
+        }
+        _imageMaxDecodeHeight = sanitizedDecodeHeight;
+
+        var sanitizedDownloadConcurrency = Config.SanitizeImageDownloadConcurrency(_config.ImageDownloadConcurrency);
+        if (_config.ImageDownloadConcurrency != sanitizedDownloadConcurrency)
+        {
+            _config.ImageDownloadConcurrency = sanitizedDownloadConcurrency;
+        }
+        ReplaceSemaphore(ref _imageDownloadSemaphore, sanitizedDownloadConcurrency);
+
+        var sanitizedDecodeConcurrency = Config.SanitizeImageDecodeConcurrency(_config.ImageDecodeConcurrency);
+        if (_config.ImageDecodeConcurrency != sanitizedDecodeConcurrency)
+        {
+            _config.ImageDecodeConcurrency = sanitizedDecodeConcurrency;
+        }
+        ReplaceSemaphore(ref _imageDecodeSemaphore, sanitizedDecodeConcurrency);
+
+        var sanitizedBudget = Config.SanitizeImageBytesInFlightBudget(_config.ImageBytesInFlightBudget);
+        if (_config.ImageBytesInFlightBudget != sanitizedBudget)
+        {
+            _config.ImageBytesInFlightBudget = sanitizedBudget;
+        }
+        _imageBytesBudget = sanitizedBudget;
+
+        var sanitizedPreload = Config.SanitizePreloadRowsAhead(_config.PreloadRowsAhead);
+        if (_config.PreloadRowsAhead != sanitizedPreload)
+        {
+            _config.PreloadRowsAhead = sanitizedPreload;
+        }
+        _preloadRowsAhead = sanitizedPreload;
+
+        _lazyLoadEmbedsEnabled = _config.LazyLoadEmbeds;
+    }
+
+    private int MaxMessages => _chatMaxMessages > 0 ? _chatMaxMessages : Config.DefaultChatMaxMessages;
+
+    private void EnforceTextureCacheCapacity()
+    {
+        if (_textureCacheCapacity <= 0)
+        {
+            return;
+        }
+
+        while (_textureCache.Count > _textureCacheCapacity)
         {
             var last = _textureLru.Last;
-            if (last != null)
+            if (last == null)
             {
-                if (_textureCache.TryGetValue(last.Value, out var toRemove))
-                {
-                    if (toRemove.Texture?.GetWrapOrEmpty() is IDisposable wrap)
-                        wrap.Dispose();
-                    _textureCache.Remove(last.Value);
-                }
-                _textureLru.RemoveLast();
+                break;
             }
+
+            if (_textureCache.TryGetValue(last.Value, out var toRemove))
+            {
+                if (toRemove.Texture?.GetWrapOrEmpty() is IDisposable wrap)
+                {
+                    wrap.Dispose();
+                }
+                _textureCache.Remove(last.Value);
+            }
+            _textureLru.Remove(last);
+        }
+    }
+
+    private void RemoveTextureEntry(string url)
+    {
+        if (!_textureCache.TryGetValue(url, out var entry))
+        {
+            return;
+        }
+
+        if (entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
+        {
+            wrap.Dispose();
+        }
+
+        _textureCache.Remove(url);
+        _textureLru.Remove(entry.Node);
+    }
+
+    private bool ShouldLoadRowTextures(string? messageId)
+    {
+        if (!_lazyLoadEmbedsEnabled || string.IsNullOrEmpty(messageId))
+        {
+            return true;
+        }
+
+        if (!_messageRectCache.TryGetValue(messageId, out var rect))
+        {
+            return true;
+        }
+
+        if (ImGui.IsRectVisible(rect.Min, rect.Max))
+        {
+            return true;
+        }
+
+        if (_preloadRowsAhead <= 0)
+        {
+            return false;
+        }
+
+        var windowPos = ImGui.GetWindowPos();
+        var scrollY = ImGui.GetScrollY();
+        var windowHeight = ImGui.GetWindowHeight();
+
+        var visibleMin = scrollY;
+        var visibleMax = scrollY + windowHeight;
+
+        var rowMinY = rect.Min.Y - windowPos.Y + scrollY;
+        var rowMaxY = rect.Max.Y - windowPos.Y + scrollY;
+
+        float distance;
+        if (rowMaxY < visibleMin)
+        {
+            distance = visibleMin - rowMaxY;
+        }
+        else if (rowMinY > visibleMax)
+        {
+            distance = rowMinY - visibleMax;
+        }
+        else
+        {
+            return true;
+        }
+
+        var rowHeight = Math.Max(1f, rect.Max.Y - rect.Min.Y);
+        var rowsAway = distance / rowHeight;
+        return rowsAway <= _preloadRowsAhead;
+    }
+
+    private void ReplaceSemaphore(ref SemaphoreSlim semaphore, int concurrency)
+    {
+        var old = semaphore;
+        semaphore = new SemaphoreSlim(concurrency, concurrency);
+        if (old == null)
+        {
+            return;
         }
 
         _ = Task.Run(async () =>
         {
             try
             {
-                var bytes = await _httpClient.GetByteArrayAsync(url).ConfigureAwait(false);
-                using var stream = new MemoryStream(bytes);
-                var image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-                var wrap = PluginServices.Instance!.TextureProvider.CreateFromRaw(
-                    RawImageSpecification.Rgba32(image.Width, image.Height),
-                    image.Data);
-                var texture = new ForwardingSharedImmediateTexture(wrap);
-                if (_textureCache.TryGetValue(url, out var entry))
-                {
-                    entry.Texture = texture;
-                }
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
+                await Task.Delay(5000).ConfigureAwait(false);
+                old.Dispose();
             }
             catch
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(null));
+                // ignored
             }
         });
+    }
+
+    private readonly struct TextureLoadScope : IDisposable
+    {
+        private readonly ChatWindow _owner;
+        private readonly bool _previous;
+
+        public TextureLoadScope(ChatWindow owner, bool allow)
+        {
+            _owner = owner;
+            _previous = owner._allowTextureLoads;
+            owner._allowTextureLoads = allow;
+        }
+
+        public void Dispose()
+        {
+            _owner._allowTextureLoads = _previous;
+        }
     }
 }
