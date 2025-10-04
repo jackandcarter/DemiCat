@@ -371,6 +371,110 @@ public class SettingsWindow : IDisposable
         }
 
         ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.TextUnformatted("Chat Performance");
+        ImGui.Spacing();
+
+        var maxMessages = _config.ChatMaxMessages;
+        if (ImGui.SliderInt("Message history limit", ref maxMessages, Config.MinChatMaxMessages, Config.MaxChatMaxMessages))
+        {
+            maxMessages = Config.SanitizeChatMaxMessages(maxMessages);
+            if (maxMessages != _config.ChatMaxMessages)
+            {
+                _config.ChatMaxMessages = maxMessages;
+                ApplyChatRuntimeConfigChanges();
+            }
+        }
+
+        var cacheCapacity = _config.TextureCacheCapacity;
+        if (ImGui.SliderInt("Texture cache size", ref cacheCapacity, Config.MinTextureCacheCapacity, Config.MaxTextureCacheCapacity))
+        {
+            cacheCapacity = Config.SanitizeTextureCacheCapacity(cacheCapacity);
+            if (cacheCapacity != _config.TextureCacheCapacity)
+            {
+                _config.TextureCacheCapacity = cacheCapacity;
+                ApplyChatRuntimeConfigChanges();
+            }
+        }
+
+        var maxDecodeWidth = _config.ImageMaxDecodeWidth;
+        if (ImGui.SliderInt("Max image decode width", ref maxDecodeWidth, Config.MinImageDecodeDimension, Config.MaxImageDecodeDimension))
+        {
+            maxDecodeWidth = Config.SanitizeImageDecodeDimension(maxDecodeWidth);
+            if (maxDecodeWidth != _config.ImageMaxDecodeWidth)
+            {
+                _config.ImageMaxDecodeWidth = maxDecodeWidth;
+                ApplyChatRuntimeConfigChanges();
+            }
+        }
+
+        var maxDecodeHeight = _config.ImageMaxDecodeHeight;
+        if (ImGui.SliderInt("Max image decode height", ref maxDecodeHeight, Config.MinImageDecodeDimension, Config.MaxImageDecodeDimension))
+        {
+            maxDecodeHeight = Config.SanitizeImageDecodeDimension(maxDecodeHeight);
+            if (maxDecodeHeight != _config.ImageMaxDecodeHeight)
+            {
+                _config.ImageMaxDecodeHeight = maxDecodeHeight;
+                ApplyChatRuntimeConfigChanges();
+            }
+        }
+
+        var downloadConcurrency = _config.ImageDownloadConcurrency;
+        if (ImGui.SliderInt("Concurrent image downloads", ref downloadConcurrency, Config.MinImageConcurrency, Config.MaxImageDownloadConcurrency))
+        {
+            downloadConcurrency = Config.SanitizeImageDownloadConcurrency(downloadConcurrency);
+            if (downloadConcurrency != _config.ImageDownloadConcurrency)
+            {
+                _config.ImageDownloadConcurrency = downloadConcurrency;
+                ApplyChatRuntimeConfigChanges();
+            }
+        }
+
+        var decodeConcurrency = _config.ImageDecodeConcurrency;
+        if (ImGui.SliderInt("Concurrent image decodes", ref decodeConcurrency, Config.MinImageConcurrency, Config.MaxImageDecodeConcurrency))
+        {
+            decodeConcurrency = Config.SanitizeImageDecodeConcurrency(decodeConcurrency);
+            if (decodeConcurrency != _config.ImageDecodeConcurrency)
+            {
+                _config.ImageDecodeConcurrency = decodeConcurrency;
+                ApplyChatRuntimeConfigChanges();
+            }
+        }
+
+        var minBudgetMb = Config.MinImageBytesInFlightBudget / (1024f * 1024f);
+        var maxBudgetMb = Config.MaxImageBytesInFlightBudget / (1024f * 1024f);
+        var budgetMb = _config.ImageBytesInFlightBudget / (1024f * 1024f);
+        if (ImGui.SliderFloat("Image memory budget", ref budgetMb, minBudgetMb, maxBudgetMb, "%.0f MB"))
+        {
+            var sanitizedMb = Math.Clamp(budgetMb, minBudgetMb, maxBudgetMb);
+            var bytes = (long)Math.Round(sanitizedMb * 1024f * 1024f);
+            bytes = Config.SanitizeImageBytesInFlightBudget(bytes);
+            if (bytes != _config.ImageBytesInFlightBudget)
+            {
+                _config.ImageBytesInFlightBudget = bytes;
+                ApplyChatRuntimeConfigChanges();
+            }
+        }
+
+        var preloadRows = _config.PreloadRowsAhead;
+        if (ImGui.SliderInt("Preload rows ahead", ref preloadRows, Config.MinPreloadRowsAhead, Config.MaxPreloadRowsAhead))
+        {
+            preloadRows = Config.SanitizePreloadRowsAhead(preloadRows);
+            if (preloadRows != _config.PreloadRowsAhead)
+            {
+                _config.PreloadRowsAhead = preloadRows;
+                ApplyChatRuntimeConfigChanges();
+            }
+        }
+
+        var lazyLoadEmbeds = _config.LazyLoadEmbeds;
+        if (ImGui.Checkbox("Lazy-load embeds and attachments", ref lazyLoadEmbeds))
+        {
+            _config.LazyLoadEmbeds = lazyLoadEmbeds;
+            ApplyChatRuntimeConfigChanges();
+        }
+
+        ImGui.Spacing();
 
         ImGui.TextUnformatted("Theme");
         ImGui.Spacing();
@@ -635,6 +739,14 @@ public class SettingsWindow : IDisposable
     {
         ChatWindow?.OnAppearanceSettingsChanged();
         OfficerChatWindow?.OnAppearanceSettingsChanged();
+    }
+
+    private void ApplyChatRuntimeConfigChanges()
+    {
+        SaveConfig();
+        ChatWindow?.ReconfigureImageLoader();
+        OfficerChatWindow?.ReconfigureImageLoader();
+        RefreshChatWindows();
     }
 
     private static bool ColorsAlmostEqual(Vector4 a, Vector4 b)

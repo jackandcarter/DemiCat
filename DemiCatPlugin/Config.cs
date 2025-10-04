@@ -41,7 +41,28 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 23;
+    public const int DefaultChatMaxMessages = 100;
+    public const int MinChatMaxMessages = 20;
+    public const int MaxChatMaxMessages = 500;
+    public const int DefaultTextureCacheCapacity = 100;
+    public const int MinTextureCacheCapacity = 10;
+    public const int MaxTextureCacheCapacity = 500;
+    public const int DefaultImageMaxDecodeWidth = 4096;
+    public const int DefaultImageMaxDecodeHeight = 4096;
+    public const int MinImageDecodeDimension = 256;
+    public const int MaxImageDecodeDimension = 8192;
+    public const int DefaultImageDownloadConcurrency = 4;
+    public const int DefaultImageDecodeConcurrency = 2;
+    public const int MinImageConcurrency = 1;
+    public const int MaxImageDownloadConcurrency = 16;
+    public const int MaxImageDecodeConcurrency = 8;
+    public const long DefaultImageBytesInFlightBudget = 32L * 1024L * 1024L;
+    public const long MinImageBytesInFlightBudget = 4L * 1024L * 1024L;
+    public const long MaxImageBytesInFlightBudget = 512L * 1024L * 1024L;
+    public const int DefaultPreloadRowsAhead = 2;
+    public const int MinPreloadRowsAhead = 0;
+    public const int MaxPreloadRowsAhead = 10;
+    public const int CurrentVersion = 24;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -148,6 +169,15 @@ public class Config : IPluginConfiguration
     public float ChatFontScale { get; set; } = 1f;
     public bool ChatImageAutoStretch { get; set; } = true;
     public float ChatImageManualScale { get; set; } = 1f;
+    public int ChatMaxMessages { get; set; } = DefaultChatMaxMessages;
+    public int TextureCacheCapacity { get; set; } = DefaultTextureCacheCapacity;
+    public int ImageMaxDecodeWidth { get; set; } = DefaultImageMaxDecodeWidth;
+    public int ImageMaxDecodeHeight { get; set; } = DefaultImageMaxDecodeHeight;
+    public int ImageDownloadConcurrency { get; set; } = DefaultImageDownloadConcurrency;
+    public int ImageDecodeConcurrency { get; set; } = DefaultImageDecodeConcurrency;
+    public long ImageBytesInFlightBudget { get; set; } = DefaultImageBytesInFlightBudget;
+    public int PreloadRowsAhead { get; set; } = DefaultPreloadRowsAhead;
+    public bool LazyLoadEmbeds { get; set; } = false;
 
     [JsonPropertyName("emojiTileSize")]
     public float EmojiTileSize { get; set; } = 28f;
@@ -682,6 +712,20 @@ public class Config : IPluginConfiguration
             Version = 23;
             ExtensionData = null;
         }
+        if (Version < 24)
+        {
+            ChatMaxMessages = SanitizeChatMaxMessages(ChatMaxMessages);
+            TextureCacheCapacity = SanitizeTextureCacheCapacity(TextureCacheCapacity);
+            ImageMaxDecodeWidth = SanitizeImageDecodeDimension(ImageMaxDecodeWidth);
+            ImageMaxDecodeHeight = SanitizeImageDecodeDimension(ImageMaxDecodeHeight);
+            ImageDownloadConcurrency = SanitizeImageDownloadConcurrency(ImageDownloadConcurrency);
+            ImageDecodeConcurrency = SanitizeImageDecodeConcurrency(ImageDecodeConcurrency);
+            ImageBytesInFlightBudget = SanitizeImageBytesInFlightBudget(ImageBytesInFlightBudget);
+            PreloadRowsAhead = SanitizePreloadRowsAhead(PreloadRowsAhead);
+
+            Version = 24;
+            ExtensionData = null;
+        }
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)
@@ -898,4 +942,74 @@ public class Config : IPluginConfiguration
 
     internal static Vector4 SanitizeDockGradientColor(Vector4 color)
         => SanitizeDockBackgroundColor(color);
+
+    public static int SanitizeChatMaxMessages(int value)
+    {
+        if (value <= 0)
+        {
+            return DefaultChatMaxMessages;
+        }
+
+        return Math.Clamp(value, MinChatMaxMessages, MaxChatMaxMessages);
+    }
+
+    public static int SanitizeTextureCacheCapacity(int value)
+    {
+        if (value <= 0)
+        {
+            return DefaultTextureCacheCapacity;
+        }
+
+        return Math.Clamp(value, MinTextureCacheCapacity, MaxTextureCacheCapacity);
+    }
+
+    public static int SanitizeImageDecodeDimension(int value)
+    {
+        if (value <= 0)
+        {
+            return DefaultImageMaxDecodeWidth;
+        }
+
+        return Math.Clamp(value, MinImageDecodeDimension, MaxImageDecodeDimension);
+    }
+
+    public static int SanitizeImageDownloadConcurrency(int value)
+    {
+        if (value <= 0)
+        {
+            return DefaultImageDownloadConcurrency;
+        }
+
+        return Math.Clamp(value, MinImageConcurrency, MaxImageDownloadConcurrency);
+    }
+
+    public static int SanitizeImageDecodeConcurrency(int value)
+    {
+        if (value <= 0)
+        {
+            return DefaultImageDecodeConcurrency;
+        }
+
+        return Math.Clamp(value, MinImageConcurrency, MaxImageDecodeConcurrency);
+    }
+
+    public static long SanitizeImageBytesInFlightBudget(long value)
+    {
+        if (value <= 0)
+        {
+            return DefaultImageBytesInFlightBudget;
+        }
+
+        return Math.Clamp(value, MinImageBytesInFlightBudget, MaxImageBytesInFlightBudget);
+    }
+
+    public static int SanitizePreloadRowsAhead(int value)
+    {
+        if (value < 0)
+        {
+            return DefaultPreloadRowsAhead;
+        }
+
+        return Math.Clamp(value, MinPreloadRowsAhead, MaxPreloadRowsAhead);
+    }
 }
