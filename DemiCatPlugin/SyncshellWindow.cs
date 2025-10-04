@@ -21,7 +21,9 @@ using DemiCatPlugin.SyncShell;
 using Penumbra.Api.Enums;
 using Serilog;
 using Serilog.Events;
-using ImGuiNET;
+using ImGuiInputTextCallback = Dalamud.Bindings.ImGui.ImGuiInputTextCallback;
+using ImGuiInputTextCallbackData = Dalamud.Bindings.ImGui.ImGuiInputTextCallbackData;
+using ImGuiMouseCursor = Dalamud.Bindings.ImGui.ImGuiMouseCursor;
 
 namespace DemiCatPlugin;
 
