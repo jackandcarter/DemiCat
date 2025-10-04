@@ -38,25 +38,6 @@ class Admin(commands.Cog):
         self.bot = bot
 
 
-async def _authorized_role_ids(guild_id: int) -> set[int]:
-    """Return a set of Discord role IDs authorized for the guild."""
-    async with db_session.get_session() as db:
-        guild_res = await db.execute(
-            select(Guild).where(Guild.discord_guild_id == guild_id)
-        )
-        guild = guild_res.scalars().first()
-        if guild is None:
-            return set()
-        result = await db.execute(
-            select(Role.id).where(
-                Role.guild_id == guild.id,
-                (Role.is_officer.is_(True) | Role.is_chat.is_(True)),
-            )
-        )
-        return {row[0] for row in result}
-    return set()
-
-
 @demibot.command(name="clear", description="Delete all user records for this guild")
 async def clear_users(interaction: discord.Interaction) -> None:
     async with db_session.get_session() as db:
@@ -122,18 +103,6 @@ async def key_embed(interaction: discord.Interaction) -> None:
     if interaction.guild is None:
         await interaction.response.send_message("Guild only", ephemeral=True)
         return
-
-    if (
-        interaction.user.id != interaction.guild.owner_id
-        and not interaction.user.guild_permissions.administrator
-    ):
-        allowed_roles = await _authorized_role_ids(interaction.guild.id)
-        member_role_ids = {r.id for r in interaction.user.roles}
-        if not (member_role_ids & allowed_roles):
-            await interaction.response.send_message(
-                "You are not authorized", ephemeral=True
-            )
-            return
 
     cfg = getattr(interaction.client, "cfg", None)
     image_url = None
@@ -269,9 +238,6 @@ async def key_embed(interaction: discord.Interaction) -> None:
     name="reset", description="Remove all guild configuration and cached users"
 )
 async def reset_guild(interaction: discord.Interaction) -> None:
-    if interaction.user.id != interaction.guild.owner_id:
-        await interaction.response.send_message("Owner only", ephemeral=True)
-        return
     async with db_session.get_session() as db:
         guild_res = await db.execute(
             select(Guild).where(Guild.discord_guild_id == interaction.guild.id)
@@ -822,10 +788,6 @@ async def settings_wizard(interaction: discord.Interaction) -> None:
 
 @demibot.command(name="setup", description="Initial setup wizard")
 async def setup_wizard(interaction: discord.Interaction) -> None:
-    if interaction.user.id != interaction.guild.owner_id:
-        await interaction.response.send_message("Owner only", ephemeral=True)
-        return
-
     view = ConfigWizard(
         interaction.guild,
         title="Setup Wizard",
