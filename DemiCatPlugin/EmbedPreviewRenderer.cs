@@ -12,9 +12,19 @@ namespace DemiCatPlugin;
 
 public static class EmbedPreviewRenderer
 {
-    private static readonly Dictionary<string, ISharedImmediateTexture?> TextureCache = new();
+    private const int TextureCacheCapacity = 96;
 
-    public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null)
+    private static readonly Dictionary<string, CacheEntry> TextureCache = new(StringComparer.Ordinal);
+    private static readonly LinkedList<string> TextureLru = new();
+
+    public static RenderResult Draw(
+        EmbedDto dto,
+        Action<string?, Action<ISharedImmediateTexture?>> loadTexture,
+        EmojiManager emojiManager,
+        bool allowAutoLoad,
+        Vector2 maxThumbnailSize,
+        Vector2 maxImageSize,
+        Action<string>? onButtonClick = null)
     {
         using var emojiFont = emojiManager.PushEmojiFont();
         const float stripeWidth = 4f;
@@ -87,14 +97,19 @@ public static class EmbedPreviewRenderer
             ImGui.TextWrapped(dto.Description);
         }
 
+        var thumbnailRendered = false;
+        var thumbnailDeferred = false;
         if (!string.IsNullOrEmpty(dto.ThumbnailUrl))
         {
-            var tex = GetTexture(dto.ThumbnailUrl!, loadTexture);
+            var tex = GetTexture(dto.ThumbnailUrl!, allowAutoLoad, loadTexture, out var suppressed);
+            thumbnailDeferred = suppressed;
             if (tex != null)
             {
                 BeginSection();
                 var wrap = tex.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+                var size = CalculateDisplaySize(new Vector2(wrap.Width, wrap.Height), maxThumbnailSize);
+                ImGui.Image(wrap.Handle, size);
+                thumbnailRendered = true;
             }
         }
 
@@ -104,14 +119,19 @@ public static class EmbedPreviewRenderer
             DrawFields(dto);
         }
 
+        var imageRendered = false;
+        var imageDeferred = false;
         if (!string.IsNullOrEmpty(dto.ImageUrl))
         {
-            var tex = GetTexture(dto.ImageUrl!, loadTexture);
+            var tex = GetTexture(dto.ImageUrl!, allowAutoLoad, loadTexture, out var suppressed);
+            imageDeferred = suppressed;
             if (tex != null)
             {
                 BeginSection();
                 var wrap = tex.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+                var size = CalculateDisplaySize(new Vector2(wrap.Width, wrap.Height), maxImageSize);
+                ImGui.Image(wrap.Handle, size);
+                imageRendered = true;
             }
         }
 
@@ -261,17 +281,45 @@ public static class EmbedPreviewRenderer
                 }
             }
         }
+        return new RenderResult(thumbnailRendered, thumbnailDeferred, imageRendered, imageDeferred);
     }
 
-    private static ISharedImmediateTexture? GetTexture(string url, Action<string?, Action<ISharedImmediateTexture?>> loadTexture)
+    private static ISharedImmediateTexture? GetTexture(
+        string url,
+        bool allowAutoLoad,
+        Action<string?, Action<ISharedImmediateTexture?>> loadTexture,
+        out bool loadSuppressed)
     {
-        if (!TextureCache.TryGetValue(url, out var tex))
+        loadSuppressed = false;
+
+        if (!TextureCache.TryGetValue(url, out var entry))
         {
-            TextureCache[url] = null;
-            loadTexture(url, t => TextureCache[url] = t);
-            tex = null;
+            entry = CreateEntry(url);
         }
-        return tex;
+        else
+        {
+            Touch(entry);
+        }
+
+        if (entry.Texture != null)
+        {
+            return entry.Texture;
+        }
+
+        if (!allowAutoLoad)
+        {
+            loadSuppressed = true;
+            entry.IsLoading = false;
+            return null;
+        }
+
+        if (!entry.IsLoading)
+        {
+            entry.IsLoading = true;
+            loadTexture(url, t => SetTexture(url, t));
+        }
+
+        return null;
     }
 
     internal static Vector4 GetStyleColor(ButtonStyle style) => style switch
@@ -288,7 +336,140 @@ public static class EmbedPreviewRenderer
 
     public static void ClearCache()
     {
+        foreach (var entry in TextureCache.Values)
+        {
+            DisposeEntry(entry);
+        }
+
         TextureCache.Clear();
+        TextureLru.Clear();
+    }
+
+    private static CacheEntry CreateEntry(string key)
+    {
+        var node = TextureLru.AddFirst(key);
+        var entry = new CacheEntry(key, node);
+        TextureCache[key] = entry;
+        EnforceCapacity();
+        return entry;
+    }
+
+    private static void SetTexture(string key, ISharedImmediateTexture? texture)
+    {
+        if (!TextureCache.TryGetValue(key, out var entry))
+        {
+            DisposeWrap(texture);
+            return;
+        }
+
+        entry.IsLoading = false;
+
+        if (!ReferenceEquals(entry.Texture, texture))
+        {
+            DisposeWrap(entry.Texture);
+        }
+
+        entry.Texture = texture;
+        Touch(entry);
+        EnforceCapacity();
+    }
+
+    private static void Touch(CacheEntry entry)
+    {
+        if (entry.Node.List == TextureLru)
+        {
+            TextureLru.Remove(entry.Node);
+            TextureLru.AddFirst(entry.Node);
+        }
+        else
+        {
+            entry.Node = TextureLru.AddFirst(entry.Key);
+        }
+    }
+
+    private static void EnforceCapacity()
+    {
+        while (TextureCache.Count > TextureCacheCapacity)
+        {
+            var tail = TextureLru.Last;
+            if (tail == null)
+            {
+                break;
+            }
+
+            TextureLru.RemoveLast();
+            if (TextureCache.Remove(tail.Value, out var removed))
+            {
+                DisposeEntry(removed);
+            }
+        }
+    }
+
+    private static void DisposeEntry(CacheEntry entry)
+    {
+        DisposeWrap(entry.Texture);
+        entry.Texture = null;
+        entry.IsLoading = false;
+    }
+
+    private static void DisposeWrap(ISharedImmediateTexture? texture)
+    {
+        if (texture?.GetWrapOrEmpty() is IDisposable wrap)
+        {
+            wrap.Dispose();
+        }
+    }
+
+    private static Vector2 CalculateDisplaySize(Vector2 originalSize, Vector2 maxSize)
+    {
+        var width = MathF.Max(1f, originalSize.X);
+        var height = MathF.Max(1f, originalSize.Y);
+
+        var maxWidth = maxSize.X > 0f ? maxSize.X : width;
+        var maxHeight = maxSize.Y > 0f ? maxSize.Y : height;
+
+        var widthScale = maxWidth / width;
+        var heightScale = maxHeight / height;
+        var scale = MathF.Min(1f, MathF.Min(widthScale, heightScale));
+
+        if (!float.IsFinite(scale) || scale <= 0f)
+        {
+            scale = 1f;
+        }
+
+        return new Vector2(width * scale, height * scale);
+    }
+
+    private sealed class CacheEntry
+    {
+        public CacheEntry(string key, LinkedListNode<string> node)
+        {
+            Key = key;
+            Node = node;
+        }
+
+        public string Key { get; }
+        public LinkedListNode<string> Node { get; set; }
+        public ISharedImmediateTexture? Texture { get; set; }
+        public bool IsLoading { get; set; }
+    }
+
+    public readonly struct RenderResult
+    {
+        public RenderResult(bool thumbnailRendered, bool thumbnailDeferred, bool imageRendered, bool imageDeferred)
+        {
+            ThumbnailRendered = thumbnailRendered;
+            ThumbnailDeferred = thumbnailDeferred;
+            ImageRendered = imageRendered;
+            ImageDeferred = imageDeferred;
+        }
+
+        public bool ThumbnailRendered { get; }
+        public bool ThumbnailDeferred { get; }
+        public bool ImageRendered { get; }
+        public bool ImageDeferred { get; }
+
+        public bool AnyDeferred => ThumbnailDeferred || ImageDeferred;
     }
 }
 

@@ -97,6 +97,7 @@ public class ChatWindow : IDisposable
     private string _previewKey = string.Empty;
     private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
     private float _previewContentHeight;
+    private bool _previewForceLoadEmbeds;
     private const string OldestRestCursorSuffix = ":oldest";
     private const int MentionResultLimit = 20;
     private const float MentionDrawerAnimationSpeed = 12f;
@@ -1127,9 +1128,37 @@ public class ChatWindow : IDisposable
                     ImGui.TextWrapped(plainTextPreview);
                 }
 
+                var embedSizeCap = GetConfiguredAttachmentCap();
+                var embedIndex = 0;
                 foreach (var embed in _previewMessage.Embeds)
                 {
-                    EmbedPreviewRenderer.Draw(embed, LoadTexture, _emojiManager);
+                    var allowAutoLoad = !_lazyLoadEmbedsEnabled || _previewForceLoadEmbeds;
+                    var result = EmbedPreviewRenderer.Draw(
+                        embed,
+                        LoadTexture,
+                        _emojiManager,
+                        allowAutoLoad,
+                        embedSizeCap,
+                        embedSizeCap);
+
+                    if (!allowAutoLoad && result.AnyDeferred)
+                    {
+                        ImGui.Spacing();
+                        var style = ImGui.GetStyle();
+                        ImGui.PushStyleColor(ImGuiCol.Text, style.Colors[(int)ImGuiCol.TextDisabled]);
+                        ImGui.TextUnformatted("Images not loaded (lazy-load enabled).");
+                        ImGui.PopStyleColor();
+                        ImGui.SameLine();
+                        var buttonId = !string.IsNullOrEmpty(embed.Id)
+                            ? embed.Id!
+                            : embedIndex.ToString(CultureInfo.InvariantCulture);
+                        if (ImGui.SmallButton($"Load images##embedprev{buttonId}"))
+                        {
+                            _previewForceLoadEmbeds = true;
+                        }
+                    }
+
+                    embedIndex++;
                 }
 
                 foreach (var att in _previewMessage.Attachments)
@@ -2749,6 +2778,7 @@ public class ChatWindow : IDisposable
     {
         _previewKey = string.Empty;
         _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
+        _previewForceLoadEmbeds = false;
     }
 
     private void UpdatePreviewMessage()
@@ -3742,8 +3772,8 @@ public class ChatWindow : IDisposable
                 wrap.Dispose();
         }
         _attachmentPreviewTextures.Clear();
-        _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
-        _previewKey = string.Empty;
+        InvalidatePreview();
+        EmbedPreviewRenderer.ClearCache();
         EmbedRenderer.ClearCache();
     }
 
