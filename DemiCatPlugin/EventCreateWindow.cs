@@ -136,7 +136,7 @@ public class EventCreateWindow
 
         var footer = ImGui.GetFrameHeightWithSpacing() * 2;
         var avail = ImGui.GetContentRegionAvail();
-        ImGui.BeginChild("eventCreateScroll", new Vector2(avail.X, avail.Y - footer), true);
+        ImGui.BeginChild("eventCreateScroll", new Vector2(avail.X, avail.Y - footer), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
 
         if (!_channelsLoaded)
         {

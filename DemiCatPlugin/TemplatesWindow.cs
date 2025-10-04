@@ -165,7 +165,7 @@ public class TemplatesWindow
             ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
         }
 
-        ImGui.BeginChild("TemplateList", new Vector2(150, 0), true);
+        ImGui.BeginChild("TemplateList", new Vector2(150, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
         {
             using var emojiFont = _emojiManager.PushEmojiFont();
             for (var i = 0; i < _templates.Count; i++)
@@ -182,7 +182,7 @@ public class TemplatesWindow
 
         ImGui.SameLine();
 
-        ImGui.BeginChild("TemplateContent", ImGui.GetContentRegionAvail(), false);
+        ImGui.BeginChild("TemplateContent", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
         if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)
         {
             var tmpl = _templates[_selectedIndex].Template;

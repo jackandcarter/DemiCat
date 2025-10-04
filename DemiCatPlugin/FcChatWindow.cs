@@ -72,7 +72,7 @@ public class FcChatWindow : ChatWindow
             ImGui.SameLine();
         }
 
-        ImGui.BeginChild("##fcChat", ImGui.GetContentRegionAvail(), false);
+        ImGui.BeginChild("##fcChat", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
         base.Draw();
         ImGui.EndChild();
     }
