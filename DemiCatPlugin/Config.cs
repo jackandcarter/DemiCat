@@ -59,10 +59,10 @@ public class Config : IPluginConfiguration
     public const long DefaultImageBytesInFlightBudget = 32L * 1024L * 1024L;
     public const long MinImageBytesInFlightBudget = 4L * 1024L * 1024L;
     public const long MaxImageBytesInFlightBudget = 512L * 1024L * 1024L;
-    public const int DefaultPreloadRowsAhead = 2;
+    public const int DefaultPreloadRowsAhead = 24;
     public const int MinPreloadRowsAhead = 0;
-    public const int MaxPreloadRowsAhead = 10;
-    public const int CurrentVersion = 24;
+    public const int MaxPreloadRowsAhead = 32;
+    public const int CurrentVersion = 25;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -724,6 +724,19 @@ public class Config : IPluginConfiguration
             PreloadRowsAhead = SanitizePreloadRowsAhead(PreloadRowsAhead);
 
             Version = 24;
+            ExtensionData = null;
+        }
+        if (Version < 25)
+        {
+            const int OldDefaultPreloadRowsAhead = 2;
+            if (PreloadRowsAhead == OldDefaultPreloadRowsAhead)
+            {
+                PreloadRowsAhead = DefaultPreloadRowsAhead;
+            }
+
+            PreloadRowsAhead = SanitizePreloadRowsAhead(PreloadRowsAhead);
+
+            Version = 25;
             ExtensionData = null;
         }
     }
