@@ -20,6 +20,8 @@ public class SignupOptionEditor
     private int _emojiSelectionStart;
     private int _emojiSelectionEnd;
     private bool _focusEmojiNextFrame;
+    private static SignupOptionEditor? _activeEmojiCallbackOwner;
+    private static readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _emojiEditedCallback = &OnEmojiEdited;
 
     public SignupOptionEditor(Config config, HttpClient httpClient, EmojiManager emojiManager)
     {
@@ -66,12 +68,24 @@ public class SignupOptionEditor
                 ImGui.SetKeyboardFocusHere();
                 _focusEmojiNextFrame = false;
             }
-            ImGui.InputText(
-                "Emoji",
-                emojiBuf,
-                ImGuiInputTextFlags.CallbackAlways,
-                OnEmojiEdited
-            );
+            unsafe
+            {
+                _activeEmojiCallbackOwner = this;
+                try
+                {
+                    ImGui.InputText(
+                        "Emoji",
+                        emojiBuf,
+                        (uint)emojiBuf.Length,
+                        ImGuiInputTextFlags.CallbackAlways,
+                        _emojiEditedCallback
+                    );
+                }
+                finally
+                {
+                    _activeEmojiCallbackOwner = null;
+                }
+            }
             var emoji = ImGuiTextUtil.ReadUtf8Buffer(emojiBuf);
             if (_working.Emoji != emoji)
             {
@@ -179,10 +193,21 @@ public class SignupOptionEditor
         _focusEmojiNextFrame = true;
     }
 
-    private int OnEmojiEdited(scoped ref ImGuiInputTextCallbackData data)
+    private static unsafe int OnEmojiEdited(ImGuiInputTextCallbackData* data)
     {
-        _emojiSelectionStart = data.SelectionStart;
-        _emojiSelectionEnd = data.SelectionEnd;
+        if (data == null)
+        {
+            return 0;
+        }
+
+        var owner = _activeEmojiCallbackOwner;
+        if (owner == null)
+        {
+            return 0;
+        }
+
+        owner._emojiSelectionStart = data->SelectionStart;
+        owner._emojiSelectionEnd = data->SelectionEnd;
         return 0;
     }
 
