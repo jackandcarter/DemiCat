@@ -52,6 +52,7 @@ public class EventCreateWindow
     private readonly HashSet<string> _mentions = new();
     private bool _rolesLoaded;
     private readonly List<ChannelDto> _channels = new();
+    private string[] _channelDisplayNames = Array.Empty<string>();
     private bool _channelsLoaded;
     private bool _channelFetchFailed;
     private string _channelErrorMessage = string.Empty;
@@ -143,7 +144,7 @@ public class EventCreateWindow
         }
         if (_channels.Count > 0)
         {
-            var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
+            var channelNames = _channelDisplayNames;
             {
                 using var emojiFont = _emojiManager.PushEmojiFont();
                 if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
@@ -1435,6 +1436,7 @@ public class EventCreateWindow
             {
                 _channels.Clear();
                 _channels.AddRange(dto);
+                UpdateChannelDisplayNames();
                 var current = ChannelId;
                 if (!string.IsNullOrEmpty(current))
                 {
@@ -1474,6 +1476,19 @@ public class EventCreateWindow
                 _channelsLoaded = true;
             });
         }
+    }
+
+    private void UpdateChannelDisplayNames()
+    {
+        if (_channels.Count == 0)
+        {
+            _channelDisplayNames = Array.Empty<string>();
+            return;
+        }
+
+        _channelDisplayNames = _channels
+            .Select(c => c.ParentId == null ? c.Name : "  " + c.Name)
+            .ToArray();
     }
 
     private void SavePreset()
