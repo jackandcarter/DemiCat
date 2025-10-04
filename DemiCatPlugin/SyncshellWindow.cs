@@ -21,6 +21,7 @@ using DemiCatPlugin.SyncShell;
 using Penumbra.Api.Enums;
 using Serilog;
 using Serilog.Events;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -140,7 +141,7 @@ public class SyncshellWindow : IDisposable
     private Vector2 _inviteSuggestionWindowSize;
     private bool _inviteSuggestionFiltered;
     private bool _focusInviteInputNextFrame;
-    private readonly ImGui.ImGuiInputTextCallbackDelegate _inviteInputCallback;
+    private readonly ImGuiInputTextCallback _inviteInputCallback;
     private int _inviteInFlight;
     private DateTimeOffset _lastMembershipFetch;
     private bool _membershipNeedsRefresh = true;
@@ -208,7 +209,7 @@ public class SyncshellWindow : IDisposable
         }
         InitializeMembershipPanelRatios();
 
-        _inviteInputCallback = new ImGui.ImGuiInputTextCallbackDelegate(OnInviteInputEdited);
+        _inviteInputCallback = OnInviteInputEdited;
 
         foreach (var inviteEntry in state.Invites.ToList())
         {
@@ -1345,8 +1346,13 @@ public class SyncshellWindow : IDisposable
         }
     }
 
-    private int OnInviteInputEdited(ref ImGuiInputTextCallbackData data)
+    private unsafe int OnInviteInputEdited(ImGuiInputTextCallbackData* data)
     {
+        if (data == null)
+        {
+            return 0;
+        }
+
         _inviteSuggestionsDirty = true;
         return 0;
     }

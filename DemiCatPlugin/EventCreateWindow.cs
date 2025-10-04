@@ -223,7 +223,6 @@ public class EventCreateWindow
 
                     var avail = ImGui.GetContentRegionAvail();
                     var descHeight = ImGui.GetTextLineHeight() * 6f;
-                    var descBuf = ImGuiTextUtil.MakeUtf8Buffer(_description, 4096);
                     if (_focusDescriptionNextFrame)
                     {
                         ImGui.SetKeyboardFocusHere();
@@ -231,12 +230,13 @@ public class EventCreateWindow
                     }
                     ImGui.InputTextMultiline(
                         "##Description",
-                        descBuf,
+                        ref _description,
+                        4096u,
                         new Vector2(avail.X, descHeight),
                         ImGuiInputTextFlags.CallbackAlways,
-                        new ImGui.ImGuiInputTextCallbackDelegate(OnDescriptionEdited)
+                        OnDescriptionEdited,
+                        IntPtr.Zero
                     );
-                    _description = ImGuiTextUtil.ReadUtf8Buffer(descBuf);
                     _descriptionEmojiPopup.Draw();
                 },
                 alignLabel: false,
@@ -451,7 +451,7 @@ public class EventCreateWindow
             {
                 var field = _fields[i];
                 ImGui.InputText($"Name##{i}", ref field.Name, 256);
-                ImGui.InputTextMultiline($"Value##{i}", ref field.Value, 1024, new Vector2(400, 60));
+                ImGui.InputTextMultiline($"Value##{i}", ref field.Value, 1024u, new Vector2(400, 60));
                 ImGui.Checkbox($"Inline##{i}", ref field.Inline);
                 if (ImGui.Button($"Remove##{i}"))
                 {
@@ -947,10 +947,15 @@ public class EventCreateWindow
         _focusDescriptionNextFrame = true;
     }
 
-    private int OnDescriptionEdited(ref ImGuiInputTextCallbackData data)
+    private unsafe int OnDescriptionEdited(ImGuiInputTextCallbackData* data)
     {
-        _descriptionSelectionStart = data.SelectionStart;
-        _descriptionSelectionEnd = data.SelectionEnd;
+        if (data == null)
+        {
+            return 0;
+        }
+
+        _descriptionSelectionStart = data->SelectionStart;
+        _descriptionSelectionEnd = data->SelectionEnd;
         return 0;
     }
 
