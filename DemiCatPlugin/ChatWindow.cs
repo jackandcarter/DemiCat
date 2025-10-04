@@ -135,7 +135,8 @@ public class ChatWindow : IDisposable
     private static bool TryGetTextureWrap(ISharedImmediateTexture? texture, out IDalamudTextureWrap? wrap)
     {
         wrap = texture?.GetWrapOrEmpty();
-        if (wrap == null || wrap.Handle.Handle == 0 || wrap.Width <= 0 || wrap.Height <= 0)
+        var handle = wrap.ToImGuiHandle();
+        if (wrap == null || handle == 0 || wrap.Width <= 0 || wrap.Height <= 0)
         {
             wrap = null;
             return false;
@@ -1728,7 +1729,15 @@ public class ChatWindow : IDisposable
         if (msg.AvatarTexture != null)
         {
             var wrapAvatar = msg.AvatarTexture.GetWrapOrEmpty();
-            ImGui.Image(wrapAvatar.Handle, new Vector2(20, 20));
+            var avatarHandle = wrapAvatar.ToImGuiHandle();
+            if (avatarHandle != 0)
+            {
+                ImGui.Image(avatarHandle, new Vector2(20, 20));
+            }
+            else
+            {
+                ImGui.Dummy(new Vector2(20, 20));
+            }
         }
         else
         {
@@ -1792,10 +1801,16 @@ public class ChatWindow : IDisposable
                     if (att.Texture != null)
                     {
                         var wrapAtt = att.Texture.GetWrapOrEmpty();
+                        var attachmentHandle = wrapAtt.ToImGuiHandle();
+                        if (attachmentHandle == 0)
+                        {
+                            continue;
+                        }
+
                         var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
                         var bounds = GetAttachmentBounds(attachmentCap);
                         var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
-                        ImGui.Image(wrapAtt.Handle, displaySize);
+                        ImGui.Image(attachmentHandle, displaySize);
                         if (ImGui.IsItemHovered())
                         {
                             ImGui.BeginTooltip();
@@ -2330,10 +2345,11 @@ public class ChatWindow : IDisposable
             }
 
             var wrap = presence.AvatarTexture?.GetWrapOrEmpty();
-            if (wrap != null && wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+            var handle = wrap.ToImGuiHandle();
+            if (handle != 0 && wrap != null && wrap.Width > 0 && wrap.Height > 0)
             {
                 ImGui.SetCursorScreenPos(position);
-                ImGui.Image(wrap.ToImGuiHandle(), textureSize);
+                ImGui.Image(handle, textureSize);
                 return;
             }
         }
@@ -2671,12 +2687,13 @@ public class ChatWindow : IDisposable
             if (previewReady && previewTexture != null)
             {
                 var wrap = previewTexture.GetWrapOrEmpty();
-                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+                var handle = wrap.ToImGuiHandle();
+                if (handle != 0 && wrap.Width > 0 && wrap.Height > 0)
                 {
                     var maxThumbnail = new Vector2(40f, 40f) * scale;
                     var bounds = GetAttachmentBounds(maxThumbnail, allowAutoStretch: false);
                     var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds, allowAutoStretch: false);
-                    ImGui.Image(wrap.ToImGuiHandle(), size);
+                    ImGui.Image(handle, size);
                     renderedPreview = true;
                 }
             }
@@ -2978,12 +2995,13 @@ public class ChatWindow : IDisposable
         if (_attachmentPreviewTextures.TryGetValue(attachment.Path, out var texture) && texture != null)
         {
             var wrap = texture.GetWrapOrEmpty();
-            if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+            var handle = wrap.ToImGuiHandle();
+            if (handle != 0 && wrap.Width > 0 && wrap.Height > 0)
             {
                 var attachmentCap = GetConfiguredAttachmentCap();
                 var bounds = GetAttachmentBounds(attachmentCap);
                 var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds);
-                ImGui.Image(wrap.ToImGuiHandle(), size);
+                ImGui.Image(handle, size);
             }
         }
     }

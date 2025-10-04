@@ -122,10 +122,11 @@ public static class WebTextureCache
         if (tex == null) return;
         var wrap = tex.GetWrapOrEmpty();
 
-        if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0 &&
+        var handle = wrap.ToImGuiHandle();
+        if (handle != 0 && wrap.Width > 0 && wrap.Height > 0 &&
             ImGui.ImageButton(
                 $"##{id}",
-                wrap.ToImGuiHandle(),
+                handle,
                 size,
                 Vector2.Zero,
                 Vector2.One,

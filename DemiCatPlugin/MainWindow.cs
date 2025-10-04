@@ -653,11 +653,12 @@ public class MainWindow : IDisposable
         if (item.Icon != null)
         {
             var wrap = item.Icon.GetWrapOrEmpty();
-            if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+            var handle = wrap.ToImGuiHandle();
+            if (handle != 0 && wrap.Width > 0 && wrap.Height > 0)
             {
                 return ImGui.ImageButton(
                     $"##{item.Id}",
-                    wrap.ToImGuiHandle(),
+                    handle,
                     iconSize,
                     Vector2.Zero,
                     Vector2.One,

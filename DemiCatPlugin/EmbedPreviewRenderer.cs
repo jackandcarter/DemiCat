@@ -107,10 +107,11 @@ public static class EmbedPreviewRenderer
             {
                 BeginSection();
                 var wrap = tex.GetWrapOrEmpty();
-                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+                var handle = wrap.ToImGuiHandle();
+                if (handle != 0 && wrap.Width > 0 && wrap.Height > 0)
                 {
                     var size = CalculateDisplaySize(new Vector2(wrap.Width, wrap.Height), maxThumbnailSize);
-                    ImGui.Image(wrap.ToImGuiHandle(), size);
+                    ImGui.Image(handle, size);
                     thumbnailRendered = true;
                 }
             }
@@ -132,10 +133,11 @@ public static class EmbedPreviewRenderer
             {
                 BeginSection();
                 var wrap = tex.GetWrapOrEmpty();
-                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+                var handle = wrap.ToImGuiHandle();
+                if (handle != 0 && wrap.Width > 0 && wrap.Height > 0)
                 {
                     var size = CalculateDisplaySize(new Vector2(wrap.Width, wrap.Height), maxImageSize);
-                    ImGui.Image(wrap.ToImGuiHandle(), size);
+                    ImGui.Image(handle, size);
                     imageRendered = true;
                 }
             }

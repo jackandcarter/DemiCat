@@ -84,9 +84,10 @@ public static class EmbedRenderer
             if (tex != null)
             {
                 var wrap = tex.GetWrapOrEmpty();
-                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+                var handle = wrap.ToImGuiHandle();
+                if (handle != 0 && wrap.Width > 0 && wrap.Height > 0)
                 {
-                    ImGui.Image(wrap.ToImGuiHandle(), new Vector2(wrap.Width, wrap.Height));
+                    ImGui.Image(handle, new Vector2(wrap.Width, wrap.Height));
                 }
             }
         }
