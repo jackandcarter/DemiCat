@@ -110,6 +110,7 @@ discord_client_stub.set_discord_client = lambda client: None
 discord_client_stub.is_discord_client_ready = lambda client=None: False
 sys.modules.setdefault("demibot.http.discord_client", discord_client_stub)
 
+from demibot.db.session import init_db
 from demibot.http import ws_chat
 from demibot.http.deps import RequestContext
 
@@ -1056,6 +1057,8 @@ def test_chat_ws_unsubscribe_cleans_channel_state(monkeypatch):
         assert manager._channel_subscribers[channel_id] == 1
 
         manager._channel_history[channel_id] = deque([{"cursor": 1}])
+        manager._channel_history_bytes[channel_id] = 10
+        manager._history_total_bytes = 10
         manager._channel_last_touch[channel_id] = 0.0
         manager._channel_queues[channel_id] = [{"cursor": 2}]
         loop = asyncio.get_running_loop()
@@ -1074,6 +1077,8 @@ def test_chat_ws_unsubscribe_cleans_channel_state(monkeypatch):
         assert channel_id not in manager._channel_cursors
         assert channel_id not in manager._channel_subscribers
         assert channel_id not in manager._channel_last_touch
+        assert channel_id not in manager._channel_history_bytes
+        assert manager._history_total_bytes == 0
         assert task.cancelled()
 
     _run(scenario())
@@ -1105,6 +1110,95 @@ def test_chat_ws_history_global_cap(monkeypatch):
         remaining = {int(ch) for ch in manager._channel_history.keys()}
         assert remaining
         assert min(remaining) >= total_channels - ws_chat.HISTORY_CHANNEL_CAP
+
+    _run(scenario())
+
+
+def test_chat_ws_history_total_byte_cap(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        manager._history_max_bytes = 350
+        manager._history_db_enabled = False
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=1, kind="CHAT")
+
+        async def fake_sleep(delay):
+            return None
+
+        monkeypatch.setattr(ws_chat.asyncio, "sleep", fake_sleep)
+        monkeypatch.setattr(ws_chat.random, "uniform", lambda a, b: 0.0)
+        clock = itertools.count()
+        monkeypatch.setattr(ws_chat.time, "time", lambda: next(clock))
+
+        for idx in range(3):
+            channel = str(idx)
+            manager._channel_meta[channel] = meta
+            manager._channel_queues[channel] = [
+                {
+                    "cursor": idx + 1,
+                    "op": "mc",
+                    "d": {"id": idx, "text": "x" * 160},
+                }
+            ]
+            await manager._flush_channel(channel)
+
+        assert manager._history_total_bytes <= manager._history_max_bytes
+        assert set(manager._channel_history.keys()) == {"2"}
+
+    _run(scenario())
+
+
+def test_chat_ws_history_disk_fallback(monkeypatch):
+    async def scenario():
+        await init_db("sqlite+aiosqlite://")
+        manager = ws_chat.ChatConnectionManager()
+        manager._history_db_enabled = True
+        manager._channel_cursors["123"] = 3
+        queue = [
+            {"cursor": 1, "op": "mc", "d": {"id": "a"}},
+            {"cursor": 2, "op": "mc", "d": {"id": "b"}},
+            {"cursor": 3, "op": "mc", "d": {"id": "c"}},
+        ]
+
+        await manager._persist_history_to_cache("123", queue)
+
+        history, source, missing = await manager._collect_history_batch("123", 0)
+
+        assert missing is True
+        assert source == "disk"
+        assert [msg["cursor"] for msg in history] == [1, 2, 3]
+
+    _run(scenario())
+
+
+def test_chat_ws_resync_marks_partial_when_history_missing(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(character_name=None),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=1),
+            key=types.SimpleNamespace(),
+            roles=[],
+        )
+        manager.connections[ws] = ws_chat.ChatConnection(ctx=ctx)
+        channel_id = "42"
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=1, kind="CHAT")
+
+        async def fake_fetch(channels):
+            assert channels == {channel_id}
+            return {channel_id: meta}
+
+        monkeypatch.setattr(manager, "_fetch_channel_meta_bulk", fake_fetch)
+
+        manager._channel_cursors[channel_id] = 5
+
+        await manager.sub(ws, {"channels": [{"id": channel_id, "since": 0}]})
+
+        assert ws.sent
+        resync = json.loads(ws.sent[-1])
+        assert resync["op"] == "resync"
+        assert resync.get("partial") is True
+        assert resync.get("reason") == "history_gap"
 
     _run(scenario())
 

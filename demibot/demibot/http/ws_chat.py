@@ -5,18 +5,25 @@ import base64
 import inspect
 import json
 import logging
+import os
 import random
 import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from typing import Deque, Dict, List, Mapping, Set
+from typing import Deque, Dict, List, Mapping, Set, Tuple
 from types import SimpleNamespace
 
 import discord
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
-from ..db.models import GuildChannel, Guild, ChannelKind, Membership
+from ..db.models import (
+    GuildChannel,
+    Guild,
+    ChannelKind,
+    Membership,
+    ChannelMessageCache,
+)
 from ..db.session import get_session
 from .chat_events import emit_event
 from .deps import RequestContext, api_key_auth
@@ -52,6 +59,26 @@ FATAL_WEBHOOK_STATUSES = {401, 403, 404}
 
 HISTORY_LIMIT = 200
 HISTORY_CHANNEL_CAP = 500
+DEFAULT_HISTORY_MAX_BYTES = 8 * 1024 * 1024
+try:
+    HISTORY_MAX_BYTES = int(
+        os.getenv("CHAT_HISTORY_MAX_BYTES", str(DEFAULT_HISTORY_MAX_BYTES))
+    )
+except (TypeError, ValueError):
+    HISTORY_MAX_BYTES = DEFAULT_HISTORY_MAX_BYTES
+if HISTORY_MAX_BYTES < 0:
+    HISTORY_MAX_BYTES = 0
+HISTORY_DB_CACHE_ENABLED = os.getenv("CHAT_HISTORY_ENABLE_DB_CACHE", "false").lower() in {
+    "1",
+    "true",
+    "yes",
+    "on",
+}
+try:
+    _db_fetch_limit = int(os.getenv("CHAT_HISTORY_DB_FETCH_LIMIT", str(HISTORY_LIMIT)))
+except (TypeError, ValueError):
+    _db_fetch_limit = HISTORY_LIMIT
+HISTORY_DB_FETCH_LIMIT = max(HISTORY_LIMIT, _db_fetch_limit)
 HISTORY_TTL_SECONDS = 10 * 60  # 10 minutes
 
 NONCE_CACHE_LIMIT = 256
@@ -114,12 +141,17 @@ class ChatConnectionManager:
         self._channel_cursors: Dict[str, int] = {}
         self._channel_meta: Dict[str, ChannelMeta] = {}
         self._channel_history: Dict[str, Deque[dict]] = {}
+        self._channel_history_bytes: Dict[str, int] = {}
+        self._history_total_bytes = 0
+        self._history_max_bytes = HISTORY_MAX_BYTES
         self._channel_last_touch: Dict[str, float] = {}
         self._channel_subscribers: Dict[str, int] = {}
         self._channel_nonce_cache: Dict[str, Dict[str, str]] = {}
         self._channel_nonce_order: Dict[str, Deque[str]] = {}
         self._webhook_queues: Dict[int, List[PendingWebhookMessage]] = {}
         self._webhook_tasks: Dict[int, asyncio.Task] = {}
+        self._history_db_enabled = HISTORY_DB_CACHE_ENABLED
+        self._history_disk_fetch_limit = HISTORY_DB_FETCH_LIMIT
         self._send_count = 0
         self._resync_count = 0
         self._connect_count = 0
@@ -244,7 +276,7 @@ class ChatConnectionManager:
             self._channel_subscribers[channel] = count - 1
 
     def _cleanup_channel(self, channel: str) -> None:
-        self._drop_channel_history(channel)
+        self._drop_channel_history(channel, reason="cleanup")
         queue = self._channel_queues.pop(channel, None)
         if queue:
             queue.clear()
@@ -257,8 +289,75 @@ class ChatConnectionManager:
         self._channel_nonce_cache.pop(channel, None)
         self._channel_nonce_order.pop(channel, None)
 
-    def _drop_channel_history(self, channel: str) -> None:
-        self._channel_history.pop(channel, None)
+    @staticmethod
+    def _extract_cursor(message: Mapping[str, object]) -> int | None:
+        value = message.get("cursor") if isinstance(message, Mapping) else None
+        if isinstance(value, int):
+            return value
+        if isinstance(value, str):
+            try:
+                return int(value)
+            except ValueError:
+                return None
+        return None
+
+    def _estimate_history_size(self, message: Mapping[str, object]) -> int:
+        try:
+            return len(json.dumps(message, ensure_ascii=False))
+        except (TypeError, ValueError):
+            return 0
+
+    def _record_history_add(self, channel: str, message: Mapping[str, object]) -> int:
+        size = self._estimate_history_size(message)
+        self._history_total_bytes += size
+        self._channel_history_bytes[channel] = (
+            self._channel_history_bytes.get(channel, 0) + size
+        )
+        return size
+
+    def _record_history_remove(
+        self, channel: str, message: Mapping[str, object], size: int | None = None
+    ) -> int:
+        if size is None:
+            size = self._estimate_history_size(message)
+        current = self._channel_history_bytes.get(channel, 0) - size
+        if current <= 0:
+            self._channel_history_bytes.pop(channel, None)
+        else:
+            self._channel_history_bytes[channel] = current
+        self._history_total_bytes = max(0, self._history_total_bytes - size)
+        return size
+
+    def _evict_history_message(
+        self, channel: str, history: Deque[dict], reason: str
+    ) -> None:
+        if not history:
+            return
+        message = history.popleft()
+        size = self._record_history_remove(channel, message)
+        logger.info(
+            "chat.ws history evict channel=%s reason=%s cursor=%s size=%s total=%s",
+            channel,
+            reason,
+            self._extract_cursor(message),
+            size,
+            self._history_total_bytes,
+        )
+
+    def _drop_channel_history(self, channel: str, reason: str | None = None) -> None:
+        history = self._channel_history.pop(channel, None)
+        bytes_removed = self._channel_history_bytes.pop(channel, 0)
+        if bytes_removed:
+            self._history_total_bytes = max(0, self._history_total_bytes - bytes_removed)
+        if reason and (history or bytes_removed):
+            logger.info(
+                "chat.ws history drop channel=%s reason=%s messages=%s bytes=%s total=%s",
+                channel,
+                reason,
+                len(history) if history is not None else 0,
+                bytes_removed,
+                self._history_total_bytes,
+            )
 
     def _enforce_history_caps(self) -> None:
         now = time.time()
@@ -268,7 +367,8 @@ class ChatConnectionManager:
             if now - last > HISTORY_TTL_SECONDS
         ]
         for channel in expired:
-            self._drop_channel_history(channel)
+            if channel in self._channel_history:
+                self._drop_channel_history(channel, reason="ttl_expired")
 
         if HISTORY_CHANNEL_CAP <= 0:
             return
@@ -284,7 +384,7 @@ class ChatConnectionManager:
                 break
             if self._channel_subscribers.get(channel):
                 continue
-            self._drop_channel_history(channel)
+            self._drop_channel_history(channel, reason="channel_cap")
 
         if len(self._channel_history) <= HISTORY_CHANNEL_CAP:
             return
@@ -292,7 +392,31 @@ class ChatConnectionManager:
         for channel in channels_by_touch:
             if len(self._channel_history) <= HISTORY_CHANNEL_CAP:
                 break
-            self._drop_channel_history(channel)
+            self._drop_channel_history(channel, reason="channel_cap_force")
+
+        if self._history_max_bytes <= 0:
+            return
+        if self._history_total_bytes <= self._history_max_bytes:
+            return
+
+        for channel in channels_by_touch:
+            if self._history_total_bytes <= self._history_max_bytes:
+                break
+            if self._channel_subscribers.get(channel):
+                continue
+            if channel not in self._channel_history:
+                continue
+            self._drop_channel_history(channel, reason="bytes_cap")
+
+        if self._history_total_bytes <= self._history_max_bytes:
+            return
+
+        for channel in channels_by_touch:
+            if self._history_total_bytes <= self._history_max_bytes:
+                break
+            if channel not in self._channel_history:
+                continue
+            self._drop_channel_history(channel, reason="bytes_cap_force")
 
     def _purge_idle_channels(self) -> None:
         now = time.time()
@@ -302,6 +426,172 @@ class ChatConnectionManager:
             if self._channel_subscribers.get(channel):
                 continue
             self._cleanup_channel(channel)
+
+    async def _persist_history_to_cache(
+        self, channel: str, messages: List[dict]
+    ) -> None:
+        if not self._history_db_enabled or not messages:
+            return
+        try:
+            channel_int = int(channel)
+        except (TypeError, ValueError):
+            return
+        payloads: list[tuple[int, str]] = []
+        for message in messages:
+            cursor = self._extract_cursor(message)
+            if cursor is None:
+                continue
+            try:
+                payload_text = json.dumps(message, ensure_ascii=False)
+            except (TypeError, ValueError):
+                logger.exception(
+                    "chat.ws history persist serialization_failed channel=%s cursor=%s",
+                    channel,
+                    self._extract_cursor(message),
+                )
+                continue
+            payloads.append((cursor, payload_text))
+        if not payloads:
+            return
+        try:
+            async with get_session() as db:
+                for cursor, payload_text in payloads:
+                    obj = ChannelMessageCache(
+                        channel_id=channel_int,
+                        cursor=cursor,
+                        payload=payload_text,
+                    )
+                    await db.merge(obj)
+                await db.commit()
+        except Exception:
+            logger.exception(
+                "chat.ws history persist failed channel=%s count=%s",
+                channel,
+                len(payloads),
+            )
+
+    async def _load_history_from_cache(
+        self, channel: str, since: int | None
+    ) -> List[dict]:
+        if not self._history_db_enabled:
+            return []
+        try:
+            channel_int = int(channel)
+        except (TypeError, ValueError):
+            return []
+        try:
+            async with get_session() as db:
+                stmt = select(ChannelMessageCache).where(
+                    ChannelMessageCache.channel_id == channel_int
+                )
+                if since is not None:
+                    stmt = stmt.where(ChannelMessageCache.cursor > since)
+                stmt = stmt.order_by(ChannelMessageCache.cursor.desc()).limit(
+                    self._history_disk_fetch_limit
+                )
+                result = await db.execute(stmt)
+                rows = result.scalars().all()
+        except Exception:
+            logger.exception("chat.ws history load failed channel=%s", channel)
+            return []
+        rows.reverse()
+        messages: list[dict] = []
+        for row in rows:
+            try:
+                payload = json.loads(row.payload)
+            except (TypeError, ValueError, json.JSONDecodeError):
+                logger.exception(
+                    "chat.ws history load decode_failed channel=%s cursor=%s",
+                    channel,
+                    row.cursor,
+                )
+                continue
+            messages.append(payload)
+        return messages
+
+    async def _collect_history_batch(
+        self, channel: str, since: int | None
+    ) -> Tuple[List[dict], str, bool]:
+        history = list(self._channel_history.get(channel, ()))
+        filtered: list[dict] = []
+        filtered_cursors: list[int] = []
+        if since is None:
+            filtered = history
+            for msg in history:
+                cursor = self._extract_cursor(msg)
+                if cursor is not None:
+                    filtered_cursors.append(cursor)
+        else:
+            for msg in history:
+                cursor = self._extract_cursor(msg)
+                if cursor is None:
+                    continue
+                if cursor > since:
+                    filtered.append(msg)
+                    filtered_cursors.append(cursor)
+
+        latest_cursor = self._channel_cursors.get(channel, 0)
+        missing_history = False
+        if since is not None:
+            if latest_cursor > (since or 0):
+                if not filtered:
+                    missing_history = True
+                else:
+                    earliest_filtered = (
+                        min(filtered_cursors) if filtered_cursors else None
+                    )
+                    if (
+                        earliest_filtered is not None
+                        and earliest_filtered > since + 1
+                    ):
+                        missing_history = True
+        else:
+            if not filtered and latest_cursor > 0:
+                missing_history = True
+
+        disk_messages: list[dict] = []
+        disk_used = False
+        if missing_history:
+            if self._history_db_enabled:
+                disk_messages = await self._load_history_from_cache(channel, since)
+                disk_used = bool(disk_messages)
+                logger.info(
+                    "chat.ws history fallback channel=%s source=%s since=%s disk_count=%s mem_count=%s",
+                    channel,
+                    "disk" if disk_used else "disk_empty",
+                    since,
+                    len(disk_messages),
+                    len(filtered),
+                )
+            else:
+                logger.info(
+                    "chat.ws history fallback channel=%s source=memory_only since=%s",
+                    channel,
+                    since,
+                )
+
+        combined: list[dict] = []
+        if disk_messages:
+            combined_map: Dict[int | str, dict] = {}
+            for msg in disk_messages:
+                cursor = self._extract_cursor(msg)
+                key = cursor if cursor is not None else f"disk:{id(msg)}"
+                combined_map[key] = msg
+            for msg in filtered:
+                cursor = self._extract_cursor(msg)
+                key = cursor if cursor is not None else f"mem:{id(msg)}"
+                combined_map[key] = msg
+            combined = sorted(
+                combined_map.values(),
+                key=lambda msg: self._extract_cursor(msg) or 0,
+            )
+        else:
+            combined = filtered
+
+        if len(combined) > HISTORY_LIMIT:
+            combined = combined[-HISTORY_LIMIT:]
+
+        return combined, ("disk" if disk_used else "memory"), missing_history
 
     async def sub(self, websocket: WebSocket, data: dict) -> None:
         info = self.connections.get(websocket)
@@ -495,16 +785,14 @@ class ChatConnectionManager:
                 channel_id,
                 self._sub_count,
             )
+        partial_resync: set[str] = set()
         for channel_id, meta in valid_added:
-            history = list(self._channel_history.get(channel_id, ()))
             since = since_map.get(channel_id)
-            if since is not None:
-                filtered_history: list[dict] = []
-                for msg in history:
-                    cursor = msg.get("cursor")
-                    if cursor is not None and cursor > since:
-                        filtered_history.append(msg)
-                history = filtered_history
+            history, source, missing = await self._collect_history_batch(
+                channel_id, since
+            )
+            if missing:
+                partial_resync.add(channel_id)
             if history:
                 payload = {
                     "op": "batch",
@@ -513,13 +801,28 @@ class ChatConnectionManager:
                     "kind": meta.kind,
                     "messages": history,
                 }
+                if missing:
+                    payload["partial"] = True
+                if source == "disk":
+                    logger.info(
+                        "chat.ws history batch channel=%s source=disk count=%s since=%s",
+                        channel_id,
+                        len(history),
+                        since,
+                    )
                 await websocket.send_text(json.dumps(payload, ensure_ascii=False))
         for channel_id in sync_channels:
             meta = info.metadata.get(channel_id)
             if meta is None:
                 continue
             await self._send_subscription_ack(websocket, channel_id, meta)
-            await self._send_resync(websocket, channel_id, meta)
+            await self._send_resync(
+                websocket,
+                channel_id,
+                meta,
+                partial=channel_id in partial_resync,
+                reason="history_gap" if channel_id in partial_resync else None,
+            )
 
     def ack(self, websocket: WebSocket, data: dict) -> None:
         info = self.connections.get(websocket)
@@ -707,9 +1010,11 @@ class ChatConnectionManager:
         history = self._channel_history.setdefault(channel, deque())
         for message in queue:
             history.append(message)
+            self._record_history_add(channel, message)
             while len(history) > HISTORY_LIMIT:
-                history.popleft()
+                self._evict_history_message(channel, history, "per_channel_limit")
         self._channel_last_touch[channel] = time.time()
+        await self._persist_history_to_cache(channel, queue)
         self._enforce_history_caps()
         guild_id = meta.guild_id_value()
         logger.info(
@@ -1062,33 +1367,38 @@ class ChatConnectionManager:
         websocket: WebSocket,
         channel: str,
         meta: ChannelMeta | None = None,
+        *,
+        partial: bool = False,
+        reason: str | None = None,
     ) -> None:
         cursor = self._channel_cursors.get(channel, 0)
         if meta is None:
             meta = await self._ensure_channel_meta(channel)
-        if meta is None:
-            logger.info("chat.ws resync skipped channel=%s reason=missing_meta", channel)
-            return
+            if meta is None:
+                logger.info("chat.ws resync skipped channel=%s reason=missing_meta", channel)
+                return
         guild_id = meta.guild_id_value()
         self._resync_count += 1
         logger.info(
-            "chat.ws resync channel=%s cursor=%s count=%s",
+            "chat.ws resync channel=%s cursor=%s count=%s partial=%s reason=%s",
             channel,
             cursor,
             self._resync_count,
+            partial,
+            reason,
         )
-        await websocket.send_text(
-            json.dumps(
-                {
-                    "op": "resync",
-                    "guildId": guild_id,
-                    "kind": meta.kind,
-                    "channel": channel,
-                    "cursor": cursor,
-                },
-                ensure_ascii=False,
-            )
-        )
+        payload = {
+            "op": "resync",
+            "guildId": guild_id,
+            "kind": meta.kind,
+            "channel": channel,
+            "cursor": cursor,
+        }
+        if partial:
+            payload["partial"] = True
+        if reason:
+            payload["reason"] = reason
+        await websocket.send_text(json.dumps(payload, ensure_ascii=False))
 
     async def resync(self, websocket: WebSocket, data: dict) -> None:
         info = self.connections.get(websocket)

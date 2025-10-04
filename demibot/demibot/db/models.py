@@ -194,6 +194,15 @@ class Membership(Base):
     accent_color: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
+class ChannelMessageCache(Base):
+    __tablename__ = "channel_message_cache"
+
+    channel_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
+    cursor: Mapped[int] = mapped_column(Integer, primary_key=True)
+    payload: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
 class Role(Base):
     __tablename__ = "roles"
 
