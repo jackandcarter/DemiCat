@@ -111,6 +111,8 @@ public class ChatWindow : IDisposable
     private readonly Dictionary<string, (Vector2 Min, Vector2 Max)> _messageRectCache = new();
     private SemaphoreSlim _imageDownloadSemaphore = new(Config.DefaultImageDownloadConcurrency, Config.DefaultImageDownloadConcurrency);
     private SemaphoreSlim _imageDecodeSemaphore = new(Config.DefaultImageDecodeConcurrency, Config.DefaultImageDecodeConcurrency);
+    private int _imageDownloadSemaphoreCapacity = Config.DefaultImageDownloadConcurrency;
+    private int _imageDecodeSemaphoreCapacity = Config.DefaultImageDecodeConcurrency;
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -3944,14 +3946,14 @@ public class ChatWindow : IDisposable
         {
             _config.ImageDownloadConcurrency = sanitizedDownloadConcurrency;
         }
-        ReplaceSemaphore(ref _imageDownloadSemaphore, sanitizedDownloadConcurrency);
+        ReplaceSemaphore(ref _imageDownloadSemaphore, ref _imageDownloadSemaphoreCapacity, sanitizedDownloadConcurrency);
 
         var sanitizedDecodeConcurrency = Config.SanitizeImageDecodeConcurrency(_config.ImageDecodeConcurrency);
         if (_config.ImageDecodeConcurrency != sanitizedDecodeConcurrency)
         {
             _config.ImageDecodeConcurrency = sanitizedDecodeConcurrency;
         }
-        ReplaceSemaphore(ref _imageDecodeSemaphore, sanitizedDecodeConcurrency);
+        ReplaceSemaphore(ref _imageDecodeSemaphore, ref _imageDecodeSemaphoreCapacity, sanitizedDecodeConcurrency);
 
         var sanitizedBudget = Config.SanitizeImageBytesInFlightBudget(_config.ImageBytesInFlightBudget);
         if (_config.ImageBytesInFlightBudget != sanitizedBudget)
@@ -4066,9 +4068,11 @@ public class ChatWindow : IDisposable
         return rowsAway <= _preloadRowsAhead;
     }
 
-    private void ReplaceSemaphore(ref SemaphoreSlim semaphore, int concurrency)
+    private void ReplaceSemaphore(ref SemaphoreSlim semaphore, ref int capacityField, int concurrency)
     {
         var old = semaphore;
+        var previousCapacity = capacityField;
+        capacityField = concurrency;
         semaphore = new SemaphoreSlim(concurrency, concurrency);
         if (old == null)
         {
@@ -4079,8 +4083,18 @@ public class ChatWindow : IDisposable
         {
             try
             {
-                await Task.Delay(5000).ConfigureAwait(false);
+                if (previousCapacity > 0)
+                {
+                    while (old.CurrentCount < previousCapacity)
+                    {
+                        await Task.Delay(100).ConfigureAwait(false);
+                    }
+                }
                 old.Dispose();
+            }
+            catch (ObjectDisposedException)
+            {
+                // already disposed
             }
             catch
             {
