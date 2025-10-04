@@ -513,7 +513,6 @@ public class ChatWindow : IDisposable
                 _pendingRefreshAfterSubscribe = false;
             }
 
-            OnSubscriptionStateChanged(true);
             return true;
         }
 
