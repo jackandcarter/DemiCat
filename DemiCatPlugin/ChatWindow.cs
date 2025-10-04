@@ -12,6 +12,7 @@ using System.Linq;
 using System.Globalization;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Utility;
+using Dalamud.Interface.Textures.TextureWraps;
 using ImGuiNET;
 using System.IO;
 using DiscordHelper;
@@ -126,6 +127,18 @@ public class ChatWindow : IDisposable
             Texture = texture;
             Node = node;
         }
+    }
+
+    private static bool TryGetTextureWrap(ISharedImmediateTexture? texture, out IDalamudTextureWrap? wrap)
+    {
+        wrap = texture?.GetWrapOrEmpty();
+        if (wrap == null || wrap.Handle == IntPtr.Zero || wrap.Width <= 0 || wrap.Height <= 0)
+        {
+            wrap = null;
+            return false;
+        }
+
+        return true;
     }
 
     private float GetManualImageScale()
@@ -1410,9 +1423,8 @@ public class ChatWindow : IDisposable
                 }
                 if (emoji.Texture == null)
                     LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
-                if (emoji.Texture != null)
+                if (emoji.Texture != null && TryGetTextureWrap(emoji.Texture, out var wrap))
                 {
-                    var wrap = emoji.Texture.GetWrapOrEmpty();
                     ImGui.Image(wrap.Handle, new Vector2(20, 20));
                 }
                 else
@@ -1829,9 +1841,8 @@ public class ChatWindow : IDisposable
                         LoadTexture(url, t => reaction.Texture = t);
                     }
 
-                    if (reaction.Texture != null)
+                    if (reaction.Texture != null && TryGetTextureWrap(reaction.Texture, out var wrap))
                     {
-                        var wrap = reaction.Texture.GetWrapOrEmpty();
                         if (ImGui.ImageButton(wrap.Handle, new Vector2(20, 20)))
                         {
                             _ = React(msg.Id, reaction.Emoji, reaction.Me);
