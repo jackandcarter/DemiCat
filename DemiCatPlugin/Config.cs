@@ -74,7 +74,9 @@ public class Config : IPluginConfiguration
     }
 
     public bool Enabled { get; set; } = true;
-    public string ApiBaseUrl { get; set; } = "http://127.0.0.1:5050";
+    public const string DefaultApiBaseUrl = "http://127.0.0.1:5050";
+
+    public string ApiBaseUrl { get; set; } = DefaultApiBaseUrl;
     public string WebSocketPath { get; set; } = "/ws/embeds";
     public int PollIntervalSeconds { get; set; } = 5;
     [JsonPropertyName("guildId")]
