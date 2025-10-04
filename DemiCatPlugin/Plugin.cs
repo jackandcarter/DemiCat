@@ -73,6 +73,7 @@ public class Plugin : IDalamudPlugin
 
         var oldVersion = _config.Version;
         _config.Migrate();
+        _config.ApiBaseUrl = Config.DefaultApiBaseUrl;
         var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
         if (rolesRemoved || _config.Version != oldVersion)
             _services.PluginInterface.SavePluginConfig(_config);
