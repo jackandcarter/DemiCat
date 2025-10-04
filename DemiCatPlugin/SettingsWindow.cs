@@ -28,7 +28,6 @@ public class SettingsWindow : IDisposable
     private static readonly Vector2 DefaultWindowSize = new(960f, 720f);
 
     private string _apiKey = string.Empty;
-    private string _apiBaseUrl = string.Empty;
     private string _penumbraModsDirectory = string.Empty;
     private string _penumbraConfigDirectory = string.Empty;
     private string _syncStatus = string.Empty;
@@ -62,7 +61,6 @@ public class SettingsWindow : IDisposable
         _refreshRoles = refreshRoles;
         _startNetworking = startNetworking;
         _apiKey = tokenManager.Token ?? string.Empty;
-        _apiBaseUrl = config.ApiBaseUrl;
         _penumbraModsDirectory = config.PenumbraModsDirectory ?? string.Empty;
         _penumbraConfigDirectory = config.PenumbraConfigDirectory ?? string.Empty;
         _penumbraCollectionOverride = config.PenumbraCollectionOverride ?? string.Empty;
@@ -147,29 +145,19 @@ public class SettingsWindow : IDisposable
             ImGui.Separator();
         }
 
-        if (ImGui.InputText("API Base URL", ref _apiBaseUrl, 256))
+        var effectiveApiBaseUrl = string.IsNullOrWhiteSpace(_config.ApiBaseUrl)
+            ? Config.DefaultApiBaseUrl
+            : _config.ApiBaseUrl;
+        var isDefaultApiBaseUrl = string.Equals(effectiveApiBaseUrl, Config.DefaultApiBaseUrl, StringComparison.OrdinalIgnoreCase);
+        ImGui.TextUnformatted($"API Base URL: {effectiveApiBaseUrl}");
+        if (!isDefaultApiBaseUrl)
         {
-            _config.ApiBaseUrl = _apiBaseUrl;
-            SaveConfig();
-            if (ApiHelpers.ValidateApiBaseUrl(_config))
-            {
-                _ = HardReloadIdentityAndStartAsync();
-            }
-            else
-            {
-                StopAllWatchersAndPresence();
-            }
+            ImGui.SameLine();
+            ImGui.TextDisabled("(override)");
         }
 
         // Allow room for longer server-generated API keys
         ImGui.InputText("API Key", ref _apiKey, 256);
-        ImGui.SameLine();
-        ImGui.TextDisabled("\u03C0");
-        var io = ImGui.GetIO();
-        if (ImGui.IsItemClicked() && io.KeyCtrl && io.KeyShift)
-        {
-            _devWindow.IsOpen = true;
-        }
 
         var enableFc = _config.EnableFcChat;
         if (!linked)
@@ -267,6 +255,23 @@ public class SettingsWindow : IDisposable
             }
 
             ImGui.TextColored(color, _syncStatus);
+        }
+
+        var style = ImGui.GetStyle();
+        var piGlyph = "\u03C0";
+        var piSize = ImGui.CalcTextSize(piGlyph);
+        var windowPos = ImGui.GetWindowPos();
+        var contentRegionMax = ImGui.GetWindowContentRegionMax();
+        var bottomRight = new Vector2(
+            windowPos.X + contentRegionMax.X - style.WindowPadding.X - piSize.X,
+            windowPos.Y + contentRegionMax.Y - style.WindowPadding.Y - piSize.Y);
+
+        ImGui.SetCursorScreenPos(bottomRight);
+        ImGui.TextDisabled(piGlyph);
+        var io = ImGui.GetIO();
+        if (ImGui.IsItemClicked() && io.KeyCtrl && io.KeyShift)
+        {
+            _devWindow.IsOpen = true;
         }
     }
 
