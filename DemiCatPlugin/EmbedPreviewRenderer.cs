@@ -225,6 +225,8 @@ public static class EmbedPreviewRenderer
             var inset = new Vector2(1f, 1f);
             drawList.AddRect(rectMin + inset, rectMax - inset, color, 0f, ImDrawFlags.None, 1.5f);
         }
+
+        return new RenderResult(thumbnailRendered, thumbnailDeferred, imageRendered, imageDeferred);
     }
 
     private static void DrawFields(EmbedDto dto)
@@ -281,7 +283,6 @@ public static class EmbedPreviewRenderer
                 }
             }
         }
-        return new RenderResult(thumbnailRendered, thumbnailDeferred, imageRendered, imageDeferred);
     }
 
     private static ISharedImmediateTexture? GetTexture(
