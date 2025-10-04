@@ -32,6 +32,7 @@ public sealed class NotePadService : IDisposable
     private int _retryAttempt;
     private DateTime _lastToast;
     private string? _lastToastSignature;
+    private bool _disposed;
 
     private static readonly TimeSpan ToastThrottle = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan AutosyncDelay = TimeSpan.FromSeconds(5);
@@ -718,7 +719,10 @@ public sealed class NotePadService : IDisposable
 
                         if (!string.IsNullOrEmpty(message))
                         {
-                            _ = TriggerRefreshAsync();
+                            if (!_disposed)
+                            {
+                                _ = TriggerRefreshAsync();
+                            }
                         }
                     }
                 }
@@ -798,14 +802,39 @@ public sealed class NotePadService : IDisposable
 
     private async Task TriggerRefreshAsync()
     {
-        if (_refreshLock.CurrentCount == 0)
+        if (_disposed)
         {
             return;
         }
 
-        await _refreshLock.WaitAsync().ConfigureAwait(false);
         try
         {
+            if (_refreshLock.CurrentCount == 0)
+            {
+                return;
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            await _refreshLock.WaitAsync().ConfigureAwait(false);
+        }
+        catch (ObjectDisposedException)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
             await RefreshAsync(CancellationToken.None).ConfigureAwait(false);
             await Task.Delay(AutosyncDelay).ConfigureAwait(false);
         }
@@ -815,7 +844,13 @@ public sealed class NotePadService : IDisposable
         }
         finally
         {
-            _refreshLock.Release();
+            try
+            {
+                _refreshLock.Release();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
         }
     }
 
@@ -946,6 +981,12 @@ public sealed class NotePadService : IDisposable
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
         Stop();
         _stateLock.Dispose();
         _refreshLock.Dispose();
