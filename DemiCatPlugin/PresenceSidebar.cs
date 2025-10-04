@@ -303,8 +303,11 @@ public class PresenceSidebar : IDisposable
             try
             {
                 var wrap = p.AvatarTexture.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, avatarSize);
-                drewAvatar = true;
+                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+                {
+                    ImGui.Image(wrap.ToImGuiHandle(), avatarSize);
+                    drewAvatar = true;
+                }
             }
             catch (ObjectDisposedException)
             {
@@ -413,8 +416,11 @@ public class PresenceSidebar : IDisposable
             try
             {
                 var wrap = presence.BannerTexture.GetWrapOrEmpty();
-                drawList.AddImage(wrap.Handle, min, max);
-                bannerDrawn = true;
+                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+                {
+                    drawList.AddImage(wrap.ToImGuiHandle(), min, max);
+                    bannerDrawn = true;
+                }
             }
             catch (ObjectDisposedException)
             {

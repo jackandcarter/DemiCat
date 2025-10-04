@@ -125,8 +125,11 @@ public static class WebTextureCache
         // In this binding, ImageButton takes (ImTextureID, Vector2) and
         // IDs are provided via PushID/PopID (not a string label param).
         ImGui.PushID(id);
-        if (ImGui.ImageButton(wrap.Handle, size))
+        if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0 &&
+            ImGui.ImageButton(wrap.ToImGuiHandle(), size))
+        {
             onClick();
+        }
         ImGui.PopID();
     }
 

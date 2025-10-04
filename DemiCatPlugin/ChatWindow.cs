@@ -132,7 +132,7 @@ public class ChatWindow : IDisposable
     private static bool TryGetTextureWrap(ISharedImmediateTexture? texture, out IDalamudTextureWrap? wrap)
     {
         wrap = texture?.GetWrapOrEmpty();
-        if (wrap == null || wrap.Handle == IntPtr.Zero || wrap.Width <= 0 || wrap.Height <= 0)
+        if (wrap == null || wrap.Handle.Handle == 0 || wrap.Width <= 0 || wrap.Height <= 0)
         {
             wrap = null;
             return false;
@@ -1428,7 +1428,7 @@ public class ChatWindow : IDisposable
                     LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
                 if (emoji.Texture != null && TryGetTextureWrap(emoji.Texture, out var wrap))
                 {
-                    ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                    ImGui.Image(wrap.ToImGuiHandle(), new Vector2(20, 20));
                 }
                 else
                 {
@@ -1851,7 +1851,7 @@ public class ChatWindow : IDisposable
 
                     if (reaction.Texture != null && TryGetTextureWrap(reaction.Texture, out var wrap))
                     {
-                        if (ImGui.ImageButton(wrap.Handle, new Vector2(20, 20)))
+                        if (ImGui.ImageButton(wrap.ToImGuiHandle(), new Vector2(20, 20)))
                         {
                             _ = React(msg.Id, reaction.Emoji, reaction.Me);
                         }
@@ -2300,10 +2300,10 @@ public class ChatWindow : IDisposable
             }
 
             var wrap = presence.AvatarTexture?.GetWrapOrEmpty();
-            if (wrap != null && wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+            if (wrap != null && wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
             {
                 ImGui.SetCursorScreenPos(position);
-                ImGui.Image(wrap.Handle, textureSize);
+                ImGui.Image(wrap.ToImGuiHandle(), textureSize);
                 return;
             }
         }
@@ -2641,12 +2641,12 @@ public class ChatWindow : IDisposable
             if (previewReady && previewTexture != null)
             {
                 var wrap = previewTexture.GetWrapOrEmpty();
-                if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
                 {
                     var maxThumbnail = new Vector2(40f, 40f) * scale;
                     var bounds = GetAttachmentBounds(maxThumbnail, allowAutoStretch: false);
                     var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds, allowAutoStretch: false);
-                    ImGui.Image(wrap.Handle, size);
+                    ImGui.Image(wrap.ToImGuiHandle(), size);
                     renderedPreview = true;
                 }
             }
@@ -2948,12 +2948,12 @@ public class ChatWindow : IDisposable
         if (_attachmentPreviewTextures.TryGetValue(attachment.Path, out var texture) && texture != null)
         {
             var wrap = texture.GetWrapOrEmpty();
-            if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+            if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
             {
                 var attachmentCap = GetConfiguredAttachmentCap();
                 var bounds = GetAttachmentBounds(attachmentCap);
                 var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds);
-                ImGui.Image(wrap.Handle, size);
+                ImGui.Image(wrap.ToImGuiHandle(), size);
             }
         }
     }

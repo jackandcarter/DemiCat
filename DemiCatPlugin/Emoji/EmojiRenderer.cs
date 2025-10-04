@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using DemiCatPlugin;
 
 namespace DemiCatPlugin.Emoji;
 
@@ -38,7 +39,10 @@ public static class EmojiRenderer
             if (tex != null)
             {
                 var wrap = tex.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, new Vector2(size, size));
+                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+                {
+                    ImGui.Image(wrap.ToImGuiHandle(), new Vector2(size, size));
+                }
             }
             else
             {

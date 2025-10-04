@@ -653,14 +653,17 @@ public class MainWindow : IDisposable
         if (item.Icon != null)
         {
             var wrap = item.Icon.GetWrapOrEmpty();
-            return ImGui.ImageButton(
-                wrap.Handle,
-                iconSize,
-                Vector2.Zero,
-                Vector2.One,
-                0,
-                Vector4.Zero,
-                item.IconTint);
+            if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+            {
+                return ImGui.ImageButton(
+                    wrap.ToImGuiHandle(),
+                    iconSize,
+                    Vector2.Zero,
+                    Vector2.One,
+                    0,
+                    Vector4.Zero,
+                    item.IconTint);
+            }
         }
 
         return ImGui.Button(item.Tooltip, iconSize);
