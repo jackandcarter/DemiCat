@@ -94,6 +94,8 @@ public class ChatWindow : IDisposable
     private int _selectionStart;
     private int _selectionEnd;
     private bool _focusComposerNextFrame;
+    private static ChatWindow? _activeInputCallbackOwner;
+    private static readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _inputEditedCallback = &OnInputEdited;
     private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
     private string _previewKey = string.Empty;
     private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
@@ -906,12 +908,15 @@ public class ChatWindow : IDisposable
 
         if (ImGui.BeginPopup("editMessage"))
         {
-            _ = ImGui.InputTextMultiline(
-                "##editContent",
-                ref _editContent,
-                2048u,
-                new Vector2(400, ImGui.GetTextLineHeight() * 5)
-            );
+            unsafe
+            {
+                _ = ImGui.InputTextMultiline(
+                    "##editContent",
+                    ref _editContent,
+                    2048u,
+                    new Vector2(400, ImGui.GetTextLineHeight() * 5)
+                );
+            }
 
             if (ImGui.Button("Save"))
             {
@@ -1029,15 +1034,26 @@ public class ChatWindow : IDisposable
             ImGui.SetKeyboardFocusHere();
             _focusComposerNextFrame = false;
         }
-        _ = ImGui.InputTextMultiline(
-            "##chatInput",
-            ref _input,
-            2048u,
-            new Vector2(inputWidth, inputHeight),
-            ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
-            OnInputEdited,
-            IntPtr.Zero
-        );
+        unsafe
+        {
+            _activeInputCallbackOwner = this;
+            try
+            {
+                _ = ImGui.InputTextMultiline(
+                    "##chatInput",
+                    ref _input,
+                    2048u,
+                    new Vector2(inputWidth, inputHeight),
+                    ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
+                    _inputEditedCallback,
+                    IntPtr.Zero
+                );
+            }
+            finally
+            {
+                _activeInputCallbackOwner = null;
+            }
+        }
         if (MentionsEnabled)
         {
             var mentionState = EnsureMentionDrawerState();
@@ -1523,15 +1539,21 @@ public class ChatWindow : IDisposable
     }
 
     // Correct signature for Dalamud's callback: unsafe pointer, returns int
-    private unsafe int OnInputEdited(ImGuiInputTextCallbackData* data)
+    private static unsafe int OnInputEdited(ImGuiInputTextCallbackData* data)
     {
         if (data == null)
         {
             return 0;
         }
 
-        _selectionStart = data->SelectionStart;
-        _selectionEnd = data->SelectionEnd;
+        var owner = _activeInputCallbackOwner;
+        if (owner == null)
+        {
+            return 0;
+        }
+
+        owner._selectionStart = data->SelectionStart;
+        owner._selectionEnd = data->SelectionEnd;
         return 0;
     }
 
