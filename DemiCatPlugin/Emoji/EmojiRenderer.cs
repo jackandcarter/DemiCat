@@ -39,9 +39,10 @@ public static class EmojiRenderer
             if (tex != null)
             {
                 var wrap = tex.GetWrapOrEmpty();
-                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+                var handle = wrap.ToImGuiHandle();
+                if (handle != 0 && wrap.Width > 0 && wrap.Height > 0)
                 {
-                    ImGui.Image(wrap.ToImGuiHandle(), new Vector2(size, size));
+                    ImGui.Image(handle, new Vector2(size, size));
                 }
             }
             else
