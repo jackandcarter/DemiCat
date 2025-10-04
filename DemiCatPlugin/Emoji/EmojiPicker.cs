@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using DemiCatPlugin;
 
 namespace DemiCatPlugin.Emoji;
 
@@ -281,7 +282,8 @@ public sealed class EmojiPicker
                 texture != null)
             {
                 var wrap = texture.GetWrapOrEmpty();
-                if (ImGui.ImageButton(wrap.Handle, new Vector2(_tileSize, _tileSize)))
+                if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0 &&
+                    ImGui.ImageButton(wrap.ToImGuiHandle(), new Vector2(_tileSize, _tileSize)))
                 {
                     clicked = true;
                 }

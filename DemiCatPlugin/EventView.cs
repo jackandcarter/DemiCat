@@ -336,10 +336,13 @@ public class EventView : IDisposable
         if (_authorIcon != null)
         {
             var wrap = _authorIcon.GetWrapOrEmpty();
-            ImGui.Image(wrap.Handle, new Vector2(32, 32));
-            if (names.Count > 0)
+            if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
             {
-                ImGui.SameLine();
+                ImGui.Image(wrap.ToImGuiHandle(), new Vector2(32, 32));
+                if (names.Count > 0)
+                {
+                    ImGui.SameLine();
+                }
             }
         }
 
@@ -443,7 +446,10 @@ public class EventView : IDisposable
         }
 
         var wrap = _thumbnail.GetWrapOrEmpty();
-        ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+        if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+        {
+            ImGui.Image(wrap.ToImGuiHandle(), new Vector2(wrap.Width, wrap.Height));
+        }
     }
 
     private void DrawImageSection()
@@ -454,7 +460,10 @@ public class EventView : IDisposable
         }
 
         var wrap = _image.GetWrapOrEmpty();
-        ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+        if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
+        {
+            ImGui.Image(wrap.ToImGuiHandle(), new Vector2(wrap.Width, wrap.Height));
+        }
     }
 
     private void DrawFooterSection(EmbedDto dto)
@@ -476,10 +485,13 @@ public class EventView : IDisposable
         if (_footerIcon != null)
         {
             var wrap = _footerIcon.GetWrapOrEmpty();
-            ImGui.Image(wrap.Handle, new Vector2(16, 16));
-            if (hasText)
+            if (wrap.Handle.Handle != 0 && wrap.Width > 0 && wrap.Height > 0)
             {
-                ImGui.SameLine();
+                ImGui.Image(wrap.ToImGuiHandle(), new Vector2(16, 16));
+                if (hasText)
+                {
+                    ImGui.SameLine();
+                }
             }
         }
 
