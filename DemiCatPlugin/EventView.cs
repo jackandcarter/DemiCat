@@ -9,7 +9,7 @@ using System.Threading.Tasks;
 using System.IO;
 using DiscordHelper;
 using Dalamud.Interface.Textures;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using StbImageSharp;
 using System.Diagnostics;
 using System.Linq;

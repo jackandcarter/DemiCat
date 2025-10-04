@@ -1,7 +1,7 @@
 using System;
 using System.Net.Http;
 using System.Threading.Tasks;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using System.Numerics;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;

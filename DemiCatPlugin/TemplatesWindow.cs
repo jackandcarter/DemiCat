@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using DiscordHelper;
 using DemiCat.UI;
 using DemiCatPlugin.Emoji;

@@ -13,7 +13,7 @@ using System.Text;
 using System.Threading;
 using System.Text.RegularExpressions;
 using DiscordHelper;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;

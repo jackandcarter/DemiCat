@@ -4,7 +4,7 @@ using System.Linq;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 

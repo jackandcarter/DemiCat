@@ -9,7 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using System.IO;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;

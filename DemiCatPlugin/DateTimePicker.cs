@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 using System.Numerics;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 

@@ -6,7 +6,7 @@ using System.Net.Http;
 using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Dalamud.Bindings.ImGui;
+using ImGuiNET;
 using System.Numerics;
 
 namespace DemiCatPlugin;
