@@ -13,7 +13,10 @@ namespace DemiCatPlugin;
 
 public static class EmbedRenderer
 {
-    private static readonly Dictionary<string, ISharedImmediateTexture?> ThumbnailCache = new();
+    private const int ThumbnailCacheCapacity = 64;
+
+    private static readonly Dictionary<string, ThumbnailCacheEntry> ThumbnailCache = new();
+    private static readonly LinkedList<string> ThumbnailLru = new();
 
     public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null)
     {
@@ -71,12 +74,13 @@ public static class EmbedRenderer
 
         if (!string.IsNullOrEmpty(dto.ThumbnailUrl))
         {
-            if (!ThumbnailCache.TryGetValue(dto.ThumbnailUrl, out var tex))
+            var entry = GetOrCreateThumbnailEntry(dto.ThumbnailUrl, out var created);
+            if (created)
             {
-                ThumbnailCache[dto.ThumbnailUrl] = null;
-                loadTexture(dto.ThumbnailUrl, t => ThumbnailCache[dto.ThumbnailUrl] = t);
-                tex = null;
+                loadTexture(dto.ThumbnailUrl, t => SetThumbnailTexture(dto.ThumbnailUrl, t));
             }
+
+            var tex = entry.Texture;
             if (tex != null)
             {
                 var wrap = tex.GetWrapOrEmpty();
@@ -152,7 +156,93 @@ public static class EmbedRenderer
 
     public static void ClearCache()
     {
+        foreach (var entry in ThumbnailCache.Values)
+        {
+            DisposeWrap(entry.Texture);
+        }
+
         ThumbnailCache.Clear();
+        ThumbnailLru.Clear();
+    }
+
+    private static ThumbnailCacheEntry GetOrCreateThumbnailEntry(string key, out bool created)
+    {
+        if (ThumbnailCache.TryGetValue(key, out var existing))
+        {
+            created = false;
+            Touch(existing);
+            return existing;
+        }
+
+        var node = new LinkedListNode<string>(key);
+        ThumbnailLru.AddFirst(node);
+        var entry = new ThumbnailCacheEntry(node);
+        ThumbnailCache[key] = entry;
+        EnforceThumbnailCapacity();
+        created = true;
+        return entry;
+    }
+
+    private static void SetThumbnailTexture(string key, ISharedImmediateTexture? texture)
+    {
+        if (!ThumbnailCache.TryGetValue(key, out var entry))
+        {
+            DisposeWrap(texture);
+            return;
+        }
+
+        if (!ReferenceEquals(entry.Texture, texture))
+        {
+            DisposeWrap(entry.Texture);
+        }
+
+        entry.Texture = texture;
+        Touch(entry);
+        EnforceThumbnailCapacity();
+    }
+
+    private static void EnforceThumbnailCapacity()
+    {
+        while (ThumbnailCache.Count > ThumbnailCacheCapacity)
+        {
+            var tail = ThumbnailLru.Last;
+            if (tail == null)
+            {
+                break;
+            }
+
+            ThumbnailLru.RemoveLast();
+
+            if (ThumbnailCache.Remove(tail.Value, out var entry))
+            {
+                DisposeWrap(entry.Texture);
+            }
+        }
+    }
+
+    private static void Touch(ThumbnailCacheEntry entry)
+    {
+        ThumbnailLru.Remove(entry.Node);
+        ThumbnailLru.AddFirst(entry.Node);
+    }
+
+    private static void DisposeWrap(ISharedImmediateTexture? texture)
+    {
+        if (texture?.GetWrapOrEmpty() is IDisposable disposable)
+        {
+            disposable.Dispose();
+        }
+    }
+
+    private sealed class ThumbnailCacheEntry
+    {
+        public ThumbnailCacheEntry(LinkedListNode<string> node)
+        {
+            Node = node;
+        }
+
+        public LinkedListNode<string> Node { get; }
+        public ISharedImmediateTexture? Texture { get; set; }
     }
 }
 
