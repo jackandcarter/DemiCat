@@ -3650,7 +3650,7 @@ public class ChatWindow : IDisposable
     {
         _presence?.Reload();
         _ = _presence?.Refresh();
-        TrySubscribeCurrentChannel(force: true, refreshMessages: false);
+        TrySubscribeCurrentChannel(refreshMessages: false);
     }
 
     private void HandleBridgeUnlinked()
