@@ -44,10 +44,10 @@ public class EventView : IDisposable
         _dto = dto;
         _content = content;
         SetWarnings(warnings);
-        LoadTexture(dto.AuthorIconUrl, t => _authorIcon = t, () => _dto.AuthorIconUrl);
-        LoadTexture(dto.FooterIconUrl, t => _footerIcon = t, () => _dto.FooterIconUrl);
-        LoadTexture(dto.ThumbnailUrl, t => _thumbnail = t, () => _dto.ThumbnailUrl);
-        LoadTexture(dto.ImageUrl, t => _image = t, () => _dto.ImageUrl);
+        LoadTexture(dto.AuthorIconUrl, SetAuthorIconTexture, () => _dto.AuthorIconUrl);
+        LoadTexture(dto.FooterIconUrl, SetFooterIconTexture, () => _dto.FooterIconUrl);
+        LoadTexture(dto.ThumbnailUrl, SetThumbnailTexture, () => _dto.ThumbnailUrl);
+        LoadTexture(dto.ImageUrl, SetImageTexture, () => _dto.ImageUrl);
     }
 
     public void Update(EmbedDto dto, string? content = null, IEnumerable<string>? warnings = null)
@@ -57,19 +57,19 @@ public class EventView : IDisposable
 
         if (!string.Equals(previousDto.AuthorIconUrl, dto.AuthorIconUrl, StringComparison.Ordinal))
         {
-            ReloadTexture(ref _authorIcon, dto.AuthorIconUrl, () => _dto.AuthorIconUrl);
+            ReloadTexture(ref _authorIcon, SetAuthorIconTexture, dto.AuthorIconUrl, () => _dto.AuthorIconUrl);
         }
         if (!string.Equals(previousDto.FooterIconUrl, dto.FooterIconUrl, StringComparison.Ordinal))
         {
-            ReloadTexture(ref _footerIcon, dto.FooterIconUrl, () => _dto.FooterIconUrl);
+            ReloadTexture(ref _footerIcon, SetFooterIconTexture, dto.FooterIconUrl, () => _dto.FooterIconUrl);
         }
         if (!string.Equals(previousDto.ThumbnailUrl, dto.ThumbnailUrl, StringComparison.Ordinal))
         {
-            ReloadTexture(ref _thumbnail, dto.ThumbnailUrl, () => _dto.ThumbnailUrl);
+            ReloadTexture(ref _thumbnail, SetThumbnailTexture, dto.ThumbnailUrl, () => _dto.ThumbnailUrl);
         }
         if (!string.Equals(previousDto.ImageUrl, dto.ImageUrl, StringComparison.Ordinal))
         {
-            ReloadTexture(ref _image, dto.ImageUrl, () => _dto.ImageUrl);
+            ReloadTexture(ref _image, SetImageTexture, dto.ImageUrl, () => _dto.ImageUrl);
         }
         _content = content;
         SetWarnings(warnings);
@@ -590,10 +590,10 @@ public class EventView : IDisposable
         texture = null;
     }
 
-    private void ReloadTexture(ref ISharedImmediateTexture? texture, string? url, Func<string?> getLatestUrl)
+    private void ReloadTexture(ref ISharedImmediateTexture? texture, Action<ISharedImmediateTexture?> setTexture, string? url, Func<string?> getLatestUrl)
     {
         DisposeTexture(ref texture);
-        LoadTexture(url, t => texture = t, getLatestUrl);
+        LoadTexture(url, setTexture, getLatestUrl);
     }
 
     private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set, Func<string?> getLatestUrl)
@@ -635,6 +635,18 @@ public class EventView : IDisposable
             });
         });
     }
+
+    private void SetAuthorIconTexture(ISharedImmediateTexture? texture)
+        => _authorIcon = texture;
+
+    private void SetFooterIconTexture(ISharedImmediateTexture? texture)
+        => _footerIcon = texture;
+
+    private void SetThumbnailTexture(ISharedImmediateTexture? texture)
+        => _thumbnail = texture;
+
+    private void SetImageTexture(ISharedImmediateTexture? texture)
+        => _image = texture;
 
     public async Task SendInteraction(string customId)
     {
