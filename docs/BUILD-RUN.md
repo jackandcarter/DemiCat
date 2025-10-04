@@ -62,7 +62,7 @@ This guide walks through compiling the Dalamud plugin and running the DemiBot ba
 
    Uvicorn will host the FastAPI app while the Discord bot, recurring-event poster, channel-name resync, asset purge, and Syncshell cleanup workers run in parallel.
 
-5. Point the Dalamud plugin at the bot’s `ApiBaseUrl` (default `http://127.0.0.1:5050`) and link an API key via `/demibot embed` in Discord.
+5. Point the Dalamud plugin at the bot’s `ApiBaseUrl` (default `https://mew.the-demiurge.com`) and link an API key via `/demibot embed` in Discord.
 
 ## Tips
 
