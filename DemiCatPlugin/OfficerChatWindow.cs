@@ -157,7 +157,7 @@ public class OfficerChatWindow : ChatWindow
             _ = RoleCache.EnsureLoaded(_httpClient, _config);
             _presenceSidebar!.Draw(ref _presenceWidth);
             ImGui.SameLine();
-            ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), false);
+            ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
         }
 
         base.Draw();

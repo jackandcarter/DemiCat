@@ -281,7 +281,7 @@ public static class EmbedStyleControls
             {
                 var tileSize = Math.Clamp(context.EmojiTileSize, Config.MinEmojiTileSize, Config.MaxEmojiTileSize);
                 var childSize = context.EmojiGridHeight > 0f ? new Vector2(0f, context.EmojiGridHeight) : Vector2.Zero;
-                ImGui.BeginChild($"##borderEmojiGrid_{searchKey}", childSize, false);
+                ImGui.BeginChild($"##borderEmojiGrid_{searchKey}", childSize, ImGuiChildFlags.None, ImGuiWindowFlags.None);
 
                 var avail = Math.Max(1f, ImGui.GetContentRegionAvail().X);
                 var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (tileSize + 4f)));

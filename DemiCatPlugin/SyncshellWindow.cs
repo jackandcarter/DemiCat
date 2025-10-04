@@ -348,7 +348,7 @@ public class SyncshellWindow : IDisposable
             _syncSettingsHeight = DefaultSyncSettingsHeight;
         maxSettingsHeight = MathF.Max(MinSyncSettingsHeight, maxSettingsHeight);
         _syncSettingsHeight = Math.Clamp(_syncSettingsHeight, MinSyncSettingsHeight, maxSettingsHeight);
-        ImGui.BeginChild("sync-settings", new Vector2(-1, _syncSettingsHeight), true);
+        ImGui.BeginChild("sync-settings", new Vector2(-1, _syncSettingsHeight), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
         if (ImGui.BeginTabBar("syncshell-settings-tabs"))
         {
             if (ImGui.BeginTabItem("Sync"))
@@ -509,7 +509,7 @@ public class SyncshellWindow : IDisposable
             var childHeight = 70f;
             if (asset.Kind == "BUNDLE" && asset.Items != null)
                 childHeight += ImGui.GetTextLineHeightWithSpacing() * asset.Items.Count;
-            ImGui.BeginChild("card", new Vector2(-1, childHeight), true);
+            ImGui.BeginChild("card", new Vector2(-1, childHeight), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
             ImGui.TextUnformatted(asset.Name);
             if (!_seenAssetIds.Contains(asset.Id))
             {
@@ -849,7 +849,7 @@ public class SyncshellWindow : IDisposable
     {
         var id = $"syncshell-panel-{label.Replace(' ', '-').ToLowerInvariant()}";
         var size = fillRemaining ? new Vector2(-1, 0f) : new Vector2(-1, height);
-        ImGui.BeginChild(id, size, true);
+        ImGui.BeginChild(id, size, ImGuiChildFlags.Border, ImGuiWindowFlags.None);
         ImGui.TextUnformatted(label);
         ImGui.Separator();
         content();

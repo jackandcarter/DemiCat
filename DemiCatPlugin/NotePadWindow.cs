@@ -91,7 +91,7 @@ public sealed class NotePadWindow : IDisposable
         var pageListWidth = Math.Clamp(region.X * ratio, 160f, Math.Max(160f, region.X - 200f));
         var editorWidth = Math.Max(200f, region.X - pageListWidth - splitterWidth);
 
-        ImGui.BeginChild("NotePadPageList", new Vector2(pageListWidth, region.Y), true);
+        ImGui.BeginChild("NotePadPageList", new Vector2(pageListWidth, region.Y), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
         DrawPageList(selectedSection, selectedPage);
         ImGui.EndChild();
 
@@ -117,7 +117,7 @@ public sealed class NotePadWindow : IDisposable
         }
 
         ImGui.SameLine();
-        ImGui.BeginChild("NotePadEditor", new Vector2(editorWidth, region.Y), false);
+        ImGui.BeginChild("NotePadEditor", new Vector2(editorWidth, region.Y), ImGuiChildFlags.None, ImGuiWindowFlags.None);
         DrawEditor(selectedSection, selectedPage);
         ImGui.EndChild();
 

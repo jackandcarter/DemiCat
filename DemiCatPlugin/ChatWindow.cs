@@ -726,7 +726,7 @@ public class ChatWindow : IDisposable
         }
         composeRatio = actualRatio;
         const float ScrollTolerance = 1f;
-        ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), ImGuiChildFlags.Borders);
+        ImGui.BeginChild("##chatScroll", new Vector2(-1, scrollRegionHeight), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
 
         var fontScale = GetFontScale();
         var chatFontScope = PushWindowFontScale(fontScale);
@@ -1143,7 +1143,7 @@ public class ChatWindow : IDisposable
                 var desiredPreviewHeight = _previewContentHeight > 0f ? _previewContentHeight : fallbackHeight;
                 var previewHeight = Math.Clamp(desiredPreviewHeight, minPreviewHeight, maxPreviewHeight);
 
-                ImGui.BeginChild("##inputPreview", new Vector2(0, previewHeight), ImGuiChildFlags.Borders);
+                ImGui.BeginChild("##inputPreview", new Vector2(0, previewHeight), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
                 var childStartCursor = ImGui.GetCursorPosY();
                 if (!string.IsNullOrEmpty(plainTextPreview))
                 {
@@ -1475,7 +1475,7 @@ public class ChatWindow : IDisposable
         var codeBlock = Regex.Match(text, "^\\[CODEBLOCK\\](.+?)\\[/CODEBLOCK\\]$", RegexOptions.Singleline);
         if (codeBlock.Success)
         {
-            ImGui.BeginChild($"codeblock{GetHashCode()}{text.GetHashCode()}", new Vector2(0, 0), ImGuiChildFlags.Borders);
+            ImGui.BeginChild($"codeblock{GetHashCode()}{text.GetHashCode()}", new Vector2(0, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
             ImGui.TextUnformatted(codeBlock.Groups[1].Value);
             ImGui.EndChild();
             return;
@@ -2641,7 +2641,7 @@ public class ChatWindow : IDisposable
             ImGuiWindowFlags.AlwaysAutoResize |
             ImGuiWindowFlags.NoScrollbar |
             ImGuiWindowFlags.NoScrollWithMouse;
-        if (ImGui.BeginChild("##attachmentChip", new Vector2(0, 0), ImGuiChildFlags.Borders, childFlags))
+        if (ImGui.BeginChild("##attachmentChip", new Vector2(0, 0), ImGuiChildFlags.Border, childFlags))
         {
             ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(6f * scale, style.ItemSpacing.Y));
 
