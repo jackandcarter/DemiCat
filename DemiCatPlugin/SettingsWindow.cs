@@ -64,7 +64,12 @@ public class SettingsWindow : IDisposable
         _penumbraModsDirectory = config.PenumbraModsDirectory ?? string.Empty;
         _penumbraConfigDirectory = config.PenumbraConfigDirectory ?? string.Empty;
         _penumbraCollectionOverride = config.PenumbraCollectionOverride ?? string.Empty;
-        _devWindow = new DeveloperWindow(config, pluginInterface);
+        _devWindow = new DeveloperWindow(
+            config,
+            pluginInterface,
+            () => _tokenManager.IsReady(),
+            () => HardReloadIdentityAndStartAsync(),
+            StopAllWatchersAndPresence);
         _log = log;
         _isLinked = _tokenManager.State == LinkState.Linked;
         _tokenManager.OnLinked += OnLinked;
