@@ -540,13 +540,10 @@ public class MainWindow : IDisposable
 
             if (ImGui.BeginDragDropSource())
             {
-                unsafe
-                {
-                    _draggingDockItemId = item.Id;
-                    ImGui.SetDragDropPayload(DockDragPayloadType, (void*)0, 0, ImGuiCond.None);
-                    ImGui.TextUnformatted(item.Tooltip);
-                    ImGui.EndDragDropSource();
-                }
+                _draggingDockItemId = item.Id;
+                ImGui.SetDragDropPayload(DockDragPayloadType, nint.Zero, 0, ImGuiCond.None);
+                ImGui.TextUnformatted(item.Tooltip);
+                ImGui.EndDragDropSource();
             }
 
             if (ImGui.BeginDragDropTarget())

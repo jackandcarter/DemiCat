@@ -26,7 +26,7 @@ using ImGuiMouseCursor = ImGuiNET.ImGuiMouseCursor;
 
 namespace DemiCatPlugin;
 
-public unsafe class SyncshellWindow : IDisposable
+public class SyncshellWindow : IDisposable
 {
     public static SyncshellWindow? Instance { get; private set; }
 
@@ -143,7 +143,7 @@ public unsafe class SyncshellWindow : IDisposable
     private bool _inviteSuggestionFiltered;
     private bool _focusInviteInputNextFrame;
     private static SyncshellWindow? _activeInviteCallbackOwner;
-    private static readonly ImGuiInputTextCallback _inviteInputCallback = OnInviteInputEdited;
+    private static unsafe readonly ImGuiInputTextCallback _inviteInputCallback = OnInviteInputEdited;
     private int _inviteInFlight;
     private DateTimeOffset _lastMembershipFetch;
     private bool _membershipNeedsRefresh = true;

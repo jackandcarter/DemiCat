@@ -28,7 +28,7 @@ using SixLabors.ImageSharp.Processing;
 
 namespace DemiCatPlugin;
 
-public unsafe class ChatWindow : IDisposable
+public class ChatWindow : IDisposable
 {
     protected readonly Config _config;
     protected readonly HttpClient _httpClient;
@@ -95,7 +95,7 @@ public unsafe class ChatWindow : IDisposable
     private int _selectionEnd;
     private bool _focusComposerNextFrame;
     private static ChatWindow? _activeInputCallbackOwner;
-    private static readonly ImGuiInputTextCallback _inputEditedCallback = OnInputEdited;
+    private static unsafe readonly ImGuiInputTextCallback _inputEditedCallback = OnInputEdited;
     private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
     private string _previewKey = string.Empty;
     private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
