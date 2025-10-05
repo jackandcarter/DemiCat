@@ -234,41 +234,21 @@ public class MainWindow : IDisposable
 
     public void Draw()
     {
+        DrawFeatures();
+    }
+
+    internal void DrawFeatures()
+    {
         if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }
 
-        var linked = IsLinked();
-
-        if (!linked)
-        {
-            CloseAllFeatureWindows();
-
-            if (!_settings.IsOpen)
-            {
-                if (IsOpen)
-                {
-                    IsOpen = false;
-                }
-                else if (_config.DockVisible)
-                {
-                    _config.DockVisible = false;
-                    SaveConfig();
-                }
-            }
-
-            return;
-        }
-
         UpdateSyncshell();
 
-        if (_styleNeedsUpdate)
+        if (_styleNeedsUpdate && TryApplyAccentColors())
         {
-            if (TryApplyAccentColors())
-            {
-                _styleNeedsUpdate = false;
-            }
+            _styleNeedsUpdate = false;
         }
 
         if (!IsOpen)
@@ -366,6 +346,26 @@ public class MainWindow : IDisposable
         }
 
         DrawFeatureWindows();
+    }
+
+    internal void HandleUnlinkedState()
+    {
+        CloseAllFeatureWindows();
+
+        if (_settings.IsOpen)
+        {
+            return;
+        }
+
+        if (IsOpen)
+        {
+            IsOpen = false;
+        }
+        else if (_config.DockVisible)
+        {
+            _config.DockVisible = false;
+            SaveConfig();
+        }
     }
 
     public void OnAppearanceSettingsChanged()
