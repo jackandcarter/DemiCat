@@ -37,6 +37,7 @@ public class SettingsWindow : IDisposable
     private readonly object _hardReloadLock = new();
     private Task? _hardReloadTask;
     private bool _requestMainWindowOpen;
+    private bool _focusNext;
     private bool _settingsLoaded;
     private bool _isLinked;
     private static readonly int[] FadeDurations = { 5, 10, 15, 20, 30 };
@@ -96,6 +97,11 @@ public class SettingsWindow : IDisposable
                 colorPushCount = 2;
 
                 ImGui.SetNextWindowSize(DefaultWindowSize, ImGuiCond.FirstUseEver);
+                if (_focusNext)
+                {
+                    ImGui.SetNextWindowFocus();
+                    _focusNext = false;
+                }
                 if (ImGui.Begin("DemiCat Settings", ref IsOpen))
                 {
                     if (!_settingsLoaded)
@@ -142,6 +148,11 @@ public class SettingsWindow : IDisposable
         }
 
         _devWindow.Draw();
+    }
+
+    public void RequestFocus()
+    {
+        _focusNext = true;
     }
 
     private void DrawGeneralTab()

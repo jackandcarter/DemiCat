@@ -191,7 +191,11 @@ public class Plugin : IDalamudPlugin
             }
             uiBuilder.OpenMainUi += _openMainUi;
 
-            _openConfigUi = () => _settings.IsOpen = true;
+            _openConfigUi = () =>
+            {
+                _settings.RequestFocus();
+                _settings.IsOpen = true;
+            };
             if (_preInitOpenConfigUiHandler != null)
             {
                 uiBuilder.OpenConfigUi -= _preInitOpenConfigUiHandler;
@@ -341,6 +345,7 @@ public class Plugin : IDalamudPlugin
     {
         if (!_tokenManager.IsReady())
         {
+            _settings.RequestFocus();
             _settings.IsOpen = true;
             return;
         }
