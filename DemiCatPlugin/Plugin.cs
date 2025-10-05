@@ -228,7 +228,8 @@ public class Plugin : IDalamudPlugin
     {
         var pluginInterface = PluginInterface;
         Dalamud.Interface.UiBuilder.Draw -= EnsureInitializedOnce;
-        pluginInterface?.UiBuilder.Draw -= EnsureInitializedOnce;
+        if (pluginInterface != null)
+            pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
 
         if (!_initialized)
             return;
