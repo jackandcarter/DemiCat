@@ -203,10 +203,13 @@ public unsafe sealed class NotePadWindow : IDisposable
 
                 if (ImGui.BeginDragDropSource())
                 {
-                    _draggingSectionId = section.Id;
-                    ImGui.SetDragDropPayload("NotePadSection", nint.Zero, 0, ImGuiCond.None);
-                    ImGui.TextUnformatted(title);
-                    ImGui.EndDragDropSource();
+                    unsafe
+                    {
+                        _draggingSectionId = section.Id;
+                        ImGui.SetDragDropPayload("NotePadSection", (void*)0, 0, ImGuiCond.None);
+                        ImGui.TextUnformatted(title);
+                        ImGui.EndDragDropSource();
+                    }
                 }
 
                 if (ImGui.BeginDragDropTarget())
@@ -321,10 +324,13 @@ public unsafe sealed class NotePadWindow : IDisposable
 
             if (ImGui.BeginDragDropSource())
             {
-                _draggingPageId = page.Id;
-                ImGui.SetDragDropPayload("NotePadPage", nint.Zero, 0, ImGuiCond.None);
-                ImGui.TextUnformatted(label);
-                ImGui.EndDragDropSource();
+                unsafe
+                {
+                    _draggingPageId = page.Id;
+                    ImGui.SetDragDropPayload("NotePadPage", (void*)0, 0, ImGuiCond.None);
+                    ImGui.TextUnformatted(label);
+                    ImGui.EndDragDropSource();
+                }
             }
 
             if (ImGui.BeginDragDropTarget())
