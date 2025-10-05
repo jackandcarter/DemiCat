@@ -58,10 +58,10 @@ public class Plugin : IDalamudPlugin
     private Action? _preInitOpenMainUiHandler;
     private Action? _preInitOpenConfigUiHandler;
     private bool _queuedOpenMainUi;
-    private bool _queuedOpenConfigUi;
     private TokenManager _tokenManager = null!;
     private bool _officerWatcherRunning;
     private bool _invalidTokenToastShown;
+    private bool _initErrorToastShown;
     private bool? _savedDockVisibilityPreference;
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
     private IFontHandle? _emojiFontHandle;
@@ -69,6 +69,9 @@ public class Plugin : IDalamudPlugin
 
     private bool _initialized;
     private bool _initError;
+    private bool _coreInitialized;
+    private bool _drawHandlersRegistered;
+    private bool _overlayRegistered;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
     {
@@ -95,44 +98,13 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            _services = pluginInterface.Create<PluginServices>()
-                ?? throw new InvalidOperationException("Failed to initialize plugin services.");
-            if (_services.PluginInterface == null || _services.Log == null)
-                throw new InvalidOperationException("Failed to initialize plugin services.");
+            EnsureCoreInitialized();
 
-            _config = _services.PluginInterface.GetPluginConfig() as Config ?? new Config();
-            _tokenManager = new TokenManager(_services.PluginInterface);
-
-            var oldVersion = _config.Version;
-            var originalApiBaseUrl = _config.ApiBaseUrl;
-            _config.Migrate();
-            var sanitizedApiBaseUrl = Config.SanitizeApiBaseUrl(_config.ApiBaseUrl);
-            var apiBaseUrlChanged = !string.Equals(originalApiBaseUrl, sanitizedApiBaseUrl, StringComparison.Ordinal);
-            _config.ApiBaseUrl = sanitizedApiBaseUrl;
-            var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
-            if (rolesRemoved || _config.Version != oldVersion || apiBaseUrlChanged)
-                _services.PluginInterface.SavePluginConfig(_config);
-
-            RequestStateService.Load(_config);
-
-            var handler = new SocketsHttpHandler
+            if (_initialized)
             {
-                MaxConnectionsPerServer = 10,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-                AutomaticDecompression = DecompressionMethods.All
-            };
-            _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
-
-            WebTextureCache.FetchOverride = FetchWebTexture;
-
-            PingService.Instance = new PingService(_httpClient, _config, _tokenManager);
-
-            _channelSelection = new ChannelSelectionService(_config);
-            _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
-            _emojiFontHandle = InitializeEmojiFont();
-            _emojiManager.EmojiFontHandle = _emojiFontHandle;
-            _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
-            _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
+                uiBuilder.Draw -= EnsureInitializedOnce;
+                return;
+            }
 
             _presenceService = _config.SyncedChat && _config.EnableFcChat
                 ? new DiscordPresenceService(_config, _httpClient)
@@ -179,28 +151,23 @@ public class Plugin : IDalamudPlugin
 
             _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
-            uiBuilder.Draw += DrawAll;
-            uiBuilder.Draw += DrawOverlay;
+            if (!_overlayRegistered)
+            {
+                uiBuilder.Draw += DrawOverlay;
+                _overlayRegistered = true;
+            }
 
-            _openMainUi = () => _mainWindow.IsOpen = true;
+            _openMainUi = () =>
+            {
+                if (_mainWindow != null)
+                    _mainWindow.IsOpen = true;
+            };
             if (_preInitOpenMainUiHandler != null)
             {
                 uiBuilder.OpenMainUi -= _preInitOpenMainUiHandler;
                 _preInitOpenMainUiHandler = null;
             }
             uiBuilder.OpenMainUi += _openMainUi;
-
-            _openConfigUi = () =>
-            {
-                _settings.RequestFocus();
-                _settings.IsOpen = true;
-            };
-            if (_preInitOpenConfigUiHandler != null)
-            {
-                uiBuilder.OpenConfigUi -= _preInitOpenConfigUiHandler;
-                _preInitOpenConfigUiHandler = null;
-            }
-            uiBuilder.OpenConfigUi += _openConfigUi;
 
             _mewCommandInfo = new CommandInfo(OnMewCommand)
             {
@@ -222,35 +189,11 @@ public class Plugin : IDalamudPlugin
                 openMainHandler();
             }
 
-            var openConfigHandler = _openConfigUi;
-            if (_queuedOpenConfigUi && openConfigHandler != null)
-            {
-                _queuedOpenConfigUi = false;
-                openConfigHandler();
-            }
             _initialized = true;
         }
         catch (Exception ex)
         {
-            _initError = true;
-
-            try
-            {
-                _services?.Log.Error(ex, "Failed to initialize DemiCat.");
-            }
-            catch
-            {
-                // ignored
-            }
-
-            try
-            {
-                PluginServices.Instance?.ToastGui.ShowError("Failed to initialize DemiCat. Check /xllog for details.");
-            }
-            catch
-            {
-                // ignored
-            }
+            HandleInitializationException(ex);
         }
         finally
         {
@@ -290,8 +233,17 @@ public class Plugin : IDalamudPlugin
             _openConfigUi = null;
         }
 
+        if (_drawHandlersRegistered)
+        {
+            uiBuilder.Draw -= DrawAll;
+            _drawHandlersRegistered = false;
+        }
+
         if (!_initialized)
+        {
+            DisposeCoreResources();
             return;
+        }
 
         WebTextureCache.FetchOverride = null;
         try
@@ -308,8 +260,11 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle?.Dispose();
 
         // Unsubscribe UI draw handlers
-        uiBuilder.Draw -= DrawAll;
-        uiBuilder.Draw -= DrawOverlay;
+        if (_overlayRegistered)
+        {
+            uiBuilder.Draw -= DrawOverlay;
+            _overlayRegistered = false;
+        }
 
         _services.CommandManager.RemoveHandler(MewCommand);
 
@@ -348,7 +303,15 @@ public class Plugin : IDalamudPlugin
             return;
         }
 
-        _mainWindow.IsOpen = !_mainWindow.IsOpen;
+        var mainWindow = _mainWindow;
+        if (mainWindow == null)
+        {
+            _settings.RequestFocus();
+            _settings.IsOpen = true;
+            return;
+        }
+
+        mainWindow.IsOpen = !mainWindow.IsOpen;
     }
 
     private void HandlePreInitOpenMainUi()
@@ -360,34 +323,40 @@ public class Plugin : IDalamudPlugin
             return;
         }
 
-        if (!_initError)
-            _queuedOpenMainUi = true;
+        _queuedOpenMainUi = true;
     }
 
     private void HandlePreInitOpenConfigUi()
     {
-        var handler = _openConfigUi;
-        if (_initialized && handler != null)
+        try
         {
-            handler();
+            EnsureCoreInitialized();
+        }
+        catch (Exception ex)
+        {
+            HandleInitializationException(ex);
             return;
         }
 
-        if (!_initError)
-            _queuedOpenConfigUi = true;
+        _settings.RequestFocus();
+        _settings.IsOpen = true;
     }
 
     private void DrawAll()
     {
         _settings.Draw();
 
+        var mainWindow = _mainWindow;
+        if (mainWindow == null)
+            return;
+
         if (!_tokenManager.IsReady())
         {
-            _mainWindow.HandleUnlinkedState();
+            mainWindow.HandleUnlinkedState();
             return;
         }
 
-        _mainWindow.DrawFeatures();
+        mainWindow.DrawFeatures();
     }
 
     private void DrawOverlay()
@@ -399,6 +368,160 @@ public class Plugin : IDalamudPlugin
 
         overlay.IsVisible = _config.FCSyncShell && _config.ShowSyncshellProgressOverlay;
         overlay.Draw();
+    }
+
+    private void ShowInitErrorToast()
+    {
+        if (_initErrorToastShown)
+            return;
+
+        try
+        {
+            var toastGui = PluginServices.Instance?.ToastGui;
+            if (toastGui == null)
+                return;
+
+            toastGui.ShowError("Failed to initialize DemiCat. Check /xllog for details.");
+            _initErrorToastShown = true;
+        }
+        catch
+        {
+            // ignored
+        }
+    }
+
+    private void HandleInitializationException(Exception ex)
+    {
+        _initError = true;
+
+        try
+        {
+            _services?.Log.Error(ex, "Failed to initialize DemiCat.");
+        }
+        catch
+        {
+            // ignored
+        }
+
+        ShowInitErrorToast();
+    }
+
+    private void EnsureCoreInitialized()
+    {
+        if (_coreInitialized)
+            return;
+
+        var pluginInterface = _pluginInterface;
+        var services = pluginInterface.Create<PluginServices>()
+            ?? throw new InvalidOperationException("Failed to initialize plugin services.");
+        if (services.PluginInterface == null || services.Log == null)
+            throw new InvalidOperationException("Failed to initialize plugin services.");
+
+        _services = services;
+
+        _config = _services.PluginInterface.GetPluginConfig() as Config ?? new Config();
+        _tokenManager = new TokenManager(_services.PluginInterface);
+
+        var oldVersion = _config.Version;
+        var originalApiBaseUrl = _config.ApiBaseUrl;
+        _config.Migrate();
+        var sanitizedApiBaseUrl = Config.SanitizeApiBaseUrl(_config.ApiBaseUrl);
+        var apiBaseUrlChanged = !string.Equals(originalApiBaseUrl, sanitizedApiBaseUrl, StringComparison.Ordinal);
+        _config.ApiBaseUrl = sanitizedApiBaseUrl;
+        var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
+        if (rolesRemoved || _config.Version != oldVersion || apiBaseUrlChanged)
+            _services.PluginInterface.SavePluginConfig(_config);
+
+        RequestStateService.Load(_config);
+
+        var handler = new SocketsHttpHandler
+        {
+            MaxConnectionsPerServer = 10,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            AutomaticDecompression = DecompressionMethods.All
+        };
+        _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+
+        WebTextureCache.FetchOverride = FetchWebTexture;
+
+        PingService.Instance = new PingService(_httpClient, _config, _tokenManager);
+
+        _channelSelection = new ChannelSelectionService(_config);
+        _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
+        _emojiFontHandle = InitializeEmojiFont();
+        _emojiManager.EmojiFontHandle = _emojiFontHandle;
+        _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
+        _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
+
+        if (_openConfigUi != null)
+        {
+            _uiBuilder.OpenConfigUi -= _openConfigUi;
+        }
+
+        _openConfigUi = () =>
+        {
+            _settings.RequestFocus();
+            _settings.IsOpen = true;
+        };
+
+        if (_preInitOpenConfigUiHandler != null)
+        {
+            _uiBuilder.OpenConfigUi -= _preInitOpenConfigUiHandler;
+            _preInitOpenConfigUiHandler = null;
+        }
+
+        _uiBuilder.OpenConfigUi += _openConfigUi;
+
+        if (!_drawHandlersRegistered)
+        {
+            _uiBuilder.Draw += DrawAll;
+            _drawHandlersRegistered = true;
+        }
+
+        _coreInitialized = true;
+    }
+
+    private void DisposeCoreResources()
+    {
+        if (!_coreInitialized)
+            return;
+
+        try
+        {
+            WebTextureCache.FetchOverride = null;
+            RunOnFrameworkAsync(WebTextureCache.Clear).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            try
+            {
+                WebTextureCache.Clear();
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+
+        if (_emojiManager != null)
+        {
+            _emojiManager.EmojiFontHandle = null;
+            _emojiManager.Dispose();
+        }
+
+        _emojiFontHandle?.Dispose();
+        _emojiFontHandle = null;
+
+        try
+        {
+            _ui?.DisposeAsync().GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // ignored
+        }
+        _settings?.Dispose();
+        _httpClient?.Dispose();
     }
 
     private object? FetchWebTexture(string url, Action<ISharedImmediateTexture?> onReady)
