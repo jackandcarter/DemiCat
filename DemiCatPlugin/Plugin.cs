@@ -29,6 +29,7 @@ public class Plugin : IDalamudPlugin
 
     [PluginService] internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal ITextureProvider TextureProvider { get; private set; } = null!;
+    [PluginService] internal IUiBuilder UiBuilder { get; private set; } = null!;
 
     private const uint InvalidTokenLinkCommandId = 0x44434B49;
     private const string MewCommand = "/mew";
@@ -67,17 +68,17 @@ public class Plugin : IDalamudPlugin
 
     public Plugin()
     {
-        var uiBuilder = Dalamud.Interface.UiBuilder;
+        var uiBuilder = UiBuilder;
         if (uiBuilder != null)
             uiBuilder.Draw += EnsureInitializedOnce;
     }
 
     private void EnsureInitializedOnce()
     {
-        var uiBuilder = Dalamud.Interface.UiBuilder;
+        var uiBuilder = UiBuilder;
         var pluginInterface = PluginInterface;
         var textureProvider = TextureProvider;
-        if (pluginInterface == null || textureProvider == null)
+        if (pluginInterface == null || textureProvider == null || uiBuilder == null)
             return;
 
         if (_initialized || _initError)
@@ -169,15 +170,15 @@ public class Plugin : IDalamudPlugin
 
             _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
-            _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
-            _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
-            _services.PluginInterface.UiBuilder.Draw += DrawOverlay;
+            uiBuilder.Draw += _mainWindow.Draw;
+            uiBuilder.Draw += _settings.Draw;
+            uiBuilder.Draw += DrawOverlay;
 
             _openMainUi = () => _mainWindow.IsOpen = true;
-            _services.PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
+            uiBuilder.OpenMainUi += _openMainUi;
 
             _openConfigUi = () => _settings.IsOpen = true;
-            _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
+            uiBuilder.OpenConfigUi += _openConfigUi;
 
             _mewCommandInfo = new CommandInfo(OnMewCommand)
             {
@@ -228,7 +229,7 @@ public class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
-        var uiBuilder = Dalamud.Interface.UiBuilder;
+        var uiBuilder = UiBuilder;
         if (uiBuilder != null)
             uiBuilder.Draw -= EnsureInitializedOnce;
 
@@ -250,13 +251,16 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle?.Dispose();
 
         // Unsubscribe UI draw handlers
-        _services.PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
-        _services.PluginInterface.UiBuilder.Draw -= _settings.Draw;
-        _services.PluginInterface.UiBuilder.Draw -= DrawOverlay;
+        if (uiBuilder != null)
+        {
+            uiBuilder.Draw -= _mainWindow.Draw;
+            uiBuilder.Draw -= _settings.Draw;
+            uiBuilder.Draw -= DrawOverlay;
 
-        // Unsubscribe UI open handlers
-        _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
-        _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
+            // Unsubscribe UI open handlers
+            uiBuilder.OpenMainUi -= _openMainUi;
+            uiBuilder.OpenConfigUi -= _openConfigUi;
+        }
 
         _services.CommandManager.RemoveHandler(MewCommand);
 
@@ -456,8 +460,8 @@ public class Plugin : IDalamudPlugin
                 return null;
             }
 
-            var atlas = _services.PluginInterface.UiBuilder.FontAtlas;
-            var fontSize = _services.PluginInterface.UiBuilder.FontDefaultSizePx;
+            var atlas = UiBuilder.FontAtlas;
+            var fontSize = UiBuilder.FontDefaultSizePx;
 
             var handle = atlas.NewDelegateFontHandle(toolkit =>
                 toolkit.OnPreBuild(pre =>
