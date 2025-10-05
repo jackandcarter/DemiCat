@@ -179,8 +179,7 @@ public class Plugin : IDalamudPlugin
 
             _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
-            uiBuilder.Draw += _mainWindow.Draw;
-            uiBuilder.Draw += _settings.Draw;
+            uiBuilder.Draw += DrawAll;
             uiBuilder.Draw += DrawOverlay;
 
             _openMainUi = () => _mainWindow.IsOpen = true;
@@ -309,8 +308,7 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle?.Dispose();
 
         // Unsubscribe UI draw handlers
-        uiBuilder.Draw -= _mainWindow.Draw;
-        uiBuilder.Draw -= _settings.Draw;
+        uiBuilder.Draw -= DrawAll;
         uiBuilder.Draw -= DrawOverlay;
 
         _services.CommandManager.RemoveHandler(MewCommand);
@@ -377,6 +375,19 @@ public class Plugin : IDalamudPlugin
 
         if (!_initError)
             _queuedOpenConfigUi = true;
+    }
+
+    private void DrawAll()
+    {
+        _settings.Draw();
+
+        if (!_tokenManager.IsReady())
+        {
+            _mainWindow.HandleUnlinkedState();
+            return;
+        }
+
+        _mainWindow.DrawFeatures();
     }
 
     private void DrawOverlay()
