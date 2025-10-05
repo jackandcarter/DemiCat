@@ -339,6 +339,12 @@ public class Plugin : IDalamudPlugin
 
     private void OnMewCommand(string command, string arguments)
     {
+        if (!_tokenManager.IsReady())
+        {
+            _settings.IsOpen = true;
+            return;
+        }
+
         _mainWindow.IsOpen = !_mainWindow.IsOpen;
     }
 

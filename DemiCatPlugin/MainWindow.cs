@@ -239,13 +239,26 @@ public class MainWindow : IDisposable
             return;
         }
 
-        if (!IsLinked())
+        var linked = IsLinked();
+
+        if (!linked)
         {
             CloseAllFeatureWindows();
-            return;
-        }
 
-        UpdateSyncshell();
+            if (IsOpen)
+            {
+                IsOpen = false;
+            }
+            else if (_config.DockVisible)
+            {
+                _config.DockVisible = false;
+                SaveConfig();
+            }
+        }
+        else
+        {
+            UpdateSyncshell();
+        }
 
         if (_styleNeedsUpdate)
         {
@@ -255,99 +268,100 @@ public class MainWindow : IDisposable
             }
         }
 
-        if (!IsOpen)
+        if (linked)
         {
-            if (_config.DockVisible)
+            if (!IsOpen)
             {
-                _config.DockVisible = false;
-                SaveConfig();
+                if (_config.DockVisible)
+                {
+                    _config.DockVisible = false;
+                    SaveConfig();
+                }
             }
-
-            return;
-        }
-
-        if (!_config.DockVisible)
-        {
-            _config.DockVisible = true;
-            SaveConfig();
-        }
-
-        var visibleFeatures = _dockItems.Where(i => i.IsVisible()).ToList();
-        var settingsItem = _settingsDockItem;
-        var settingsVisible = settingsItem?.IsVisible() ?? false;
-        if (!settingsVisible && visibleFeatures.Count == 0)
-        {
-            return;
-        }
-
-        var iconScale = GetIconScale();
-        var padding = GetPadding(iconScale);
-        var spacing = GetSpacing(iconScale);
-        var separatorThickness = settingsVisible && visibleFeatures.Count > 0
-            ? GetSeparatorThickness(spacing)
-            : 0f;
-        var iconSize = new Vector2(BaseIconSize * iconScale, BaseIconSize * iconScale);
-        var indicatorHeight = IndicatorRadius * 2f * iconScale + spacing * 0.75f;
-        var buttonCount = visibleFeatures.Count + (settingsVisible ? 1 : 0);
-        var spacingCount = Math.Max(0, visibleFeatures.Count - 1);
-        if (settingsVisible && visibleFeatures.Count > 0)
-        {
-            spacingCount += 2;
-        }
-        var iconAreaWidth = iconSize.X * buttonCount + spacing * spacingCount + separatorThickness;
-        var iconAreaHeight = iconSize.Y;
-        var totalWidth = iconAreaWidth + padding * 2f;
-        var totalHeight = iconAreaHeight + padding * 2f + indicatorHeight;
-        var dockSize = new Vector2(totalWidth, totalHeight);
-
-        var dockPosition = GetDockPosition(dockSize);
-
-        ImGui.SetNextWindowPos(dockPosition, ImGuiCond.Appearing);
-        ImGui.SetNextWindowSize(dockSize, ImGuiCond.Appearing);
-
-        var windowFlags = ImGuiWindowFlags.NoDecoration
-            | ImGuiWindowFlags.NoScrollbar
-            | ImGuiWindowFlags.NoCollapse
-            | ImGuiWindowFlags.NoSavedSettings
-            | ImGuiWindowFlags.AlwaysAutoResize;
-
-        if (_config.DockLocked)
-        {
-            windowFlags |= ImGuiWindowFlags.NoMove;
-        }
-
-        var dockBgColor = GetDockBackgroundColor();
-        var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
-
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, MathF.Max(14f, padding * 1.5f));
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(padding, padding));
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, dockBgColor);
-        ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
-
-        var open = true;
-        if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
-        {
-            _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor, dockBgColor);
-            DrawDockContextMenu();
-        }
-        var windowPos = ImGui.GetWindowPos();
-        ImGui.End();
-
-        ImGui.PopStyleColor(2);
-        ImGui.PopStyleVar(2);
-
-        if (!open)
-        {
-            IsOpen = false;
-        }
-
-        if (_config.DockRememberPosition && !_config.DockLocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
-        {
-            if (!_config.DockPositionInitialized || Vector2.Distance(windowPos, _config.DockPosition) > 0.5f)
+            else
             {
-                _config.DockPosition = windowPos;
-                _config.DockPositionInitialized = true;
-                SaveConfig();
+                if (!_config.DockVisible)
+                {
+                    _config.DockVisible = true;
+                    SaveConfig();
+                }
+
+                var visibleFeatures = _dockItems.Where(i => i.IsVisible()).ToList();
+                var settingsItem = _settingsDockItem;
+                var settingsVisible = settingsItem?.IsVisible() ?? false;
+                if (settingsVisible || visibleFeatures.Count > 0)
+                {
+                    var iconScale = GetIconScale();
+                    var padding = GetPadding(iconScale);
+                    var spacing = GetSpacing(iconScale);
+                    var separatorThickness = settingsVisible && visibleFeatures.Count > 0
+                        ? GetSeparatorThickness(spacing)
+                        : 0f;
+                    var iconSize = new Vector2(BaseIconSize * iconScale, BaseIconSize * iconScale);
+                    var indicatorHeight = IndicatorRadius * 2f * iconScale + spacing * 0.75f;
+                    var buttonCount = visibleFeatures.Count + (settingsVisible ? 1 : 0);
+                    var spacingCount = Math.Max(0, visibleFeatures.Count - 1);
+                    if (settingsVisible && visibleFeatures.Count > 0)
+                    {
+                        spacingCount += 2;
+                    }
+                    var iconAreaWidth = iconSize.X * buttonCount + spacing * spacingCount + separatorThickness;
+                    var iconAreaHeight = iconSize.Y;
+                    var totalWidth = iconAreaWidth + padding * 2f;
+                    var totalHeight = iconAreaHeight + padding * 2f + indicatorHeight;
+                    var dockSize = new Vector2(totalWidth, totalHeight);
+
+                    var dockPosition = GetDockPosition(dockSize);
+
+                    ImGui.SetNextWindowPos(dockPosition, ImGuiCond.Appearing);
+                    ImGui.SetNextWindowSize(dockSize, ImGuiCond.Appearing);
+
+                    var windowFlags = ImGuiWindowFlags.NoDecoration
+                        | ImGuiWindowFlags.NoScrollbar
+                        | ImGuiWindowFlags.NoCollapse
+                        | ImGuiWindowFlags.NoSavedSettings
+                        | ImGuiWindowFlags.AlwaysAutoResize;
+
+                    if (_config.DockLocked)
+                    {
+                        windowFlags |= ImGuiWindowFlags.NoMove;
+                    }
+
+                    var dockBgColor = GetDockBackgroundColor();
+                    var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
+
+                    ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, MathF.Max(14f, padding * 1.5f));
+                    ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(padding, padding));
+                    ImGui.PushStyleColor(ImGuiCol.WindowBg, dockBgColor);
+                    ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
+
+                    var open = true;
+                    if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
+                    {
+                        _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor, dockBgColor);
+                        DrawDockContextMenu();
+                    }
+                    var windowPos = ImGui.GetWindowPos();
+                    ImGui.End();
+
+                    ImGui.PopStyleColor(2);
+                    ImGui.PopStyleVar(2);
+
+                    if (!open)
+                    {
+                        IsOpen = false;
+                    }
+
+                    if (_config.DockRememberPosition && !_config.DockLocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+                    {
+                        if (!_config.DockPositionInitialized || Vector2.Distance(windowPos, _config.DockPosition) > 0.5f)
+                        {
+                            _config.DockPosition = windowPos;
+                            _config.DockPositionInitialized = true;
+                            SaveConfig();
+                        }
+                    }
+                }
             }
         }
 
