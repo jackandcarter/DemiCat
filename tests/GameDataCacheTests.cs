@@ -32,7 +32,7 @@ public class GameDataCacheTests
             SetPrivateProperty(services, "PluginInterface", pluginInterface.Object);
             SetPrivateProperty(services, "DataManager", Mock.Of<IDataManager>());
             SetPrivateProperty(services, "TextureProvider", Mock.Of<ITextureProvider>());
-            SetPrivateProperty(services, "TextureReadbackProvider", null);
+            SetPrivateProperty(services, "Log", Mock.Of<IPluginLog>());
 
             var handler = new FakeHandler();
             using var httpClient = new HttpClient(handler);
@@ -55,6 +55,24 @@ public class GameDataCacheTests
             if (Directory.Exists(tempDir))
                 Directory.Delete(tempDir, true);
         }
+    }
+
+    [Fact]
+    public void PluginServicesHandlesMissingTextureReadbackProvider()
+    {
+        var services = new PluginServices();
+
+        var pluginInterface = new Mock<IDalamudPluginInterface>();
+        pluginInterface
+            .Setup(pi => pi.Create<ITextureReadbackProvider>(It.IsAny<object[]>()))
+            .Throws(
+                new AggregateException(
+                    new InvalidOperationException("Requested type Dalamud.Plugin.Services.ITextureReadbackProvider could not be found")));
+
+        SetPrivateProperty(services, "PluginInterface", pluginInterface.Object);
+        SetPrivateProperty(services, "Log", Mock.Of<IPluginLog>());
+
+        Assert.Null(services.TextureReadbackProvider);
     }
 
     private static void SetPrivateProperty(object instance, string name, object? value)
