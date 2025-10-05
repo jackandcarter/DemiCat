@@ -1188,9 +1188,12 @@ public class MainWindow : IDisposable
         }
 
         var style = ImGui.GetStyle();
-        if (style.NativePtr == null)
+        unsafe
         {
-            return false;
+            if (style.NativePtr == null)
+            {
+                return false;
+            }
         }
 
         var accent = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
