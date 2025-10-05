@@ -481,16 +481,16 @@ public class MainWindow : IDisposable
                 {
                     var drawListPtr = drawList.NativePtr;
                     var vertexBuffer = drawListPtr->VtxBuffer;
-                    var vertices = new Span<ImDrawVert>(vertexBuffer.Data, vertexBuffer.Size);
+                    var vertices = new Span<ImDrawVert>((ImDrawVert*)vertexBuffer.Data, vertexBuffer.Size);
                     var gradientVertices = vertices.Slice(vertexStartIndex, vertexCount);
 
                     for (var i = 0; i < gradientVertices.Length; i++)
                     {
                         ref var vertex = ref gradientVertices[i];
-                        var position = vertex.Pos;
+                        var position = vertex.pos;
                         var t = Math.Clamp((position.Y - stripMin.Y) / height, 0f, 1f);
                         var color = Vector4.Lerp(topColor, bottomColor, t);
-                        vertex.Col = ImGui.ColorConvertFloat4ToU32(color);
+                        vertex.col = ImGui.ColorConvertFloat4ToU32(color);
                     }
                 }
             }
