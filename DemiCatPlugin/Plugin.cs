@@ -67,21 +67,23 @@ public class Plugin : IDalamudPlugin
 
     public Plugin()
     {
-        Dalamud.Interface.UiBuilder.Draw += EnsureInitializedOnce;
+        var uiBuilder = Dalamud.Interface.UiBuilder;
+        if (uiBuilder != null)
+            uiBuilder.Draw += EnsureInitializedOnce;
     }
 
     private void EnsureInitializedOnce()
     {
+        var uiBuilder = Dalamud.Interface.UiBuilder;
         var pluginInterface = PluginInterface;
         var textureProvider = TextureProvider;
         if (pluginInterface == null || textureProvider == null)
             return;
 
-        Dalamud.Interface.UiBuilder.Draw -= EnsureInitializedOnce;
-
         if (_initialized || _initError)
         {
-            pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
+            if (uiBuilder != null)
+                uiBuilder.Draw -= EnsureInitializedOnce;
             return;
         }
 
@@ -218,18 +220,17 @@ public class Plugin : IDalamudPlugin
         {
             if (_initialized || _initError)
             {
-                Dalamud.Interface.UiBuilder.Draw -= EnsureInitializedOnce;
-                pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
+                if (uiBuilder != null)
+                    uiBuilder.Draw -= EnsureInitializedOnce;
             }
         }
     }
 
     public void Dispose()
     {
-        var pluginInterface = PluginInterface;
-        Dalamud.Interface.UiBuilder.Draw -= EnsureInitializedOnce;
-        if (pluginInterface != null)
-            pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
+        var uiBuilder = Dalamud.Interface.UiBuilder;
+        if (uiBuilder != null)
+            uiBuilder.Draw -= EnsureInitializedOnce;
 
         if (!_initialized)
             return;
