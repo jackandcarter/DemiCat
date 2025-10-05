@@ -26,7 +26,7 @@ using ImGuiMouseCursor = ImGuiNET.ImGuiMouseCursor;
 
 namespace DemiCatPlugin;
 
-public class SyncshellWindow : IDisposable
+public unsafe class SyncshellWindow : IDisposable
 {
     public static SyncshellWindow? Instance { get; private set; }
 

@@ -20,7 +20,7 @@ using System.IO;
 
 namespace DemiCatPlugin;
 
-public class EventCreateWindow
+public unsafe class EventCreateWindow
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
