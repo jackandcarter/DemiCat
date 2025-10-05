@@ -154,6 +154,7 @@ public class SettingsWindow : IDisposable
                 if (colorPushCount > 0)
                     ImGui.PopStyleColor(colorPushCount);
             }
+        }
 
         _devWindow?.Draw();
     }
