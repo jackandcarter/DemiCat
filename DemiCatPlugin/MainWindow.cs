@@ -243,8 +243,10 @@ public class MainWindow : IDisposable
 
         if (_styleNeedsUpdate)
         {
-            ApplyAccentColors();
-            _styleNeedsUpdate = false;
+            if (TryApplyAccentColors())
+            {
+                _styleNeedsUpdate = false;
+            }
         }
 
         if (!IsOpen)
@@ -1178,9 +1180,19 @@ public class MainWindow : IDisposable
         PluginServices.Instance!.PluginInterface.SavePluginConfig(_config);
     }
 
-    private void ApplyAccentColors()
+    private bool TryApplyAccentColors()
     {
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return false;
+        }
+
         var style = ImGui.GetStyle();
+        if (style.NativePtr == null)
+        {
+            return false;
+        }
+
         var accent = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
         var accentHovered = DockableWindow.AdjustBrightness(accent, 1.1f);
         var accentActive = DockableWindow.AdjustBrightness(accent, 1.2f);
@@ -1191,5 +1203,7 @@ public class MainWindow : IDisposable
         style.Colors[(int)ImGuiCol.Separator] = accent;
         style.Colors[(int)ImGuiCol.SeparatorHovered] = accentHovered;
         style.Colors[(int)ImGuiCol.SeparatorActive] = accentActive;
+
+        return true;
     }
 }
