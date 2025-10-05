@@ -86,6 +86,11 @@ public sealed class ProgressOverlay
             return;
         }
 
+        if (!ImGuiHelpers.IsImGuiReady || ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
         var now = DateTime.UtcNow;
 
         lock (_lock)

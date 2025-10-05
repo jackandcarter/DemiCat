@@ -14,6 +14,7 @@ using System.IO;
 using System.Linq;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
+using Dalamud.Interface.Utility;
 
 namespace DemiCatPlugin;
 
@@ -124,6 +125,11 @@ public class OfficerChatWindow : ChatWindow
 
     public override void Draw()
     {
+        if (!ImGuiHelpers.IsImGuiReady || ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
         if (!OfficerPermissions.HasAccess(_config))
         {
             var message = string.IsNullOrEmpty(_statusMessage)

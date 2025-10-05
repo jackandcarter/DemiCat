@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net.Http;
 using System.Numerics;
 using ImGuiNET;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
 using DemiCatPlugin.Emoji;
@@ -233,6 +234,11 @@ public class MainWindow : IDisposable
 
     public void Draw()
     {
+        if (!ImGuiHelpers.IsImGuiReady || ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
         if (!IsLinked())
         {
             CloseAllFeatureWindows();

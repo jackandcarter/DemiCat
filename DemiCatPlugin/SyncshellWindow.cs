@@ -21,6 +21,7 @@ using DemiCatPlugin.SyncShell;
 using Penumbra.Api.Enums;
 using Serilog;
 using Serilog.Events;
+using Dalamud.Interface.Utility;
 using ImGuiInputTextCallbackData = ImGuiNET.ImGuiInputTextCallbackData;
 using ImGuiMouseCursor = ImGuiNET.ImGuiMouseCursor;
 
@@ -285,6 +286,11 @@ public class SyncshellWindow : IDisposable
     public void Draw()
     {
         PumpClientEvents();
+
+        if (!ImGuiHelpers.IsImGuiReady || ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
 
         if (!_config.FCSyncShell)
         {

@@ -719,6 +719,11 @@ public class ChatWindow : IDisposable
 
     public virtual void Draw()
     {
+        if (!ImGuiHelpers.IsImGuiReady || ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
         _fileDialog.Draw();
         if (!_bridge.IsReady())
         {
