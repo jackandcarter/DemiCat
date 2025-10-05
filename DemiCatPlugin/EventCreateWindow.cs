@@ -33,7 +33,7 @@ public class EventCreateWindow
     private int _descriptionSelectionEnd;
     private bool _focusDescriptionNextFrame;
     private static EventCreateWindow? _activeDescriptionCallbackOwner;
-    private static readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _descriptionEditedCallback = &OnDescriptionEdited;
+    private static readonly ImGuiInputTextCallback _descriptionEditedCallback = OnDescriptionEdited;
     private string _time = string.Empty;
     private string _imageUrl = string.Empty;
     private string _url = string.Empty;
@@ -230,25 +230,22 @@ public class EventCreateWindow
                         ImGui.SetKeyboardFocusHere();
                         _focusDescriptionNextFrame = false;
                     }
-                    unsafe
+                    _activeDescriptionCallbackOwner = this;
+                    try
                     {
-                        _activeDescriptionCallbackOwner = this;
-                        try
-                        {
-                            ImGui.InputTextMultiline(
-                                "##Description",
-                                ref _description,
-                                4096u,
-                                new Vector2(avail.X, descHeight),
-                                ImGuiInputTextFlags.CallbackAlways,
-                                _descriptionEditedCallback,
-                                IntPtr.Zero
-                            );
-                        }
-                        finally
-                        {
-                            _activeDescriptionCallbackOwner = null;
-                        }
+                        ImGui.InputTextMultiline(
+                            "##Description",
+                            ref _description,
+                            4096u,
+                            new Vector2(avail.X, descHeight),
+                            ImGuiInputTextFlags.CallbackAlways,
+                            _descriptionEditedCallback,
+                            IntPtr.Zero
+                        );
+                    }
+                    finally
+                    {
+                        _activeDescriptionCallbackOwner = null;
                     }
                     _descriptionEmojiPopup.Draw();
                 },

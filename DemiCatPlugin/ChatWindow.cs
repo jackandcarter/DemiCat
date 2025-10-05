@@ -95,7 +95,7 @@ public class ChatWindow : IDisposable
     private int _selectionEnd;
     private bool _focusComposerNextFrame;
     private static ChatWindow? _activeInputCallbackOwner;
-    private static readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _inputEditedCallback = &OnInputEdited;
+    private static readonly ImGuiInputTextCallback _inputEditedCallback = OnInputEdited;
     private BridgeMessageFormatter.BridgeFormattedMessage _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
     private string _previewKey = string.Empty;
     private readonly Dictionary<string, ISharedImmediateTexture?> _attachmentPreviewTextures = new(StringComparer.OrdinalIgnoreCase);
@@ -1035,25 +1035,22 @@ public class ChatWindow : IDisposable
             ImGui.SetKeyboardFocusHere();
             _focusComposerNextFrame = false;
         }
-        unsafe
+        _activeInputCallbackOwner = this;
+        try
         {
-            _activeInputCallbackOwner = this;
-            try
-            {
-                _ = ImGui.InputTextMultiline(
-                    "##chatInput",
-                    ref _input,
-                    2048u,
-                    new Vector2(inputWidth, inputHeight),
-                    ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
-                    _inputEditedCallback,
-                    IntPtr.Zero
-                );
-            }
-            finally
-            {
-                _activeInputCallbackOwner = null;
-            }
+            _ = ImGui.InputTextMultiline(
+                "##chatInput",
+                ref _input,
+                2048u,
+                new Vector2(inputWidth, inputHeight),
+                ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
+                _inputEditedCallback,
+                IntPtr.Zero
+            );
+        }
+        finally
+        {
+            _activeInputCallbackOwner = null;
         }
         if (MentionsEnabled)
         {
