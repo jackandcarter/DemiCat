@@ -31,8 +31,6 @@ public class Plugin : IDalamudPlugin
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IUiBuilder _uiBuilder;
 
-    [PluginService] internal ITextureProvider TextureProvider { get; private set; } = null!;
-
     private const uint InvalidTokenLinkCommandId = 0x44434B49;
     private const string MewCommand = "/mew";
     private const string MewCommandHelpMessage = "Open the DemiCat main window.";
@@ -80,9 +78,6 @@ public class Plugin : IDalamudPlugin
     {
         var uiBuilder = _uiBuilder;
         var pluginInterface = _pluginInterface;
-        var textureProvider = TextureProvider;
-        if (textureProvider == null)
-            return;
 
         if (_initialized || _initError)
         {
@@ -136,6 +131,7 @@ public class Plugin : IDalamudPlugin
                 : null;
 
             _channelService = new ChannelService(_config, _httpClient, _tokenManager);
+            var textureProvider = _services.TextureProvider;
             _avatarCache = new AvatarCache(textureProvider, _httpClient);
             _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
             _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
@@ -386,7 +382,7 @@ public class Plugin : IDalamudPlugin
             {
                 try
                 {
-                    var wrap = TextureProvider.CreateFromRaw(
+                    var wrap = _services.TextureProvider.CreateFromRaw(
                         RawImageSpecification.Rgba32(image.Width, image.Height),
                         image.Data);
                     var texture = new ForwardingSharedImmediateTexture(wrap);
