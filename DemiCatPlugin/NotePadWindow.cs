@@ -164,7 +164,8 @@ public sealed class NotePadWindow : IDisposable
                 ImGui.PushStyleColor(ImGuiCol.TabActive, AdjustTabColor(color, 1f));
                 ImGui.PushStyleColor(ImGuiCol.TabHovered, AdjustTabColor(color, 1.2f));
 
-                var tabOpen = ImGui.BeginTabItem(label, tabFlags);
+                var tabVisible = true;
+                var tabOpen = ImGui.BeginTabItem(label, ref tabVisible, tabFlags);
                 var rectMin = ImGui.GetItemRectMin();
                 var rectMax = ImGui.GetItemRectMax();
                 var drawList = ImGui.GetWindowDrawList();
@@ -189,6 +190,16 @@ public sealed class NotePadWindow : IDisposable
 
                 ImGui.PopStyleColor(3);
                 style.TabMinWidthForCloseButton = previousTabMinWidth;
+
+                if (!tabVisible && !IsReadOnly)
+                {
+                    _ = Task.Run(() => _service.DeleteSectionAsync(section.Id, CancellationToken.None));
+
+                    if (string.Equals(_selectedSectionId, section.Id, StringComparison.Ordinal))
+                    {
+                        _selectedSectionId = null;
+                    }
+                }
 
                 if (ImGui.BeginDragDropSource())
                 {
