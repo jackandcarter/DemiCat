@@ -820,10 +820,7 @@ public class Plugin : IDalamudPlugin
             var savedDockVisibility = _config.DockVisible;
             _savedDockVisibilityPreference = savedDockVisibility;
 
-            if (_mainWindow.IsOpen)
-            {
-                _mainWindow.IsOpen = false;
-            }
+            _mainWindow.CloseDockForUnlink();
 
             if (_config.DockVisible != savedDockVisibility)
             {

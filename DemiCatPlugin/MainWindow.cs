@@ -350,18 +350,25 @@ public class MainWindow : IDisposable
 
     internal void HandleUnlinkedState()
     {
-        CloseAllFeatureWindows();
-
         if (_settings.IsOpen)
         {
+            CloseAllFeatureWindows();
             return;
         }
 
-        if (IsOpen)
+        CloseDockForUnlink();
+    }
+
+    internal void CloseDockForUnlink()
+    {
+        CloseAllFeatureWindows();
+
+        if (_isOpen)
         {
-            IsOpen = false;
+            _isOpen = false;
         }
-        else if (_config.DockVisible)
+
+        if (_config.DockVisible)
         {
             _config.DockVisible = false;
             SaveConfig();
