@@ -53,8 +53,12 @@ public class Plugin : IDalamudPlugin
     private Config _config = null!;
     private HttpClient _httpClient = null!;
     private ChannelService _channelService = null!;
-    private Action _openMainUi = null!;
-    private Action _openConfigUi = null!;
+    private Action? _openMainUi;
+    private Action? _openConfigUi;
+    private Action? _preInitOpenMainUiHandler;
+    private Action? _preInitOpenConfigUiHandler;
+    private bool _queuedOpenMainUi;
+    private bool _queuedOpenConfigUi;
     private TokenManager _tokenManager = null!;
     private bool _officerWatcherRunning;
     private bool _invalidTokenToastShown;
@@ -72,6 +76,10 @@ public class Plugin : IDalamudPlugin
         _uiBuilder = pluginInterface.UiBuilder ?? throw new ArgumentNullException(nameof(pluginInterface.UiBuilder));
 
         _uiBuilder.Draw += EnsureInitializedOnce;
+        _preInitOpenMainUiHandler = HandlePreInitOpenMainUi;
+        _uiBuilder.OpenMainUi += _preInitOpenMainUiHandler;
+        _preInitOpenConfigUiHandler = HandlePreInitOpenConfigUi;
+        _uiBuilder.OpenConfigUi += _preInitOpenConfigUiHandler;
     }
 
     private void EnsureInitializedOnce()
@@ -176,9 +184,19 @@ public class Plugin : IDalamudPlugin
             uiBuilder.Draw += DrawOverlay;
 
             _openMainUi = () => _mainWindow.IsOpen = true;
+            if (_preInitOpenMainUiHandler != null)
+            {
+                uiBuilder.OpenMainUi -= _preInitOpenMainUiHandler;
+                _preInitOpenMainUiHandler = null;
+            }
             uiBuilder.OpenMainUi += _openMainUi;
 
             _openConfigUi = () => _settings.IsOpen = true;
+            if (_preInitOpenConfigUiHandler != null)
+            {
+                uiBuilder.OpenConfigUi -= _preInitOpenConfigUiHandler;
+                _preInitOpenConfigUiHandler = null;
+            }
             uiBuilder.OpenConfigUi += _openConfigUi;
 
             _mewCommandInfo = new CommandInfo(OnMewCommand)
@@ -194,6 +212,19 @@ public class Plugin : IDalamudPlugin
                 HandleTokenLinked();
 
             _services.Log.Info("DemiCat loaded.");
+            var openMainHandler = _openMainUi;
+            if (_queuedOpenMainUi && openMainHandler != null)
+            {
+                _queuedOpenMainUi = false;
+                openMainHandler();
+            }
+
+            var openConfigHandler = _openConfigUi;
+            if (_queuedOpenConfigUi && openConfigHandler != null)
+            {
+                _queuedOpenConfigUi = false;
+                openConfigHandler();
+            }
             _initialized = true;
         }
         catch (Exception ex)
@@ -232,6 +263,30 @@ public class Plugin : IDalamudPlugin
         var uiBuilder = _uiBuilder;
         uiBuilder.Draw -= EnsureInitializedOnce;
 
+        if (_preInitOpenMainUiHandler != null)
+        {
+            uiBuilder.OpenMainUi -= _preInitOpenMainUiHandler;
+            _preInitOpenMainUiHandler = null;
+        }
+
+        if (_preInitOpenConfigUiHandler != null)
+        {
+            uiBuilder.OpenConfigUi -= _preInitOpenConfigUiHandler;
+            _preInitOpenConfigUiHandler = null;
+        }
+
+        if (_openMainUi != null)
+        {
+            uiBuilder.OpenMainUi -= _openMainUi;
+            _openMainUi = null;
+        }
+
+        if (_openConfigUi != null)
+        {
+            uiBuilder.OpenConfigUi -= _openConfigUi;
+            _openConfigUi = null;
+        }
+
         if (!_initialized)
             return;
 
@@ -253,10 +308,6 @@ public class Plugin : IDalamudPlugin
         uiBuilder.Draw -= _mainWindow.Draw;
         uiBuilder.Draw -= _settings.Draw;
         uiBuilder.Draw -= DrawOverlay;
-
-        // Unsubscribe UI open handlers
-        uiBuilder.OpenMainUi -= _openMainUi;
-        uiBuilder.OpenConfigUi -= _openConfigUi;
 
         _services.CommandManager.RemoveHandler(MewCommand);
 
@@ -289,6 +340,32 @@ public class Plugin : IDalamudPlugin
     private void OnMewCommand(string command, string arguments)
     {
         _mainWindow.IsOpen = !_mainWindow.IsOpen;
+    }
+
+    private void HandlePreInitOpenMainUi()
+    {
+        var handler = _openMainUi;
+        if (_initialized && handler != null)
+        {
+            handler();
+            return;
+        }
+
+        if (!_initError)
+            _queuedOpenMainUi = true;
+    }
+
+    private void HandlePreInitOpenConfigUi()
+    {
+        var handler = _openConfigUi;
+        if (_initialized && handler != null)
+        {
+            handler();
+            return;
+        }
+
+        if (!_initError)
+            _queuedOpenConfigUi = true;
     }
 
     private void DrawOverlay()
@@ -866,7 +943,8 @@ public class Plugin : IDalamudPlugin
         if (toastGui == null || chatGui == null)
             return;
 
-        if (_openConfigUi == null)
+        var openConfigHandler = _openConfigUi;
+        if (openConfigHandler == null)
             return;
 
         _invalidTokenToastShown = true;
@@ -885,11 +963,11 @@ public class Plugin : IDalamudPlugin
                         var framework = _services.Framework;
                         if (framework != null)
                         {
-                            _ = framework.RunOnTick(() => _openConfigUi());
+                            _ = framework.RunOnTick(() => openConfigHandler());
                         }
                         else
                         {
-                            _openConfigUi();
+                            openConfigHandler();
                         }
                     }
                     catch
