@@ -1183,8 +1183,8 @@ public class ChatWindow : IDisposable
                     if (!allowAutoLoad && result.AnyDeferred)
                     {
                         ImGui.Spacing();
-                        var style = ImGui.GetStyle();
-                        ImGui.PushStyleColor(ImGuiCol.Text, style.Colors[(int)ImGuiCol.TextDisabled]);
+                        var lazyLoadStyle = ImGui.GetStyle();
+                        ImGui.PushStyleColor(ImGuiCol.Text, lazyLoadStyle.Colors[(int)ImGuiCol.TextDisabled]);
                         ImGui.TextUnformatted("Images not loaded (lazy-load enabled).");
                         ImGui.PopStyleColor();
                         ImGui.SameLine();
