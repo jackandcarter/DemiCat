@@ -4,6 +4,9 @@
 - Added API tests covering Discord emoji warm-up responses and cached emoji listings.
 - Added officer message endpoint test ensuring unresolved channels return HTTP 409 with structured error details.
 
+## 13.0.0.9 - 2025-10-07
+- Bumped plugin manifest versions to 13.0.0.9 for Dalamud distribution.
+
 ## 13.0.0.8 - 2025-10-06
 - Bumped plugin manifest versions to 13.0.0.8 for Dalamud distribution.
 
