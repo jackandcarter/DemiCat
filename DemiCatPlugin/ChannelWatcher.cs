@@ -536,18 +536,21 @@ public class ChannelWatcher : IDisposable
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
-            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, ex.StatusCode);
+            var status = ex.StatusCode?.ToString() ?? "Unknown";
+            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, status);
             _ = Task.Run(() => _tokenManager.Clear("Invalid API key"));
             return ChannelRefreshResult.Failure(kind, ChannelRefreshError.Unauthorized);
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
         {
-            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, ex.StatusCode);
+            var status = ex.StatusCode?.ToString() ?? "Unknown";
+            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, status);
             return ChannelRefreshResult.Failure(kind, ChannelRefreshError.Forbidden);
         }
         catch (HttpRequestException ex)
         {
-            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, ex.StatusCode);
+            var status = ex.StatusCode?.ToString() ?? "Unknown";
+            PluginServices.Instance!.Log.Warning(ex, "Failed to fetch channels for {Kind}. Status: {Status}", kind, status);
             return ChannelRefreshResult.Failure(kind, ChannelRefreshError.Generic);
         }
         catch (Exception ex)
