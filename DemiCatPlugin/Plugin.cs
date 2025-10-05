@@ -42,6 +42,8 @@ public class Plugin : IDalamudPlugin
     private const string MewCommandHelpMessage = "Open the DemiCat main window.";
 
     private PluginServices? _services;
+    private PluginServices Services => _services ?? PluginServices.Instance
+        ?? throw new InvalidOperationException("Plugin services are not initialized.");
     private UiRenderer? _ui;
     private AvatarCache? _avatarCache;
     private ChatWindow? _chatWindow;
@@ -56,6 +58,8 @@ public class Plugin : IDalamudPlugin
     private EmojiManager? _emojiManager;
 
     private HttpClient? _httpClient;
+    private HttpClient HttpClient => _httpClient
+        ?? throw new InvalidOperationException("HTTP client has not been initialized.");
     private ChannelService? _channelService;
     private Action? _openMainUi;
     private bool _officerWatcherRunning;
@@ -109,7 +113,7 @@ public class Plugin : IDalamudPlugin
         {
             _services = pluginInterface.Create<PluginServices>()
                 ?? throw new InvalidOperationException("Failed to initialize plugin services.");
-            if (_services.PluginInterface == null || _services.Log == null)
+            if (Services.PluginInterface == null || Services.Log == null)
                 throw new InvalidOperationException("Failed to initialize plugin services.");
 
             var oldVersion = _config.Version;
@@ -120,7 +124,7 @@ public class Plugin : IDalamudPlugin
             _config.ApiBaseUrl = sanitizedApiBaseUrl;
             var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
             if (rolesRemoved || _config.Version != oldVersion || apiBaseUrlChanged)
-                _services.PluginInterface.SavePluginConfig(_config);
+                Services.PluginInterface.SavePluginConfig(_config);
 
             RequestStateService.Load(_config);
 
@@ -134,32 +138,32 @@ public class Plugin : IDalamudPlugin
 
             WebTextureCache.FetchOverride = FetchWebTexture;
 
-            PingService.Instance = new PingService(_httpClient, _config, _tokenManager);
+            PingService.Instance = new PingService(HttpClient, _config, _tokenManager);
 
             _channelSelection = new ChannelSelectionService(_config);
-            _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
+            _emojiManager = new EmojiManager(HttpClient, _tokenManager, _config);
             _emojiFontHandle = InitializeEmojiFont();
             _emojiManager.EmojiFontHandle = _emojiFontHandle;
-            _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
+            _ui = new UiRenderer(_config, HttpClient, _channelSelection, _emojiManager);
 
             _settings.ConfigureServices(
-                _httpClient,
-                () => RefreshRoles(_services.Log),
+                HttpClient,
+                () => RefreshRoles(Services.Log),
                 _ui.StartNetworking);
 
             _presenceService = _config.SyncedChat && _config.EnableFcChat
-                ? new DiscordPresenceService(_config, _httpClient)
+                ? new DiscordPresenceService(_config, HttpClient)
                 : null;
 
-            _channelService = new ChannelService(_config, _httpClient, _tokenManager);
-            var textureProvider = _services.TextureProvider;
-            _avatarCache = new AvatarCache(textureProvider, _httpClient);
-            _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
-            _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
+            _channelService = new ChannelService(_config, HttpClient, _tokenManager);
+            var textureProvider = Services.TextureProvider;
+            _avatarCache = new AvatarCache(textureProvider, HttpClient);
+            _chatWindow = new FcChatWindow(_config, HttpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
+            _officerChatWindow = new OfficerChatWindow(_config, HttpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
 
             _presenceService?.Reset();
 
-            _notePadService = new NotePadService(_config, _httpClient, _tokenManager);
+            _notePadService = new NotePadService(_config, HttpClient, _tokenManager);
             _notePadWindow = new NotePadWindow(_config, _notePadService);
 
             _mainWindow = new MainWindow(
@@ -168,15 +172,15 @@ public class Plugin : IDalamudPlugin
                 _chatWindow,
                 _officerChatWindow,
                 _settings,
-                _httpClient,
+                HttpClient,
                 _channelService,
                 _channelSelection,
                 _emojiManager,
                 _notePadWindow
             );
 
-            _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient, _channelService);
-            _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
+            _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, HttpClient, _channelService);
+            _requestWatcher = new RequestWatcher(_config, HttpClient, _tokenManager);
 
             _channelSelection.ChannelChanged += HandleChannelSelectionValidation;
 
@@ -192,7 +196,7 @@ public class Plugin : IDalamudPlugin
 
             _windowSystem.Add(DrawMainWindowArea);
 
-            _ = RoleCache.EnsureLoaded(_httpClient, _config);
+            _ = RoleCache.EnsureLoaded(HttpClient, _config);
 
             _openMainUi = () =>
             {
@@ -205,7 +209,7 @@ public class Plugin : IDalamudPlugin
             {
                 HelpMessage = MewCommandHelpMessage
             };
-            _services.CommandManager.AddHandler(MewCommand, _mewCommandInfo);
+            Services.CommandManager.AddHandler(MewCommand, _mewCommandInfo);
 
             _tokenManager.OnLinked += HandleTokenLinked;
             _tokenManager.OnUnlinked += HandleTokenUnlinked;
@@ -213,7 +217,7 @@ public class Plugin : IDalamudPlugin
             if (_tokenManager.IsReady())
                 HandleTokenLinked();
 
-            _services.Log.Info("DemiCat loaded.");
+            Services.Log.Info("DemiCat loaded.");
             _initialized = true;
         }
         catch (Exception ex)
@@ -271,7 +275,7 @@ public class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            _services!.Log.Warning(ex, "Failed to clear web texture cache on framework thread.");
+            Services.Log.Warning(ex, "Failed to clear web texture cache on framework thread.");
             WebTextureCache.Clear();
         }
 
@@ -283,7 +287,7 @@ public class Plugin : IDalamudPlugin
 
         if (_services != null)
         {
-            _services.CommandManager.RemoveHandler(MewCommand);
+            Services.CommandManager.RemoveHandler(MewCommand);
         }
 
         _tokenManager.OnLinked -= HandleTokenLinked;
@@ -373,13 +377,13 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            response = await _httpClient
+            response = await HttpClient
                 .GetAsync(url, HttpCompletionOption.ResponseHeadersRead)
                 .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
             {
-                _services.Log.Warning(
+                Services.Log.Warning(
                     $"Failed to download texture {url}: {(int)response.StatusCode} {response.StatusCode}. Falling back to text label.");
                 await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
                 return;
@@ -389,19 +393,19 @@ public class Plugin : IDalamudPlugin
         }
         catch (TaskCanceledException ex)
         {
-            _services.Log.Warning(ex, $"Texture download timed out for {url}. Falling back to text label.");
+            Services.Log.Warning(ex, $"Texture download timed out for {url}. Falling back to text label.");
             await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
             return;
         }
         catch (HttpRequestException ex)
         {
-            _services.Log.Warning(ex, $"Failed to download texture {url}. Falling back to text label.");
+            Services.Log.Warning(ex, $"Failed to download texture {url}. Falling back to text label.");
             await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
             return;
         }
         catch (Exception ex)
         {
-            _services.Log.Error(ex, $"Unexpected error downloading texture {url}. Falling back to text label.");
+            Services.Log.Error(ex, $"Unexpected error downloading texture {url}. Falling back to text label.");
             await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
             return;
         }
@@ -412,7 +416,7 @@ public class Plugin : IDalamudPlugin
 
         if (payload == null || payload.Length == 0)
         {
-            _services.Log.Warning($"Texture download for {url} returned no data. Falling back to text label.");
+            Services.Log.Warning($"Texture download for {url} returned no data. Falling back to text label.");
             await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
             return;
         }
@@ -424,7 +428,7 @@ public class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            _services.Log.Error(ex, $"Failed to decode texture {url}. Falling back to text label.");
+            Services.Log.Error(ex, $"Failed to decode texture {url}. Falling back to text label.");
             await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
             return;
         }
@@ -435,7 +439,7 @@ public class Plugin : IDalamudPlugin
             {
                 try
                 {
-                    var wrap = _services.TextureProvider.CreateFromRaw(
+                    var wrap = Services.TextureProvider.CreateFromRaw(
                         RawImageSpecification.Rgba32(image.Width, image.Height),
                         image.Data);
                     var texture = new ForwardingSharedImmediateTexture(wrap);
@@ -444,7 +448,7 @@ public class Plugin : IDalamudPlugin
                 }
                 catch (Exception ex)
                 {
-                    _services.Log.Error(ex, $"Failed to create texture for {url}. Falling back to text label.");
+                    Services.Log.Error(ex, $"Failed to create texture for {url}. Falling back to text label.");
                     WebTextureCache.Set(url, null);
                     onReady(null);
                 }
@@ -452,14 +456,14 @@ public class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            _services.Log.Error(ex, $"Failed to finalize texture load for {url}. Falling back to text label.");
+            Services.Log.Error(ex, $"Failed to finalize texture load for {url}. Falling back to text label.");
             await RunOnFrameworkAsync(() => onReady(null)).ConfigureAwait(false);
         }
     }
 
     private Task RunOnFrameworkAsync(Action action)
     {
-        var framework = PluginServices.Instance?.Framework ?? _services.Framework;
+        var framework = PluginServices.Instance?.Framework ?? Services.Framework;
         if (framework != null)
             return framework.RunOnTick(action);
 
@@ -471,7 +475,7 @@ public class Plugin : IDalamudPlugin
     {
         try
         {
-            var directory = _services.PluginInterface.AssemblyLocation.Directory;
+            var directory = Services.PluginInterface.AssemblyLocation.Directory;
             if (directory == null)
             {
                 return null;
@@ -500,7 +504,7 @@ public class Plugin : IDalamudPlugin
                 const string message =
                     "DemiCat could not find its emoji font. Channel icons will fall back to text until the font is restored.";
 
-                _services.Log.Info(
+                Services.Log.Info(
                     "Emoji font not found at any known path ({Paths}). Unicode emoji will use fallback glyphs.",
                     paths
                 );
@@ -536,12 +540,12 @@ public class Plugin : IDalamudPlugin
                     pre.Font = baseFont;
                 }));
 
-            _services.Log.Info("Loaded emoji font from {Path}.", fontPath);
+            Services.Log.Info("Loaded emoji font from {Path}.", fontPath);
             return handle;
         }
         catch (Exception ex)
         {
-            _services.Log.Warning(ex, "Failed to load emoji font. Unicode emoji will use fallback glyphs.");
+            Services.Log.Warning(ex, "Failed to load emoji font. Unicode emoji will use fallback glyphs.");
             return null;
         }
     }
@@ -614,7 +618,7 @@ public class Plugin : IDalamudPlugin
                     var guildChanged = !string.Equals(normalizedStoredGuild, normalizedResponseGuild, StringComparison.Ordinal);
                     _config.GuildId = normalizedResponseGuild;
                     ChannelWatcher.Instance?.InvalidateCache();
-                    _services.PluginInterface.SavePluginConfig(_config);
+                    Services.PluginInterface.SavePluginConfig(_config);
 
                     _chatWindow.OnGuildUpdated();
                     _officerChatWindow.OnGuildUpdated();
@@ -675,10 +679,10 @@ public class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            _services.Log.Warning(
-                ex,
-                $"Failed to revalidate channel selections after guild change to {normalizedGuildId}"
-            );
+                Services.Log.Warning(
+                    ex,
+                    $"Failed to revalidate channel selections after guild change to {normalizedGuildId}"
+                );
         }
 
         try
@@ -687,7 +691,7 @@ public class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            _services.Log.Warning(ex, "Failed to restart watchers after guild change");
+            Services.Log.Warning(ex, "Failed to restart watchers after guild change");
         }
 
         try
@@ -696,7 +700,7 @@ public class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            _services.Log.Warning(ex, "Failed to refresh custom emoji after guild change");
+            Services.Log.Warning(ex, "Failed to refresh custom emoji after guild change");
         }
     }
 
@@ -747,14 +751,14 @@ public class Plugin : IDalamudPlugin
 
     private void StartWatchers()
     {
-        _services.Log.Info("Starting watchers");
+        Services.Log.Info("Starting watchers");
         _ = _settings.HardReloadIdentityAndStartAsync();
     }
 
     private void HandleTokenLinked()
     {
         _invalidTokenToastShown = false;
-        try { _services.ChatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
+        try { _services?.ChatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
 
         var desiredDockVisibility = _savedDockVisibilityPreference ?? _config.DockVisible;
         _savedDockVisibilityPreference = null;
@@ -779,7 +783,7 @@ public class Plugin : IDalamudPlugin
             if (_config.DockVisible != savedDockVisibility)
             {
                 _config.DockVisible = savedDockVisibility;
-                _services.PluginInterface?.SavePluginConfig(_config);
+                Services.PluginInterface?.SavePluginConfig(_config);
             }
 
             var hadOfficerAccess = _config.IsOfficerToken;
@@ -787,7 +791,7 @@ public class Plugin : IDalamudPlugin
             _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
             if (hadOfficerAccess)
             {
-                _services.PluginInterface?.SavePluginConfig(_config);
+                Services.PluginInterface?.SavePluginConfig(_config);
             }
 
             if (IsAuthenticationFailure(reason))
@@ -796,7 +800,7 @@ public class Plugin : IDalamudPlugin
             }
         }
 
-        var framework = PluginServices.Instance?.Framework ?? _services.Framework;
+        var framework = PluginServices.Instance?.Framework ?? Services.Framework;
 
         if (framework != null)
         {
@@ -807,7 +811,7 @@ public class Plugin : IDalamudPlugin
             }
             catch (Exception ex)
             {
-                var log = PluginServices.Instance?.Log ?? _services.Log;
+                var log = PluginServices.Instance?.Log ?? Services.Log;
                 log?.Warning(ex, "Failed to marshal token unlink handling to framework thread");
             }
         }
@@ -820,7 +824,7 @@ public class Plugin : IDalamudPlugin
         if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
             return;
 
-        var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
+        var pingService = PingService.Instance ?? new PingService(HttpClient, _config, _tokenManager);
         HttpResponseMessage? response = null;
         try
         {
@@ -828,7 +832,7 @@ public class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            _services.Log.Warning(ex, "Failed to ping DemiCat backend while starting watchers");
+            Services.Log.Warning(ex, "Failed to ping DemiCat backend while starting watchers");
         }
 
         if (response == null)
@@ -839,7 +843,7 @@ public class Plugin : IDalamudPlugin
 
         if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
         {
-            _services.Log.Warning($"Ping returned {(int)response.StatusCode} {response.StatusCode}; clearing token");
+            Services.Log.Warning($"Ping returned {(int)response.StatusCode} {response.StatusCode}; clearing token");
             _tokenManager.Clear("Invalid API key");
             return;
         }
@@ -853,26 +857,26 @@ public class Plugin : IDalamudPlugin
 
         if (_config.Requests)
         {
-            _services.Log.Info("Starting request watcher");
+            Services.Log.Info("Starting request watcher");
             _requestWatcher.Start();
         }
 
         var hasOfficerAccess = OfficerPermissions.HasAccess(_config);
         if (_config.Events || _config.SyncedChat || hasOfficerAccess)
         {
-            _services.Log.Info("Starting channel watcher");
+            Services.Log.Info("Starting channel watcher");
             _ = _channelWatcher.Start();
         }
 
         if (_config.NotePadEnabled)
         {
-            _services.Log.Info("Starting notepad service");
+            Services.Log.Info("Starting notepad service");
             _notePadService.Start();
         }
 
         if (_config.SyncedChat && _config.EnableFcChat)
         {
-            _services.Log.Info("Starting chat window networking");
+            Services.Log.Info("Starting chat window networking");
             _chatWindow.StartNetworking();
         }
 
@@ -880,7 +884,7 @@ public class Plugin : IDalamudPlugin
         {
             if (!_officerWatcherRunning)
             {
-                _services.Log.Info("Starting officer chat window networking");
+                Services.Log.Info("Starting officer chat window networking");
                 _officerChatWindow.StartNetworking();
                 _officerWatcherRunning = true;
             }
@@ -892,13 +896,13 @@ public class Plugin : IDalamudPlugin
 
         if (_config.Events)
         {
-            _services.Log.Info("Starting event watchers");
+            Services.Log.Info("Starting event watchers");
             _ = _ui.StartNetworking();
             _mainWindow.EventCreateWindow.StartNetworking();
             _mainWindow.TemplatesWindow.StartNetworking();
         }
 
-        _services.Log.Info("Watchers started");
+        Services.Log.Info("Watchers started");
     }
 
     private static bool IsAuthenticationFailure(string? reason)
@@ -910,8 +914,8 @@ public class Plugin : IDalamudPlugin
         if (_invalidTokenToastShown)
             return;
 
-        var toastGui = _services.ToastGui;
-        var chatGui = _services.ChatGui;
+        var toastGui = Services.ToastGui;
+        var chatGui = Services.ChatGui;
 
         if (toastGui == null || chatGui == null)
             return;
@@ -929,7 +933,7 @@ public class Plugin : IDalamudPlugin
                 {
                     try
                     {
-                        var framework = _services.Framework;
+                        var framework = Services.Framework;
                         if (framework != null)
                         {
                             _ = framework.RunOnTick(HandleOpenConfig);
@@ -972,13 +976,13 @@ public class Plugin : IDalamudPlugin
     {
         var suffix = string.IsNullOrEmpty(statusDetails) ? string.Empty : statusDetails;
         var message = $"Unable to reach the DemiCat backend{suffix}. Watchers were not started.";
-        _services.Log.Warning(message);
+        Services.Log.Warning(message);
         PluginServices.Instance?.ToastGui.ShowError(message);
     }
 
     private void StopWatchers()
     {
-        _services.Log.Info("Stopping watchers");
+        Services.Log.Info("Stopping watchers");
         _requestWatcher.Stop();
         _channelWatcher.Stop();
         _notePadService.Stop();
@@ -990,7 +994,7 @@ public class Plugin : IDalamudPlugin
         _ui.StopNetworking();
         _mainWindow.TemplatesWindow.StopNetworking();
         MembershipCache.Reset();
-        _services.Log.Info("Watchers stopped");
+        Services.Log.Info("Watchers stopped");
     }
 
     private async Task<bool> RefreshRoles(IPluginLog log)
@@ -1004,7 +1008,7 @@ public class Plugin : IDalamudPlugin
             var request = new HttpRequestMessage(HttpMethod.Post, url);
             ApiHelpers.AddAuthHeader(request, _tokenManager);
             log.Info($"Requesting roles from {url}");
-            var response = await _httpClient.SendAsync(request);
+            var response = await HttpClient.SendAsync(request);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
@@ -1038,7 +1042,7 @@ public class Plugin : IDalamudPlugin
 
             try
             {
-                var channelResponse = await _httpClient.SendAsync(channelRequest);
+                var channelResponse = await HttpClient.SendAsync(channelRequest);
                 if (channelResponse.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     var responseBody = await channelResponse.Content.ReadAsStringAsync();
@@ -1086,7 +1090,7 @@ public class Plugin : IDalamudPlugin
 
             var hasChat = chatChannels.Count > 0;
 
-            _ = _services.Framework.RunOnTick(() =>
+            _ = Services.Framework.RunOnTick(() =>
             {
                 var officerWatcherWasRunning = _officerWatcherRunning;
                 var channelWatcherWasRunning = _channelWatcher.IsRunning;
@@ -1135,7 +1139,7 @@ public class Plugin : IDalamudPlugin
                 var stopRequestWatcher = requestWatcherWasRunning && !shouldRunRequestWatcher;
                 var startRequestWatcher = !requestWatcherWasRunning && shouldRunRequestWatcher;
 
-                _services.PluginInterface.SavePluginConfig(_config);
+                Services.PluginInterface.SavePluginConfig(_config);
                 MembershipCache.Reset();
 
                 _ = Task.Run(async () =>
@@ -1145,26 +1149,26 @@ public class Plugin : IDalamudPlugin
                     {
                         if (stopRequestWatcher)
                         {
-                            _services.Log.Info("Stopping request watcher");
+                            Services.Log.Info("Stopping request watcher");
                             _requestWatcher.Stop();
                         }
 
                         if (stopChannelWatcher)
                         {
-                            _services.Log.Info("Stopping channel watcher");
+                            Services.Log.Info("Stopping channel watcher");
                             _channelWatcher.Stop();
                         }
 
                         if (stopOfficer)
                         {
-                            _services.Log.Info("Stopping officer chat window networking");
+                            Services.Log.Info("Stopping officer chat window networking");
                             _officerChatWindow.StopNetworking();
                             _officerWatcherRunning = false;
                         }
 
                         if (stopChat)
                         {
-                            _services.Log.Info("Stopping chat window networking");
+                            Services.Log.Info("Stopping chat window networking");
                             _chatWindow.StopNetworking();
                             _presenceService?.SetPresenceReady(false);
                             _presenceService?.Stop();
@@ -1172,37 +1176,37 @@ public class Plugin : IDalamudPlugin
 
                         if (startChannelWatcher)
                         {
-                            _services.Log.Info("Starting channel watcher");
+                            Services.Log.Info("Starting channel watcher");
                             await _channelWatcher.Start().ConfigureAwait(false);
                         }
 
                         if (startRequestWatcher)
                         {
-                            _services.Log.Info("Starting request watcher");
+                            Services.Log.Info("Starting request watcher");
                             _requestWatcher.Start();
                         }
 
                         if (startChat)
                         {
-                            _services.Log.Info("Starting chat window networking");
+                            Services.Log.Info("Starting chat window networking");
                             _chatWindow.StartNetworking();
                         }
 
                         if (startOfficer)
                         {
-                            _services.Log.Info("Starting officer chat window networking");
+                            Services.Log.Info("Starting officer chat window networking");
                             _officerChatWindow.StartNetworking();
                             _officerWatcherRunning = true;
                         }
                     }
                     catch (Exception ex)
                     {
-                        _services.Log.Error(ex, "Error updating watchers after refreshing roles.");
+                        Services.Log.Error(ex, "Error updating watchers after refreshing roles.");
                     }
                     finally
                     {
                         _watcherRestartLock.Release();
-                        _ = _services.Framework.RunOnTick(() =>
+                        _ = Services.Framework.RunOnTick(() =>
                         {
                             _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
                         });
@@ -1210,7 +1214,7 @@ public class Plugin : IDalamudPlugin
                 });
             });
 
-            await RoleCache.Refresh(_httpClient, _config);
+            await RoleCache.Refresh(HttpClient, _config);
             return true;
         }
         catch (Exception ex)
