@@ -10,7 +10,7 @@ internal sealed class GameDataCache : IDisposable
 {
     private readonly IDataManager _dataManager;
     private readonly ITextureProvider _textureProvider;
-    private readonly ITextureReadbackProvider _textureReadback;
+    private readonly ITextureReadbackProvider? _textureReadback;
     private readonly HttpClient _httpClient;
     private readonly string _cacheDir;
     private readonly Dictionary<uint, CachedEntry> _items = new();
@@ -62,6 +62,7 @@ internal sealed class GameDataCache : IDisposable
 
     private async Task<CachedEntry?> ResolveItem(uint id)
     {
+        string? luminaName = null;
         try
         {
             #if LUMINA_GENERATED_SHEETS
@@ -69,9 +70,13 @@ internal sealed class GameDataCache : IDisposable
             var row = sheet?.GetRow(id);
             if (row != null)
             {
-                var name = row.Name.ExtractText();
-                var iconFile = await GetIconFile(row.Icon, id);
-                return new CachedEntry(name, iconFile, DateTime.UtcNow);
+                luminaName = row.Name.ExtractText();
+                if (_textureReadback != null)
+                {
+                    var iconFile = await TryGetIconFile(row.Icon, id);
+                    if (!string.IsNullOrEmpty(iconFile))
+                        return new CachedEntry(luminaName, iconFile!, DateTime.UtcNow);
+                }
             }
             #endif
         }
@@ -85,7 +90,9 @@ internal sealed class GameDataCache : IDisposable
             var json = await _httpClient.GetStringAsync($"https://xivapi.com/item/{id}");
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            var name = root.TryGetProperty("Name", out var nEl) ? nEl.GetString() ?? $"Item {id}" : $"Item {id}";
+            var name = root.TryGetProperty("Name", out var nEl)
+                ? nEl.GetString() ?? luminaName ?? $"Item {id}"
+                : luminaName ?? $"Item {id}";
             var iconRel = root.TryGetProperty("Icon", out var iEl) ? iEl.GetString() ?? string.Empty : string.Empty;
             var iconUrl = string.IsNullOrEmpty(iconRel) ? string.Empty : $"https://xivapi.com{iconRel}";
             var iconFile = await DownloadIcon(iconUrl, id);
@@ -99,6 +106,7 @@ internal sealed class GameDataCache : IDisposable
 
     private async Task<CachedEntry?> ResolveDuty(uint id)
     {
+        string? luminaName = null;
         try
         {
             #if LUMINA_GENERATED_SHEETS
@@ -106,9 +114,13 @@ internal sealed class GameDataCache : IDisposable
             var row = sheet?.GetRow(id);
             if (row != null)
             {
-                var name = row.Name.ExtractText();
-                var iconFile = await GetIconFile(row.Icon, id, "duty");
-                return new CachedEntry(name, iconFile, DateTime.UtcNow);
+                luminaName = row.Name.ExtractText();
+                if (_textureReadback != null)
+                {
+                    var iconFile = await TryGetIconFile(row.Icon, id, "duty");
+                    if (!string.IsNullOrEmpty(iconFile))
+                        return new CachedEntry(luminaName, iconFile!, DateTime.UtcNow);
+                }
             }
             #endif
         }
@@ -122,7 +134,9 @@ internal sealed class GameDataCache : IDisposable
             var json = await _httpClient.GetStringAsync($"https://xivapi.com/duty/{id}");
             using var doc = JsonDocument.Parse(json);
             var root = doc.RootElement;
-            var name = root.TryGetProperty("Name", out var nEl) ? nEl.GetString() ?? $"Duty {id}" : $"Duty {id}";
+            var name = root.TryGetProperty("Name", out var nEl)
+                ? nEl.GetString() ?? luminaName ?? $"Duty {id}"
+                : luminaName ?? $"Duty {id}";
             var iconRel = root.TryGetProperty("Icon", out var iEl) ? iEl.GetString() ?? string.Empty : string.Empty;
             var iconUrl = string.IsNullOrEmpty(iconRel) ? string.Empty : $"https://xivapi.com{iconRel}";
             var iconFile = await DownloadIcon(iconUrl, id, "duty");
@@ -134,23 +148,30 @@ internal sealed class GameDataCache : IDisposable
         }
     }
 
-    private async Task<string> GetIconFile(uint iconId, uint id, string prefix = "item")
+    private async Task<string?> TryGetIconFile(uint iconId, uint id, string prefix = "item")
     {
+        if (_textureReadback == null)
+            return null;
+
         var filePath = Path.Combine(_cacheDir, $"{prefix}-{id}.png");
-        if (!File.Exists(filePath))
+        if (File.Exists(filePath))
+            return filePath;
+
+        try
         {
-            try
-            {
-                var texture = _textureProvider.GetFromGameIcon(iconId);
-                using var icon = await texture.RentAsync();
-                await _textureReadback.SaveToFileAsync(icon, GUID.GUID_ContainerFormatPng, filePath);
-            }
-            catch
-            {
-                // ignore
-            }
+            var texture = _textureProvider.GetFromGameIcon(iconId);
+            if (texture == null)
+                return null;
+
+            using var icon = await texture.RentAsync();
+            await _textureReadback.SaveToFileAsync(icon, GUID.GUID_ContainerFormatPng, filePath);
         }
-        return filePath;
+        catch
+        {
+            return null;
+        }
+
+        return File.Exists(filePath) ? filePath : null;
     }
 
     private async Task<string> DownloadIcon(string url, uint id, string prefix = "item")
