@@ -86,7 +86,7 @@ public sealed class ProgressOverlay
             return;
         }
 
-        if (!ImGuiHelpers.IsImGuiReady || ImGui.GetCurrentContext() == IntPtr.Zero)
+        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }
