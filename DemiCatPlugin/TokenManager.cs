@@ -4,6 +4,7 @@ using System.Text;
 using System.Security.Cryptography;
 using System.Runtime.InteropServices;
 using System.Diagnostics;
+using System.Threading;
 using Dalamud.Plugin;
 
 namespace DemiCatPlugin;
@@ -351,13 +352,45 @@ public class TokenManager
         OnUnlinked?.Invoke(reason);
     }
 
-    public void RegisterWatcher(Action start, Action stop)
+    public IDisposable RegisterWatcher(Action start, Action stop)
     {
         OnLinked += start;
-        OnUnlinked += _ => stop();
+        Action<string?> onUnlinked = _ => stop();
+        OnUnlinked += onUnlinked;
+
         if (IsReady())
         {
             start();
+        }
+
+        return new WatcherHandle(this, start, onUnlinked);
+    }
+
+    private sealed class WatcherHandle : IDisposable
+    {
+        private readonly TokenManager _manager;
+        private Action? _start;
+        private Action<string?>? _stop;
+
+        public WatcherHandle(TokenManager manager, Action start, Action<string?> stop)
+        {
+            _manager = manager;
+            _start = start;
+            _stop = stop;
+        }
+
+        public void Dispose()
+        {
+            var start = Interlocked.Exchange(ref _start, null);
+            var stop = Interlocked.Exchange(ref _stop, null);
+            if (start != null)
+            {
+                _manager.OnLinked -= start;
+            }
+            if (stop != null)
+            {
+                _manager.OnUnlinked -= stop;
+            }
         }
     }
 }
