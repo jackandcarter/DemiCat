@@ -28,9 +28,10 @@ public class Plugin : IDalamudPlugin
 {
     public string Name => "DemiCat";
 
-    [PluginService] internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
+    private readonly IDalamudPluginInterface _pluginInterface;
+    private readonly IUiBuilder _uiBuilder;
+
     [PluginService] internal ITextureProvider TextureProvider { get; private set; } = null!;
-    [PluginService] internal IUiBuilder UiBuilder { get; private set; } = null!;
 
     private const uint InvalidTokenLinkCommandId = 0x44434B49;
     private const string MewCommand = "/mew";
@@ -67,25 +68,25 @@ public class Plugin : IDalamudPlugin
     private bool _initialized;
     private bool _initError;
 
-    public Plugin()
+    public Plugin(IDalamudPluginInterface pluginInterface)
     {
-        var uiBuilder = UiBuilder;
-        if (uiBuilder != null)
-            uiBuilder.Draw += EnsureInitializedOnce;
+        _pluginInterface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface));
+        _uiBuilder = pluginInterface.UiBuilder ?? throw new ArgumentNullException(nameof(pluginInterface.UiBuilder));
+
+        _uiBuilder.Draw += EnsureInitializedOnce;
     }
 
     private void EnsureInitializedOnce()
     {
-        var uiBuilder = UiBuilder;
-        var pluginInterface = PluginInterface;
+        var uiBuilder = _uiBuilder;
+        var pluginInterface = _pluginInterface;
         var textureProvider = TextureProvider;
-        if (pluginInterface == null || textureProvider == null || uiBuilder == null)
+        if (textureProvider == null)
             return;
 
         if (_initialized || _initError)
         {
-            if (uiBuilder != null)
-                uiBuilder.Draw -= EnsureInitializedOnce;
+            uiBuilder.Draw -= EnsureInitializedOnce;
             return;
         }
 
@@ -225,17 +226,15 @@ public class Plugin : IDalamudPlugin
         {
             if (_initialized || _initError)
             {
-                if (uiBuilder != null)
-                    uiBuilder.Draw -= EnsureInitializedOnce;
+                uiBuilder.Draw -= EnsureInitializedOnce;
             }
         }
     }
 
     public void Dispose()
     {
-        var uiBuilder = UiBuilder;
-        if (uiBuilder != null)
-            uiBuilder.Draw -= EnsureInitializedOnce;
+        var uiBuilder = _uiBuilder;
+        uiBuilder.Draw -= EnsureInitializedOnce;
 
         if (!_initialized)
             return;
@@ -255,16 +254,13 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle?.Dispose();
 
         // Unsubscribe UI draw handlers
-        if (uiBuilder != null)
-        {
-            uiBuilder.Draw -= _mainWindow.Draw;
-            uiBuilder.Draw -= _settings.Draw;
-            uiBuilder.Draw -= DrawOverlay;
+        uiBuilder.Draw -= _mainWindow.Draw;
+        uiBuilder.Draw -= _settings.Draw;
+        uiBuilder.Draw -= DrawOverlay;
 
-            // Unsubscribe UI open handlers
-            uiBuilder.OpenMainUi -= _openMainUi;
-            uiBuilder.OpenConfigUi -= _openConfigUi;
-        }
+        // Unsubscribe UI open handlers
+        uiBuilder.OpenMainUi -= _openMainUi;
+        uiBuilder.OpenConfigUi -= _openConfigUi;
 
         _services.CommandManager.RemoveHandler(MewCommand);
 
@@ -464,8 +460,8 @@ public class Plugin : IDalamudPlugin
                 return null;
             }
 
-            var atlas = UiBuilder.FontAtlas;
-            var fontSize = UiBuilder.FontDefaultSizePx;
+            var atlas = _uiBuilder.FontAtlas;
+            var fontSize = _uiBuilder.FontDefaultSizePx;
 
             var handle = atlas.NewDelegateFontHandle(toolkit =>
                 toolkit.OnPreBuild(pre =>
