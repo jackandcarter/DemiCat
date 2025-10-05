@@ -354,6 +354,27 @@ public static class EmbedPreviewRenderer
         TextureLru.Clear();
     }
 
+    public static void ReleaseTexture(ISharedImmediateTexture? texture)
+    {
+        if (texture == null)
+        {
+            return;
+        }
+
+        foreach (var (key, entry) in TextureCache.ToList())
+        {
+            if (!ReferenceEquals(entry.Texture, texture))
+            {
+                continue;
+            }
+
+            TextureLru.Remove(entry.Node);
+            TextureCache.Remove(key);
+            entry.Texture = null;
+            entry.IsLoading = false;
+        }
+    }
+
     private static CacheEntry CreateEntry(string key)
     {
         var node = TextureLru.AddFirst(key);
