@@ -21,12 +21,12 @@ public class SettingsWindow : IDisposable
 {
     private readonly Config _config;
     private readonly TokenManager _tokenManager;
-    private readonly HttpClient _httpClient;
-    private readonly Func<Task<bool>> _refreshRoles;
-    private readonly Func<Task> _startNetworking;
-    private readonly DeveloperWindow _devWindow;
+    private readonly IDalamudPluginInterface _pluginInterface;
+    private HttpClient? _httpClient;
+    private Func<Task<bool>>? _refreshRoles;
+    private Func<Task>? _startNetworking;
+    private DeveloperWindow? _devWindow;
     private readonly IPluginLog _log;
-    private static readonly Vector2 DefaultWindowSize = new(960f, 720f);
 
     private string _apiKey = string.Empty;
     private string _penumbraModsDirectory = string.Empty;
@@ -37,7 +37,6 @@ public class SettingsWindow : IDisposable
     private readonly object _hardReloadLock = new();
     private Task? _hardReloadTask;
     private bool _requestMainWindowOpen;
-    private bool _focusNext;
     private bool _settingsLoaded;
     private bool _isLinked;
     private static readonly int[] FadeDurations = { 5, 10, 15, 20, 30 };
@@ -48,6 +47,8 @@ public class SettingsWindow : IDisposable
 
     public bool IsOpen;
 
+    private bool ServicesReady => _httpClient != null && _refreshRoles != null && _startNetworking != null;
+
     public MainWindow? MainWindow { get; set; }
     public ChatWindow? ChatWindow { get; set; }
     public OfficerChatWindow? OfficerChatWindow { get; set; }
@@ -55,27 +56,36 @@ public class SettingsWindow : IDisposable
     public RequestWatcher? RequestWatcher { get; set; }
     public NotePadService? NotePadService { get; set; }
 
-    public SettingsWindow(Config config, TokenManager tokenManager, HttpClient httpClient, Func<Task<bool>> refreshRoles, Func<Task> startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
+    public SettingsWindow(IDalamudPluginInterface pluginInterface, Config config, TokenManager tokenManager, IPluginLog log)
     {
+        _pluginInterface = pluginInterface;
         _config = config;
         _tokenManager = tokenManager;
-        _httpClient = httpClient;
-        _refreshRoles = refreshRoles;
-        _startNetworking = startNetworking;
         _apiKey = tokenManager.Token ?? string.Empty;
         _penumbraModsDirectory = config.PenumbraModsDirectory ?? string.Empty;
         _penumbraConfigDirectory = config.PenumbraConfigDirectory ?? string.Empty;
         _penumbraCollectionOverride = config.PenumbraCollectionOverride ?? string.Empty;
-        _devWindow = new DeveloperWindow(
-            config,
-            pluginInterface,
-            () => _tokenManager.IsReady(),
-            () => HardReloadIdentityAndStartAsync(),
-            StopAllWatchersAndPresence);
         _log = log;
         _isLinked = _tokenManager.State == LinkState.Linked;
         _tokenManager.OnLinked += OnLinked;
         _tokenManager.OnUnlinked += OnUnlinked;
+    }
+
+    public void ConfigureServices(
+        HttpClient httpClient,
+        Func<Task<bool>> refreshRoles,
+        Func<Task> startNetworking)
+    {
+        _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
+        _refreshRoles = refreshRoles ?? throw new ArgumentNullException(nameof(refreshRoles));
+        _startNetworking = startNetworking ?? throw new ArgumentNullException(nameof(startNetworking));
+
+        _devWindow ??= new DeveloperWindow(
+            _config,
+            _pluginInterface,
+            () => _tokenManager.IsReady(),
+            () => HardReloadIdentityAndStartAsync(),
+            StopAllWatchersAndPresence);
     }
 
     public void Draw()
@@ -96,12 +106,6 @@ public class SettingsWindow : IDisposable
                 ImGui.PushStyleColor(ImGuiCol.ChildBg, primaryColor);
                 colorPushCount = 2;
 
-                ImGui.SetNextWindowSize(DefaultWindowSize, ImGuiCond.FirstUseEver);
-                if (_focusNext)
-                {
-                    ImGui.SetNextWindowFocus();
-                    _focusNext = false;
-                }
                 if (ImGui.Begin("DemiCat Settings", ref IsOpen))
                 {
                     if (!_settingsLoaded)
@@ -112,6 +116,11 @@ public class SettingsWindow : IDisposable
 
                     if (ImGui.BeginTabBar("SettingsTabs"))
                     {
+                        if (!ServicesReady)
+                        {
+                            ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Some services are still starting; features that depend on them are temporarily disabled.");
+                            ImGui.Separator();
+                        }
                         if (ImGui.BeginTabItem("General"))
                         {
                             DrawGeneralTab();
@@ -145,14 +154,8 @@ public class SettingsWindow : IDisposable
                 if (colorPushCount > 0)
                     ImGui.PopStyleColor(colorPushCount);
             }
-        }
 
-        _devWindow.Draw();
-    }
-
-    public void RequestFocus()
-    {
-        _focusNext = true;
+        _devWindow?.Draw();
     }
 
     private void DrawGeneralTab()
@@ -181,6 +184,19 @@ public class SettingsWindow : IDisposable
         // Allow room for longer server-generated API keys
         ImGui.InputText("API Key", ref _apiKey, 256);
 
+        var servicesReady = ServicesReady;
+        if (!servicesReady)
+            ImGui.BeginDisabled();
+
+        DrawGeneralTabControls(linked);
+
+        if (!servicesReady)
+            ImGui.EndDisabled();
+    }
+
+    private void DrawGeneralTabControls(bool linked)
+    {
+        
         var enableFc = _config.EnableFcChat;
         if (!linked)
             ImGui.BeginDisabled();
@@ -211,7 +227,7 @@ public class SettingsWindow : IDisposable
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
                 ImGui.SetTooltip("Link DemiCat to enable chat and presence.");
         }
-
+        
         foreach (var kvp in _categoryToggles.ToList())
         {
             var enabled = kvp.Value;
@@ -220,7 +236,7 @@ public class SettingsWindow : IDisposable
                 _categoryToggles[kvp.Key] = enabled;
                 _ = Task.Run(PushSettings);
             }
-
+        
             ImGui.SameLine();
             var autoApply = _config.AutoApply.TryGetValue(kvp.Key, out var ap) && ap;
             if (ImGui.Checkbox($"Auto-apply##{kvp.Key}", ref autoApply))
@@ -230,18 +246,18 @@ public class SettingsWindow : IDisposable
                 _ = Task.Run(PushSettings);
             }
         }
-
+        
         if (ImGui.Button("Clear my cached data"))
         {
             ClearCachedData();
         }
-
+        
         ImGui.SameLine();
         if (ImGui.Button("Forget me"))
         {
             _ = Task.Run(ForgetMe);
         }
-
+        
         ImGui.BeginDisabled(_syncInProgress);
         if (ImGui.Button("Sync"))
         {
@@ -259,7 +275,7 @@ public class SettingsWindow : IDisposable
             });
         }
         ImGui.EndDisabled();
-
+        
         if (!string.IsNullOrEmpty(_syncStatus))
         {
             Vector4 color;
@@ -275,10 +291,10 @@ public class SettingsWindow : IDisposable
             {
                 color = new Vector4(1, 1, 1, 1);
             }
-
+        
             ImGui.TextColored(color, _syncStatus);
         }
-
+        
         var style = ImGui.GetStyle();
         var piGlyph = "\u03C0";
         var piSize = ImGui.CalcTextSize(piGlyph);
@@ -287,13 +303,16 @@ public class SettingsWindow : IDisposable
         var bottomRight = new Vector2(
             windowPos.X + contentRegionMax.X - style.WindowPadding.X - piSize.X,
             windowPos.Y + contentRegionMax.Y - style.WindowPadding.Y - piSize.Y);
-
+        
         ImGui.SetCursorScreenPos(bottomRight);
         ImGui.TextDisabled(piGlyph);
         var io = ImGui.GetIO();
         if (ImGui.IsItemClicked() && io.KeyCtrl && io.KeyShift)
         {
-            _devWindow.IsOpen = true;
+            if (_devWindow != null)
+            {
+                _devWindow.IsOpen = true;
+            }
         }
     }
 
@@ -1182,6 +1201,12 @@ public class SettingsWindow : IDisposable
                 _log.Error(ex, "Failed to reload signup presets during hard reload.");
             }
 
+            if (_httpClient == null)
+            {
+                UpdateStatus("Service not ready");
+                return;
+            }
+
             HttpResponseMessage? pingResponse = null;
             try
             {
@@ -1234,13 +1259,20 @@ public class SettingsWindow : IDisposable
                 _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
             }
 
-            try
+            if (_startNetworking != null)
             {
-                await _startNetworking();
+                try
+                {
+                    await _startNetworking();
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Failed to start UI networking during hard reload.");
+                }
             }
-            catch (Exception ex)
+            else
             {
-                _log.Error(ex, "Failed to start UI networking during hard reload.");
+                _log.Warning("StartNetworking delegate is not set; skipping UI renderer start.");
             }
 
             try
