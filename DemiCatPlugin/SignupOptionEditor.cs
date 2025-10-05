@@ -9,7 +9,7 @@ using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
-public unsafe class SignupOptionEditor
+public class SignupOptionEditor
 {
     private bool _open;
     private Template.TemplateButton _working = new();
@@ -21,7 +21,7 @@ public unsafe class SignupOptionEditor
     private int _emojiSelectionEnd;
     private bool _focusEmojiNextFrame;
     private static SignupOptionEditor? _activeEmojiCallbackOwner;
-    private static readonly ImGuiInputTextCallback _emojiEditedCallback = OnEmojiEdited;
+    private static unsafe readonly ImGuiInputTextCallback _emojiEditedCallback = OnEmojiEdited;
 
     public SignupOptionEditor(Config config, HttpClient httpClient, EmojiManager emojiManager)
     {

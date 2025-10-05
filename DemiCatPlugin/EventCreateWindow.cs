@@ -20,7 +20,7 @@ using System.IO;
 
 namespace DemiCatPlugin;
 
-public unsafe class EventCreateWindow
+public class EventCreateWindow
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
@@ -33,7 +33,7 @@ public unsafe class EventCreateWindow
     private int _descriptionSelectionEnd;
     private bool _focusDescriptionNextFrame;
     private static EventCreateWindow? _activeDescriptionCallbackOwner;
-    private static readonly ImGuiInputTextCallback _descriptionEditedCallback = OnDescriptionEdited;
+    private static unsafe readonly ImGuiInputTextCallback _descriptionEditedCallback = OnDescriptionEdited;
     private string _time = string.Empty;
     private string _imageUrl = string.Empty;
     private string _url = string.Empty;

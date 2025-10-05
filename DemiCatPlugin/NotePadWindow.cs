@@ -8,7 +8,7 @@ using ImGuiNET;
 
 namespace DemiCatPlugin;
 
-public unsafe sealed class NotePadWindow : IDisposable
+public sealed class NotePadWindow : IDisposable
 {
     private const int MaxTitleLength = 25;
     private static readonly ImGuiMouseCursor ResizeEwCursor = ResolveResizeEwCursor();
@@ -40,7 +40,7 @@ public unsafe sealed class NotePadWindow : IDisposable
     private bool _pageOrderDirty;
     private bool _focusEditorNextFrame;
     private static NotePadWindow? _activeEditorCallbackOwner;
-    private static readonly ImGuiInputTextCallback _editorEditedCallback = OnEditorEdited;
+    private static unsafe readonly ImGuiInputTextCallback _editorEditedCallback = OnEditorEdited;
     private string _newSectionName = string.Empty;
     private string _newPageTitle = string.Empty;
     private bool _showNewSectionPopup;
@@ -203,13 +203,10 @@ public unsafe sealed class NotePadWindow : IDisposable
 
                 if (ImGui.BeginDragDropSource())
                 {
-                    unsafe
-                    {
-                        _draggingSectionId = section.Id;
-                        ImGui.SetDragDropPayload("NotePadSection", (void*)0, 0, ImGuiCond.None);
-                        ImGui.TextUnformatted(title);
-                        ImGui.EndDragDropSource();
-                    }
+                    _draggingSectionId = section.Id;
+                    ImGui.SetDragDropPayload("NotePadSection", nint.Zero, 0, ImGuiCond.None);
+                    ImGui.TextUnformatted(title);
+                    ImGui.EndDragDropSource();
                 }
 
                 if (ImGui.BeginDragDropTarget())
@@ -324,13 +321,10 @@ public unsafe sealed class NotePadWindow : IDisposable
 
             if (ImGui.BeginDragDropSource())
             {
-                unsafe
-                {
-                    _draggingPageId = page.Id;
-                    ImGui.SetDragDropPayload("NotePadPage", (void*)0, 0, ImGuiCond.None);
-                    ImGui.TextUnformatted(label);
-                    ImGui.EndDragDropSource();
-                }
+                _draggingPageId = page.Id;
+                ImGui.SetDragDropPayload("NotePadPage", nint.Zero, 0, ImGuiCond.None);
+                ImGui.TextUnformatted(label);
+                ImGui.EndDragDropSource();
             }
 
             if (ImGui.BeginDragDropTarget())
