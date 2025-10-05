@@ -34,142 +34,208 @@ public class Plugin : IDalamudPlugin
     private const string MewCommand = "/mew";
     private const string MewCommandHelpMessage = "Open the DemiCat main window.";
 
-    private readonly PluginServices _services;
-    private readonly UiRenderer _ui;
-    private readonly SettingsWindow _settings;
-    private readonly AvatarCache _avatarCache;
-    private readonly ChatWindow _chatWindow;
-    private readonly OfficerChatWindow _officerChatWindow;
-    private readonly DiscordPresenceService? _presenceService;
-    private readonly MainWindow _mainWindow;
-    private readonly ChannelWatcher _channelWatcher;
-    private readonly RequestWatcher _requestWatcher;
-    private readonly NotePadService _notePadService;
-    private readonly NotePadWindow _notePadWindow;
-    private readonly ChannelSelectionService _channelSelection;
-    private readonly EmojiManager _emojiManager;
+    private PluginServices _services = null!;
+    private UiRenderer _ui = null!;
+    private SettingsWindow _settings = null!;
+    private AvatarCache _avatarCache = null!;
+    private ChatWindow _chatWindow = null!;
+    private OfficerChatWindow _officerChatWindow = null!;
+    private DiscordPresenceService? _presenceService;
+    private MainWindow _mainWindow = null!;
+    private ChannelWatcher _channelWatcher = null!;
+    private RequestWatcher _requestWatcher = null!;
+    private NotePadService _notePadService = null!;
+    private NotePadWindow _notePadWindow = null!;
+    private ChannelSelectionService _channelSelection = null!;
+    private EmojiManager _emojiManager = null!;
 
     private Config _config = null!;
-    private readonly HttpClient _httpClient;
-    private readonly ChannelService _channelService;
-    private readonly Action _openMainUi;
-    private readonly Action _openConfigUi;
-    private readonly TokenManager _tokenManager;
+    private HttpClient _httpClient = null!;
+    private ChannelService _channelService = null!;
+    private Action _openMainUi = null!;
+    private Action _openConfigUi = null!;
+    private TokenManager _tokenManager = null!;
     private bool _officerWatcherRunning;
     private bool _invalidTokenToastShown;
     private bool? _savedDockVisibilityPreference;
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
-    private readonly IFontHandle? _emojiFontHandle;
-    private readonly CommandInfo _mewCommandInfo;
+    private IFontHandle? _emojiFontHandle;
+    private CommandInfo _mewCommandInfo = null!;
+
+    private bool _initialized;
+    private bool _initError;
 
     public Plugin()
     {
-        _services = PluginInterface.Create<PluginServices>()!;
-        if (_services.PluginInterface == null || _services.Log == null)
-            throw new InvalidOperationException("Failed to initialize plugin services.");
+        var pluginInterface = PluginInterface ?? throw new InvalidOperationException("PluginInterface was not provided.");
+        pluginInterface.UiBuilder.Draw += EnsureInitializedOnce;
+    }
 
-        _config = _services.PluginInterface.GetPluginConfig() as Config ?? new Config();
-        _tokenManager = new TokenManager(_services.PluginInterface);
-
-        var oldVersion = _config.Version;
-        _config.Migrate();
-        _config.ApiBaseUrl = Config.DefaultApiBaseUrl;
-        var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
-        if (rolesRemoved || _config.Version != oldVersion)
-            _services.PluginInterface.SavePluginConfig(_config);
-
-        RequestStateService.Load(_config);
-
-        var handler = new SocketsHttpHandler
+    private void EnsureInitializedOnce()
+    {
+        var pluginInterface = PluginInterface;
+        if (pluginInterface == null)
         {
-            MaxConnectionsPerServer = 10,
-            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-            AutomaticDecompression = DecompressionMethods.All
-        };
-        _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+            _initError = true;
+            return;
+        }
 
-        WebTextureCache.FetchOverride = FetchWebTexture;
-
-        PingService.Instance = new PingService(_httpClient, _config, _tokenManager);
-
-        _channelSelection = new ChannelSelectionService(_config);
-        _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
-        _emojiFontHandle = InitializeEmojiFont();
-        _emojiManager.EmojiFontHandle = _emojiFontHandle;
-        _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
-        _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
-
-        _presenceService = _config.SyncedChat && _config.EnableFcChat
-            ? new DiscordPresenceService(_config, _httpClient)
-            : null;
-
-        _channelService = new ChannelService(_config, _httpClient, _tokenManager);
-        _avatarCache = new AvatarCache(TextureProvider, _httpClient);
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
-
-        _presenceService?.Reset();
-
-        _notePadService = new NotePadService(_config, _httpClient, _tokenManager);
-        _notePadWindow = new NotePadWindow(_config, _notePadService);
-
-        _mainWindow = new MainWindow(
-            _config,
-            _ui,
-            _chatWindow,
-            _officerChatWindow,
-            _settings,
-            _httpClient,
-            _channelService,
-            _channelSelection,
-            _emojiManager,
-            _notePadWindow
-        );
-
-        _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient, _channelService);
-        _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
-
-        _channelSelection.ChannelChanged += HandleChannelSelectionValidation;
-
-        _settings.MainWindow = _mainWindow;
-        _settings.ChatWindow = _chatWindow;
-        _settings.OfficerChatWindow = _officerChatWindow;
-        _settings.ChannelWatcher = _channelWatcher;
-        _settings.RequestWatcher = _requestWatcher;
-        _settings.NotePadService = _notePadService;
-
-        _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
-        _mainWindow.SetNotePadReadOnly(!_tokenManager.IsReady());
-
-        _ = RoleCache.EnsureLoaded(_httpClient, _config);
-
-        _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
-        _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
-        _services.PluginInterface.UiBuilder.Draw += DrawOverlay;
-
-        _openMainUi = () => _mainWindow.IsOpen = true;
-        _services.PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
-
-        _openConfigUi = () => _settings.IsOpen = true;
-        _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
-
-        _mewCommandInfo = new CommandInfo(OnMewCommand)
+        if (_initialized || _initError)
         {
-            HelpMessage = MewCommandHelpMessage
-        };
-        _services.CommandManager.AddHandler(MewCommand, _mewCommandInfo);
+            pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
+            return;
+        }
 
-        _tokenManager.OnLinked += HandleTokenLinked;
-        _tokenManager.OnUnlinked += HandleTokenUnlinked;
+        try
+        {
+            var textureProvider = TextureProvider;
+            if (textureProvider == null)
+                throw new InvalidOperationException("TextureProvider was not provided.");
 
-        if (_tokenManager.IsReady())
-            HandleTokenLinked();
+            _services = pluginInterface.Create<PluginServices>()
+                ?? throw new InvalidOperationException("Failed to initialize plugin services.");
+            if (_services.PluginInterface == null || _services.Log == null)
+                throw new InvalidOperationException("Failed to initialize plugin services.");
 
-        _services.Log.Info("DemiCat loaded.");
+            _config = _services.PluginInterface.GetPluginConfig() as Config ?? new Config();
+            _tokenManager = new TokenManager(_services.PluginInterface);
+
+            var oldVersion = _config.Version;
+            _config.Migrate();
+            _config.ApiBaseUrl = Config.DefaultApiBaseUrl;
+            var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
+            if (rolesRemoved || _config.Version != oldVersion)
+                _services.PluginInterface.SavePluginConfig(_config);
+
+            RequestStateService.Load(_config);
+
+            var handler = new SocketsHttpHandler
+            {
+                MaxConnectionsPerServer = 10,
+                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+                AutomaticDecompression = DecompressionMethods.All
+            };
+            _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+
+            WebTextureCache.FetchOverride = FetchWebTexture;
+
+            PingService.Instance = new PingService(_httpClient, _config, _tokenManager);
+
+            _channelSelection = new ChannelSelectionService(_config);
+            _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
+            _emojiFontHandle = InitializeEmojiFont();
+            _emojiManager.EmojiFontHandle = _emojiFontHandle;
+            _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
+            _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
+
+            _presenceService = _config.SyncedChat && _config.EnableFcChat
+                ? new DiscordPresenceService(_config, _httpClient)
+                : null;
+
+            _channelService = new ChannelService(_config, _httpClient, _tokenManager);
+            _avatarCache = new AvatarCache(textureProvider, _httpClient);
+            _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
+            _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
+
+            _presenceService?.Reset();
+
+            _notePadService = new NotePadService(_config, _httpClient, _tokenManager);
+            _notePadWindow = new NotePadWindow(_config, _notePadService);
+
+            _mainWindow = new MainWindow(
+                _config,
+                _ui,
+                _chatWindow,
+                _officerChatWindow,
+                _settings,
+                _httpClient,
+                _channelService,
+                _channelSelection,
+                _emojiManager,
+                _notePadWindow
+            );
+
+            _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient, _channelService);
+            _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
+
+            _channelSelection.ChannelChanged += HandleChannelSelectionValidation;
+
+            _settings.MainWindow = _mainWindow;
+            _settings.ChatWindow = _chatWindow;
+            _settings.OfficerChatWindow = _officerChatWindow;
+            _settings.ChannelWatcher = _channelWatcher;
+            _settings.RequestWatcher = _requestWatcher;
+            _settings.NotePadService = _notePadService;
+
+            _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
+            _mainWindow.SetNotePadReadOnly(!_tokenManager.IsReady());
+
+            _ = RoleCache.EnsureLoaded(_httpClient, _config);
+
+            _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
+            _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
+            _services.PluginInterface.UiBuilder.Draw += DrawOverlay;
+
+            _openMainUi = () => _mainWindow.IsOpen = true;
+            _services.PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
+
+            _openConfigUi = () => _settings.IsOpen = true;
+            _services.PluginInterface.UiBuilder.OpenConfigUi += _openConfigUi;
+
+            _mewCommandInfo = new CommandInfo(OnMewCommand)
+            {
+                HelpMessage = MewCommandHelpMessage
+            };
+            _services.CommandManager.AddHandler(MewCommand, _mewCommandInfo);
+
+            _tokenManager.OnLinked += HandleTokenLinked;
+            _tokenManager.OnUnlinked += HandleTokenUnlinked;
+
+            if (_tokenManager.IsReady())
+                HandleTokenLinked();
+
+            _services.Log.Info("DemiCat loaded.");
+            _initialized = true;
+        }
+        catch (Exception ex)
+        {
+            _initError = true;
+
+            try
+            {
+                _services?.Log.Error(ex, "Failed to initialize DemiCat.");
+            }
+            catch
+            {
+                // ignored
+            }
+
+            try
+            {
+                PluginServices.Instance?.ToastGui.ShowError("Failed to initialize DemiCat. Check /xllog for details.");
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+        finally
+        {
+            if (_initialized || _initError)
+            {
+                pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
+            }
+        }
     }
 
     public void Dispose()
     {
+        var pluginInterface = PluginInterface;
+        pluginInterface?.UiBuilder.Draw -= EnsureInitializedOnce;
+
+        if (!_initialized)
+            return;
+
         WebTextureCache.FetchOverride = null;
         try
         {
