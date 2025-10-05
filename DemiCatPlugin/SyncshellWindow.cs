@@ -72,6 +72,7 @@ public class SyncshellWindow : IDisposable
     private readonly FileBlobStore _blobStore;
     private readonly Resolver _resolver;
     private readonly SyncClient _syncClient;
+    private readonly IDisposable? _tokenWatcher;
     private readonly ProgressOverlay _progressOverlay;
     private readonly Config.CategoryState _syncshellState;
     private readonly ConcurrentQueue<Action> _uiThreadActions = new();
@@ -255,7 +256,7 @@ public class SyncshellWindow : IDisposable
         _ = TrimCacheAsync();
 
         SubscribeToStateChanges();
-        _tokenManager.RegisterWatcher(HandleTokenLinked, HandleTokenUnlinked);
+        _tokenWatcher = _tokenManager.RegisterWatcher(HandleTokenLinked, HandleTokenUnlinked);
 
         RequestMembershipRefresh();
     }
@@ -4670,6 +4671,11 @@ public class SyncshellWindow : IDisposable
 
     private void HandleTokenLinked()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _ = EnsurePairingAsync();
         StartPeriodicRefresh();
         UpdateSyncClientState();
@@ -4677,6 +4683,11 @@ public class SyncshellWindow : IDisposable
 
     private void HandleTokenUnlinked()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _ = StopSyncClientAsync();
         StopPeriodicRefresh();
         _pairingExpiresAt = null;
@@ -4762,6 +4773,7 @@ public class SyncshellWindow : IDisposable
     public void Dispose()
     {
         _disposed = true;
+        _tokenWatcher?.Dispose();
         StopPeriodicRefresh();
         CancelActiveDownloads();
         foreach (var unsubscribe in _ipcUnsubscribers)
