@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.IO;
 using ImGuiNET;
+using Dalamud.Interface.Utility;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -78,6 +79,11 @@ public class SettingsWindow : IDisposable
 
     public void Draw()
     {
+        if (!ImGuiHelpers.IsImGuiReady || ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
         if (IsOpen)
         {
             var colorPushCount = 0;
