@@ -145,6 +145,79 @@ public class ChatWindow : IDisposable
         return true;
     }
 
+    private void ReleaseTextureReferences(ISharedImmediateTexture? texture)
+    {
+        if (texture == null)
+        {
+            return;
+        }
+
+        foreach (var message in _messages)
+        {
+            if (ReferenceEquals(message.AvatarTexture, texture))
+            {
+                message.AvatarTexture = null;
+            }
+
+            if (message.Attachments != null)
+            {
+                foreach (var attachment in message.Attachments)
+                {
+                    if (ReferenceEquals(attachment.Texture, texture))
+                    {
+                        attachment.Texture = null;
+                    }
+                }
+            }
+
+            if (message.Reactions != null)
+            {
+                foreach (var reaction in message.Reactions)
+                {
+                    if (ReferenceEquals(reaction.Texture, texture))
+                    {
+                        reaction.Texture = null;
+                    }
+                }
+            }
+        }
+
+        foreach (var emoji in _emojiCatalog.Values)
+        {
+            if (ReferenceEquals(emoji.Texture, texture))
+            {
+                emoji.Texture = null;
+            }
+        }
+
+        foreach (var kvp in _attachmentPreviewTextures.ToList())
+        {
+            if (ReferenceEquals(kvp.Value, texture))
+            {
+                _attachmentPreviewTextures[kvp.Key] = null;
+            }
+        }
+
+        if (_presence != null)
+        {
+            foreach (var presence in _presence.Presences)
+            {
+                if (ReferenceEquals(presence.AvatarTexture, texture))
+                {
+                    presence.AvatarTexture = null;
+                }
+
+                if (ReferenceEquals(presence.BannerTexture, texture))
+                {
+                    presence.BannerTexture = null;
+                }
+            }
+        }
+
+        EmbedRenderer.ReleaseTexture(texture);
+        EmbedPreviewRenderer.ReleaseTexture(texture);
+    }
+
     private float GetManualImageScale()
     {
         var manualScale = _config.ChatImageManualScale;
@@ -3826,8 +3899,19 @@ public class ChatWindow : IDisposable
     {
         foreach (var entry in _textureCache.Values)
         {
-            if (entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
+            var texture = entry.Texture;
+            if (texture == null)
+            {
+                continue;
+            }
+
+            ReleaseTextureReferences(texture);
+            entry.Texture = null;
+
+            if (texture.GetWrapOrEmpty() is IDisposable wrap)
+            {
                 wrap.Dispose();
+            }
         }
         _textureCache.Clear();
         _textureLru.Clear();
@@ -4331,9 +4415,15 @@ public class ChatWindow : IDisposable
 
             if (_textureCache.TryGetValue(last.Value, out var toRemove))
             {
-                if (toRemove.Texture?.GetWrapOrEmpty() is IDisposable wrap)
+                var texture = toRemove.Texture;
+                if (texture != null)
                 {
-                    wrap.Dispose();
+                    ReleaseTextureReferences(texture);
+                    toRemove.Texture = null;
+                    if (texture.GetWrapOrEmpty() is IDisposable wrap)
+                    {
+                        wrap.Dispose();
+                    }
                 }
                 _textureCache.Remove(last.Value);
             }
@@ -4348,9 +4438,15 @@ public class ChatWindow : IDisposable
             return;
         }
 
-        if (entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
+        var texture = entry.Texture;
+        if (texture != null)
         {
-            wrap.Dispose();
+            ReleaseTextureReferences(texture);
+            entry.Texture = null;
+            if (texture.GetWrapOrEmpty() is IDisposable wrap)
+            {
+                wrap.Dispose();
+            }
         }
 
         _textureCache.Remove(url);

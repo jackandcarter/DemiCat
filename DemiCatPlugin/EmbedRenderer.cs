@@ -146,6 +146,26 @@ public static class EmbedRenderer
         }
     }
 
+    public static void ReleaseTexture(ISharedImmediateTexture? texture)
+    {
+        if (texture == null)
+        {
+            return;
+        }
+
+        foreach (var (key, entry) in ThumbnailCache.ToList())
+        {
+            if (!ReferenceEquals(entry.Texture, texture))
+            {
+                continue;
+            }
+
+            ThumbnailLru.Remove(entry.Node);
+            ThumbnailCache.Remove(key);
+            entry.Texture = null;
+        }
+    }
+
     private static Vector4 GetStyleColor(ButtonStyle style) => style switch
     {
         ButtonStyle.Primary => new Vector4(0.345f, 0.396f, 0.949f, 1f),
