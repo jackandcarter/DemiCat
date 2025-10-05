@@ -9,7 +9,7 @@ using DemiCatPlugin.Emoji;
 
 namespace DemiCatPlugin;
 
-public class SignupOptionEditor
+public unsafe class SignupOptionEditor
 {
     private bool _open;
     private Template.TemplateButton _working = new();

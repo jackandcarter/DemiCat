@@ -28,7 +28,7 @@ using SixLabors.ImageSharp.Processing;
 
 namespace DemiCatPlugin;
 
-public class ChatWindow : IDisposable
+public unsafe class ChatWindow : IDisposable
 {
     protected readonly Config _config;
     protected readonly HttpClient _httpClient;

@@ -8,7 +8,7 @@ using ImGuiNET;
 
 namespace DemiCatPlugin;
 
-public sealed class NotePadWindow : IDisposable
+public unsafe sealed class NotePadWindow : IDisposable
 {
     private const int MaxTitleLength = 25;
     private static readonly ImGuiMouseCursor ResizeEwCursor = ResolveResizeEwCursor();
