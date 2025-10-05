@@ -44,23 +44,23 @@ public class Plugin : IDalamudPlugin
     private PluginServices? _services;
     private PluginServices Services => _services ?? PluginServices.Instance
         ?? throw new InvalidOperationException("Plugin services are not initialized.");
-    private UiRenderer? _ui;
-    private AvatarCache? _avatarCache;
-    private ChatWindow? _chatWindow;
-    private OfficerChatWindow? _officerChatWindow;
+    private UiRenderer _ui = null!;
+    private AvatarCache _avatarCache = null!;
+    private ChatWindow _chatWindow = null!;
+    private OfficerChatWindow _officerChatWindow = null!;
     private DiscordPresenceService? _presenceService;
-    private MainWindow? _mainWindow;
-    private ChannelWatcher? _channelWatcher;
-    private RequestWatcher? _requestWatcher;
-    private NotePadService? _notePadService;
-    private NotePadWindow? _notePadWindow;
-    private ChannelSelectionService? _channelSelection;
-    private EmojiManager? _emojiManager;
+    private MainWindow _mainWindow = null!;
+    private ChannelWatcher _channelWatcher = null!;
+    private RequestWatcher _requestWatcher = null!;
+    private NotePadService _notePadService = null!;
+    private NotePadWindow _notePadWindow = null!;
+    private ChannelSelectionService _channelSelection = null!;
+    private EmojiManager _emojiManager = null!;
 
     private HttpClient? _httpClient;
     private HttpClient HttpClient => _httpClient
         ?? throw new InvalidOperationException("HTTP client has not been initialized.");
-    private ChannelService? _channelService;
+    private ChannelService _channelService = null!;
     private Action? _openMainUi;
     private bool _officerWatcherRunning;
     private bool _invalidTokenToastShown;
@@ -70,7 +70,6 @@ public class Plugin : IDalamudPlugin
     private CommandInfo _mewCommandInfo = null!;
 
     private bool _initialized;
-    private bool _initError;
     private bool _initializationAttempted;
 
     public Plugin(IDalamudPluginInterface pluginInterface)
@@ -222,8 +221,6 @@ public class Plugin : IDalamudPlugin
         }
         catch (Exception ex)
         {
-            _initError = true;
-
             try
             {
                 _services?.Log.Error(ex, "Failed to initialize DemiCat.");
