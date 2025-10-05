@@ -100,10 +100,13 @@ public class Plugin : IDalamudPlugin
             _tokenManager = new TokenManager(_services.PluginInterface);
 
             var oldVersion = _config.Version;
+            var originalApiBaseUrl = _config.ApiBaseUrl;
             _config.Migrate();
-            _config.ApiBaseUrl = Config.DefaultApiBaseUrl;
+            var sanitizedApiBaseUrl = Config.SanitizeApiBaseUrl(_config.ApiBaseUrl);
+            var apiBaseUrlChanged = !string.Equals(originalApiBaseUrl, sanitizedApiBaseUrl, StringComparison.Ordinal);
+            _config.ApiBaseUrl = sanitizedApiBaseUrl;
             var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
-            if (rolesRemoved || _config.Version != oldVersion)
+            if (rolesRemoved || _config.Version != oldVersion || apiBaseUrlChanged)
                 _services.PluginInterface.SavePluginConfig(_config);
 
             RequestStateService.Load(_config);

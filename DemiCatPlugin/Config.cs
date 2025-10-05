@@ -62,7 +62,7 @@ public class Config : IPluginConfiguration
     public const int DefaultPreloadRowsAhead = 24;
     public const int MinPreloadRowsAhead = 0;
     public const int MaxPreloadRowsAhead = 32;
-    public const int CurrentVersion = 25;
+    public const int CurrentVersion = 26;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -97,7 +97,7 @@ public class Config : IPluginConfiguration
     public bool Enabled { get; set; } = true;
     public const string DefaultApiBaseUrl = "https://mew.the-demiurge.com";
 
-    [JsonIgnore]
+    [JsonPropertyName("apiBaseUrl")]
     public string ApiBaseUrl { get; set; } = DefaultApiBaseUrl;
     public string WebSocketPath { get; set; } = "/ws/embeds";
     public int PollIntervalSeconds { get; set; } = 5;
@@ -739,6 +739,33 @@ public class Config : IPluginConfiguration
             Version = 25;
             ExtensionData = null;
         }
+        if (Version < 26)
+        {
+            if (ExtensionData != null)
+            {
+                string? candidate = null;
+                if (ExtensionData.TryGetValue("apiBaseUrl", out var apiBaseUrlElement) &&
+                    apiBaseUrlElement.ValueKind == JsonValueKind.String)
+                {
+                    candidate = apiBaseUrlElement.GetString();
+                }
+                else if (ExtensionData.TryGetValue("ApiBaseUrl", out var pascalApiBaseUrlElement) &&
+                         pascalApiBaseUrlElement.ValueKind == JsonValueKind.String)
+                {
+                    candidate = pascalApiBaseUrlElement.GetString();
+                }
+
+                if (!string.IsNullOrWhiteSpace(candidate))
+                {
+                    ApiBaseUrl = candidate;
+                }
+            }
+
+            ApiBaseUrl = SanitizeApiBaseUrl(ApiBaseUrl);
+
+            Version = 26;
+            ExtensionData = null;
+        }
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)
@@ -869,6 +896,23 @@ public class Config : IPluginConfiguration
         }
 
         return WindowFadePreferences.TryGetValue(id, out var enabled) ? enabled : defaultValue;
+    }
+
+    public static string SanitizeApiBaseUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return DefaultApiBaseUrl;
+        }
+
+        var trimmed = value.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return DefaultApiBaseUrl;
+        }
+
+        return trimmed;
     }
 
     public void SetWindowFadePreference(string? id, bool enabled)
