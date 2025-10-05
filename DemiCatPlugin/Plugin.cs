@@ -12,6 +12,7 @@ using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Toast;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
+using Dalamud.Interface;
 using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Textures;
 using Dalamud.IoC;
