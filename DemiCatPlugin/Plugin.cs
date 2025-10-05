@@ -28,16 +28,19 @@ public class Plugin : IDalamudPlugin
 {
     public string Name => "DemiCat";
 
-    [PluginService] internal IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal ITextureProvider TextureProvider { get; private set; } = null!;
-    [PluginService] internal IUiBuilder UiBuilder { get; private set; } = null!;
+
+    private readonly IDalamudPluginInterface _pluginInterface = null!;
+    private readonly IUiBuilder _ui = null!;
+
+    internal IDalamudPluginInterface PluginInterface => _pluginInterface;
 
     private const uint InvalidTokenLinkCommandId = 0x44434B49;
     private const string MewCommand = "/mew";
     private const string MewCommandHelpMessage = "Open the DemiCat main window.";
 
     private PluginServices _services = null!;
-    private UiRenderer _ui = null!;
+    private UiRenderer _uiRenderer = null!;
     private SettingsWindow _settings = null!;
     private AvatarCache _avatarCache = null!;
     private ChatWindow _chatWindow = null!;
@@ -67,25 +70,27 @@ public class Plugin : IDalamudPlugin
     private bool _initialized;
     private bool _initError;
 
-    public Plugin()
+    public Plugin(IDalamudPluginInterface pluginInterface)
     {
-        var uiBuilder = UiBuilder;
-        if (uiBuilder != null)
-            uiBuilder.Draw += EnsureInitializedOnce;
+        _pluginInterface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface));
+        _ui = pluginInterface.UiBuilder ?? throw new InvalidOperationException("Dalamud UI builder is unavailable.");
+
+        _ui.Draw += EnsureInitializedOnce;
+        _ui.OpenConfigUi += EnsureInitializedOnce;
     }
 
     private void EnsureInitializedOnce()
     {
-        var uiBuilder = UiBuilder;
-        var pluginInterface = PluginInterface;
+        var uiBuilder = _ui;
+        var pluginInterface = _pluginInterface;
         var textureProvider = TextureProvider;
-        if (pluginInterface == null || textureProvider == null || uiBuilder == null)
+        if (uiBuilder == null || pluginInterface == null || textureProvider == null)
             return;
 
         if (_initialized || _initError)
         {
-            if (uiBuilder != null)
-                uiBuilder.Draw -= EnsureInitializedOnce;
+            uiBuilder.Draw -= EnsureInitializedOnce;
+            uiBuilder.OpenConfigUi -= EnsureInitializedOnce;
             return;
         }
 
@@ -127,8 +132,8 @@ public class Plugin : IDalamudPlugin
             _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
             _emojiFontHandle = InitializeEmojiFont();
             _emojiManager.EmojiFontHandle = _emojiFontHandle;
-            _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
-            _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
+            _uiRenderer = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
+            _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _uiRenderer.StartNetworking, _services.Log, _services.PluginInterface);
 
             _presenceService = _config.SyncedChat && _config.EnableFcChat
                 ? new DiscordPresenceService(_config, _httpClient)
@@ -146,7 +151,7 @@ public class Plugin : IDalamudPlugin
 
             _mainWindow = new MainWindow(
                 _config,
-                _ui,
+                _uiRenderer,
                 _chatWindow,
                 _officerChatWindow,
                 _settings,
@@ -157,7 +162,7 @@ public class Plugin : IDalamudPlugin
                 _notePadWindow
             );
 
-            _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient, _channelService);
+            _channelWatcher = new ChannelWatcher(_config, _uiRenderer, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient, _channelService);
             _requestWatcher = new RequestWatcher(_config, _httpClient, _tokenManager);
 
             _channelSelection.ChannelChanged += HandleChannelSelectionValidation;
@@ -225,17 +230,20 @@ public class Plugin : IDalamudPlugin
         {
             if (_initialized || _initError)
             {
-                if (uiBuilder != null)
-                    uiBuilder.Draw -= EnsureInitializedOnce;
+                uiBuilder.Draw -= EnsureInitializedOnce;
+                uiBuilder.OpenConfigUi -= EnsureInitializedOnce;
             }
         }
     }
 
     public void Dispose()
     {
-        var uiBuilder = UiBuilder;
+        var uiBuilder = _ui;
         if (uiBuilder != null)
+        {
             uiBuilder.Draw -= EnsureInitializedOnce;
+            uiBuilder.OpenConfigUi -= EnsureInitializedOnce;
+        }
 
         if (!_initialized)
             return;
@@ -283,7 +291,7 @@ public class Plugin : IDalamudPlugin
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();
         _mainWindow.Dispose();
-        _ui.DisposeAsync().GetAwaiter().GetResult();
+        _uiRenderer.DisposeAsync().GetAwaiter().GetResult();
         _settings.Dispose();
         _avatarCache.Dispose();
         _emojiManager.Dispose();
@@ -464,8 +472,8 @@ public class Plugin : IDalamudPlugin
                 return null;
             }
 
-            var atlas = UiBuilder.FontAtlas;
-            var fontSize = UiBuilder.FontDefaultSizePx;
+            var atlas = _ui.FontAtlas;
+            var fontSize = _ui.FontDefaultSizePx;
 
             var handle = atlas.NewDelegateFontHandle(toolkit =>
                 toolkit.OnPreBuild(pre =>
@@ -851,7 +859,7 @@ public class Plugin : IDalamudPlugin
         if (_config.Events)
         {
             _services.Log.Info("Starting event watchers");
-            _ = _ui.StartNetworking();
+            _ = _uiRenderer.StartNetworking();
             _mainWindow.EventCreateWindow.StartNetworking();
             _mainWindow.TemplatesWindow.StartNetworking();
         }
@@ -948,7 +956,7 @@ public class Plugin : IDalamudPlugin
         _officerWatcherRunning = false;
         _presenceService?.SetPresenceReady(false);
         _presenceService?.Stop();
-        _ui.StopNetworking();
+        _uiRenderer.StopNetworking();
         _mainWindow.TemplatesWindow.StopNetworking();
         MembershipCache.Reset();
         _services.Log.Info("Watchers stopped");
