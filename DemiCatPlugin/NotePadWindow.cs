@@ -204,7 +204,7 @@ public sealed class NotePadWindow : IDisposable
                 if (ImGui.BeginDragDropSource())
                 {
                     _draggingSectionId = section.Id;
-                    ImGui.SetDragDropPayload("NotePadSection", ReadOnlySpan<byte>.Empty, ImGuiCond.None);
+                    ImGui.SetDragDropPayload("NotePadSection", nint.Zero, 0, ImGuiCond.None);
                     ImGui.TextUnformatted(title);
                     ImGui.EndDragDropSource();
                 }
@@ -322,7 +322,7 @@ public sealed class NotePadWindow : IDisposable
             if (ImGui.BeginDragDropSource())
             {
                 _draggingPageId = page.Id;
-                ImGui.SetDragDropPayload("NotePadPage", ReadOnlySpan<byte>.Empty, ImGuiCond.None);
+                ImGui.SetDragDropPayload("NotePadPage", nint.Zero, 0, ImGuiCond.None);
                 ImGui.TextUnformatted(label);
                 ImGui.EndDragDropSource();
             }
