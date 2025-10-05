@@ -67,18 +67,17 @@ public class Plugin : IDalamudPlugin
 
     public Plugin()
     {
-        var pluginInterface = PluginInterface ?? throw new InvalidOperationException("PluginInterface was not provided.");
-        pluginInterface.UiBuilder.Draw += EnsureInitializedOnce;
+        Dalamud.Interface.UiBuilder.Draw += EnsureInitializedOnce;
     }
 
     private void EnsureInitializedOnce()
     {
         var pluginInterface = PluginInterface;
-        if (pluginInterface == null)
-        {
-            _initError = true;
+        var textureProvider = TextureProvider;
+        if (pluginInterface == null || textureProvider == null)
             return;
-        }
+
+        Dalamud.Interface.UiBuilder.Draw -= EnsureInitializedOnce;
 
         if (_initialized || _initError)
         {
@@ -88,10 +87,6 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            var textureProvider = TextureProvider;
-            if (textureProvider == null)
-                throw new InvalidOperationException("TextureProvider was not provided.");
-
             _services = pluginInterface.Create<PluginServices>()
                 ?? throw new InvalidOperationException("Failed to initialize plugin services.");
             if (_services.PluginInterface == null || _services.Log == null)
@@ -223,6 +218,7 @@ public class Plugin : IDalamudPlugin
         {
             if (_initialized || _initError)
             {
+                Dalamud.Interface.UiBuilder.Draw -= EnsureInitializedOnce;
                 pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
             }
         }
@@ -231,8 +227,8 @@ public class Plugin : IDalamudPlugin
     public void Dispose()
     {
         var pluginInterface = PluginInterface;
-        if (pluginInterface != null)
-            pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
+        Dalamud.Interface.UiBuilder.Draw -= EnsureInitializedOnce;
+        pluginInterface?.UiBuilder.Draw -= EnsureInitializedOnce;
 
         if (!_initialized)
             return;
