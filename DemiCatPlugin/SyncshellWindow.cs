@@ -143,7 +143,7 @@ public class SyncshellWindow : IDisposable
     private bool _inviteSuggestionFiltered;
     private bool _focusInviteInputNextFrame;
     private static SyncshellWindow? _activeInviteCallbackOwner;
-    private readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _inviteInputCallback;
+    private static readonly ImGuiInputTextCallback _inviteInputCallback = OnInviteInputEdited;
     private int _inviteInFlight;
     private DateTimeOffset _lastMembershipFetch;
     private bool _membershipNeedsRefresh = true;
@@ -210,11 +210,6 @@ public class SyncshellWindow : IDisposable
             _syncSettingsHeight = Math.Clamp(storedHeight, MinSyncSettingsHeight, MaxSyncSettingsHeight);
         }
         InitializeMembershipPanelRatios();
-
-        unsafe
-        {
-            _inviteInputCallback = &OnInviteInputEdited;
-        }
 
         foreach (var inviteEntry in state.Invites.ToList())
         {
@@ -973,24 +968,21 @@ public class SyncshellWindow : IDisposable
         }
         ImGui.SetNextItemWidth(-150f);
         bool submitted;
-        unsafe
+        _activeInviteCallbackOwner = this;
+        try
         {
-            _activeInviteCallbackOwner = this;
-            try
-            {
-                submitted = ImGui.InputTextWithHint(
-                    "##syncshell-invite",
-                    "Character name",
-                    ref invite,
-                    64,
-                    ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
-                    _inviteInputCallback
-                );
-            }
-            finally
-            {
-                _activeInviteCallbackOwner = null;
-            }
+            submitted = ImGui.InputTextWithHint(
+                "##syncshell-invite",
+                "Character name",
+                ref invite,
+                64,
+                ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
+                _inviteInputCallback
+            );
+        }
+        finally
+        {
+            _activeInviteCallbackOwner = null;
         }
         invite ??= string.Empty;
         _inviteTarget = invite;

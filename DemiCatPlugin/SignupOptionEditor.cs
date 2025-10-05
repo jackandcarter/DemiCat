@@ -21,7 +21,7 @@ public class SignupOptionEditor
     private int _emojiSelectionEnd;
     private bool _focusEmojiNextFrame;
     private static SignupOptionEditor? _activeEmojiCallbackOwner;
-    private static readonly unsafe delegate* unmanaged[Cdecl]<ImGuiInputTextCallbackData*, int> _emojiEditedCallback = &OnEmojiEdited;
+    private static readonly ImGuiInputTextCallback _emojiEditedCallback = OnEmojiEdited;
 
     public SignupOptionEditor(Config config, HttpClient httpClient, EmojiManager emojiManager)
     {
@@ -68,23 +68,20 @@ public class SignupOptionEditor
                 ImGui.SetKeyboardFocusHere();
                 _focusEmojiNextFrame = false;
             }
-            unsafe
+            _activeEmojiCallbackOwner = this;
+            try
             {
-                _activeEmojiCallbackOwner = this;
-                try
-                {
-                    ImGui.InputText(
-                        "Emoji",
-                        emojiBuf,
-                        (uint)emojiBuf.Length,
-                        ImGuiInputTextFlags.CallbackAlways,
-                        _emojiEditedCallback
-                    );
-                }
-                finally
-                {
-                    _activeEmojiCallbackOwner = null;
-                }
+                ImGui.InputText(
+                    "Emoji",
+                    emojiBuf,
+                    (uint)emojiBuf.Length,
+                    ImGuiInputTextFlags.CallbackAlways,
+                    _emojiEditedCallback
+                );
+            }
+            finally
+            {
+                _activeEmojiCallbackOwner = null;
             }
             var emoji = ImGuiTextUtil.ReadUtf8Buffer(emojiBuf);
             if (_working.Emoji != emoji)
