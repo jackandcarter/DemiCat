@@ -54,13 +54,14 @@ public class SettingsWindowIdentityTests
         var tokenManager = new TokenManager();
 
         var settings = new SettingsWindow(
+            pluginInterfaceMock.Object,
             config,
             tokenManager,
+            logMock.Object);
+        settings.ConfigureServices(
             httpClient,
             () => Task.FromResult(true),
-            () => Task.CompletedTask,
-            logMock.Object,
-            pluginInterfaceMock.Object);
+            () => Task.CompletedTask);
 
         var mainWindow = (MainWindow)FormatterServices.GetUninitializedObject(typeof(MainWindow));
         settings.MainWindow = mainWindow;
@@ -121,13 +122,14 @@ public class SettingsWindowIdentityTests
         var tokenManager = new TokenManager();
 
         var settings = new SettingsWindow(
+            pluginInterfaceMock.Object,
             config,
             tokenManager,
+            logMock.Object);
+        settings.ConfigureServices(
             httpClient,
             () => Task.FromResult(true),
-            () => Task.CompletedTask,
-            logMock.Object,
-            pluginInterfaceMock.Object);
+            () => Task.CompletedTask);
 
         var mainWindow = (MainWindow)FormatterServices.GetUninitializedObject(typeof(MainWindow));
         mainWindow.HasOfficerAccess = true;

@@ -39,13 +39,14 @@ public class PresenceServiceLifecycleTests : IDisposable
         var channelService = new ChannelService(config, httpClient, tokenManager);
 
         var settingsWindow = new SettingsWindow(
+            Mock.Of<IDalamudPluginInterface>(),
             config,
             tokenManager,
+            new TestLog());
+        settingsWindow.ConfigureServices(
             httpClient,
             () => Task.FromResult(true),
-            () => Task.CompletedTask,
-            new TestLog(),
-            Mock.Of<IDalamudPluginInterface>());
+            () => Task.CompletedTask);
 
         settingsWindow.ChatWindow = new ChatWindow(config, httpClient, presence, tokenManager, channelService);
 

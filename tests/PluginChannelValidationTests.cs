@@ -71,13 +71,15 @@ public class PluginChannelValidationTests
         var notePadService = new NotePadService(config, httpClient, tokenManager);
         var notePadWindow = new NotePadWindow(config, notePadService);
         var settingsWindow = new SettingsWindow(
+            pluginInterfaceMock.Object,
             config,
             tokenManager,
+            logMock.Object
+        );
+        settingsWindow.ConfigureServices(
             httpClient,
             () => Task.FromResult(true),
-            () => Task.CompletedTask,
-            logMock.Object,
-            pluginInterfaceMock.Object
+            () => Task.CompletedTask
         );
         settingsWindow.NotePadService = notePadService;
         var mainWindow = new MainWindow(

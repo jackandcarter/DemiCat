@@ -76,13 +76,14 @@ public class DockVisibilityTokenLifecycleTests
             var chatWindow = new ChatWindow(config, httpClient, null, tokenManager, channelService);
             var officerWindow = new OfficerChatWindow(config, httpClient, null, tokenManager, channelService);
             var settingsWindow = new SettingsWindow(
+                pluginInterfaceMock.Object,
                 config,
                 tokenManager,
+                logMock.Object);
+            settingsWindow.ConfigureServices(
                 httpClient,
                 () => Task.FromResult(true),
-                () => Task.CompletedTask,
-                logMock.Object,
-                pluginInterfaceMock.Object);
+                () => Task.CompletedTask);
             var notePadService = new NotePadService(config, httpClient, tokenManager);
             var notePadWindow = new NotePadWindow(config, notePadService);
 
