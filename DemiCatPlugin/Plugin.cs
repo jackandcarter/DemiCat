@@ -231,7 +231,8 @@ public class Plugin : IDalamudPlugin
     public void Dispose()
     {
         var pluginInterface = PluginInterface;
-        pluginInterface?.UiBuilder.Draw -= EnsureInitializedOnce;
+        if (pluginInterface != null)
+            pluginInterface.UiBuilder.Draw -= EnsureInitializedOnce;
 
         if (!_initialized)
             return;
