@@ -80,7 +80,7 @@ public class SyncshellStateChangeFallbackTests
 
             SetPluginService(services, "PluginInterface", pluginInterface.Object);
 
-            _ = new TokenManager();
+            var tokenManager = new TokenManager();
 
             var config = new Config
             {
@@ -89,7 +89,7 @@ public class SyncshellStateChangeFallbackTests
                 SyncshellManualSyncAllUsers = true,
             };
 
-            window = new SyncshellWindow(config, httpClient);
+            window = new SyncshellWindow(config, httpClient, tokenManager);
 
             Assert.NotNull(glamourerHandler);
 

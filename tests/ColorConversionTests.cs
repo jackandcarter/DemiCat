@@ -99,7 +99,7 @@ public class ColorConversionTests
         var channelService = new ChannelService(config, http, tokenManager);
         var selection = new ChannelSelectionService(config);
         var emojiManager = new EmojiManager(http, tokenManager, config);
-        var window = new EventCreateWindow(config, http, channelService, selection, emojiManager);
+        var window = new EventCreateWindow(config, http, channelService, selection, emojiManager, tokenManager);
         typeof(EventCreateWindow).GetField("_color", BindingFlags.NonPublic | BindingFlags.Instance)!
             .SetValue(window, ColorUtils.RgbToImGui(rgb));
         var preview = (EmbedDto)typeof(EventCreateWindow).GetMethod("BuildPreview", BindingFlags.NonPublic | BindingFlags.Instance)!

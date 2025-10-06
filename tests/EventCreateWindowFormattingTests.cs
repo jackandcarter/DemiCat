@@ -35,7 +35,7 @@ public class EventCreateWindowFormattingTests
         var channelService = new ChannelService(config, http, tokenManager);
         var selection = new ChannelSelectionService(config);
         var emojiManager = new EmojiManager(http, tokenManager, config);
-        return new EventCreateWindow(config, http, channelService, selection, emojiManager);
+        return new EventCreateWindow(config, http, channelService, selection, emojiManager, tokenManager);
     }
 
     private static void SetDescription(EventCreateWindow window, string text, int start, int end)

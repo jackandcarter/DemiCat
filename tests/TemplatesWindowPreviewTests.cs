@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DemiCatPlugin;
+using DemiCatPlugin.Emoji;
 using Xunit;
 
 public class TemplatesWindowPreviewTests
@@ -33,9 +34,11 @@ public class TemplatesWindowPreviewTests
     {
         var config = new Config();
         var http = new HttpClient(new StubHandler());
-        var channelService = new ChannelService(config, http, new TokenManager());
+        var tokenManager = new TokenManager();
+        var channelService = new ChannelService(config, http, tokenManager);
         var selection = new ChannelSelectionService(config);
-        var window = new TemplatesWindow(config, http, channelService, selection);
+        using var emojiManager = new EmojiManager(http, tokenManager, config);
+        var window = new TemplatesWindow(config, http, channelService, selection, emojiManager, tokenManager);
 
         var firstTmpl = new Template { Name = "One", Title = "T1", Description = "D1" };
         window.SelectTemplate(0, firstTmpl);
