@@ -65,7 +65,7 @@ public class ChatWindowMentionTests
         var httpClient = new HttpClient(handler);
         var tokenManager = new TokenManager();
         var channelService = new ChannelService(config, httpClient, tokenManager);
-        var presence = new DiscordPresenceService(config, httpClient);
+        var presence = new DiscordPresenceService(config, httpClient, tokenManager);
         var presenceList = (List<PresenceDto>)typeof(DiscordPresenceService)
             .GetField("_presences", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(presence)!;
@@ -174,7 +174,7 @@ public class ChatWindowMentionTests
         var httpClient = new HttpClient(handler);
         var tokenManager = new TokenManager();
         var channelService = new ChannelService(config, httpClient, tokenManager);
-        var presence = new DiscordPresenceService(config, httpClient);
+            var presence = new DiscordPresenceService(config, httpClient, tokenManager);
         var presenceList = (List<PresenceDto>)typeof(DiscordPresenceService)
             .GetField("_presences", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(presence)!;

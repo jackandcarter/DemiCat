@@ -44,9 +44,9 @@ internal static class MembershipCache
         }
     }
 
-    internal static async Task EnsureLoaded(HttpClient httpClient, Config config)
+    internal static async Task EnsureLoaded(HttpClient httpClient, Config config, TokenManager tokenManager)
     {
-        if (TokenManager.Instance?.IsReady() != true)
+        if (!tokenManager.IsReady())
         {
             return;
         }
@@ -69,7 +69,7 @@ internal static class MembershipCache
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{config.ApiBaseUrl.TrimEnd('/')}/api/users/me/profile");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, tokenManager);
             var response = await httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {

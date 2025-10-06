@@ -18,7 +18,9 @@ public class UiRendererWebSocketUriTests
         };
         using var httpClient = new HttpClient();
         var selection = new ChannelSelectionService(config);
-        using var ui = new UiRenderer(config, httpClient, selection);
+        var tokenManager = new TokenManager();
+        var emojiManager = new EmojiManager(httpClient, tokenManager, config);
+        using var ui = new UiRenderer(config, httpClient, selection, emojiManager, tokenManager);
 
         var uri = ui.BuildWebSocketUri();
 
@@ -38,7 +40,9 @@ public class UiRendererWebSocketUriTests
         };
         using var httpClient = new HttpClient();
         var selection = new ChannelSelectionService(config);
-        using var ui = new UiRenderer(config, httpClient, selection);
+        var tokenManager = new TokenManager();
+        var emojiManager = new EmojiManager(httpClient, tokenManager, config);
+        using var ui = new UiRenderer(config, httpClient, selection, emojiManager, tokenManager);
 
         var uri = ui.BuildWebSocketUri();
 

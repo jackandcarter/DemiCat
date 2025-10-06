@@ -26,6 +26,7 @@ public class EventCreateWindow
     private readonly HttpClient _httpClient;
     private readonly ChannelService _channelService;
     private readonly EmojiManager _emojiManager;
+    private readonly TokenManager _tokenManager;
 
     private string _title = string.Empty;
     private string _description = string.Empty;
@@ -75,12 +76,19 @@ public class EventCreateWindow
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    public EventCreateWindow(Config config, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection, EmojiManager emojiManager)
+    public EventCreateWindow(
+        Config config,
+        HttpClient httpClient,
+        ChannelService channelService,
+        ChannelSelectionService channelSelection,
+        EmojiManager emojiManager,
+        TokenManager tokenManager)
     {
         _config = config;
         _httpClient = httpClient;
         _channelService = channelService;
         _emojiManager = emojiManager;
+        _tokenManager = tokenManager;
         _channelSelection = channelSelection;
         _optionEditor = new SignupOptionEditor(config, httpClient, emojiManager);
         _descriptionEmojiPopup = new EmojiPopup(config, emojiManager, "EventDescriptionEmoji", SaveConfig);
@@ -109,19 +117,19 @@ public class EventCreateWindow
 
     public void StartNetworking()
     {
-        if (!_config.Events || TokenManager.Instance?.IsReady() != true)
+        if (!_config.Events || !_tokenManager.IsReady())
         {
             return;
         }
 
-        _ = MembershipCache.EnsureLoaded(_httpClient, _config);
-        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+        _ = MembershipCache.EnsureLoaded(_httpClient, _config, _tokenManager);
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config, _tokenManager);
         _ = RefreshChannels();
     }
 
     public void Draw()
     {
-        if (TokenManager.Instance?.IsReady() != true)
+        if (!_tokenManager.IsReady())
         {
             ImGui.TextUnformatted("Link DemiCat to create events");
             return;
@@ -415,7 +423,7 @@ public class EventCreateWindow
         }
         _optionEditor.Draw();
 
-        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config, _tokenManager);
         var presets = SignupPresetService.Presets;
         if (presets.Count > 0)
         {
@@ -489,6 +497,7 @@ public class EventCreateWindow
                 _httpClient,
                 () => Task.CompletedTask,
                 _emojiManager,
+                _tokenManager,
                 previewResult.Content,
                 previewResult.Warnings);
         }
@@ -579,7 +588,7 @@ public class EventCreateWindow
 
     private async Task LoadRoles()
     {
-        await RoleCache.EnsureLoaded(_httpClient, _config);
+        await RoleCache.EnsureLoaded(_httpClient, _config, _tokenManager);
         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
         {
             IEnumerable<RoleDto> roles = RoleCache.Roles;
@@ -617,7 +626,7 @@ public class EventCreateWindow
         try
         {
             var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/repeat";
-            var tokenManager = TokenManager.Instance!;
+            var tokenManager = _tokenManager;
             var response = await ApiHelpers.SendWithRetries(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
@@ -662,7 +671,7 @@ public class EventCreateWindow
         try
         {
             var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/{id}/repeat";
-            var tokenManager = TokenManager.Instance!;
+            var tokenManager = _tokenManager;
             var response = await ApiHelpers.SendWithRetries(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);
@@ -780,7 +789,7 @@ public class EventCreateWindow
             };
             var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates";
             var json = JsonSerializer.Serialize(body, JsonOpts);
-            var tokenManager = TokenManager.Instance!;
+            var tokenManager = _tokenManager;
             var response = await ApiHelpers.SendWithRetries(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
@@ -852,7 +861,7 @@ public class EventCreateWindow
 
             var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events";
             var json = JsonSerializer.Serialize(body, JsonOpts);
-            var tokenManager = TokenManager.Instance!;
+            var tokenManager = _tokenManager;
             var response = await ApiHelpers.SendWithRetries(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Post, requestUri)
@@ -1142,7 +1151,7 @@ public class EventCreateWindow
             return;
         }
 
-        var tokenManager = TokenManager.Instance;
+        var tokenManager = _tokenManager;
         if (tokenManager?.IsReady() != true)
         {
             SetUploadFailure(kind, "Link DemiCat to upload images");
@@ -1549,7 +1558,16 @@ public class EventCreateWindow
         try
         {
             var dto = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList());
-            if (await ChannelNameResolver.Resolve(dto, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            if (await ChannelNameResolver.Resolve(
+                    dto,
+                    _httpClient,
+                    _config,
+                    refreshed,
+                    () => FetchChannels(true),
+                    _tokenManager))
+            {
+                return;
+            }
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 _channels.Clear();
@@ -1628,7 +1646,7 @@ public class EventCreateWindow
                 Width = b.Width
             }).ToList()
         };
-        _ = SignupPresetService.Create(preset, _httpClient, _config);
+        _ = SignupPresetService.Create(preset, _httpClient, _config, _tokenManager);
         _presetName = string.Empty;
     }
 

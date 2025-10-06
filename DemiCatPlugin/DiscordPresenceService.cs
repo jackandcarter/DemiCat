@@ -21,6 +21,7 @@ public class DiscordPresenceService : IDisposable
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
+    private readonly TokenManager _tokenManager;
     private readonly List<PresenceDto> _presences = new();
     private readonly SemaphoreSlim _resetGate = new(1, 1);
     private ClientWebSocket? _ws;
@@ -42,10 +43,11 @@ public class DiscordPresenceService : IDisposable
     public bool Loaded => _loaded;
     public bool IsPresenceReady => _presenceReady;
 
-    public DiscordPresenceService(Config config, HttpClient httpClient)
+    public DiscordPresenceService(Config config, HttpClient httpClient, TokenManager tokenManager)
     {
         _config = config;
         _httpClient = httpClient;
+        _tokenManager = tokenManager;
     }
 
     public void SetPresenceReady(bool ready)
@@ -152,7 +154,7 @@ public class DiscordPresenceService : IDisposable
             return;
         }
 
-        if (TokenManager.Instance?.IsReady() != true)
+        if (!_tokenManager.IsReady())
         {
             PluginServices.Instance!.Log.Warning("Cannot refresh presences: API key is not configured.");
             UpdateStatusMessage(ApiKeyMissingStatus);
@@ -162,7 +164,7 @@ public class DiscordPresenceService : IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -230,7 +232,7 @@ public class DiscordPresenceService : IDisposable
                 continue;
             }
 
-            if (TokenManager.Instance?.IsReady() != true)
+            if (!_tokenManager.IsReady())
             {
                 UpdateStatusMessage(ApiKeyMissingStatus);
                 await DelayWithBackoff(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
@@ -252,7 +254,7 @@ public class DiscordPresenceService : IDisposable
 
             try
             {
-                var pingService = PingService.Instance ?? new PingService(_httpClient, _config, TokenManager.Instance!);
+                var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
                 var pingResponse = await pingService.PingAsync(token).ConfigureAwait(false);
                 if (pingResponse?.IsSuccessStatusCode != true)
                 {
@@ -266,7 +268,7 @@ public class DiscordPresenceService : IDisposable
                 }
 
                 socket = CreateClientWebSocket();
-                ApiHelpers.AddAuthHeader(socket, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(socket, _tokenManager);
                 Uri? uri;
                 try
                 {

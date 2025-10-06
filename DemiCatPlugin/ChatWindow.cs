@@ -4087,7 +4087,13 @@ public class ChatWindow : IDisposable
         try
         {
             var channels = (await _channelService.FetchAsync(_channelKind, CancellationToken.None)).ToList();
-            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
+            if (await ChannelNameResolver.Resolve(
+                    channels,
+                    _httpClient,
+                    _config,
+                    refreshed,
+                    () => FetchChannels(true),
+                    _tokenManager))
             {
                 if (refreshed)
                 {

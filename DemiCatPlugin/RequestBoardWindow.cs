@@ -17,6 +17,7 @@ public class RequestBoardWindow
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, bool> _conflicts = new();
     private readonly GameDataCache _gameData;
+    private readonly TokenManager _tokenManager;
     private readonly ConcurrentDictionary<string, byte> _itemLoads = new();
     private readonly ConcurrentDictionary<string, byte> _dutyLoads = new();
 
@@ -39,11 +40,12 @@ public class RequestBoardWindow
     private SortMode _sortMode = SortMode.MostRecent;
     private static readonly string[] SortLabels = { "Type", "Name", "Most Recent" };
 
-    public RequestBoardWindow(Config config, HttpClient httpClient)
+    public RequestBoardWindow(Config config, HttpClient httpClient, TokenManager tokenManager)
     {
         _config = config;
         _httpClient = httpClient;
         _gameData = new GameDataCache(httpClient);
+        _tokenManager = tokenManager;
     }
 
     public void Draw()
@@ -53,7 +55,7 @@ public class RequestBoardWindow
             ImGui.TextUnformatted("Feature disabled");
             return;
         }
-        if (TokenManager.Instance?.IsReady() != true)
+        if (!_tokenManager.IsReady())
         {
             ImGui.TextUnformatted("Link DemiCat to view requests");
             return;
@@ -162,7 +164,7 @@ public class RequestBoardWindow
 
     private void DrawActionButtons(RequestState req)
     {
-        var disabled = TokenManager.Instance?.IsReady() != true;
+        var disabled = !_tokenManager.IsReady();
         if (disabled)
             ImGui.BeginDisabled();
 
@@ -301,7 +303,7 @@ public class RequestBoardWindow
 
     private async Task Comment(RequestState req, string message)
     {
-        if (string.IsNullOrWhiteSpace(message) || TokenManager.Instance == null || !ApiHelpers.ValidateApiBaseUrl(_config))
+        if (string.IsNullOrWhiteSpace(message) || !ApiHelpers.ValidateApiBaseUrl(_config))
             return;
 
         try
@@ -310,7 +312,7 @@ public class RequestBoardWindow
             var body = new { message };
             var json = JsonSerializer.Serialize(body);
             var msg = new HttpRequestMessage(HttpMethod.Post, url);
-            ApiHelpers.AddAuthHeader(msg, TokenManager.Instance);
+            ApiHelpers.AddAuthHeader(msg, _tokenManager);
             msg.Content = new StringContent(json, Encoding.UTF8, "application/json");
             var resp = await _httpClient.SendAsync(msg);
             if (!resp.IsSuccessStatusCode)
@@ -369,7 +371,7 @@ public class RequestBoardWindow
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests/{req.Id}/{action}";
                 var json = JsonSerializer.Serialize(new { version = req.Version });
                 var msg = new HttpRequestMessage(HttpMethod.Post, url);
-                ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(msg, _tokenManager);
                 msg.Content = new StringContent(json, Encoding.UTF8, "application/json");
                 var resp = await _httpClient.SendAsync(msg);
                 if (resp.IsSuccessStatusCode)
@@ -447,7 +449,7 @@ public class RequestBoardWindow
         {
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests/{id}";
             var msg = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(msg, _tokenManager);
             var resp = await _httpClient.SendAsync(msg);
             if (resp.IsSuccessStatusCode)
             {
@@ -565,7 +567,7 @@ public class RequestBoardWindow
 
     private async Task CreateRequest()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance == null)
+        if (!ApiHelpers.ValidateApiBaseUrl(_config))
             return;
         try
         {
@@ -579,7 +581,7 @@ public class RequestBoardWindow
             };
             var json = JsonSerializer.Serialize(body);
             var msg = new HttpRequestMessage(HttpMethod.Post, url);
-            ApiHelpers.AddAuthHeader(msg, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(msg, _tokenManager);
             msg.Content = new StringContent(json, Encoding.UTF8, "application/json");
             var resp = await _httpClient.SendAsync(msg);
             if (resp.IsSuccessStatusCode)

@@ -20,22 +20,22 @@ internal static class SignupPresetService
         _loaded = false;
     }
 
-    internal static async Task EnsureLoaded(HttpClient httpClient, Config config)
+    internal static async Task EnsureLoaded(HttpClient httpClient, Config config, TokenManager tokenManager)
     {
         if (!_loaded)
         {
-            await Refresh(httpClient, config);
+            await Refresh(httpClient, config, tokenManager);
         }
     }
 
-    internal static async Task Refresh(HttpClient httpClient, Config config)
+    internal static async Task Refresh(HttpClient httpClient, Config config, TokenManager tokenManager)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
         try
         {
             var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets";
             var req = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, tokenManager);
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
             {
@@ -50,9 +50,9 @@ internal static class SignupPresetService
                 PluginServices.Instance!.Log.Warning($"Failed to refresh signup presets. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
                 if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    if (TokenManager.Instance?.IsReady() == true)
+                    if (tokenManager.IsReady())
                     {
-                        TokenManager.Instance.Clear("Invalid API key");
+                        tokenManager.Clear("Invalid API key");
                     }
                 }
             }
@@ -63,19 +63,19 @@ internal static class SignupPresetService
         }
     }
 
-    internal static async Task Create(SignupPreset preset, HttpClient httpClient, Config config)
+    internal static async Task Create(SignupPreset preset, HttpClient httpClient, Config config, TokenManager tokenManager)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
         try
         {
             var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets";
             var req = new HttpRequestMessage(HttpMethod.Post, url);
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, tokenManager);
             req.Content = new StringContent(JsonSerializer.Serialize(preset), Encoding.UTF8, "application/json");
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
             {
-                await Refresh(httpClient, config);
+                await Refresh(httpClient, config, tokenManager);
             }
             else
             {
@@ -83,9 +83,9 @@ internal static class SignupPresetService
                 PluginServices.Instance!.Log.Warning($"Failed to create signup preset. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
                 if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    if (TokenManager.Instance?.IsReady() == true)
+                    if (tokenManager.IsReady())
                     {
-                        TokenManager.Instance.Clear("Invalid API key");
+                        tokenManager.Clear("Invalid API key");
                     }
                 }
             }
@@ -96,18 +96,18 @@ internal static class SignupPresetService
         }
     }
 
-    internal static async Task Delete(string id, HttpClient httpClient, Config config)
+    internal static async Task Delete(string id, HttpClient httpClient, Config config, TokenManager tokenManager)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(config)) return;
         try
         {
             var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/signup-presets/{id}";
             var req = new HttpRequestMessage(HttpMethod.Delete, url);
-            ApiHelpers.AddAuthHeader(req, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(req, tokenManager);
             var resp = await httpClient.SendAsync(req);
             if (resp.IsSuccessStatusCode)
             {
-                await Refresh(httpClient, config);
+                await Refresh(httpClient, config, tokenManager);
             }
             else
             {
@@ -115,9 +115,9 @@ internal static class SignupPresetService
                 PluginServices.Instance!.Log.Warning($"Failed to delete signup preset. URL: {url}, Status: {resp.StatusCode}. Response Body: {responseBody}");
                 if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    if (TokenManager.Instance?.IsReady() == true)
+                    if (tokenManager.IsReady())
                     {
-                        TokenManager.Instance.Clear("Invalid API key");
+                        tokenManager.Clear("Invalid API key");
                     }
                 }
             }

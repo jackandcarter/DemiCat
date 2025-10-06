@@ -34,7 +34,7 @@ public class PresenceServiceLifecycleTests : IDisposable
         var config = new Config { ApiBaseUrl = "https://example.invalid" };
         using var httpClient = new HttpClient(new StubPresenceHandler());
         var tokenManager = new TokenManager();
-        var presence = new DiscordPresenceService(config, httpClient);
+        var presence = new DiscordPresenceService(config, httpClient, tokenManager);
         presence.SetPresenceReady(true);
         var channelService = new ChannelService(config, httpClient, tokenManager);
 
@@ -66,7 +66,7 @@ public class PresenceServiceLifecycleTests : IDisposable
         var config = new Config { ApiBaseUrl = "https://example.invalid" };
         using var httpClient = new HttpClient(new StubPresenceHandler());
         var tokenManager = new TokenManager();
-        var presence = new DiscordPresenceService(config, httpClient);
+        var presence = new DiscordPresenceService(config, httpClient, tokenManager);
         var channelService = new ChannelService(config, httpClient, tokenManager);
 
         PingService.Instance = new PingService(httpClient, config, tokenManager);

@@ -120,7 +120,7 @@ public class UiRendererShutdownTests
             var emojiManager = new EmojiManager(new HttpClient(new StubEmojiHandler()), tokenManager, config);
             var handler = new TestHttpHandler();
             var httpClient = new HttpClient(handler);
-            var ui = new UiRenderer(config, httpClient, selection, emojiManager);
+            var ui = new UiRenderer(config, httpClient, selection, emojiManager, tokenManager);
 
             var pollCts = new CancellationTokenSource();
             SetPrivateField(ui, "_networkingActive", true);

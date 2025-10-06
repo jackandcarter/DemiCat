@@ -49,7 +49,8 @@ public class PresenceSidebarTests
     {
         var config = new Config();
         var httpClient = new HttpClient(new StubHandler());
-        var service = new DiscordPresenceService(config, httpClient);
+        var tokenManager = new TokenManager();
+        var service = new DiscordPresenceService(config, httpClient, tokenManager);
         return new PresenceSidebar(service);
     }
 

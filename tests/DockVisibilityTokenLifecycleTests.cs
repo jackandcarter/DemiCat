@@ -72,7 +72,7 @@ public class DockVisibilityTokenLifecycleTests
             var channelService = new ChannelService(config, httpClient, tokenManager);
             var channelSelection = new ChannelSelectionService(config);
             var emojiManager = new EmojiManager(httpClient, tokenManager, config);
-            var uiRenderer = new UiRenderer(config, httpClient, channelSelection, emojiManager);
+            var uiRenderer = new UiRenderer(config, httpClient, channelSelection, emojiManager, tokenManager);
             var chatWindow = new ChatWindow(config, httpClient, null, tokenManager, channelService);
             var officerWindow = new OfficerChatWindow(config, httpClient, null, tokenManager, channelService);
             var settingsWindow = new SettingsWindow(
@@ -98,6 +98,7 @@ public class DockVisibilityTokenLifecycleTests
                 channelSelection,
                 emojiManager,
                 notePadWindow,
+                tokenManager,
                 () => tokenManager.IsReady(),
                 () => tokenManager.State == LinkState.Linked);
 

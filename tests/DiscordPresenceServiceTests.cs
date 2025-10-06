@@ -78,8 +78,8 @@ public class DiscordPresenceServiceTests
         private int _started;
         private int _completed;
 
-        public TestDiscordPresenceService(Config config, HttpClient httpClient)
-            : base(config, httpClient)
+        public TestDiscordPresenceService(Config config, HttpClient httpClient, TokenManager tokenManager)
+            : base(config, httpClient, tokenManager)
         {
         }
 
@@ -181,9 +181,10 @@ public class DiscordPresenceServiceTests
             var log = new RecordingLog();
             ConfigurePluginServices(services, framework, log);
 
-            _ = new TokenManager();
+            var tokenManager = new TokenManager();
+            SetTokenManagerInstance(tokenManager);
 
-            var service = new DiscordPresenceService(config, httpClient);
+            var service = new DiscordPresenceService(config, httpClient, tokenManager);
 
             await service.Refresh().ConfigureAwait(false);
 
@@ -212,9 +213,10 @@ public class DiscordPresenceServiceTests
             var log = new RecordingLog();
             ConfigurePluginServices(services, framework, log);
 
-            SetTokenManagerInstance(null);
+            var tokenManager = new TokenManager();
+            SetTokenManagerInstance(tokenManager);
 
-            var service = new DiscordPresenceService(config, httpClient);
+            var service = new DiscordPresenceService(config, httpClient, tokenManager);
 
             await service.Refresh().ConfigureAwait(false);
 
@@ -244,9 +246,10 @@ public class DiscordPresenceServiceTests
             var log = new RecordingLog();
             ConfigurePluginServices(services, framework, log);
 
-            SetTokenManagerInstance(null);
+            var tokenManager = new TokenManager();
+            SetTokenManagerInstance(tokenManager);
 
-            service = new DiscordPresenceService(config, httpClient);
+            service = new DiscordPresenceService(config, httpClient, tokenManager);
 
             service.Reset();
 
@@ -278,9 +281,9 @@ public class DiscordPresenceServiceTests
             ConfigurePluginServices(services, framework, log);
 
             var tokenManager = new TokenManager();
-            _ = tokenManager;
+            SetTokenManagerInstance(tokenManager);
 
-            service = new DiscordPresenceService(config, httpClient);
+            service = new DiscordPresenceService(config, httpClient, tokenManager);
 
             service.Reset();
 
@@ -315,7 +318,7 @@ public class DiscordPresenceServiceTests
             typeof(PluginServices).GetProperty("Framework", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, framework);
             typeof(PluginServices).GetProperty("Log", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(services, log);
 
-            var service = new TestDiscordPresenceService(config, httpClient);
+            var service = new TestDiscordPresenceService(config, httpClient, tokenManager);
 
             service.Reset();
             await service.WaitForConnectionStartsAsync(1, TimeSpan.FromSeconds(1)).ConfigureAwait(false);
@@ -357,7 +360,8 @@ public class DiscordPresenceServiceTests
     {
         var config = new Config { ApiBaseUrl = "http://unit-test" };
         using var httpClient = new HttpClient(new StubPresenceHandler());
-        var service = new DiscordPresenceService(config, httpClient);
+        var tokenManager = new TokenManager();
+        var service = new DiscordPresenceService(config, httpClient, tokenManager);
 
         var field = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var list = (List<PresenceDto>)field.GetValue(service)!;
@@ -403,7 +407,8 @@ public class DiscordPresenceServiceTests
     {
         var config = new Config { ApiBaseUrl = "http://unit-test" };
         using var httpClient = new HttpClient(new StubPresenceHandler());
-        var service = new DiscordPresenceService(config, httpClient);
+        var tokenManager = new TokenManager();
+        var service = new DiscordPresenceService(config, httpClient, tokenManager);
 
         var field = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
         var list = (List<PresenceDto>)field.GetValue(service)!;

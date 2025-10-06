@@ -153,13 +153,14 @@ public class SyncshellWindow : IDisposable
     private int _membershipRefreshRequested;
     private string? _membershipError;
 
-    public SyncshellWindow(Config config, HttpClient httpClient)
+    public SyncshellWindow(Config config, HttpClient httpClient, TokenManager tokenManager)
     {
         if (!config.FCSyncShell)
             throw new InvalidOperationException("Syncshell disabled");
 
         _config = config;
         _httpClient = httpClient;
+        _tokenManager = tokenManager;
 
         var services = PluginServices.Instance;
         _progressOverlay = new ProgressOverlay();
@@ -179,7 +180,6 @@ public class SyncshellWindow : IDisposable
             _blobStore = new FileBlobStore(Path.Combine(configDir, ".syncshell", "cache"));
         }
 
-        _tokenManager = TokenManager.Instance ?? throw new InvalidOperationException("Token manager unavailable");
         var log = services?.Log ?? new NullPluginLog();
         _resolver = new Resolver(config, _blobStore, log, services?.PluginInterface);
         _syncClient = new SyncClient(_config, _tokenManager, _resolver, _blobStore);
