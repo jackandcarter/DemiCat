@@ -24,6 +24,7 @@ public class EventView : IDisposable
     private readonly HttpClient _httpClient;
     private readonly Func<Task> _refresh;
     private readonly EmojiManager _emojiManager;
+    private readonly TokenManager _tokenManager;
 
     private EmbedDto _dto;
     private ISharedImmediateTexture? _authorIcon;
@@ -35,12 +36,21 @@ public class EventView : IDisposable
     private readonly List<string> _warnings = new();
     private static readonly Regex RoleMentionRegex = new("<@&(\\d+)>", RegexOptions.Compiled);
 
-    public EventView(EmbedDto dto, Config config, HttpClient httpClient, Func<Task> refresh, EmojiManager emojiManager, string? content = null, IEnumerable<string>? warnings = null)
+    public EventView(
+        EmbedDto dto,
+        Config config,
+        HttpClient httpClient,
+        Func<Task> refresh,
+        EmojiManager emojiManager,
+        TokenManager tokenManager,
+        string? content = null,
+        IEnumerable<string>? warnings = null)
     {
         _config = config;
         _httpClient = httpClient;
         _refresh = refresh;
         _emojiManager = emojiManager;
+        _tokenManager = tokenManager;
         _dto = dto;
         _content = content;
         SetWarnings(warnings);
@@ -679,7 +689,7 @@ public class EventView : IDisposable
             var request = new HttpRequestMessage(HttpMethod.Post, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/events/{_dto.Id}/rsvp");
             var body = new { tag = tag };
             request.Content = new StringContent(JsonSerializer.Serialize(body), Encoding.UTF8, "application/json");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             _lastResult = response.IsSuccessStatusCode ? "Signup updated" : "Signup failed";
             if (response.IsSuccessStatusCode)

@@ -104,10 +104,9 @@ internal static class RequestStateService
         }
     }
 
-    public static async Task RefreshAll(HttpClient httpClient, Config config)
+    public static async Task RefreshAll(HttpClient httpClient, Config config, TokenManager tokenManager)
     {
-        var tokenManager = TokenManager.Instance;
-        if (!ApiHelpers.ValidateApiBaseUrl(config) || tokenManager == null || !tokenManager.IsReady()) return;
+        if (!ApiHelpers.ValidateApiBaseUrl(config) || !tokenManager.IsReady()) return;
         _config = config;
         try
         {

@@ -160,7 +160,7 @@ public class OfficerChatWindow : ChatWindow
         var showPresence = _presenceSidebar != null && _tokenManager.IsReady();
         if (showPresence)
         {
-            _ = RoleCache.EnsureLoaded(_httpClient, _config);
+        _ = RoleCache.EnsureLoaded(_httpClient, _config, _tokenManager);
             _presenceSidebar!.Draw(ref _presenceWidth);
             ImGui.SameLine();
             ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
@@ -328,7 +328,13 @@ public class OfficerChatWindow : ChatWindow
         try
         {
             var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(global::DemiCatPlugin.ChannelKind.OfficerChat, CancellationToken.None)).ToList());
-            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
+            if (await ChannelNameResolver.Resolve(
+                    channels,
+                    _httpClient,
+                    _config,
+                    refreshed,
+                    () => FetchChannels(true),
+                    _tokenManager))
             {
                 if (refreshed)
                 {

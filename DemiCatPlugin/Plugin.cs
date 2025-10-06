@@ -149,7 +149,7 @@ public class Plugin : IDalamudPlugin
             _emojiManager = new EmojiManager(HttpClient, _tokenManager, _config);
             _emojiFontHandle = InitializeEmojiFont();
             _emojiManager.EmojiFontHandle = _emojiFontHandle;
-            _ui = new UiRenderer(_config, HttpClient, _channelSelection, _emojiManager);
+        _ui = new UiRenderer(_config, HttpClient, _channelSelection, _emojiManager, _tokenManager);
 
             _settings.ConfigureServices(
                 HttpClient,
@@ -158,9 +158,9 @@ public class Plugin : IDalamudPlugin
 
             RegisterDeveloperWindow();
 
-            _presenceService = _config.SyncedChat && _config.EnableFcChat
-                ? new DiscordPresenceService(_config, HttpClient)
-                : null;
+        _presenceService = _config.SyncedChat && _config.EnableFcChat
+            ? new DiscordPresenceService(_config, HttpClient, _tokenManager)
+            : null;
 
             _channelService = new ChannelService(_config, HttpClient, _tokenManager);
             var textureProvider = Services.TextureProvider;
@@ -173,20 +173,21 @@ public class Plugin : IDalamudPlugin
             _notePadService = new NotePadService(_config, HttpClient, _tokenManager);
             _notePadWindow = new NotePadWindow(_config, _notePadService);
 
-            _mainWindow = new MainWindow(
-                _config,
-                _ui,
-                _chatWindow,
-                _officerChatWindow,
-                _settings,
-                HttpClient,
-                _channelService,
-                _channelSelection,
-                _emojiManager,
-                _notePadWindow,
-                () => _tokenManager.IsReady(),
-                () => _tokenManager.State == LinkState.Linked
-            );
+        _mainWindow = new MainWindow(
+            _config,
+            _ui,
+            _chatWindow,
+            _officerChatWindow,
+            _settings,
+            HttpClient,
+            _channelService,
+            _channelSelection,
+            _emojiManager,
+            _notePadWindow,
+            _tokenManager,
+            () => _tokenManager.IsReady(),
+            () => _tokenManager.State == LinkState.Linked
+        );
 
             _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, HttpClient, _channelService);
             _requestWatcher = new RequestWatcher(_config, HttpClient, _tokenManager);
@@ -204,8 +205,9 @@ public class Plugin : IDalamudPlugin
             _mainWindow.SetNotePadReadOnly(!_tokenManager.IsReady());
 
             _windows.AddWindow(_mainWindow);
+            _mainWindow.IsOpen = _config.DockVisible;
 
-            _ = RoleCache.EnsureLoaded(HttpClient, _config);
+            _ = RoleCache.EnsureLoaded(HttpClient, _config, _tokenManager);
 
             _openMainUi = () =>
             {
@@ -1220,7 +1222,7 @@ public class Plugin : IDalamudPlugin
                 });
             });
 
-            await RoleCache.Refresh(HttpClient, _config);
+            await RoleCache.Refresh(HttpClient, _config, _tokenManager);
             return true;
         }
         catch (Exception ex)

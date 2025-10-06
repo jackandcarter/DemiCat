@@ -563,7 +563,13 @@ public class ChannelWatcher : IDisposable
     private async Task<IReadOnlyList<ChannelDto>> FetchChannelsForKindAsync(string kind, bool refreshed, CancellationToken ct = default)
     {
         var channels = (await _channelService.FetchAsync(kind, ct).ConfigureAwait(false)).ToList();
-        if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => Task.CompletedTask).ConfigureAwait(false))
+        if (await ChannelNameResolver.Resolve(
+                channels,
+                _httpClient,
+                _config,
+                refreshed,
+                () => Task.CompletedTask,
+                _tokenManager).ConfigureAwait(false))
         {
             return await FetchChannelsForKindAsync(kind, true, ct).ConfigureAwait(false);
         }

@@ -23,7 +23,7 @@ internal static class RoleCache
         _lastErrorMessage = null;
     }
 
-    internal static async Task EnsureLoaded(HttpClient httpClient, Config config)
+    internal static async Task EnsureLoaded(HttpClient httpClient, Config config, TokenManager tokenManager)
     {
         if (_loaded)
             return;
@@ -33,10 +33,10 @@ internal static class RoleCache
             _loaded = true;
             return;
         }
-        await Refresh(httpClient, config);
+        await Refresh(httpClient, config, tokenManager);
     }
 
-    internal static async Task Refresh(HttpClient httpClient, Config config)
+    internal static async Task Refresh(HttpClient httpClient, Config config, TokenManager tokenManager)
     {
         if (!ApiHelpers.ValidateApiBaseUrl(config))
         {
@@ -47,11 +47,11 @@ internal static class RoleCache
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{config.ApiBaseUrl.TrimEnd('/')}/api/guild-roles");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, tokenManager);
             var response = await httpClient.SendAsync(request);
             if (response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden)
             {
-                TokenManager.Instance!.Clear("Authentication failed");
+                tokenManager.Clear("Authentication failed");
                 _lastErrorMessage = "Authentication failed";
                 _loaded = true;
                 return;

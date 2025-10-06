@@ -21,6 +21,7 @@ namespace DemiCatPlugin;
 public class UiRenderer : IAsyncDisposable, IDisposable
 {
     private readonly HttpClient _httpClient;
+    private readonly TokenManager _tokenManager;
     private readonly Config _config;
     private readonly Dictionary<string, EventView> _embeds = new();
     private readonly object _embedLock = new();
@@ -61,12 +62,18 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private const string DefaultWebSocketPath = "/ws/embeds";
     private const string ForbiddenMessage = "Forbidden – check API key/roles";
 
-    public UiRenderer(Config config, HttpClient httpClient, ChannelSelectionService channelSelection, EmojiManager emojiManager)
+    public UiRenderer(
+        Config config,
+        HttpClient httpClient,
+        ChannelSelectionService channelSelection,
+        EmojiManager emojiManager,
+        TokenManager tokenManager)
     {
         _config = config;
         _httpClient = httpClient;
         _channelSelection = channelSelection;
         _emojiManager = emojiManager;
+        _tokenManager = tokenManager;
         _channelSelection.ChannelChanged += HandleChannelChanged;
     }
 
@@ -122,7 +129,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             socket.Dispose();
         }
 
-        if (!TokenManager.Instance!.IsReady() || !_config.Enabled || !_config.Events)
+        if (!_tokenManager.IsReady() || !_config.Enabled || !_config.Events)
         {
             return;
         }
@@ -193,7 +200,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             while (!token.IsCancellationRequested)
             {
                 await Task.Delay(delay, token);
-                if (!TokenManager.Instance!.IsReady() || !_config.Enabled || !_config.Events)
+                if (!_tokenManager.IsReady() || !_config.Enabled || !_config.Events)
                 {
                     continue;
                 }
@@ -233,14 +240,14 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task LoadPresences()
     {
-        if (!TokenManager.Instance!.IsReady()) return;
+        if (!_tokenManager.IsReady()) return;
         if (_presenceLoadAttempted) return;
         _presenceLoadAttempted = true;
         if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return;
             var stream = await response.Content.ReadAsStreamAsync();
@@ -308,7 +315,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task<bool> PollEmbeds()
     {
-        if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true) return false;
+        if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady()) return false;
 
         try
         {
@@ -319,12 +326,12 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 url += $"?channel_id={channelId}";
             }
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 PluginServices.Instance?.Log.Warning("Sync unauthorized; clearing token");
-                TokenManager.Instance?.Clear("Invalid API key");
+                _tokenManager.Clear("Invalid API key");
                 return false;
             }
             if (response.StatusCode == HttpStatusCode.Forbidden)
@@ -359,7 +366,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
         {
             PluginServices.Instance?.Log.Warning(ex, "Sync unauthorized; clearing token");
-            TokenManager.Instance?.Clear("Invalid API key");
+            _tokenManager.Clear("Invalid API key");
             return false;
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
@@ -438,7 +445,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 return;
             }
 
-            if (!ApiHelpers.ValidateApiBaseUrl(_config) || TokenManager.Instance?.IsReady() != true || !_config.Enabled)
+            if (!ApiHelpers.ValidateApiBaseUrl(_config) || !_tokenManager.IsReady() || !_config.Enabled)
             {
                 ScheduleNextWebSocketAttempt();
                 return;
@@ -446,12 +453,12 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
             try
             {
-                var pingService = PingService.Instance ?? new PingService(_httpClient, _config, TokenManager.Instance!);
+                var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
                 var pingResponse = await pingService.PingAsync(CancellationToken.None);
                 if (pingResponse?.StatusCode == HttpStatusCode.Unauthorized)
                 {
                     PluginServices.Instance?.Log.Warning("WebSocket ping unauthorized; clearing token");
-                    TokenManager.Instance?.Clear("Invalid API key");
+                    _tokenManager.Clear("Invalid API key");
                     return;
                 }
                 if (pingResponse?.StatusCode == HttpStatusCode.Forbidden)
@@ -473,7 +480,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
                 _webSocket?.Dispose();
                 _webSocket = new ClientWebSocket();
-                ApiHelpers.AddAuthHeader(_webSocket, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(_webSocket, _tokenManager);
                 var wsUrl = BuildWebSocketUri();
                 if (wsUrl == null)
                 {
@@ -807,7 +814,14 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 }
                 else
                 {
-                    _embeds[dto.Id] = new EventView(dto, _config, _httpClient, RefreshEmbeds, _emojiManager, BuildMentionContent(dto));
+                    _embeds[dto.Id] = new EventView(
+                        dto,
+                        _config,
+                        _httpClient,
+                        RefreshEmbeds,
+                        _emojiManager,
+                        _tokenManager,
+                        BuildMentionContent(dto));
                 }
             }
 
@@ -831,7 +845,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public async Task RefreshEmbeds()
     {
-        if (!TokenManager.Instance!.IsReady()) return;
+        if (!_tokenManager.IsReady()) return;
         if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
 
         try
@@ -843,7 +857,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 url += $"?channel_id={channelId}";
             }
             var request = new HttpRequestMessage(HttpMethod.Get, url);
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode)
             {
@@ -867,7 +881,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public void Draw()
     {
-        if (!TokenManager.Instance!.IsReady())
+        if (!_tokenManager.IsReady())
         {
             ImGui.TextUnformatted("Link DemiCat to view events");
             return;
@@ -1175,7 +1189,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task FetchChannels(bool refreshed = false)
     {
-        if (!TokenManager.Instance!.IsReady()) return;
+        if (!_tokenManager.IsReady()) return;
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
@@ -1191,14 +1205,14 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+            ApiHelpers.AddAuthHeader(request, _tokenManager);
             var response = await _httpClient.SendAsync(request);
             if (response.StatusCode == HttpStatusCode.Unauthorized)
             {
                 var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning(
                     $"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}. Clearing token");
-                TokenManager.Instance?.Clear("Invalid API key");
+                _tokenManager.Clear("Invalid API key");
                 return;
             }
             if (response.StatusCode == HttpStatusCode.Forbidden)
@@ -1236,7 +1250,16 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             {
                 channel.EnsureKind(ChannelKind.Event);
             }
-            if (await ChannelNameResolver.Resolve(eventChannels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
+            if (await ChannelNameResolver.Resolve(
+                    eventChannels,
+                    _httpClient,
+                    _config,
+                    refreshed,
+                    () => FetchChannels(true),
+                    _tokenManager))
+            {
+                return;
+            }
             ResetPermissionToast();
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
@@ -1248,7 +1271,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             PluginServices.Instance!.Log.Warning(
                 ex,
                 "Failed to fetch channels due to authorization failure; clearing token");
-            TokenManager.Instance?.Clear("Invalid API key");
+            _tokenManager.Clear("Invalid API key");
             return;
         }
         catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)

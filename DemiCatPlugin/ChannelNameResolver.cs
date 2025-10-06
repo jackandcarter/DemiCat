@@ -27,7 +27,8 @@ internal static class ChannelNameResolver
         HttpClient httpClient,
         Config config,
         bool refreshed,
-        Func<Task> reload)
+        Func<Task> reload,
+        TokenManager tokenManager)
     {
         var unresolved = Resolve(channels);
         if (unresolved && !refreshed && ApiHelpers.ValidateApiBaseUrl(config))
@@ -36,7 +37,7 @@ internal static class ChannelNameResolver
             {
                 var refreshReq = new HttpRequestMessage(HttpMethod.Post,
                     $"{config.ApiBaseUrl.TrimEnd('/')}/api/channels/refresh");
-                ApiHelpers.AddAuthHeader(refreshReq, TokenManager.Instance!);
+                ApiHelpers.AddAuthHeader(refreshReq, tokenManager);
                 var resp = await httpClient.SendAsync(refreshReq);
                 if (!resp.IsSuccessStatusCode)
                 {

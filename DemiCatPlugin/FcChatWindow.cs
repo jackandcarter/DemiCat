@@ -64,7 +64,7 @@ public class FcChatWindow : ChatWindow
             return;
         }
 
-        _ = RoleCache.EnsureLoaded(_httpClient, _config);
+        _ = RoleCache.EnsureLoaded(_httpClient, _config, _tokenManager);
 
         if (_presenceSidebar != null)
         {

@@ -16,7 +16,7 @@ public class SyncshellTabToggleTests
         var channelService = new ChannelService(cfg, http, token);
         var selection = new ChannelSelectionService(cfg);
         var emojiManager = new EmojiManager(http, token, cfg);
-        var ui = new UiRenderer(cfg, http, selection, emojiManager);
+        var ui = new UiRenderer(cfg, http, selection, emojiManager, token);
         var officer = new OfficerChatWindow(cfg, http, null, token, channelService, selection);
         var settings = (SettingsWindow)FormatterServices.GetUninitializedObject(typeof(SettingsWindow));
         var notePadService = new NotePadService(cfg, http, token);
@@ -32,6 +32,7 @@ public class SyncshellTabToggleTests
             selection,
             emojiManager,
             notePadWindow,
+            token,
             () => token.IsReady(),
             () => token.State == LinkState.Linked);
 

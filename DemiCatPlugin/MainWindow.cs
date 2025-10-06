@@ -45,6 +45,7 @@ public class MainWindow : Window, IDisposable
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
     private readonly NotePadWindow _notePad;
+    private readonly TokenManager _tokenManager;
     private readonly EmojiManager _emojiManager;
     private readonly HttpClient _httpClient;
     private readonly List<DockItem> _dockItems = new();
@@ -71,7 +72,6 @@ public class MainWindow : Window, IDisposable
     private bool _syncshellEnabled;
     private bool _styleNeedsUpdate = true;
     private bool _hasOfficerAccess;
-    private bool _isOpen;
     private DockItem? _settingsDockItem;
 
     public bool HasOfficerAccess
@@ -117,6 +117,7 @@ public class MainWindow : Window, IDisposable
         ChannelSelectionService channelSelection,
         EmojiManager emojiManager,
         NotePadWindow notePad,
+        TokenManager tokenManager,
         Func<bool> isTokenReady,
         Func<bool> isLinked)
         : base("DemiCat Host")
@@ -128,17 +129,15 @@ public class MainWindow : Window, IDisposable
         _settings = settings;
         _httpClient = httpClient;
         _emojiManager = emojiManager;
-        _create = new EventCreateWindow(config, httpClient, channelService, channelSelection, emojiManager);
-        _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager);
-        _requestBoard = new RequestBoardWindow(config, httpClient);
+        _tokenManager = tokenManager;
+        _create = new EventCreateWindow(config, httpClient, channelService, channelSelection, emojiManager, tokenManager);
+        _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager, tokenManager);
+        _requestBoard = new RequestBoardWindow(config, httpClient, tokenManager);
         _notePad = notePad;
         _isTokenReady = isTokenReady ?? throw new ArgumentNullException(nameof(isTokenReady));
         _isLinked = isLinked ?? throw new ArgumentNullException(nameof(isLinked));
         _syncshellEnabled = config.FCSyncShell;
-        _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
-        _isOpen = config.DockVisible;
-
-        IsOpen = _config.DockVisible;
+        _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient, tokenManager) : null;
         RespectCloseHotkey = false;
         Flags = ImGuiWindowFlags.NoDecoration
             | ImGuiWindowFlags.NoSavedSettings
@@ -191,23 +190,14 @@ public class MainWindow : Window, IDisposable
 
     public override void OnOpen()
     {
-        _isOpen = true;
-        if (!_config.DockVisible)
-        {
-            _config.DockVisible = true;
-            SaveConfig();
-        }
+        _config.DockVisible = true;
+        SaveConfig();
     }
 
     public override void OnClose()
     {
-        _isOpen = false;
-        if (_config.DockVisible)
-        {
-            _config.DockVisible = false;
-            SaveConfig();
-        }
-
+        _config.DockVisible = false;
+        SaveConfig();
         CloseAllFeatureWindows();
     }
 
@@ -225,7 +215,7 @@ public class MainWindow : Window, IDisposable
         if (_syncshellEnabled)
         {
             _syncshell?.Dispose();
-            _syncshell = new SyncshellWindow(_config, _httpClient);
+            _syncshell = new SyncshellWindow(_config, _httpClient, _tokenManager);
             _syncshellWindowHost = new SyncshellDockableWindow(_config, _syncshell, IsLinked);
             _windowHosts.Add(_syncshellWindowHost);
             BuildDockItems();
@@ -265,11 +255,6 @@ public class MainWindow : Window, IDisposable
     internal void DrawFeatures()
     {
         if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
-        {
-            return;
-        }
-
-        if (!_isOpen)
         {
             return;
         }
@@ -376,19 +361,7 @@ public class MainWindow : Window, IDisposable
     {
         CloseAllFeatureWindows();
 
-        if (IsOpen)
-        {
-            IsOpen = false;
-        }
-        else
-        {
-            _isOpen = false;
-            if (_config.DockVisible)
-            {
-                _config.DockVisible = false;
-                SaveConfig();
-            }
-        }
+        IsOpen = false;
     }
 
     public void OnAppearanceSettingsChanged()
@@ -409,7 +382,7 @@ public class MainWindow : Window, IDisposable
     public void ReloadSignupPresets()
     {
         SignupPresetService.Reset();
-        _ = SignupPresetService.EnsureLoaded(_httpClient, _config);
+        _ = SignupPresetService.EnsureLoaded(_httpClient, _config, _tokenManager);
     }
 
     public void ResetFadeTimer()

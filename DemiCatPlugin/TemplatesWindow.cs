@@ -24,6 +24,7 @@ public class TemplatesWindow
     private readonly HttpClient _httpClient;
     private readonly ChannelService _channelService;
     private readonly EmojiManager _emojiManager;
+    private readonly TokenManager _tokenManager;
     private readonly List<TemplateItem> _templates = new();
     private bool _templatesLoaded;
     private bool _templatesLoading;
@@ -56,31 +57,34 @@ public class TemplatesWindow
     private readonly ChatBridge? _bridge;
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
 
-    public TemplatesWindow(Config config, HttpClient httpClient, ChannelService channelService, ChannelSelectionService channelSelection, EmojiManager emojiManager)
+    public TemplatesWindow(
+        Config config,
+        HttpClient httpClient,
+        ChannelService channelService,
+        ChannelSelectionService channelSelection,
+        EmojiManager emojiManager,
+        TokenManager tokenManager)
     {
         _config = config;
         _httpClient = httpClient;
         _channelService = channelService;
         _emojiManager = emojiManager;
+        _tokenManager = tokenManager;
         _channelSelection = channelSelection;
         _timePicker = new DateTimePicker(DateTimePicker.GetDefaultTime());
-        var token = TokenManager.Instance;
-        if (token != null)
+        _bridge = new ChatBridge(config, httpClient, _tokenManager, BuildWebSocketUri, channelSelection);
+        _bridge.TemplatesUpdated += () =>
         {
-            _bridge = new ChatBridge(config, httpClient, token, BuildWebSocketUri, channelSelection);
-            _bridge.TemplatesUpdated += () =>
+            if (_templatesLoading)
             {
-                if (_templatesLoading)
-                {
-                    _templatesReloadPending = true;
-                    _templatesLoaded = false;
-                    return;
-                }
-
+                _templatesReloadPending = true;
                 _templatesLoaded = false;
-                _ = LoadTemplates();
-            };
-        }
+                return;
+            }
+
+            _templatesLoaded = false;
+            _ = LoadTemplates();
+        };
         _channelSelection.ChannelChanged += HandleChannelChanged;
     }
 
@@ -102,7 +106,7 @@ public class TemplatesWindow
 
     public void StartNetworking()
     {
-        _ = MembershipCache.EnsureLoaded(_httpClient, _config);
+        _ = MembershipCache.EnsureLoaded(_httpClient, _config, _tokenManager);
         _bridge?.Start();
         _templatesLoaded = false;
     }
@@ -129,7 +133,7 @@ public class TemplatesWindow
             return;
         }
 
-        if (TokenManager.Instance?.IsReady() != true)
+        if (!_tokenManager.IsReady())
         {
             ImGui.TextUnformatted("Link DemiCat to manage templates");
             return;
@@ -410,6 +414,7 @@ public class TemplatesWindow
             _httpClient,
             () => Task.CompletedTask,
             _emojiManager,
+            _tokenManager,
             preview.Content,
             preview.Warnings);
         _showPreview = true;
@@ -451,7 +456,13 @@ public class TemplatesWindow
         try
         {
             var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(ChannelKind.Event, CancellationToken.None)).ToList());
-            if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
+            if (await ChannelNameResolver.Resolve(
+                    channels,
+                    _httpClient,
+                    _config,
+                    refreshed,
+                    () => FetchChannels(true),
+                    _tokenManager))
             {
                 _channelsLoading = false;
                 return;
@@ -592,7 +603,7 @@ public class TemplatesWindow
         _rolesLoading = true;
         try
         {
-            await RoleCache.EnsureLoaded(_httpClient, _config);
+            await RoleCache.EnsureLoaded(_httpClient, _config, _tokenManager);
         }
         catch
         {
@@ -795,7 +806,7 @@ public class TemplatesWindow
             var id = _templates[_selectedIndex].Id;
             var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}/post";
             var json = JsonSerializer.Serialize(body);
-            var tokenManager = TokenManager.Instance!;
+            var tokenManager = _tokenManager;
             var response = await ApiHelpers.SendWithRetries(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
@@ -876,7 +887,7 @@ public class TemplatesWindow
         try
         {
             var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates";
-            var tokenManager = TokenManager.Instance!;
+            var tokenManager = _tokenManager;
             var response = await ApiHelpers.SendWithRetries(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Get, requestUri);
@@ -977,7 +988,7 @@ public class TemplatesWindow
         try
         {
             var requestUri = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/templates/{id}";
-            var tokenManager = TokenManager.Instance!;
+            var tokenManager = _tokenManager;
             var response = await ApiHelpers.SendWithRetries(() =>
             {
                 var request = new HttpRequestMessage(HttpMethod.Delete, requestUri);

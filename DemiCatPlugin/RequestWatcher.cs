@@ -84,7 +84,7 @@ public class RequestWatcher : IDisposable
                     continue;
                 }
 
-                try { await RequestStateService.RefreshAll(_httpClient, _config); } catch { }
+                try { await RequestStateService.RefreshAll(_httpClient, _config, _tokenManager); } catch { }
 
                 ws = new ClientWebSocket();
                 ApiHelpers.AddAuthHeader(ws, _tokenManager);
@@ -186,7 +186,7 @@ public class RequestWatcher : IDisposable
 
             if (_tokenManager.IsReady())
             {
-                try { await RequestStateService.RefreshAll(_httpClient, _config); } catch { }
+                try { await RequestStateService.RefreshAll(_httpClient, _config, _tokenManager); } catch { }
             }
 
             if (hadTransportError)

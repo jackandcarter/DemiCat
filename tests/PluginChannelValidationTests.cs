@@ -64,7 +64,7 @@ public class PluginChannelValidationTests
         var channelService = new ChannelService(config, httpClient, tokenManager);
         var channelSelection = new ChannelSelectionService(config);
         var emojiManager = new EmojiManager(httpClient, tokenManager, config);
-        var ui = new UiRenderer(config, httpClient, channelSelection, emojiManager);
+        var ui = new UiRenderer(config, httpClient, channelSelection, emojiManager, tokenManager);
         var requestWatcher = new RequestWatcher(config, httpClient, tokenManager);
         var chatWindow = new ChatWindow(config, httpClient, null, tokenManager, channelService);
         var officerChatWindow = new OfficerChatWindow(config, httpClient, null, tokenManager, channelService);
@@ -93,6 +93,7 @@ public class PluginChannelValidationTests
             channelSelection,
             emojiManager,
             notePadWindow,
+            tokenManager,
             () => tokenManager.IsReady(),
             () => tokenManager.State == LinkState.Linked
         );
