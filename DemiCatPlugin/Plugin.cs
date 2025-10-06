@@ -338,6 +338,7 @@ public class Plugin : IDalamudPlugin
 
         if (!_tokenManager.IsReady())
         {
+            _savedDockVisibilityPreference ??= _config.DockVisible;
             _mainWindow.HandleUnlinkedState();
             return;
         }
