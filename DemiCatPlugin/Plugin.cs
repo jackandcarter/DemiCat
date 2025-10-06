@@ -183,7 +183,9 @@ public class Plugin : IDalamudPlugin
                 _channelService,
                 _channelSelection,
                 _emojiManager,
-                _notePadWindow
+                _notePadWindow,
+                () => _tokenManager.IsReady(),
+                () => _tokenManager.State == LinkState.Linked
             );
 
             _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, HttpClient, _channelService);

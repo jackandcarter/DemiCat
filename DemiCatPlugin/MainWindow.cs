@@ -48,6 +48,8 @@ public class MainWindow : Window, IDisposable
     private readonly EmojiManager _emojiManager;
     private readonly HttpClient _httpClient;
     private readonly List<DockItem> _dockItems = new();
+    private readonly Func<bool> _isTokenReady;
+    private readonly Func<bool> _isLinked;
     private string? _draggingDockItemId;
     private readonly HashSet<string> _autoShownDockItems = new();
 
@@ -90,28 +92,6 @@ public class MainWindow : Window, IDisposable
         }
     }
 
-    public new bool IsOpen
-    {
-        get => _isOpen;
-        set
-        {
-            if (_isOpen == value)
-                return;
-
-            _isOpen = value;
-            if (_config.DockVisible != value)
-            {
-                _config.DockVisible = value;
-                SaveConfig();
-            }
-
-            if (!value)
-            {
-                CloseAllFeatureWindows();
-            }
-        }
-    }
-
     public UiRenderer Ui => _ui;
     public EventCreateWindow EventCreateWindow => _create;
     public TemplatesWindow TemplatesWindow => _templates;
@@ -136,7 +116,9 @@ public class MainWindow : Window, IDisposable
         ChannelService channelService,
         ChannelSelectionService channelSelection,
         EmojiManager emojiManager,
-        NotePadWindow notePad)
+        NotePadWindow notePad,
+        Func<bool> isTokenReady,
+        Func<bool> isLinked)
         : base("DemiCat Host")
     {
         _config = config;
@@ -150,17 +132,17 @@ public class MainWindow : Window, IDisposable
         _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _requestBoard = new RequestBoardWindow(config, httpClient);
         _notePad = notePad;
+        _isTokenReady = isTokenReady ?? throw new ArgumentNullException(nameof(isTokenReady));
+        _isLinked = isLinked ?? throw new ArgumentNullException(nameof(isLinked));
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
         _isOpen = config.DockVisible;
 
-        base.IsOpen = true;
+        IsOpen = _config.DockVisible;
         RespectCloseHotkey = false;
         Flags = ImGuiWindowFlags.NoDecoration
-            | ImGuiWindowFlags.NoInputs
             | ImGuiWindowFlags.NoSavedSettings
-            | ImGuiWindowFlags.NoFocusOnAppearing
-            | ImGuiWindowFlags.NoBackground;
+            | ImGuiWindowFlags.NoFocusOnAppearing;
 
         _eventsWindowHost = new EventsDockableWindow(config, ui, IsLinked);
         _eventCreateWindowHost = new EventCreateDockableWindow(config, _create, IsLinked);
@@ -207,6 +189,28 @@ public class MainWindow : Window, IDisposable
         BuildDockItems();
     }
 
+    public override void OnOpen()
+    {
+        _isOpen = true;
+        if (!_config.DockVisible)
+        {
+            _config.DockVisible = true;
+            SaveConfig();
+        }
+    }
+
+    public override void OnClose()
+    {
+        _isOpen = false;
+        if (_config.DockVisible)
+        {
+            _config.DockVisible = false;
+            SaveConfig();
+        }
+
+        CloseAllFeatureWindows();
+    }
+
     public void SetNotePadReadOnly(bool isReadOnly)
     {
         _notePad.IsReadOnly = isReadOnly;
@@ -249,7 +253,7 @@ public class MainWindow : Window, IDisposable
             return;
         }
 
-        if (!TokenManager.Instance?.IsReady() ?? true)
+        if (!_isTokenReady())
         {
             HandleUnlinkedState();
             return;
@@ -265,6 +269,11 @@ public class MainWindow : Window, IDisposable
             return;
         }
 
+        if (!_isOpen)
+        {
+            return;
+        }
+
         UpdateSyncshell();
 
         if (_styleNeedsUpdate && TryApplyAccentColors())
@@ -272,96 +281,79 @@ public class MainWindow : Window, IDisposable
             _styleNeedsUpdate = false;
         }
 
-        if (!IsOpen)
+        var visibleFeatures = _dockItems.Where(i => i.IsVisible()).ToList();
+        var settingsItem = _settingsDockItem;
+        var settingsVisible = settingsItem?.IsVisible() ?? false;
+        if (settingsVisible || visibleFeatures.Count > 0)
         {
-            if (_config.DockVisible)
+            var iconScale = GetIconScale();
+            var padding = GetPadding(iconScale);
+            var spacing = GetSpacing(iconScale);
+            var separatorThickness = settingsVisible && visibleFeatures.Count > 0
+                ? GetSeparatorThickness(spacing)
+                : 0f;
+            var iconSize = new Vector2(BaseIconSize * iconScale, BaseIconSize * iconScale);
+            var indicatorHeight = IndicatorRadius * 2f * iconScale + spacing * 0.75f;
+            var buttonCount = visibleFeatures.Count + (settingsVisible ? 1 : 0);
+            var spacingCount = Math.Max(0, visibleFeatures.Count - 1);
+            if (settingsVisible && visibleFeatures.Count > 0)
             {
-                _config.DockVisible = false;
-                SaveConfig();
+                spacingCount += 2;
             }
-        }
-        else
-        {
-            if (!_config.DockVisible)
+            var iconAreaWidth = iconSize.X * buttonCount + spacing * spacingCount + separatorThickness;
+            var iconAreaHeight = iconSize.Y;
+            var totalWidth = iconAreaWidth + padding * 2f;
+            var totalHeight = iconAreaHeight + padding * 2f + indicatorHeight;
+            var dockSize = new Vector2(totalWidth, totalHeight);
+
+            var dockPosition = GetDockPosition(dockSize);
+
+            ImGui.SetNextWindowPos(dockPosition, ImGuiCond.Appearing);
+            ImGui.SetNextWindowSize(dockSize, ImGuiCond.Appearing);
+
+            var windowFlags = ImGuiWindowFlags.NoDecoration
+                | ImGuiWindowFlags.NoScrollbar
+                | ImGuiWindowFlags.NoCollapse
+                | ImGuiWindowFlags.NoSavedSettings
+                | ImGuiWindowFlags.AlwaysAutoResize;
+
+            if (_config.DockLocked)
             {
-                _config.DockVisible = true;
-                SaveConfig();
+                windowFlags |= ImGuiWindowFlags.NoMove;
             }
 
-            var visibleFeatures = _dockItems.Where(i => i.IsVisible()).ToList();
-            var settingsItem = _settingsDockItem;
-            var settingsVisible = settingsItem?.IsVisible() ?? false;
-            if (settingsVisible || visibleFeatures.Count > 0)
+            var dockBgColor = GetDockBackgroundColor();
+            var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
+
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, MathF.Max(14f, padding * 1.5f));
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(padding, padding));
+            ImGui.PushStyleColor(ImGuiCol.WindowBg, dockBgColor);
+            ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
+
+            var open = true;
+            if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
             {
-                var iconScale = GetIconScale();
-                var padding = GetPadding(iconScale);
-                var spacing = GetSpacing(iconScale);
-                var separatorThickness = settingsVisible && visibleFeatures.Count > 0
-                    ? GetSeparatorThickness(spacing)
-                    : 0f;
-                var iconSize = new Vector2(BaseIconSize * iconScale, BaseIconSize * iconScale);
-                var indicatorHeight = IndicatorRadius * 2f * iconScale + spacing * 0.75f;
-                var buttonCount = visibleFeatures.Count + (settingsVisible ? 1 : 0);
-                var spacingCount = Math.Max(0, visibleFeatures.Count - 1);
-                if (settingsVisible && visibleFeatures.Count > 0)
+                _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor, dockBgColor);
+                DrawDockContextMenu();
+            }
+            var windowPos = ImGui.GetWindowPos();
+            ImGui.End();
+
+            ImGui.PopStyleColor(2);
+            ImGui.PopStyleVar(2);
+
+            if (!open)
+            {
+                IsOpen = false;
+            }
+
+            if (_config.DockRememberPosition && !_config.DockLocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            {
+                if (!_config.DockPositionInitialized || Vector2.Distance(windowPos, _config.DockPosition) > 0.5f)
                 {
-                    spacingCount += 2;
-                }
-                var iconAreaWidth = iconSize.X * buttonCount + spacing * spacingCount + separatorThickness;
-                var iconAreaHeight = iconSize.Y;
-                var totalWidth = iconAreaWidth + padding * 2f;
-                var totalHeight = iconAreaHeight + padding * 2f + indicatorHeight;
-                var dockSize = new Vector2(totalWidth, totalHeight);
-
-                var dockPosition = GetDockPosition(dockSize);
-
-                ImGui.SetNextWindowPos(dockPosition, ImGuiCond.Appearing);
-                ImGui.SetNextWindowSize(dockSize, ImGuiCond.Appearing);
-
-                var windowFlags = ImGuiWindowFlags.NoDecoration
-                    | ImGuiWindowFlags.NoScrollbar
-                    | ImGuiWindowFlags.NoCollapse
-                    | ImGuiWindowFlags.NoSavedSettings
-                    | ImGuiWindowFlags.AlwaysAutoResize;
-
-                if (_config.DockLocked)
-                {
-                    windowFlags |= ImGuiWindowFlags.NoMove;
-                }
-
-                var dockBgColor = GetDockBackgroundColor();
-                var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
-
-                ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, MathF.Max(14f, padding * 1.5f));
-                ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(padding, padding));
-                ImGui.PushStyleColor(ImGuiCol.WindowBg, dockBgColor);
-                ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
-
-                var open = true;
-                if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
-                {
-                    _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor, dockBgColor);
-                    DrawDockContextMenu();
-                }
-                var windowPos = ImGui.GetWindowPos();
-                ImGui.End();
-
-                ImGui.PopStyleColor(2);
-                ImGui.PopStyleVar(2);
-
-                if (!open)
-                {
-                    IsOpen = false;
-                }
-
-                if (_config.DockRememberPosition && !_config.DockLocked && !ImGui.IsMouseDown(ImGuiMouseButton.Left))
-                {
-                    if (!_config.DockPositionInitialized || Vector2.Distance(windowPos, _config.DockPosition) > 0.5f)
-                    {
-                        _config.DockPosition = windowPos;
-                        _config.DockPositionInitialized = true;
-                        SaveConfig();
-                    }
+                    _config.DockPosition = windowPos;
+                    _config.DockPositionInitialized = true;
+                    SaveConfig();
                 }
             }
         }
@@ -384,15 +376,18 @@ public class MainWindow : Window, IDisposable
     {
         CloseAllFeatureWindows();
 
-        if (_isOpen)
+        if (IsOpen)
+        {
+            IsOpen = false;
+        }
+        else
         {
             _isOpen = false;
-        }
-
-        if (_config.DockVisible)
-        {
-            _config.DockVisible = false;
-            SaveConfig();
+            if (_config.DockVisible)
+            {
+                _config.DockVisible = false;
+                SaveConfig();
+            }
         }
     }
 
@@ -788,7 +783,7 @@ public class MainWindow : Window, IDisposable
     }
 
     private bool IsLinked()
-        => TokenManager.Instance?.State == LinkState.Linked;
+        => _isLinked();
 
     private float GetIconScale()
     {

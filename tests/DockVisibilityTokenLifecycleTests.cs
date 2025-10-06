@@ -97,7 +97,9 @@ public class DockVisibilityTokenLifecycleTests
                 channelService,
                 channelSelection,
                 emojiManager,
-                notePadWindow);
+                notePadWindow,
+                () => tokenManager.IsReady(),
+                () => tokenManager.State == LinkState.Linked);
 
             var channelWatcher = new ChannelWatcher(
                 config,
