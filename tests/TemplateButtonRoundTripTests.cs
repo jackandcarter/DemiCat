@@ -86,7 +86,7 @@ public class TemplateButtonRoundTripTests
         var channelService = new ChannelService(config, http, tokenManager);
         var selection = new ChannelSelectionService(config);
         var emojiManager = new EmojiManager(http, tokenManager, config);
-        var window = new TemplatesWindow(config, http, channelService, selection, emojiManager);
+        var window = new TemplatesWindow(config, http, channelService, selection, emojiManager, tokenManager);
         var field = typeof(TemplatesWindow).GetField("_buttonRows", BindingFlags.NonPublic | BindingFlags.Instance);
         field!.SetValue(window, state);
         return window;
@@ -216,7 +216,7 @@ public class TemplateButtonRoundTripTests
             var channelService = new ChannelService(config, http, tokenManager);
             var selection = new ChannelSelectionService(config);
             using var emojiManager = new EmojiManager(http, tokenManager, config);
-            var window = new TemplatesWindow(config, http, channelService, selection, emojiManager);
+            var window = new TemplatesWindow(config, http, channelService, selection, emojiManager, tokenManager);
             var template = new Template { Title = "T", Description = "D" };
 
             var templatesField = typeof(TemplatesWindow).GetField("_templates", BindingFlags.NonPublic | BindingFlags.Instance)!;

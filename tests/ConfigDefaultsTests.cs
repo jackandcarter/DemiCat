@@ -27,7 +27,7 @@ public class ConfigDefaultsTests
     {
         SyncshellWindow.Instance?.Dispose();
         var cfg = new Config { FCSyncShell = false };
-        Assert.Throws<InvalidOperationException>(() => new SyncshellWindow(cfg, new HttpClient()));
+        Assert.Throws<InvalidOperationException>(() => new SyncshellWindow(cfg, new HttpClient(), new TokenManager()));
         Assert.Null(SyncshellWindow.Instance);
     }
 

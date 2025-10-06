@@ -26,7 +26,7 @@ public class EventButtonWidthTests
         var channelService = new ChannelService(config, http, tokenManager);
         var selection = new ChannelSelectionService(config);
         var emojiManager = new EmojiManager(http, tokenManager, config);
-        var window = new EventCreateWindow(config, http, channelService, selection, emojiManager);
+        var window = new EventCreateWindow(config, http, channelService, selection, emojiManager, tokenManager);
         var buttonsField = typeof(EventCreateWindow).GetField("_buttons", BindingFlags.NonPublic | BindingFlags.Instance)!;
         buttonsField.SetValue(window, new List<Template.TemplateButton>
         {
