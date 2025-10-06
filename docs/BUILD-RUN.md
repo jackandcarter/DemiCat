@@ -4,7 +4,7 @@ This guide walks through compiling the Dalamud plugin and running the DemiBot ba
 
 ## Prerequisites
 
-- .NET SDK 9.0 (the repo’s `global.json` pins the toolchain and allows prerelease SDKs).
+- .NET SDK 9.0 (the repo’s `global.json` pins the toolchain so the build matches Dalamud’s runtime).
 - Dalamud dev libraries installed locally; update `Directory.Build.props` if your `DalamudLibPath` differs.
 - Python 3.11+ with pip for the DemiBot service.
 - MySQL (or MariaDB) accessible to the bot, plus a Discord bot token with `GUILD_MESSAGES`, `GUILD_MEMBERS`, `GUILD_PRESENCES`, and `MESSAGE_CONTENT` intents.
@@ -23,7 +23,7 @@ This guide walks through compiling the Dalamud plugin and running the DemiBot ba
    dotnet build DemiCatPlugin/DemiCatPlugin.csproj -c Release
    ```
 
-   The compiled plugin lands under `DemiCatPlugin/bin/<Configuration>/net9.0-windows`. Copy the output (and `DemiCatPlugin.json`) into your Dalamud plugin staging folder.
+   The compiled plugin lands under `DemiCatPlugin/bin/<Configuration>/net9.0-windows10.0.19041`. Copy the output (and `DemiCatPlugin.json`) into your Dalamud plugin staging folder.
 
 3. If you customize the Dalamud library path, edit `Directory.Build.props` or supply `-p:DalamudLibPath=...` during `dotnet build`.
 

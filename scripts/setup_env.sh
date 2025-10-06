@@ -164,7 +164,7 @@ install_dotnet() {
         DOTNET_CMD="$(command -v dotnet)"
     else
         curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-        bash /tmp/dotnet-install.sh --version 9.0.100 --install-dir "$ROOT_DIR/.dotnet"
+        bash /tmp/dotnet-install.sh --version 9.0.103 --install-dir "$ROOT_DIR/.dotnet"
         DOTNET_CMD="$ROOT_DIR/.dotnet/dotnet"
         export PATH="$ROOT_DIR/.dotnet:$PATH"
     fi
@@ -194,7 +194,7 @@ fi
 
 "$DOTNET_CMD" restore DemiCatPlugin/DemiCatPlugin.csproj
 "$DOTNET_CMD" build DemiCatPlugin/DemiCatPlugin.csproj -c Release
-cp DemiCatPlugin/DemiCatPlugin.json DemiCatPlugin/bin/Release/net9.0/
+cp DemiCatPlugin/DemiCatPlugin.json DemiCatPlugin/bin/Release/net9.0-windows10.0.19041/
 
 # Run .NET tests
 find tests -name '*Tests.csproj' -print0 | while IFS= read -r -d '' testproj; do
