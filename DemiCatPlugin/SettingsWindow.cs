@@ -12,12 +12,13 @@ using System.IO;
 using ImGuiNET;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.ImGuiFileDialog;
+using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
-public class SettingsWindow : IDisposable
+public class SettingsWindow : Window, IDisposable
 {
     private readonly Config _config;
     private readonly TokenManager _tokenManager;
@@ -45,7 +46,7 @@ public class SettingsWindow : IDisposable
     private readonly FileDialogManager _penumbraConfigDialog = new();
     private string _penumbraCollectionOverride = string.Empty;
 
-    public bool IsOpen;
+    private int _colorPushCount;
 
     private bool ServicesReady => _httpClient != null && _refreshRoles != null && _startNetworking != null;
 
@@ -55,8 +56,10 @@ public class SettingsWindow : IDisposable
     public ChannelWatcher? ChannelWatcher { get; set; }
     public RequestWatcher? RequestWatcher { get; set; }
     public NotePadService? NotePadService { get; set; }
+    public DeveloperWindow? DeveloperWindow => _devWindow;
 
     public SettingsWindow(IDalamudPluginInterface pluginInterface, Config config, TokenManager tokenManager, IPluginLog log)
+        : base("DemiCat Settings")
     {
         _pluginInterface = pluginInterface;
         _config = config;
@@ -69,6 +72,14 @@ public class SettingsWindow : IDisposable
         _isLinked = _tokenManager.State == LinkState.Linked;
         _tokenManager.OnLinked += OnLinked;
         _tokenManager.OnUnlinked += OnUnlinked;
+
+        RespectCloseHotkey = true;
+        SizeCondition = ImGuiCond.FirstUseEver;
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(720, 480),
+            MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
+        };
     }
 
     public void ConfigureServices(
@@ -88,75 +99,79 @@ public class SettingsWindow : IDisposable
             StopAllWatchersAndPresence);
     }
 
-    public void Draw()
+    public override void OnOpen()
+    {
+        base.OnOpen();
+
+        _isLinked = _tokenManager.State == LinkState.Linked;
+
+        if (!_settingsLoaded)
+        {
+            _settingsLoaded = true;
+            _ = Task.Run(LoadSettings);
+        }
+    }
+
+    public override void PreDraw()
+    {
+        _colorPushCount = 0;
+
+        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
+        var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
+        primaryColor.W = 1f;
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, primaryColor);
+        ImGui.PushStyleColor(ImGuiCol.ChildBg, primaryColor);
+        _colorPushCount = 2;
+    }
+
+    public override void Draw()
     {
         if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }
 
-        if (IsOpen)
+        if (ImGui.BeginTabBar("SettingsTabs"))
         {
-            var colorPushCount = 0;
-            try
+            if (!ServicesReady)
             {
-                var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
-                primaryColor.W = 1f;
-                ImGui.PushStyleColor(ImGuiCol.WindowBg, primaryColor);
-                ImGui.PushStyleColor(ImGuiCol.ChildBg, primaryColor);
-                colorPushCount = 2;
-
-                if (ImGui.Begin("DemiCat Settings", ref IsOpen))
-                {
-                    if (!_settingsLoaded)
-                    {
-                        _settingsLoaded = true;
-                        _ = Task.Run(LoadSettings);
-                    }
-
-                    if (ImGui.BeginTabBar("SettingsTabs"))
-                    {
-                        if (!ServicesReady)
-                        {
-                            ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Some services are still starting; features that depend on them are temporarily disabled.");
-                            ImGui.Separator();
-                        }
-                        if (ImGui.BeginTabItem("General"))
-                        {
-                            DrawGeneralTab();
-                            ImGui.EndTabItem();
-                        }
-
-                        if (ImGui.BeginTabItem("Appearance"))
-                        {
-                            DrawAppearanceTab();
-                            ImGui.EndTabItem();
-                        }
-
-                        if (ImGui.BeginTabItem("SyncShell Settings"))
-                        {
-                            DrawSyncshellTab();
-                            ImGui.EndTabItem();
-                        }
-
-                        ImGui.EndTabBar();
-                    }
-
-                    ImGui.End();
-                }
-                else
-                {
-                    ImGui.End();
-                }
+                ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Some services are still starting; features that depend on them are temporarily disabled.");
+                ImGui.Separator();
             }
-            finally
+
+            if (ImGui.BeginTabItem("General"))
             {
-                if (colorPushCount > 0)
-                    ImGui.PopStyleColor(colorPushCount);
+                DrawGeneralTab();
+                ImGui.EndTabItem();
             }
+
+            if (ImGui.BeginTabItem("Appearance"))
+            {
+                DrawAppearanceTab();
+                ImGui.EndTabItem();
+            }
+
+            if (ImGui.BeginTabItem("SyncShell Settings"))
+            {
+                DrawSyncshellTab();
+                ImGui.EndTabItem();
+            }
+
+            ImGui.EndTabBar();
         }
+    }
 
-        _devWindow?.Draw();
+    public override void PostDraw()
+    {
+        if (_colorPushCount > 0)
+        {
+            ImGui.PopStyleColor(_colorPushCount);
+            _colorPushCount = 0;
+        }
     }
 
     private void DrawGeneralTab()

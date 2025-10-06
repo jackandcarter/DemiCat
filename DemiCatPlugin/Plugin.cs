@@ -15,6 +15,7 @@ using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface;
 using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -35,7 +36,8 @@ public class Plugin : IDalamudPlugin
     private readonly Config _config;
     private readonly TokenManager _tokenManager;
     private readonly SettingsWindow _settings;
-    private readonly WindowSystem _windowSystem = new();
+    private readonly WindowSystem _windows = new("DemiCat");
+    private bool _developerWindowAdded;
 
     private const uint InvalidTokenLinkCommandId = 0x44434B49;
     private const string MewCommand = "/mew";
@@ -82,9 +84,10 @@ public class Plugin : IDalamudPlugin
         _tokenManager = new TokenManager(pluginInterface);
 
         _settings = new SettingsWindow(pluginInterface, _config, _tokenManager, _log);
-        _windowSystem.Add(_settings.Draw);
+        _windows.AddWindow(_settings);
 
         _uiBuilder.Draw += OnDraw;
+        _uiBuilder.Draw += _windows.Draw;
         _uiBuilder.OpenConfigUi += HandleOpenConfig;
     }
 
@@ -96,10 +99,13 @@ public class Plugin : IDalamudPlugin
             Initialize();
         }
 
-        _windowSystem.Draw();
-
         if (_initialized)
         {
+            if (!_tokenManager.IsReady())
+            {
+                _savedDockVisibilityPreference ??= _config.DockVisible;
+            }
+
             DrawOverlay();
         }
     }
@@ -150,6 +156,8 @@ public class Plugin : IDalamudPlugin
                 () => RefreshRoles(Services.Log),
                 _ui.StartNetworking);
 
+            RegisterDeveloperWindow();
+
             _presenceService = _config.SyncedChat && _config.EnableFcChat
                 ? new DiscordPresenceService(_config, HttpClient)
                 : null;
@@ -193,7 +201,7 @@ public class Plugin : IDalamudPlugin
             _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
             _mainWindow.SetNotePadReadOnly(!_tokenManager.IsReady());
 
-            _windowSystem.Add(DrawMainWindowArea);
+            _windows.AddWindow(_mainWindow);
 
             _ = RoleCache.EnsureLoaded(HttpClient, _config);
 
@@ -247,11 +255,24 @@ public class Plugin : IDalamudPlugin
         _settings.IsOpen = true;
     }
 
+    private void RegisterDeveloperWindow()
+    {
+        if (_developerWindowAdded)
+            return;
+
+        if (_settings.DeveloperWindow is { } developerWindow)
+        {
+            _windows.AddWindow(developerWindow);
+            _developerWindowAdded = true;
+        }
+    }
+
     public void Dispose()
     {
         _uiBuilder.Draw -= OnDraw;
+        _uiBuilder.Draw -= _windows.Draw;
         _uiBuilder.OpenConfigUi -= HandleOpenConfig;
-        _windowSystem.Clear();
+        _windows.RemoveAllWindows();
 
         if (_openMainUi != null)
         {
@@ -329,21 +350,6 @@ public class Plugin : IDalamudPlugin
 
         if (_mainWindow != null)
             _mainWindow.IsOpen = !_mainWindow.IsOpen;
-    }
-
-    private void DrawMainWindowArea()
-    {
-        if (_mainWindow == null)
-            return;
-
-        if (!_tokenManager.IsReady())
-        {
-            _savedDockVisibilityPreference ??= _config.DockVisible;
-            _mainWindow.HandleUnlinkedState();
-            return;
-        }
-
-        _mainWindow.DrawFeatures();
     }
 
     private void DrawOverlay()
