@@ -1,11 +1,13 @@
 using System;
+using System.Numerics;
 using System.Threading.Tasks;
-using ImGuiNET;
+using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
-public class DeveloperWindow
+public class DeveloperWindow : Window
 {
     private readonly Config _config;
     private readonly IDalamudPluginInterface? _pluginInterface;
@@ -15,14 +17,13 @@ public class DeveloperWindow
     private string _apiBaseUrl;
     private string _wsPath;
 
-    public bool IsOpen;
-
     public DeveloperWindow(
         Config config,
         IDalamudPluginInterface? pluginInterface,
         Func<bool> isIdentityReady,
         Func<Task> hardReload,
         Action stopNetworking)
+        : base("DemiCat Developer")
     {
         _config = config;
         _pluginInterface = pluginInterface;
@@ -31,21 +32,18 @@ public class DeveloperWindow
         _stopNetworking = stopNetworking;
         _apiBaseUrl = config.ApiBaseUrl;
         _wsPath = config.WebSocketPath;
+
+        RespectCloseHotkey = true;
+        SizeCondition = ImGuiCond.FirstUseEver;
+        SizeConstraints = new WindowSizeConstraints
+        {
+            MinimumSize = new Vector2(420, 220),
+            MaximumSize = new Vector2(float.MaxValue, float.MaxValue)
+        };
     }
 
-    public void Draw()
+    public override void Draw()
     {
-        if (!IsOpen)
-        {
-            return;
-        }
-
-        if (!ImGui.Begin("DemiCat Developer", ref IsOpen))
-        {
-            ImGui.End();
-            return;
-        }
-
         ImGui.InputText("API Base URL", ref _apiBaseUrl, 256);
         ImGui.InputText("WebSocket Path", ref _wsPath, 64);
 
@@ -60,8 +58,6 @@ public class DeveloperWindow
         {
             ApplyApiBaseUrlChange(Config.DefaultApiBaseUrl);
         }
-
-        ImGui.End();
     }
 
     private void ApplyApiBaseUrlChange(string candidate)

@@ -8,12 +8,13 @@ using ImGuiNET;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Textures.TextureWraps;
+using Dalamud.Interface.Windowing;
 using DemiCatPlugin.Emoji;
 using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
-public class MainWindow : IDisposable
+public class MainWindow : Window, IDisposable
 {
     private const float BaseIconSize = 42f;
     private const float BasePadding = 10f;
@@ -89,7 +90,7 @@ public class MainWindow : IDisposable
         }
     }
 
-    public bool IsOpen
+    public new bool IsOpen
     {
         get => _isOpen;
         set
@@ -136,6 +137,7 @@ public class MainWindow : IDisposable
         ChannelSelectionService channelSelection,
         EmojiManager emojiManager,
         NotePadWindow notePad)
+        : base("DemiCat Host")
     {
         _config = config;
         _ui = ui;
@@ -151,6 +153,14 @@ public class MainWindow : IDisposable
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
         _isOpen = config.DockVisible;
+
+        base.IsOpen = true;
+        RespectCloseHotkey = false;
+        Flags = ImGuiWindowFlags.NoDecoration
+            | ImGuiWindowFlags.NoInputs
+            | ImGuiWindowFlags.NoSavedSettings
+            | ImGuiWindowFlags.NoFocusOnAppearing
+            | ImGuiWindowFlags.NoBackground;
 
         _eventsWindowHost = new EventsDockableWindow(config, ui, IsLinked);
         _eventCreateWindowHost = new EventCreateDockableWindow(config, _create, IsLinked);
@@ -232,8 +242,19 @@ public class MainWindow : IDisposable
         }
     }
 
-    public void Draw()
+    public override void Draw()
     {
+        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
+        if (!TokenManager.Instance?.IsReady() ?? true)
+        {
+            HandleUnlinkedState();
+            return;
+        }
+
         DrawFeatures();
     }
 
