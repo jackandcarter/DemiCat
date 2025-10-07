@@ -27,10 +27,6 @@
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
   </ItemGroup>
 
-  <ItemGroup Condition="!Exists('$(DalamudLibPath)/ImGui.NET.dll')">
-    <PackageReference Include="ImGui.NET" Version="1.90.8.1" />
-  </ItemGroup>
-
   <ItemGroup>
     <Reference Include="Lumina.Excel">
       <HintPath>$(DalamudLibPath)/Lumina.Excel.dll</HintPath>
@@ -70,6 +66,9 @@
   </ItemGroup>
   <PropertyGroup>
     <DalamudIcon>icon.png</DalamudIcon>
+  </PropertyGroup>
+  <PropertyGroup>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <!-- DO NOT import a custom DalamudPackager.targets for v13 -->
