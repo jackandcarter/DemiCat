@@ -241,7 +241,7 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }
@@ -257,7 +257,7 @@ public class MainWindow : Window, IDisposable
 
     internal void DrawFeatures()
     {
-        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }

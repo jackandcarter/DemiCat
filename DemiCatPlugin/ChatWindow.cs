@@ -715,7 +715,7 @@ public class ChatWindow : IDisposable
 
     public virtual void Draw()
     {
-        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }
