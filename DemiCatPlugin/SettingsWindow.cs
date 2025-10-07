@@ -122,8 +122,8 @@ public class SettingsWindow : Window, IDisposable
     {
         _colorPushCount = 0;
 
-        // On XIV on Mac there can be a frame where the ImGui context isn't ready yet.
-        if (!Dalamud.Interface.Utility.ImGuiHelpers.IsImGuiReady)
+        // On XIV on Mac/Wine the first frame after opening can lack a valid ImGui context.
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
             return;
 
         var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
