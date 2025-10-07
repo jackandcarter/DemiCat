@@ -136,11 +136,6 @@ public class SettingsWindow : Window, IDisposable
 
     public override void Draw()
     {
-        if (ImGui.GetCurrentContext() == IntPtr.Zero)
-        {
-            return;
-        }
-
         if (ImGui.BeginTabBar("SettingsTabs"))
         {
             if (!ServicesReady)
