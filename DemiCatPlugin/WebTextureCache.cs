@@ -14,12 +14,16 @@ public static class WebTextureCache
 {
     private sealed class CacheEntry : IDisposable
     {
-        public CacheEntry(ISharedImmediateTexture texture)
+        public CacheEntry(ISharedImmediateTexture texture, long estimatedBytes, LinkedListNode<string> node)
         {
             Texture = texture;
+            EstimatedBytes = estimatedBytes;
+            Node = node;
         }
 
         public ISharedImmediateTexture Texture { get; }
+        public long EstimatedBytes { get; }
+        public LinkedListNode<string> Node { get; }
 
         public void Dispose()
         {
@@ -34,8 +38,12 @@ public static class WebTextureCache
         }
     }
 
+    private const long MaxBytes = 64L * 1024 * 1024; // 64 MB soft cap for cached textures
+
     private static readonly Dictionary<string, CacheEntry> _map = new();
+    private static readonly LinkedList<string> _lru = new();
     private static readonly object _lock = new();
+    private static long _currentBytes;
 
     // Tests set this to intercept fetches and provide mocked textures.
     public static Func<string, Action<ISharedImmediateTexture?>, object?>? FetchOverride { get; set; }
@@ -70,6 +78,7 @@ public static class WebTextureCache
         {
             if (_map.TryGetValue(url, out var entry))
             {
+                MoveToFront(entry);
                 texture = entry.Texture;
                 return true;
             }
@@ -87,6 +96,8 @@ public static class WebTextureCache
             {
                 if (_map.Remove(url, out var removed))
                 {
+                    _lru.Remove(removed.Node);
+                    SubtractBytes(removed.EstimatedBytes);
                     removed.Dispose();
                 }
                 return;
@@ -95,12 +106,23 @@ public static class WebTextureCache
             if (_map.TryGetValue(url, out var existing))
             {
                 if (ReferenceEquals(existing.Texture, texture))
+                {
+                    MoveToFront(existing);
                     return;
+                }
 
+                _lru.Remove(existing.Node);
+                SubtractBytes(existing.EstimatedBytes);
                 existing.Dispose();
             }
 
-            _map[url] = new CacheEntry(texture);
+            var bytes = EstimateBytes(texture);
+            var node = new LinkedListNode<string>(url);
+            _lru.AddFirst(node);
+            _map[url] = new CacheEntry(texture, bytes, node);
+            _currentBytes = Math.Min(long.MaxValue, _currentBytes + bytes);
+
+            TrimToBudget();
         }
     }
 
@@ -114,6 +136,72 @@ public static class WebTextureCache
             }
 
             _map.Clear();
+            _lru.Clear();
+            _currentBytes = 0;
+        }
+    }
+
+    private static void MoveToFront(CacheEntry entry)
+    {
+        if (entry.Node.List == _lru)
+        {
+            _lru.Remove(entry.Node);
+            _lru.AddFirst(entry.Node);
+        }
+    }
+
+    private static void TrimToBudget()
+    {
+        while (_currentBytes > MaxBytes && _lru.Last is { } tail)
+        {
+            var key = tail.Value;
+            _lru.RemoveLast();
+            if (_map.Remove(key, out var entry))
+            {
+                SubtractBytes(entry.EstimatedBytes);
+                try
+                {
+                    entry.Dispose();
+                }
+                catch
+                {
+                    // Disposal must never surface exceptions on eviction.
+                }
+            }
+        }
+    }
+
+    private static long EstimateBytes(ISharedImmediateTexture texture)
+    {
+        try
+        {
+            var wrap = texture.GetWrapOrEmpty();
+            if (wrap.Width <= 0 || wrap.Height <= 0)
+            {
+                return 0;
+            }
+
+            // RGBA32 textures (the format produced by our loader) are 4 bytes per pixel.
+            var pixels = (long)wrap.Width * wrap.Height;
+            return Math.Min(MaxBytes, pixels * 4L);
+        }
+        catch
+        {
+            return 0;
+        }
+    }
+
+    private static void SubtractBytes(long value)
+    {
+        if (value <= 0)
+        {
+            return;
+        }
+
+        _currentBytes -= value;
+        if (_currentBytes < 0)
+        {
+            _currentBytes = 0;
         }
     }
 
