@@ -147,7 +147,7 @@ public class OfficerChatWindow : ChatWindow
 
     public override void Draw()
     {
-        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }

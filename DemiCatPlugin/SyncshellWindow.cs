@@ -287,7 +287,7 @@ public class SyncshellWindow : IDisposable
     {
         PumpClientEvents();
 
-        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }

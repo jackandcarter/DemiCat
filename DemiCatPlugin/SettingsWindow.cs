@@ -122,7 +122,7 @@ public class SettingsWindow : Window, IDisposable
     {
         _colorPushCount = 0;
 
-        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }
@@ -136,7 +136,7 @@ public class SettingsWindow : Window, IDisposable
 
     public override void Draw()
     {
-        if (!ImGuiHelpers.IsImGuiInitialized || ImGui.GetCurrentContext() == IntPtr.Zero)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
             return;
         }
