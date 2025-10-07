@@ -61,18 +61,20 @@ public class Plugin : IDalamudPlugin
     private ChannelSelectionService _channelSelection = null!;
     private EmojiManager _emojiManager = null!;
 
+    private readonly HappyEyeballsCallback _happyEyeballsCallback = new();
+
     private HttpClient? _httpClient;
     private HttpClient HttpClient => _httpClient
         ?? throw new InvalidOperationException("HTTP client has not been initialized.");
 
-    private static HttpClient CreateHttpClient()
+    private HttpClient CreateHttpClient()
     {
         var handler = new SocketsHttpHandler
         {
             AutomaticDecompression = DecompressionMethods.All,
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             MaxConnectionsPerServer = 8,
-            ConnectCallback = HappyEyeballsCallback.ConnectAsync
+            ConnectCallback = _happyEyeballsCallback.ConnectCallback
         };
 
         var client = new HttpClient(handler)
@@ -360,6 +362,7 @@ public class Plugin : IDalamudPlugin
         _avatarCache?.Dispose();
         _emojiManager?.Dispose();
         _httpClient?.Dispose();
+        _happyEyeballsCallback.Dispose();
         if (PluginServices.Instance != null)
         {
             PluginServices.Instance.ProgressOverlay = null;
