@@ -34,7 +34,8 @@ public class DeveloperWindow : Window
         _wsPath = config.WebSocketPath;
 
         RespectCloseHotkey = true;
-        SizeCondition = ImGuiCond.FirstUseEver;
+        SizeCondition = Dalamud.Bindings.ImGui.ImGuiCond.FirstUseEver;
+
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(420, 220),
