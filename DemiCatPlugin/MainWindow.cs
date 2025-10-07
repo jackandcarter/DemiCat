@@ -140,8 +140,11 @@ public class MainWindow : Window, IDisposable
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient, tokenManager) : null;
         RespectCloseHotkey = false;
         Flags = ImGuiWindowFlags.NoDecoration
+            | ImGuiWindowFlags.NoInputs
+            | ImGuiWindowFlags.NoBackground
             | ImGuiWindowFlags.NoSavedSettings
-            | ImGuiWindowFlags.NoFocusOnAppearing;
+            | ImGuiWindowFlags.NoFocusOnAppearing
+            | ImGuiWindowFlags.NoBringToFrontOnFocus;
 
         _eventsWindowHost = new EventsDockableWindow(config, ui, IsLinked);
         _eventCreateWindowHost = new EventCreateDockableWindow(config, _create, IsLinked);
