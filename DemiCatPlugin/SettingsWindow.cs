@@ -120,6 +120,11 @@ public class SettingsWindow : Window, IDisposable
 
     public override void PreDraw()
     {
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
         _colorPushCount = 0;
 
         var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
@@ -131,6 +136,11 @@ public class SettingsWindow : Window, IDisposable
 
     public override void Draw()
     {
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
         if (ImGui.BeginTabBar("SettingsTabs"))
         {
             if (!ServicesReady)
