@@ -19,6 +19,7 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using Dalamud.Networking.Http;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
 using Microsoft.CSharp.RuntimeBinder;
@@ -63,6 +64,26 @@ public class Plugin : IDalamudPlugin
     private HttpClient? _httpClient;
     private HttpClient HttpClient => _httpClient
         ?? throw new InvalidOperationException("HTTP client has not been initialized.");
+
+    private static HttpClient CreateHttpClient()
+    {
+        var handler = new SocketsHttpHandler
+        {
+            AutomaticDecompression = DecompressionMethods.All,
+            PooledConnectionLifetime = TimeSpan.FromMinutes(5),
+            MaxConnectionsPerServer = 8,
+            ConnectCallback = HappyEyeballsCallback.ConnectAsync
+        };
+
+        var client = new HttpClient(handler)
+        {
+            Timeout = TimeSpan.FromSeconds(10)
+        };
+
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("DemiCat/1.0 (+Dalamud)");
+        return client;
+    }
+
     private ChannelService _channelService = null!;
     private Action? _openMainUi;
     private bool _invalidTokenToastShown;
@@ -140,8 +161,7 @@ public class Plugin : IDalamudPlugin
 
             RequestStateService.Load(_config);
 
-            _httpClient = pluginInterface.CreateHttpClient();
-            _httpClient.Timeout = TimeSpan.FromSeconds(10);
+            _httpClient = CreateHttpClient();
 
             WebTextureCache.FetchOverride = FetchWebTexture;
 
@@ -151,7 +171,7 @@ public class Plugin : IDalamudPlugin
             _emojiManager = new EmojiManager(HttpClient, _tokenManager, _config);
             _emojiFontHandle = InitializeEmojiFont();
             _emojiManager.EmojiFontHandle = _emojiFontHandle;
-        _ui = new UiRenderer(_config, HttpClient, _channelSelection, _emojiManager, _tokenManager);
+            _ui = new UiRenderer(_config, HttpClient, _channelSelection, _emojiManager, _tokenManager);
 
             _settings.ConfigureServices(
                 HttpClient,
@@ -160,7 +180,7 @@ public class Plugin : IDalamudPlugin
 
             RegisterDeveloperWindow();
 
-        _presenceService = _config.SyncedChat && _config.EnableFcChat
+            _presenceService = _config.SyncedChat && _config.EnableFcChat
             ? new DiscordPresenceService(_config, HttpClient, _tokenManager)
             : null;
 
@@ -175,21 +195,21 @@ public class Plugin : IDalamudPlugin
             _notePadService = new NotePadService(_config, HttpClient, _tokenManager);
             _notePadWindow = new NotePadWindow(_config, _notePadService);
 
-        _mainWindow = new MainWindow(
-            _config,
-            _ui,
-            _chatWindow,
-            _officerChatWindow,
-            _settings,
-            HttpClient,
-            _channelService,
-            _channelSelection,
-            _emojiManager,
-            _notePadWindow,
-            _tokenManager,
-            () => _tokenManager.IsReady(),
-            () => _tokenManager.State == LinkState.Linked
-        );
+            _mainWindow = new MainWindow(
+                _config,
+                _ui,
+                _chatWindow,
+                _officerChatWindow,
+                _settings,
+                HttpClient,
+                _channelService,
+                _channelSelection,
+                _emojiManager,
+                _notePadWindow,
+                _tokenManager,
+                () => _tokenManager.IsReady(),
+                () => _tokenManager.State == LinkState.Linked
+            );
 
             _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, HttpClient, _channelService);
             _requestWatcher = new RequestWatcher(_config, HttpClient, _tokenManager);
