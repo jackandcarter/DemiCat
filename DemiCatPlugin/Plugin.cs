@@ -1,19 +1,20 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Reflection;
 using DiscordHelper;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Toast;
 using Dalamud.Game.Text.SeStringHandling;
 using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface;
-using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.IoC;
@@ -21,6 +22,7 @@ using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
+using Microsoft.CSharp.RuntimeBinder;
 using StbImageSharp;
 
 namespace DemiCatPlugin;
@@ -68,7 +70,7 @@ public class Plugin : IDalamudPlugin
     private bool _invalidTokenToastShown;
     private bool? _savedDockVisibilityPreference;
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
-    private IFontHandle? _emojiFontHandle;
+    private IEmojiFontHandle? _emojiFontHandle;
     private CommandInfo _mewCommandInfo = null!;
 
     private bool _initialized;
@@ -479,81 +481,250 @@ public class Plugin : IDalamudPlugin
         return Task.CompletedTask;
     }
 
-    private IFontHandle? InitializeEmojiFont()
+    private IEmojiFontHandle? InitializeEmojiFont()
     {
         try
         {
-            var directory = Services.PluginInterface.AssemblyLocation.Directory;
-            if (directory == null)
-            {
-                return null;
-            }
-
-            string? fontPath = null;
-            var basePath = directory.FullName;
-            var candidates = new[]
-            {
-                Path.Combine(basePath, "Emoji", "NotoColorEmoji.ttf"),
-                Path.Combine(basePath, "NotoColorEmoji.ttf"),
-            };
-
-            foreach (var candidate in candidates)
-            {
-                if (File.Exists(candidate))
-                {
-                    fontPath = candidate;
-                    break;
-                }
-            }
-
+            var fontPath = ResolveEmojiFontPath();
             if (fontPath == null)
             {
-                var paths = string.Join(", ", candidates);
-                const string message =
-                    "DemiCat could not find its emoji font. Channel icons will fall back to text until the font is restored.";
-
-                Services.Log.Info(
-                    "Emoji font not found at any known path ({Paths}). Unicode emoji will use fallback glyphs.",
-                    paths
-                );
-
-                PluginServices.Instance?.ToastGui.ShowError(message);
                 return null;
             }
 
-            var atlas = _uiBuilder.FontAtlas;
-            var fontSize = _uiBuilder.FontDefaultSizePx;
+            var atlas = TryGetManagedFontAtlas();
+            if (atlas == null)
+            {
+                return null;
+            }
 
-            var handle = atlas.NewDelegateFontHandle(toolkit =>
-                toolkit.OnPreBuild(pre =>
-                {
-                    var baseFont = pre.AddDalamudDefaultFont(fontSize);
-                    var glyphRanges = default(FluentGlyphRangeBuilder)
-                        .With(0x2000, 0x27FF) // general punctuation, arrows, dingbats, enclosed & geometric symbols
-                        .With(0x2B00, 0x2BFF) // misc symbols and arrows (e.g. stars, triangles)
-                        .With(0x1F000, 0x1FAFF) // primary emoji blocks (U+1F000-U+1FAFF)
-                        .With(0x200D, 0x200D) // zero width joiner for multi-glyph emoji sequences
-                        .With(0x20E3, 0x20E3) // combining enclosing keycap used by keycap emoji
-                        .With(0xFE0E, 0xFE0F) // text & emoji presentation selectors
-                        .Build();
-                    var config = new SafeFontConfig
-                    {
-                        SizePx = fontSize,
-                        MergeFont = baseFont,
-                        PixelSnapH = true,
-                        GlyphRanges = glyphRanges,
-                    };
-                    config.Raw.FontBuilderFlags |= 1u << 8; // ImGuiFreeTypeBuilderFlags_LoadColor
-                    pre.AddFontFromFile(fontPath, config);
-                    pre.Font = baseFont;
-                }));
+            var fontSize = TryGetDefaultFontSize();
+            var managedFontAtlasAssembly = TryLoadManagedFontAtlasAssembly();
+            if (managedFontAtlasAssembly == null)
+            {
+                return null;
+            }
+
+            var glyphRangeBuilderType = managedFontAtlasAssembly.GetType(
+                "Dalamud.Interface.ManagedFontAtlas.FluentGlyphRangeBuilder");
+            var safeFontConfigType = managedFontAtlasAssembly.GetType(
+                "Dalamud.Interface.ManagedFontAtlas.SafeFontConfig");
+
+            if (glyphRangeBuilderType == null || safeFontConfigType == null)
+            {
+                Services.Log.Info(
+                    "Managed font atlas types unavailable; skipping emoji font initialization.");
+                return null;
+            }
+
+            object? handle = CreateManagedFontHandle(atlas, fontPath, fontSize,
+                glyphRangeBuilderType, safeFontConfigType);
+
+            if (handle == null)
+            {
+                Services.Log.Info(
+                    "Managed font atlas could not create an emoji font handle; falling back to default glyphs.");
+                return null;
+            }
 
             Services.Log.Info("Loaded emoji font from {Path}.", fontPath);
-            return handle;
+            return new ManagedFontAtlasEmojiFontHandle(handle);
         }
         catch (Exception ex)
         {
             Services.Log.Warning(ex, "Failed to load emoji font. Unicode emoji will use fallback glyphs.");
+            return null;
+        }
+    }
+
+    private string? ResolveEmojiFontPath()
+    {
+        var directory = Services.PluginInterface.AssemblyLocation.Directory;
+        if (directory == null)
+        {
+            return null;
+        }
+
+        var basePath = directory.FullName;
+        var candidates = new[]
+        {
+            Path.Combine(basePath, "Emoji", "NotoColorEmoji.ttf"),
+            Path.Combine(basePath, "NotoColorEmoji.ttf"),
+        };
+
+        foreach (var candidate in candidates)
+        {
+            if (File.Exists(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        var paths = string.Join(", ", candidates);
+        const string message =
+            "DemiCat could not find its emoji font. Channel icons will fall back to text until the font is restored.";
+
+        Services.Log.Info(
+            "Emoji font not found at any known path ({Paths}). Unicode emoji will use fallback glyphs.",
+            paths
+        );
+
+        PluginServices.Instance?.ToastGui.ShowError(message);
+        return null;
+    }
+
+    private object? TryGetManagedFontAtlas()
+    {
+        var property = _uiBuilder.GetType().GetProperty("FontAtlas");
+        var atlas = property?.GetValue(_uiBuilder);
+        if (atlas == null)
+        {
+            Services.Log.Info("Managed font atlas not available; skipping emoji font initialization.");
+        }
+
+        return atlas;
+    }
+
+    private float TryGetDefaultFontSize()
+    {
+        var property = _uiBuilder.GetType().GetProperty("FontDefaultSizePx");
+        var value = property?.GetValue(_uiBuilder);
+        return value switch
+        {
+            float f => f,
+            double d => (float)d,
+            _ => 17f,
+        };
+    }
+
+    private Assembly? TryLoadManagedFontAtlasAssembly()
+    {
+        var existing = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(
+            asm => string.Equals(asm.GetName().Name, "Dalamud.Interface.ManagedFontAtlas", StringComparison.Ordinal));
+        if (existing != null)
+        {
+            return existing;
+        }
+
+        try
+        {
+            return Assembly.Load("Dalamud.Interface.ManagedFontAtlas");
+        }
+        catch (FileNotFoundException)
+        {
+            Services.Log.Info(
+                "Dalamud.Interface.ManagedFontAtlas assembly missing; emoji font support disabled.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Services.Log.Warning(
+                ex,
+                "Failed to load Dalamud.Interface.ManagedFontAtlas; emoji font support disabled.");
+            return null;
+        }
+    }
+
+    private object? CreateManagedFontHandle(object atlas, string fontPath, float fontSize,
+        Type glyphRangeBuilderType, Type safeFontConfigType)
+    {
+        dynamic dynamicAtlas = atlas;
+
+        object? CreateGlyphRanges()
+        {
+            object? builder = Activator.CreateInstance(glyphRangeBuilderType);
+            if (builder == null)
+            {
+                return null;
+            }
+
+            var withMethod = glyphRangeBuilderType.GetMethod("With", new[] { typeof(int), typeof(int) });
+            if (withMethod == null)
+            {
+                return null;
+            }
+
+            object? Apply(object? target, int min, int max)
+            {
+                return target == null ? null : withMethod.Invoke(target, new object[] { min, max });
+            }
+
+            builder = Apply(builder, 0x2000, 0x27FF);
+            builder = Apply(builder, 0x2B00, 0x2BFF);
+            builder = Apply(builder, 0x1F000, 0x1FAFF);
+            builder = Apply(builder, 0x200D, 0x200D);
+            builder = Apply(builder, 0x20E3, 0x20E3);
+            builder = Apply(builder, 0xFE0E, 0xFE0F);
+
+            if (builder == null)
+            {
+                return null;
+            }
+
+            var buildMethod = glyphRangeBuilderType.GetMethod("Build", Type.EmptyTypes);
+            return buildMethod?.Invoke(builder, Array.Empty<object>());
+        }
+
+        object? CreateFontConfig(object baseFont, object glyphRanges)
+        {
+            var config = Activator.CreateInstance(safeFontConfigType);
+            if (config == null)
+            {
+                return null;
+            }
+
+            safeFontConfigType.GetProperty("SizePx")?.SetValue(config, fontSize);
+            safeFontConfigType.GetProperty("MergeFont")?.SetValue(config, baseFont);
+            safeFontConfigType.GetProperty("PixelSnapH")?.SetValue(config, true);
+            safeFontConfigType.GetProperty("GlyphRanges")?.SetValue(config, glyphRanges);
+
+            var rawProperty = safeFontConfigType.GetProperty("Raw");
+            var raw = rawProperty?.GetValue(config);
+            var rawType = raw?.GetType();
+            var flagsProperty = rawType?.GetProperty("FontBuilderFlags");
+            if (raw != null && flagsProperty != null)
+            {
+                var current = flagsProperty.GetValue(raw);
+                var numeric = current != null ? Convert.ToUInt32(current) : 0u;
+                numeric |= 1u << 8; // ImGuiFreeTypeBuilderFlags_LoadColor
+                var boxed = Convert.ChangeType(numeric, flagsProperty.PropertyType);
+                flagsProperty.SetValue(raw, boxed);
+            }
+
+            return config;
+        }
+
+        try
+        {
+            return dynamicAtlas.NewDelegateFontHandle((Action<dynamic>)(toolkit =>
+            {
+                toolkit.OnPreBuild((Action<dynamic>)(pre =>
+                {
+                    dynamic baseFont = pre.AddDalamudDefaultFont(fontSize);
+                    var glyphRanges = CreateGlyphRanges();
+                    if (glyphRanges == null)
+                    {
+                        return;
+                    }
+
+                    var config = CreateFontConfig(baseFont, glyphRanges);
+                    if (config == null)
+                    {
+                        return;
+                    }
+
+                    pre.AddFontFromFile(fontPath, config);
+                    pre.Font = baseFont;
+                }));
+            }));
+        }
+        catch (RuntimeBinderException ex)
+        {
+            Services.Log.Warning(ex, "Managed font atlas APIs unavailable; skipping emoji font initialization.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Services.Log.Warning(ex, "Failed to create managed font handle.");
             return null;
         }
     }
