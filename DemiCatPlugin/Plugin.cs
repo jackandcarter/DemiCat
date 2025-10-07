@@ -87,11 +87,6 @@ public class Plugin : IDalamudPlugin
         _uiBuilder = pluginInterface.UiBuilder ?? throw new ArgumentNullException(nameof(pluginInterface.UiBuilder));
         _log = pluginInterface.Create<IPluginLog>() ?? throw new InvalidOperationException("Failed to acquire plugin log.");
 
-        _services = pluginInterface.Create<PluginServices>()
-            ?? throw new InvalidOperationException("Failed to initialize plugin services.");
-        if (_services.PluginInterface == null || _services.Log == null)
-            throw new InvalidOperationException("Failed to initialize plugin services.");
-
         _config = pluginInterface.GetPluginConfig() as Config ?? new Config();
         _tokenManager = new TokenManager(pluginInterface);
 
