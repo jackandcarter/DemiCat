@@ -120,11 +120,6 @@ public class SettingsWindow : Window, IDisposable
 
     public override void PreDraw()
     {
-        if (ImGui.GetCurrentContext() == IntPtr.Zero)
-        {
-            return;
-        }
-
         _colorPushCount = 0;
 
         var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
@@ -136,33 +131,40 @@ public class SettingsWindow : Window, IDisposable
 
     public override void Draw()
     {
-        if (ImGui.BeginTabBar("SettingsTabs"))
+        try
         {
-            if (!ServicesReady)
+            if (ImGui.BeginTabBar("SettingsTabs"))
             {
-                ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Some services are still starting; features that depend on them are temporarily disabled.");
-                ImGui.Separator();
-            }
+                if (!ServicesReady)
+                {
+                    ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Some services are still starting; features that depend on them are temporarily disabled.");
+                    ImGui.Separator();
+                }
 
-            if (ImGui.BeginTabItem("General"))
-            {
-                DrawGeneralTab();
-                ImGui.EndTabItem();
-            }
+                if (ImGui.BeginTabItem("General"))
+                {
+                    DrawGeneralTab();
+                    ImGui.EndTabItem();
+                }
 
-            if (ImGui.BeginTabItem("Appearance"))
-            {
-                DrawAppearanceTab();
-                ImGui.EndTabItem();
-            }
+                if (ImGui.BeginTabItem("Appearance"))
+                {
+                    DrawAppearanceTab();
+                    ImGui.EndTabItem();
+                }
 
-            if (ImGui.BeginTabItem("SyncShell Settings"))
-            {
-                DrawSyncshellTab();
-                ImGui.EndTabItem();
-            }
+                if (ImGui.BeginTabItem("SyncShell Settings"))
+                {
+                    DrawSyncshellTab();
+                    ImGui.EndTabItem();
+                }
 
-            ImGui.EndTabBar();
+                ImGui.EndTabBar();
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Error(ex, "SettingsWindow.Draw() crashed");
         }
     }
 
