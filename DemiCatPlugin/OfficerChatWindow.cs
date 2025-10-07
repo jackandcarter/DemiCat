@@ -25,6 +25,7 @@ public class OfficerChatWindow : ChatWindow
     private bool _subscribed;
     private readonly PresenceSidebar? _presenceSidebar;
     private float _presenceWidth = 200f;
+    private CancellationTokenSource? _cts;
 
     protected override bool MentionsEnabled => true;
 
@@ -82,13 +83,19 @@ public class OfficerChatWindow : ChatWindow
     }
 #endif
 
-    public override void StartNetworking()
+    public bool IsRunning => _cts is { IsCancellationRequested: false };
+
+    public Task StartNetworkingAsync()
     {
+        if (IsRunning)
+        {
+            return Task.CompletedTask;
+        }
+
         if (!OfficerPermissions.HasAccess(_config))
         {
             MarkNetworkingStopped();
             _bridge.Stop();
-            _presence?.SetPresenceReady(false);
 
             var message = NoOfficerAccessMessage;
             var services = PluginServices.Instance;
@@ -112,16 +119,31 @@ public class OfficerChatWindow : ChatWindow
             }
 
             _subscribed = false;
-            return;
+            return Task.CompletedTask;
         }
 
+        _cts = new CancellationTokenSource();
         MarkNetworkingStarted();
-        _presence?.SetPresenceReady(true);
         _bridge.Start();
         Subscribe();
         TryRefreshRoles();
-        _presence?.Reset();
+        return Task.CompletedTask;
     }
+
+    public override void StartNetworking()
+        => StartNetworkingAsync().GetAwaiter().GetResult();
+
+    public Task StopNetworkingAsync()
+    {
+        var cts = Interlocked.Exchange(ref _cts, null);
+        cts?.Cancel();
+        cts?.Dispose();
+        base.StopNetworking();
+        return Task.CompletedTask;
+    }
+
+    public new void StopNetworking()
+        => StopNetworkingAsync().GetAwaiter().GetResult();
 
     public override void Draw()
     {
