@@ -418,13 +418,19 @@ public class Plugin : IDalamudPlugin
 
         if (!_initialized)
         {
-            _settings?.IsOpen = true;
+            if (_settings != null)
+            {
+                _settings.IsOpen = true;
+            }
             return;
         }
 
         if (!_tokenManager.IsReady())
         {
-            _settings?.IsOpen = true;
+            if (_settings != null)
+            {
+                _settings.IsOpen = true;
+            }
             return;
         }
 
