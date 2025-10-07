@@ -122,11 +122,6 @@ public class SettingsWindow : Window, IDisposable
     {
         _colorPushCount = 0;
 
-        if (ImGui.GetCurrentContext() == IntPtr.Zero)
-        {
-            return;
-        }
-
         var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
         primaryColor.W = 1f;
         ImGui.PushStyleColor(ImGuiCol.WindowBg, primaryColor);
@@ -136,11 +131,6 @@ public class SettingsWindow : Window, IDisposable
 
     public override void Draw()
     {
-        if (ImGui.GetCurrentContext() == IntPtr.Zero)
-        {
-            return;
-        }
-
         if (ImGui.BeginTabBar("SettingsTabs"))
         {
             if (!ServicesReady)
