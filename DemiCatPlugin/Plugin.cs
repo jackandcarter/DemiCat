@@ -151,6 +151,9 @@ public class Plugin : IDalamudPlugin
             if (Services.PluginInterface == null || Services.Log == null)
                 throw new InvalidOperationException("Failed to initialize plugin services.");
 
+            _tokenManager.Load();
+            _settings.SynchronizeTokenState();
+
             var oldVersion = _config.Version;
             var originalApiBaseUrl = _config.ApiBaseUrl;
             _config.Migrate();

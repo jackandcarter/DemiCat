@@ -59,18 +59,23 @@ public class SettingsWindow : Window, IDisposable
     public DeveloperWindow? DeveloperWindow => _devWindow;
     internal Plugin? Plugin { get; set; }
 
+    internal void SynchronizeTokenState()
+    {
+        _apiKey = _tokenManager.Token ?? string.Empty;
+        _isLinked = _tokenManager.State == LinkState.Linked;
+    }
+
     public SettingsWindow(IDalamudPluginInterface pluginInterface, Config config, TokenManager tokenManager, IPluginLog log)
         : base("DemiCat Settings")
     {
         _pluginInterface = pluginInterface;
         _config = config;
         _tokenManager = tokenManager;
-        _apiKey = tokenManager.Token ?? string.Empty;
+        SynchronizeTokenState();
         _penumbraModsDirectory = config.PenumbraModsDirectory ?? string.Empty;
         _penumbraConfigDirectory = config.PenumbraConfigDirectory ?? string.Empty;
         _penumbraCollectionOverride = config.PenumbraCollectionOverride ?? string.Empty;
         _log = log;
-        _isLinked = _tokenManager.State == LinkState.Linked;
         _tokenManager.OnLinked += OnLinked;
         _tokenManager.OnUnlinked += OnUnlinked;
 
@@ -104,7 +109,7 @@ public class SettingsWindow : Window, IDisposable
     {
         base.OnOpen();
 
-        _isLinked = _tokenManager.State == LinkState.Linked;
+        SynchronizeTokenState();
 
         if (!_settingsLoaded)
         {
@@ -830,11 +835,14 @@ public class SettingsWindow : Window, IDisposable
         }
     }
 
-    private void OnLinked() => _isLinked = true;
+    private void OnLinked()
+    {
+        SynchronizeTokenState();
+    }
 
     private void OnUnlinked(string? reason)
     {
-        _isLinked = false;
+        SynchronizeTokenState();
         _syncStatus = reason ?? string.Empty;
     }
 
