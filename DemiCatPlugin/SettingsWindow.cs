@@ -74,7 +74,7 @@ public class SettingsWindow : Window, IDisposable
         _tokenManager.OnUnlinked += OnUnlinked;
 
         RespectCloseHotkey = true;
-        SizeCondition = ImGuiCond.FirstUseEver;
+        SizeCondition = Dalamud.Bindings.ImGui.ImGuiCond.FirstUseEver;
         SizeConstraints = new WindowSizeConstraints
         {
             MinimumSize = new Vector2(720, 480),
