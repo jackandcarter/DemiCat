@@ -19,7 +19,6 @@ using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using Dalamud.Networking.Http;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
 using Microsoft.CSharp.RuntimeBinder;
@@ -33,11 +32,11 @@ public class Plugin : IDalamudPlugin
 
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IUiBuilder _uiBuilder;
-    private readonly IPluginLog _log;
+    private IPluginLog? _log;
 
-    private readonly Config _config;
-    private readonly TokenManager _tokenManager;
-    private readonly SettingsWindow _settings;
+    private Config _config = null!;
+    private TokenManager _tokenManager = null!;
+    private SettingsWindow? _settings;
     private readonly WindowSystem _windows = new("DemiCat");
     private bool _developerWindowAdded;
 
@@ -61,7 +60,7 @@ public class Plugin : IDalamudPlugin
     private ChannelSelectionService _channelSelection = null!;
     private EmojiManager _emojiManager = null!;
 
-    private readonly HappyEyeballsCallback _happyEyeballsCallback = new();
+    private object? _happyEyeballsHelper;
 
     private HttpClient? _httpClient;
     private HttpClient HttpClient => _httpClient
@@ -74,8 +73,30 @@ public class Plugin : IDalamudPlugin
             AutomaticDecompression = DecompressionMethods.All,
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             MaxConnectionsPerServer = 8,
-            ConnectCallback = _happyEyeballsCallback.ConnectCallback
         };
+
+        try
+        {
+            var happyEyeballsType = Type.GetType("Dalamud.Networking.Http.HappyEyeballsCallback, Dalamud");
+            if (happyEyeballsType != null)
+            {
+                var instance = Activator.CreateInstance(happyEyeballsType);
+                var connectProperty = happyEyeballsType.GetProperty("ConnectCallback", BindingFlags.Instance | BindingFlags.Public);
+                if (connectProperty?.GetValue(instance) is Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>> connectCallback)
+                {
+                    handler.ConnectCallback = connectCallback;
+                    _happyEyeballsHelper = instance;
+                }
+                else if (instance is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
+        }
+        catch
+        {
+            // ignored - HappyEyeballs support is optional
+        }
 
         var client = new HttpClient(handler)
         {
@@ -107,14 +128,6 @@ public class Plugin : IDalamudPlugin
     {
         _pluginInterface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface));
         _uiBuilder = pluginInterface.UiBuilder ?? throw new ArgumentNullException(nameof(pluginInterface.UiBuilder));
-        _log = pluginInterface.Create<IPluginLog>() ?? throw new InvalidOperationException("Failed to acquire plugin log.");
-
-        _config = pluginInterface.GetPluginConfig() as Config ?? new Config();
-        _tokenManager = new TokenManager(pluginInterface);
-
-        _settings = new SettingsWindow(pluginInterface, _config, _tokenManager, _log);
-        _settings.Plugin = this;
-        _windows.AddWindow(_settings);
 
         _uiBuilder.Draw += OnDraw;
         _uiBuilder.Draw += _windows.Draw;
@@ -123,11 +136,7 @@ public class Plugin : IDalamudPlugin
 
     private void OnDraw()
     {
-        if (!_initializationAttempted)
-        {
-            _initializationAttempted = true;
-            Initialize();
-        }
+        EnsureInitializationAttempted();
 
         if (_initialized)
         {
@@ -140,19 +149,39 @@ public class Plugin : IDalamudPlugin
         }
     }
 
+    private void EnsureInitializationAttempted()
+    {
+        if (_initializationAttempted)
+            return;
+
+        _initializationAttempted = true;
+        Initialize();
+    }
+
     private void Initialize()
     {
         var pluginInterface = _pluginInterface;
 
         try
         {
-            _services ??= pluginInterface.Create<PluginServices>()
-                ?? throw new InvalidOperationException("Failed to initialize plugin services.");
+            _services ??= PluginServices.Create(pluginInterface);
             if (Services.PluginInterface == null || Services.Log == null)
                 throw new InvalidOperationException("Failed to initialize plugin services.");
 
+            _log = Services.Log;
+
+            _config = pluginInterface.GetPluginConfig() as Config ?? new Config();
+            _tokenManager = new TokenManager(pluginInterface);
+
+            var settings = new SettingsWindow(pluginInterface, _config, _tokenManager, Services.Log)
+            {
+                Plugin = this
+            };
+            _settings = settings;
+            _windows.AddWindow(settings);
+
             _tokenManager.Load();
-            _settings.SynchronizeTokenState();
+            settings.SynchronizeTokenState();
 
             var oldVersion = _config.Version;
             var originalApiBaseUrl = _config.ApiBaseUrl;
@@ -178,7 +207,7 @@ public class Plugin : IDalamudPlugin
             _emojiManager.EmojiFontHandle = _emojiFontHandle;
             _ui = new UiRenderer(_config, HttpClient, _channelSelection, _emojiManager, _tokenManager);
 
-            _settings.ConfigureServices(
+            settings.ConfigureServices(
                 HttpClient,
                 () => RefreshRoles(Services.Log),
                 _ui.StartNetworking);
@@ -221,12 +250,12 @@ public class Plugin : IDalamudPlugin
 
             _channelSelection.ChannelChanged += HandleChannelSelectionValidation;
 
-            _settings.MainWindow = _mainWindow;
-            _settings.ChatWindow = _chatWindow;
-            _settings.OfficerChatWindow = _officerChatWindow;
-            _settings.ChannelWatcher = _channelWatcher;
-            _settings.RequestWatcher = _requestWatcher;
-            _settings.NotePadService = _notePadService;
+            settings.MainWindow = _mainWindow;
+            settings.ChatWindow = _chatWindow;
+            settings.OfficerChatWindow = _officerChatWindow;
+            settings.ChannelWatcher = _channelWatcher;
+            settings.RequestWatcher = _requestWatcher;
+            settings.NotePadService = _notePadService;
 
             _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
             _mainWindow.SetNotePadReadOnly(!_tokenManager.IsReady());
@@ -282,8 +311,10 @@ public class Plugin : IDalamudPlugin
 
     private void HandleOpenConfig()
     {
-        _log.Info("Config open requested");
-        _settings.IsOpen = true;
+        EnsureInitializationAttempted();
+        _log?.Info("Config open requested");
+        if (_settings != null)
+            _settings.IsOpen = true;
     }
 
     private void RegisterDeveloperWindow()
@@ -291,7 +322,7 @@ public class Plugin : IDalamudPlugin
         if (_developerWindowAdded)
             return;
 
-        if (_settings.DeveloperWindow is { } developerWindow)
+        if (_settings?.DeveloperWindow is { } developerWindow)
         {
             _windows.AddWindow(developerWindow);
             _developerWindowAdded = true;
@@ -313,7 +344,7 @@ public class Plugin : IDalamudPlugin
 
         if (!_initialized)
         {
-            _settings.Dispose();
+            _settings?.Dispose();
             return;
         }
 
@@ -361,11 +392,14 @@ public class Plugin : IDalamudPlugin
         {
             _ui.DisposeAsync().GetAwaiter().GetResult();
         }
-        _settings.Dispose();
+        _settings?.Dispose();
         _avatarCache?.Dispose();
         _emojiManager?.Dispose();
         _httpClient?.Dispose();
-        _happyEyeballsCallback.Dispose();
+        if (_happyEyeballsHelper is IDisposable disposableHappyEyeballs)
+        {
+            disposableHappyEyeballs.Dispose();
+        }
         if (PluginServices.Instance != null)
         {
             PluginServices.Instance.ProgressOverlay = null;
@@ -374,9 +408,17 @@ public class Plugin : IDalamudPlugin
 
     private void OnMewCommand(string command, string arguments)
     {
+        EnsureInitializationAttempted();
+
+        if (!_initialized)
+        {
+            _settings?.IsOpen = true;
+            return;
+        }
+
         if (!_tokenManager.IsReady())
         {
-            _settings.IsOpen = true;
+            _settings?.IsOpen = true;
             return;
         }
 
@@ -1021,7 +1063,8 @@ public class Plugin : IDalamudPlugin
     private void StartWatchers()
     {
         Services.Log.Info("Starting watchers");
-        _ = _settings.HardReloadIdentityAndStartAsync();
+        if (_settings != null)
+            _ = _settings.HardReloadIdentityAndStartAsync();
     }
 
     private void HandleTokenLinked()
