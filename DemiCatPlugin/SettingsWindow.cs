@@ -10,7 +10,6 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.IO;
 using ImGuiNET;
-using Dalamud.Interface.Utility;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
@@ -45,8 +44,6 @@ public class SettingsWindow : Window, IDisposable
     private readonly FileDialogManager _penumbraModsDialog = new();
     private readonly FileDialogManager _penumbraConfigDialog = new();
     private string _penumbraCollectionOverride = string.Empty;
-
-    private int _colorPushCount;
 
     private bool ServicesReady => _httpClient != null && _refreshRoles != null && _startNetworking != null;
 
@@ -118,23 +115,18 @@ public class SettingsWindow : Window, IDisposable
         }
     }
 
-    public override void PreDraw()
+    public override void Draw()
     {
-        _colorPushCount = 0;
-
         // On XIV on Mac/Wine the first frame after opening can lack a valid ImGui context.
         if (ImGui.GetCurrentContext() == IntPtr.Zero)
             return;
 
         var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
         primaryColor.W = 1f;
+
         ImGui.PushStyleColor(ImGuiCol.WindowBg, primaryColor);
         ImGui.PushStyleColor(ImGuiCol.ChildBg, primaryColor);
-        _colorPushCount = 2;
-    }
 
-    public override void Draw()
-    {
         try
         {
             if (ImGui.BeginTabBar("SettingsTabs"))
@@ -170,14 +162,9 @@ public class SettingsWindow : Window, IDisposable
         {
             _log.Error(ex, "SettingsWindow.Draw() crashed");
         }
-    }
-
-    public override void PostDraw()
-    {
-        if (_colorPushCount > 0)
+        finally
         {
-            ImGui.PopStyleColor(_colorPushCount);
-            _colorPushCount = 0;
+            ImGui.PopStyleColor(2);
         }
     }
 

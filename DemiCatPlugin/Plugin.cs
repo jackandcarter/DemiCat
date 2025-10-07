@@ -319,8 +319,18 @@ public class Plugin : IDalamudPlugin
     {
         EnsureInitializationAttempted();
         _log?.Info("Config open requested");
-        if (_settings != null)
+        if (_settings == null)
+            return;
+
+        var framework = PluginServices.Instance?.Framework;
+        if (framework != null)
+        {
+            framework.RunOnTick(() => _settings!.IsOpen = true);
+        }
+        else
+        {
             _settings.IsOpen = true;
+        }
     }
 
     private void RegisterDeveloperWindow()
