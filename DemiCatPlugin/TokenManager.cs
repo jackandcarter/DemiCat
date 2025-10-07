@@ -44,7 +44,6 @@ public class TokenManager
     {
         _pluginInterface = pluginInterface;
         Instance = this;
-        Load();
     }
 
     public bool IsReady() => State == LinkState.Linked;
