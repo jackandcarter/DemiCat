@@ -142,7 +142,10 @@ public class Plugin : IDalamudPlugin
         {
             if (!_tokenManager.IsReady())
             {
-                _savedDockVisibilityPreference ??= _config.DockVisible;
+                if (_savedDockVisibilityPreference == null)
+                {
+                    _savedDockVisibilityPreference = _config.DockVisible;
+                }
             }
 
             DrawOverlay();
@@ -164,7 +167,10 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            _services ??= PluginServices.Create(pluginInterface);
+            if (_services == null)
+            {
+                _services = PluginServices.Create(pluginInterface);
+            }
             if (Services.PluginInterface == null || Services.Log == null)
                 throw new InvalidOperationException("Failed to initialize plugin services.");
 
