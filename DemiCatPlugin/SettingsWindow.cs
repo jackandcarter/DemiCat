@@ -122,6 +122,10 @@ public class SettingsWindow : Window, IDisposable
     {
         _colorPushCount = 0;
 
+        // On XIV on Mac there can be a frame where the ImGui context isn't ready yet.
+        if (!Dalamud.Interface.Utility.ImGuiHelpers.IsImGuiReady)
+            return;
+
         var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
         primaryColor.W = 1f;
         ImGui.PushStyleColor(ImGuiCol.WindowBg, primaryColor);
