@@ -9,7 +9,7 @@ using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
-internal class PluginServices
+internal sealed class PluginServices
 {
     private IDalamudPluginInterface _pluginInterface = null!;
     private IPluginLog? _log;
@@ -70,6 +70,14 @@ internal class PluginServices
     public PluginServices()
     {
         Instance = this;
+    }
+
+    internal static PluginServices Create(IDalamudPluginInterface pluginInterface)
+    {
+        var services = pluginInterface.Create<PluginServices>()
+            ?? throw new InvalidOperationException("Failed to resolve plugin services.");
+        Instance = services;
+        return services;
     }
 
     private void TryResolveTextureReadbackProvider()
