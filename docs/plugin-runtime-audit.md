@@ -17,7 +17,7 @@
 - Consolidate presence resets inside a single helper that runs on the framework thread to avoid interleaving updates from competing restart flows.
 
 ## Alignment with Dalamud platform APIs
-- The plugin relies on a manually-constructed `HttpClient` with a custom `SocketsHttpHandler`. Dalamud provides `DalamudHttpClientFactory` via `IDalamudPluginInterface.CreateHttpClient()` which automatically inherits the launcher’s proxy, retry, and telemetry behavior. Swapping to that factory would reduce duplication and keep network behavior aligned with the platform.【F:DemiCatPlugin/Plugin.cs†L115-L162】
+- Dalamud v9 removed `IDalamudPluginInterface.CreateHttpClient()`, so the plugin now constructs a singleton `HttpClient` with a `SocketsHttpHandler` that opts into `HappyEyeballsCallback.ConnectAsync` for dual-stack connection attempts while keeping decompression, pooling, and timeout behavior consistent.【F:DemiCatPlugin/Plugin.cs†L115-L177】
 - Emoji font integration currently reflects into `Dalamud.Interface.ManagedFontAtlas`. Dalamud 9 introduced helper extensions through `IManagedFontAtlas`. Investigate whether those cover the current reflection usage to simplify upgrades when the managed atlas API changes.【F:DemiCatPlugin/Plugin.cs†L181-L352】
 
 
