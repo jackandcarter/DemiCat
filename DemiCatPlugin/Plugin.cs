@@ -4,11 +4,11 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
+using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Reflection;
 using DiscordHelper;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Toast;
@@ -17,7 +17,6 @@ using Dalamud.Game.Text.SeStringHandling.Payloads;
 using Dalamud.Interface;
 using Dalamud.Interface.Textures;
 using Dalamud.Interface.Windowing;
-using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.Avatars;
@@ -72,6 +71,12 @@ public class Plugin : IDalamudPlugin
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
     private IEmojiFontHandle? _emojiFontHandle;
     private CommandInfo _mewCommandInfo = null!;
+
+    private const string ManagedFontAtlasAssemblyName = "Dalamud.Interface.ManagedFontAtlas";
+    private const string ManagedFontAtlasGlyphRangeBuilderTypeName =
+        "Dalamud.Interface.ManagedFontAtlas.FluentGlyphRangeBuilder";
+    private const string ManagedFontAtlasSafeFontConfigTypeName =
+        "Dalamud.Interface.ManagedFontAtlas.SafeFontConfig";
 
     private bool _initialized;
     private bool _initializationAttempted;
@@ -505,9 +510,9 @@ public class Plugin : IDalamudPlugin
             }
 
             var glyphRangeBuilderType = managedFontAtlasAssembly.GetType(
-                "Dalamud.Interface.ManagedFontAtlas.FluentGlyphRangeBuilder");
+                ManagedFontAtlasGlyphRangeBuilderTypeName);
             var safeFontConfigType = managedFontAtlasAssembly.GetType(
-                "Dalamud.Interface.ManagedFontAtlas.SafeFontConfig");
+                ManagedFontAtlasSafeFontConfigTypeName);
 
             if (glyphRangeBuilderType == null || safeFontConfigType == null)
             {
@@ -599,7 +604,7 @@ public class Plugin : IDalamudPlugin
     private Assembly? TryLoadManagedFontAtlasAssembly()
     {
         var existing = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(
-            asm => string.Equals(asm.GetName().Name, "Dalamud.Interface.ManagedFontAtlas", StringComparison.Ordinal));
+            asm => string.Equals(asm.GetName().Name, ManagedFontAtlasAssemblyName, StringComparison.Ordinal));
         if (existing != null)
         {
             return existing;
@@ -607,7 +612,7 @@ public class Plugin : IDalamudPlugin
 
         try
         {
-            return Assembly.Load("Dalamud.Interface.ManagedFontAtlas");
+            return Assembly.Load(ManagedFontAtlasAssemblyName);
         }
         catch (FileNotFoundException)
         {
