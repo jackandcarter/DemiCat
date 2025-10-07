@@ -241,11 +241,6 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        if (ImGui.GetCurrentContext() == IntPtr.Zero)
-        {
-            return;
-        }
-
         if (!_isTokenReady())
         {
             HandleUnlinkedState();
