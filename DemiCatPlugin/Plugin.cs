@@ -65,10 +65,9 @@ public class Plugin : IDalamudPlugin
         ?? throw new InvalidOperationException("HTTP client has not been initialized.");
     private ChannelService _channelService = null!;
     private Action? _openMainUi;
-    private bool _officerWatcherRunning;
     private bool _invalidTokenToastShown;
     private bool? _savedDockVisibilityPreference;
-    private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
+    private readonly SemaphoreSlim _watchLock = new(1, 1);
     private IEmojiFontHandle? _emojiFontHandle;
     private CommandInfo _mewCommandInfo = null!;
 
@@ -91,6 +90,7 @@ public class Plugin : IDalamudPlugin
         _tokenManager = new TokenManager(pluginInterface);
 
         _settings = new SettingsWindow(pluginInterface, _config, _tokenManager, _log);
+        _settings.Plugin = this;
         _windows.AddWindow(_settings);
 
         _uiBuilder.Draw += OnDraw;
@@ -140,13 +140,8 @@ public class Plugin : IDalamudPlugin
 
             RequestStateService.Load(_config);
 
-            var handler = new SocketsHttpHandler
-            {
-                MaxConnectionsPerServer = 10,
-                PooledConnectionLifetime = TimeSpan.FromMinutes(5),
-                AutomaticDecompression = DecompressionMethods.All
-            };
-            _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+            _httpClient = pluginInterface.CreateHttpClient();
+            _httpClient.Timeout = TimeSpan.FromSeconds(10);
 
             WebTextureCache.FetchOverride = FetchWebTexture;
 
@@ -486,6 +481,28 @@ public class Plugin : IDalamudPlugin
         return Task.CompletedTask;
     }
 
+    private Task SetPresenceAsync(bool enabled)
+    {
+        return RunOnFrameworkAsync(() =>
+        {
+            if (_presenceService == null)
+            {
+                return;
+            }
+
+            if (!enabled)
+            {
+                _presenceService.SetPresenceReady(false);
+                _presenceService.Stop();
+                return;
+            }
+
+            _presenceService.Reload();
+            _presenceService.Reset();
+            _presenceService.SetPresenceReady(true);
+        });
+    }
+
     private IEmojiFontHandle? InitializeEmojiFont()
     {
         try
@@ -669,7 +686,7 @@ public class Plugin : IDalamudPlugin
             return buildMethod?.Invoke(builder, Array.Empty<object>());
         }
 
-        object? CreateFontConfig(object baseFont, object glyphRanges)
+        object? CreateFontConfig(object? baseFont, object glyphRanges)
         {
             var config = Activator.CreateInstance(safeFontConfigType);
             if (config == null)
@@ -678,7 +695,10 @@ public class Plugin : IDalamudPlugin
             }
 
             safeFontConfigType.GetProperty("SizePx")?.SetValue(config, fontSize);
-            safeFontConfigType.GetProperty("MergeFont")?.SetValue(config, baseFont);
+            if (baseFont != null)
+            {
+                safeFontConfigType.GetProperty("MergeFont")?.SetValue(config, baseFont);
+            }
             safeFontConfigType.GetProperty("PixelSnapH")?.SetValue(config, true);
             safeFontConfigType.GetProperty("GlyphRanges")?.SetValue(config, glyphRanges);
 
@@ -700,6 +720,37 @@ public class Plugin : IDalamudPlugin
 
         try
         {
+            var atlasType = atlas.GetType();
+            var addFontMethod = atlasType.GetMethod("AddFontFromFile", new[] { typeof(string), safeFontConfigType });
+            if (addFontMethod != null)
+            {
+                object? baseFont = null;
+                try
+                {
+                    baseFont = atlasType.GetProperty("DefaultFont")?.GetValue(atlas);
+                    var sizeProperty = baseFont?.GetType().GetProperty("SizePx");
+                    sizeProperty?.SetValue(baseFont, fontSize);
+                }
+                catch
+                {
+                    baseFont = null;
+                }
+
+                var glyphRanges = CreateGlyphRanges();
+                if (glyphRanges != null)
+                {
+                    var config = CreateFontConfig(baseFont, glyphRanges);
+                    if (config != null)
+                    {
+                        var handle = addFontMethod.Invoke(atlas, new[] { fontPath, config });
+                        if (handle != null)
+                        {
+                            return handle;
+                        }
+                    }
+                }
+            }
+
             return dynamicAtlas.NewDelegateFontHandle((Action<dynamic>)(toolkit =>
             {
                 toolkit.OnPreBuild((Action<dynamic>)(pre =>
@@ -919,19 +970,27 @@ public class Plugin : IDalamudPlugin
         }
     }
 
-    private async Task RestartWatchersAsync()
+    internal Task WithWatchLock(Func<Task> action) => WithWatchLockAsync(action);
+
+    private async Task WithWatchLockAsync(Func<Task> action)
     {
-        await _watcherRestartLock.WaitAsync().ConfigureAwait(false);
+        await _watchLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            StopWatchers();
-            await StartWatchersAsync().ConfigureAwait(false);
+            await action().ConfigureAwait(false);
         }
         finally
         {
-            _watcherRestartLock.Release();
+            _watchLock.Release();
         }
     }
+
+    internal Task RestartWatchersAsync() =>
+        WithWatchLock(async () =>
+        {
+            await StopWatchersAsync().ConfigureAwait(false);
+            await StartWatchersAsync().ConfigureAwait(false);
+        });
 
     private void StartWatchers()
     {
@@ -954,9 +1013,9 @@ public class Plugin : IDalamudPlugin
 
     private void HandleTokenUnlinked(string? reason)
     {
-        void Execute()
+        async Task ExecuteAsync()
         {
-            StopWatchers();
+            await WithWatchLock(StopWatchersAsync).ConfigureAwait(false);
             _mainWindow.SetNotePadReadOnly(true);
 
             var savedDockVisibility = _config.DockVisible;
@@ -990,7 +1049,7 @@ public class Plugin : IDalamudPlugin
         {
             try
             {
-                framework.RunOnTick(Execute);
+                framework.RunOnTick(ExecuteAsync);
                 return;
             }
             catch (Exception ex)
@@ -1000,10 +1059,10 @@ public class Plugin : IDalamudPlugin
             }
         }
 
-        Execute();
+        ExecuteAsync().GetAwaiter().GetResult();
     }
 
-    private async Task StartWatchersAsync()
+    internal async Task StartWatchersAsync()
     {
         if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
             return;
@@ -1012,7 +1071,7 @@ public class Plugin : IDalamudPlugin
         HttpResponseMessage? response = null;
         try
         {
-            response = await pingService.PingAsync(CancellationToken.None);
+            response = await pingService.PingAsync(CancellationToken.None).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1021,6 +1080,7 @@ public class Plugin : IDalamudPlugin
 
         if (response == null)
         {
+            await SetPresenceAsync(false).ConfigureAwait(false);
             HandleWatcherStartupFailure(string.Empty);
             return;
         }
@@ -1029,12 +1089,14 @@ public class Plugin : IDalamudPlugin
         {
             Services.Log.Warning($"Ping returned {(int)response.StatusCode} {response.StatusCode}; clearing token");
             _tokenManager.Clear("Invalid API key");
+            await SetPresenceAsync(false).ConfigureAwait(false);
             return;
         }
 
         if (!response.IsSuccessStatusCode)
         {
             var statusText = $" ({(int)response.StatusCode} {response.StatusCode})";
+            await SetPresenceAsync(false).ConfigureAwait(false);
             HandleWatcherStartupFailure(statusText);
             return;
         }
@@ -1049,7 +1111,7 @@ public class Plugin : IDalamudPlugin
         if (_config.Events || _config.SyncedChat || hasOfficerAccess)
         {
             Services.Log.Info("Starting channel watcher");
-            _ = _channelWatcher.Start();
+            await _channelWatcher.Start().ConfigureAwait(false);
         }
 
         if (_config.NotePadEnabled)
@@ -1058,33 +1120,37 @@ public class Plugin : IDalamudPlugin
             _notePadService.Start();
         }
 
-        if (_config.SyncedChat && _config.EnableFcChat)
+        var enableFcChat = _config.SyncedChat && _config.EnableFcChat;
+        if (enableFcChat)
         {
             Services.Log.Info("Starting chat window networking");
             _chatWindow.StartNetworking();
         }
+        else
+        {
+            _chatWindow.StopNetworking();
+        }
 
         if (hasOfficerAccess)
         {
-            if (!_officerWatcherRunning)
-            {
-                Services.Log.Info("Starting officer chat window networking");
-                _officerChatWindow.StartNetworking();
-                _officerWatcherRunning = true;
-            }
+            Services.Log.Info("Starting officer chat window networking");
+            await _officerChatWindow.StartNetworkingAsync().ConfigureAwait(false);
         }
         else
         {
-            _officerWatcherRunning = false;
+            await _officerChatWindow.StopNetworkingAsync().ConfigureAwait(false);
         }
 
         if (_config.Events)
         {
             Services.Log.Info("Starting event watchers");
-            _ = _ui.StartNetworking();
+            await _ui.StartNetworking().ConfigureAwait(false);
             _mainWindow.EventCreateWindow.StartNetworking();
             _mainWindow.TemplatesWindow.StartNetworking();
         }
+
+        var shouldEnablePresence = enableFcChat || hasOfficerAccess;
+        await SetPresenceAsync(shouldEnablePresence).ConfigureAwait(false);
 
         Services.Log.Info("Watchers started");
     }
@@ -1164,20 +1230,26 @@ public class Plugin : IDalamudPlugin
         PluginServices.Instance?.ToastGui.ShowError(message);
     }
 
-    private void StopWatchers()
+    internal async Task StopWatchersAsync()
     {
+        if (!_initialized)
+        {
+            return;
+        }
+
         Services.Log.Info("Stopping watchers");
+
+        await SetPresenceAsync(false).ConfigureAwait(false);
+
         _requestWatcher.Stop();
         _channelWatcher.Stop();
         _notePadService.Stop();
         _chatWindow.StopNetworking();
-        _officerChatWindow.StopNetworking();
-        _officerWatcherRunning = false;
-        _presenceService?.SetPresenceReady(false);
-        _presenceService?.Stop();
+        await _officerChatWindow.StopNetworkingAsync().ConfigureAwait(false);
         _ui.StopNetworking();
         _mainWindow.TemplatesWindow.StopNetworking();
         MembershipCache.Reset();
+
         Services.Log.Info("Watchers stopped");
     }
 
@@ -1276,7 +1348,7 @@ public class Plugin : IDalamudPlugin
 
             _ = Services.Framework.RunOnTick(() =>
             {
-                var officerWatcherWasRunning = _officerWatcherRunning;
+                var officerWatcherWasRunning = _officerChatWindow.IsRunning;
                 var channelWatcherWasRunning = _channelWatcher.IsRunning;
                 var requestWatcherWasRunning = _requestWatcher.IsRunning;
                 var chatWasActive = _config.SyncedChat && _config.EnableFcChat;
@@ -1328,60 +1400,62 @@ public class Plugin : IDalamudPlugin
 
                 _ = Task.Run(async () =>
                 {
-                    await _watcherRestartLock.WaitAsync().ConfigureAwait(false);
                     try
                     {
-                        if (stopRequestWatcher)
+                        await WithWatchLock(async () =>
                         {
-                            Services.Log.Info("Stopping request watcher");
-                            _requestWatcher.Stop();
-                        }
+                            if (stopRequestWatcher)
+                            {
+                                Services.Log.Info("Stopping request watcher");
+                                _requestWatcher.Stop();
+                            }
 
-                        if (stopChannelWatcher)
-                        {
-                            Services.Log.Info("Stopping channel watcher");
-                            _channelWatcher.Stop();
-                        }
+                            if (stopChannelWatcher)
+                            {
+                                Services.Log.Info("Stopping channel watcher");
+                                _channelWatcher.Stop();
+                            }
 
-                        if (stopOfficer)
-                        {
-                            Services.Log.Info("Stopping officer chat window networking");
-                            _officerChatWindow.StopNetworking();
-                            _officerWatcherRunning = false;
-                        }
+                            if (stopOfficer)
+                            {
+                                Services.Log.Info("Stopping officer chat window networking");
+                                await _officerChatWindow.StopNetworkingAsync().ConfigureAwait(false);
+                            }
 
-                        if (stopChat)
-                        {
-                            Services.Log.Info("Stopping chat window networking");
-                            _chatWindow.StopNetworking();
-                            _presenceService?.SetPresenceReady(false);
-                            _presenceService?.Stop();
-                        }
+                            if (stopChat)
+                            {
+                                Services.Log.Info("Stopping chat window networking");
+                                _chatWindow.StopNetworking();
+                            }
 
-                        if (startChannelWatcher)
-                        {
-                            Services.Log.Info("Starting channel watcher");
-                            await _channelWatcher.Start().ConfigureAwait(false);
-                        }
+                            if (startChannelWatcher)
+                            {
+                                Services.Log.Info("Starting channel watcher");
+                                await _channelWatcher.Start().ConfigureAwait(false);
+                            }
 
-                        if (startRequestWatcher)
-                        {
-                            Services.Log.Info("Starting request watcher");
-                            _requestWatcher.Start();
-                        }
+                            if (startRequestWatcher)
+                            {
+                                Services.Log.Info("Starting request watcher");
+                                _requestWatcher.Start();
+                            }
 
-                        if (startChat)
-                        {
-                            Services.Log.Info("Starting chat window networking");
-                            _chatWindow.StartNetworking();
-                        }
+                            if (startChat)
+                            {
+                                Services.Log.Info("Starting chat window networking");
+                                _chatWindow.StartNetworking();
+                            }
 
-                        if (startOfficer)
-                        {
-                            Services.Log.Info("Starting officer chat window networking");
-                            _officerChatWindow.StartNetworking();
-                            _officerWatcherRunning = true;
-                        }
+                            if (startOfficer)
+                            {
+                                Services.Log.Info("Starting officer chat window networking");
+                                await _officerChatWindow.StartNetworkingAsync().ConfigureAwait(false);
+                            }
+
+                            var presenceEnabled = (_config.SyncedChat && _config.EnableFcChat)
+                                || OfficerPermissions.HasAccess(_config);
+                            await SetPresenceAsync(presenceEnabled).ConfigureAwait(false);
+                        }).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
@@ -1389,7 +1463,6 @@ public class Plugin : IDalamudPlugin
                     }
                     finally
                     {
-                        _watcherRestartLock.Release();
                         _ = Services.Framework.RunOnTick(() =>
                         {
                             _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);

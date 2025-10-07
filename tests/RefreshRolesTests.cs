@@ -79,8 +79,6 @@ public class RefreshRolesTests
         SetPrivateField(plugin, "_channelWatcher", channelWatcher);
         SetPrivateField(plugin, "_requestWatcher", requestWatcher);
         SetPrivateField(plugin, "_mainWindow", mainWindow);
-        SetPrivateField(plugin, "_watcherRestartLock", new SemaphoreSlim(1, 1));
-        SetPrivateField(plugin, "_officerWatcherRunning", false);
         SetPrivateField(plugin, "_presenceService", null);
 
         try

@@ -656,10 +656,8 @@ public class ChatWindow : IDisposable
     public virtual void StartNetworking()
     {
         MarkNetworkingStarted();
-        _presence?.SetPresenceReady(true);
         _bridge.Start();
         TrySubscribeCurrentChannel(force: true);
-        _presence?.Reset();
     }
 
     public void StopNetworking()
@@ -667,8 +665,6 @@ public class ChatWindow : IDisposable
         _bridge.Stop();
         MarkNetworkingStopped();
         OnSubscriptionStateChanged(false);
-        _presence?.Stop();
-        _presence?.SetPresenceReady(false);
         _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
     }
 

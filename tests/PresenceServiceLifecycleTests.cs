@@ -61,7 +61,7 @@ public class PresenceServiceLifecycleTests : IDisposable
     }
 
     [Fact]
-    public void ChatWindow_StartAndStopTogglePresenceReady()
+    public void ChatWindow_StartAndStopDoNotTogglePresenceReady()
     {
         var config = new Config { ApiBaseUrl = "https://example.invalid" };
         using var httpClient = new HttpClient(new StubPresenceHandler());
@@ -71,14 +71,15 @@ public class PresenceServiceLifecycleTests : IDisposable
 
         PingService.Instance = new PingService(httpClient, config, tokenManager);
 
-        presence.SetPresenceReady(false);
         var window = new ChatWindow(config, httpClient, presence, tokenManager, channelService);
 
+        presence.SetPresenceReady(false);
         window.StartNetworking();
-        Assert.True(presence.IsPresenceReady);
-
-        window.StopNetworking();
         Assert.False(presence.IsPresenceReady);
+
+        presence.SetPresenceReady(true);
+        window.StopNetworking();
+        Assert.True(presence.IsPresenceReady);
     }
 
     public void Dispose()

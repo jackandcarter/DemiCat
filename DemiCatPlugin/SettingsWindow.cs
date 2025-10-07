@@ -57,6 +57,7 @@ public class SettingsWindow : Window, IDisposable
     public RequestWatcher? RequestWatcher { get; set; }
     public NotePadService? NotePadService { get; set; }
     public DeveloperWindow? DeveloperWindow => _devWindow;
+    internal Plugin? Plugin { get; set; }
 
     public SettingsWindow(IDalamudPluginInterface pluginInterface, Config config, TokenManager tokenManager, IPluginLog log)
         : base("DemiCat Settings")
@@ -1030,6 +1031,12 @@ public class SettingsWindow : Window, IDisposable
 
     private void StopAllWatchersAndPresence()
     {
+        if (Plugin != null)
+        {
+            _ = Plugin.WithWatchLock(Plugin.StopWatchersAsync);
+            return;
+        }
+
         void SafeInvoke(Action action, string context)
         {
             try
@@ -1182,9 +1189,6 @@ public class SettingsWindow : Window, IDisposable
     private async Task HardReloadIdentityAndStartInternalAsync()
     {
         var framework = PluginServices.Instance?.Framework;
-        var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
-        var presenceRestarted = false;
-
         void UpdateStatus(string status)
         {
             if (framework == null)
@@ -1204,249 +1208,162 @@ public class SettingsWindow : Window, IDisposable
             }
         }
 
-        presence?.SetPresenceReady(false);
-
         try
         {
-            try
-            {
-                MainWindow?.ReloadSignupPresets();
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to reload signup presets during hard reload.");
-            }
-
-            if (_httpClient == null)
+            var plugin = Plugin;
+            if (plugin == null)
             {
                 UpdateStatus("Service not ready");
                 return;
             }
 
-            HttpResponseMessage? pingResponse = null;
-            try
+            await plugin.WithWatchLock(async () =>
             {
-                var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
-                pingResponse = await pingService.PingAsync(CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(ex, "Failed to ping DemiCat backend during hard reload.");
-            }
+                await plugin.StopWatchersAsync().ConfigureAwait(false);
 
-            if (pingResponse == null)
-            {
-                UpdateStatus("Network error");
-                return;
-            }
-
-            if (pingResponse.StatusCode == HttpStatusCode.Unauthorized || pingResponse.StatusCode == HttpStatusCode.Forbidden)
-            {
-                _tokenManager.Clear("Invalid API key");
-                UpdateStatus("Authentication failed");
-                return;
-            }
-
-            if (!pingResponse.IsSuccessStatusCode)
-            {
-                UpdateStatus("Network error");
-                return;
-            }
-
-            await UpdateIdentityAsync(framework);
-
-            if (_refreshRoles != null)
-            {
                 try
                 {
-                    var rolesRefreshed = await _refreshRoles();
-                    if (!rolesRefreshed)
-                    {
-                        _log.Warning("Role refresh after key validation reported failure.");
-                    }
+                    MainWindow?.ReloadSignupPresets();
                 }
                 catch (Exception ex)
                 {
-                    _log.Error(ex, "Failed to refresh roles during hard reload.");
+                    _log.Error(ex, "Failed to reload signup presets during hard reload.");
                 }
-            }
-            else
-            {
-                _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
-            }
 
-            if (_startNetworking != null)
-            {
+                if (_httpClient == null)
+                {
+                    UpdateStatus("Service not ready");
+                    return;
+                }
+
+                HttpResponseMessage? pingResponse = null;
                 try
                 {
-                    await _startNetworking();
+                    var pingService = PingService.Instance ?? new PingService(_httpClient, _config, _tokenManager);
+                    pingResponse = await pingService.PingAsync(CancellationToken.None).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
-                    _log.Error(ex, "Failed to start UI networking during hard reload.");
+                    _log.Warning(ex, "Failed to ping DemiCat backend during hard reload.");
                 }
-            }
-            else
-            {
-                _log.Warning("StartNetworking delegate is not set; skipping UI renderer start.");
-            }
 
-            try
-            {
-                if (_config.Events)
+                if (pingResponse == null)
                 {
-                    MainWindow?.EventCreateWindow.StartNetworking();
-                    MainWindow?.TemplatesWindow.StartNetworking();
+                    UpdateStatus("Network error");
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to start event or template networking during hard reload.");
-            }
 
-            try
-            {
-                if (ChannelWatcher != null)
+                if (pingResponse.StatusCode == HttpStatusCode.Unauthorized || pingResponse.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    await ChannelWatcher.Start();
+                    _tokenManager.Clear("Invalid API key");
+                    UpdateStatus("Authentication failed");
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to start ChannelWatcher during hard reload.");
-            }
 
-            try
-            {
-                RequestWatcher?.Start();
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to start RequestWatcher during hard reload.");
-            }
-
-            try
-            {
-                if (_config.NotePadEnabled)
+                if (!pingResponse.IsSuccessStatusCode)
                 {
-                    NotePadService?.Start();
+                    UpdateStatus("Network error");
+                    return;
                 }
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to start NotePad service during hard reload.");
-            }
 
-            try
-            {
-                if (_config.EnableFcChat)
-                {
-                    ChatWindow?.StartNetworking();
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to start ChatWindow networking during hard reload.");
-            }
+                await UpdateIdentityAsync(framework).ConfigureAwait(false);
 
-            try
-            {
-                if (OfficerPermissions.HasAccess(_config))
-                {
-                    OfficerChatWindow?.StartNetworking();
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to start OfficerChatWindow networking during hard reload.");
-            }
-
-            try
-            {
-                if (_config.EnableFcChat)
-                {
-                    _ = ChatWindow?.RefreshChannels();
-                }
-                if (OfficerPermissions.HasAccess(_config))
-                {
-                    _ = OfficerChatWindow?.RefreshChannels();
-                }
-                _ = MainWindow?.EventCreateWindow.RefreshChannels();
-                _ = MainWindow?.TemplatesWindow.RefreshChannels();
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to refresh channels during hard reload.");
-            }
-
-            try
-            {
-                if (_config.EnableFcChat)
-                {
-                    _ = ChatWindow?.RequestRefreshMessagesAsync();
-                }
-                if (OfficerPermissions.HasAccess(_config))
-                {
-                    _ = OfficerChatWindow?.RequestRefreshMessagesAsync();
-                }
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to refresh messages during hard reload.");
-            }
-
-            try
-            {
-                MainWindow?.Ui.ResetChannels();
-                MainWindow?.ResetEventCreateRoles();
-                MainWindow?.TemplatesWindow.ResetRoles();
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to reset UI or roles during hard reload.");
-            }
-
-            try
-            {
-                presence?.Reset();
-                presence?.Reload();
-                presenceRestarted = presence != null;
-            }
-            catch (Exception ex)
-            {
-                _log.Error(ex, "Failed to reset or reload presence during hard reload.");
-            }
-
-            bool shouldOpenWindow;
-            lock (_hardReloadLock)
-            {
-                shouldOpenWindow = _requestMainWindowOpen;
-                _requestMainWindowOpen = false;
-            }
-
-            if (shouldOpenWindow && MainWindow != null)
-            {
-                if (framework != null)
+                if (_refreshRoles != null)
                 {
                     try
                     {
-                        _ = framework.RunOnTick(() => MainWindow.IsOpen = true);
+                        var rolesRefreshed = await _refreshRoles().ConfigureAwait(false);
+                        if (!rolesRefreshed)
+                        {
+                            _log.Warning("Role refresh after key validation reported failure.");
+                        }
                     }
                     catch (Exception ex)
                     {
-                        _log.Warning(ex, "Failed to open main window on framework thread during hard reload.");
-                        MainWindow.IsOpen = true;
+                        _log.Error(ex, "Failed to refresh roles during hard reload.");
                     }
                 }
                 else
                 {
-                    MainWindow.IsOpen = true;
+                    _log.Warning("RefreshRoles delegate is not set; roles will not be refreshed.");
                 }
-            }
+
+                try
+                {
+                    await plugin.StartWatchersAsync().ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Failed to start watchers during hard reload.");
+                    UpdateStatus("Failed to start watchers");
+                    return;
+                }
+
+                try
+                {
+                    if (_config.EnableFcChat)
+                    {
+                        _ = ChatWindow?.RefreshChannels();
+                        _ = ChatWindow?.RequestRefreshMessagesAsync();
+                    }
+
+                    if (OfficerPermissions.HasAccess(_config))
+                    {
+                        _ = OfficerChatWindow?.RefreshChannels();
+                        _ = OfficerChatWindow?.RequestRefreshMessagesAsync();
+                    }
+
+                    _ = MainWindow?.EventCreateWindow.RefreshChannels();
+                    _ = MainWindow?.TemplatesWindow.RefreshChannels();
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Failed to refresh channels during hard reload.");
+                }
+
+                try
+                {
+                    MainWindow?.Ui.ResetChannels();
+                    MainWindow?.ResetEventCreateRoles();
+                    MainWindow?.TemplatesWindow.ResetRoles();
+                }
+                catch (Exception ex)
+                {
+                    _log.Error(ex, "Failed to reset UI or roles during hard reload.");
+                }
+
+                bool shouldOpenWindow;
+                lock (_hardReloadLock)
+                {
+                    shouldOpenWindow = _requestMainWindowOpen;
+                    _requestMainWindowOpen = false;
+                }
+
+                if (shouldOpenWindow && MainWindow != null)
+                {
+                    if (framework != null)
+                    {
+                        try
+                        {
+                            await framework.RunOnTick(() => MainWindow.IsOpen = true).ConfigureAwait(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            _log.Warning(ex, "Failed to open main window on framework thread during hard reload.");
+                            MainWindow.IsOpen = true;
+                        }
+                    }
+                    else
+                    {
+                        MainWindow.IsOpen = true;
+                    }
+                }
+
+                UpdateStatus(string.Empty);
+            }).ConfigureAwait(false);
         }
         finally
         {
-            presence?.SetPresenceReady(presenceRestarted);
             lock (_hardReloadLock)
             {
                 _hardReloadTask = null;

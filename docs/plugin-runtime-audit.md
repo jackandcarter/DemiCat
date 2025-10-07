@@ -3,6 +3,7 @@
 ## Potential runtime conflicts
 
 ### Hard reload vs watcher restarts
+
 - `SettingsWindow.HardReloadIdentityAndStartInternalAsync` starts the request watcher, channel watcher, notepad service, chat windows, and templates/event networking in sequence without coordinating with the plugin-level watcher semaphore.【F:DemiCatPlugin/SettingsWindow.cs†L1194-L1355】
 - `Plugin.RestartWatchersAsync` uses a separate `_watcherRestartLock` semaphore to stop and start watchers when guild configuration changes, which can race with the hard reload path because the two locks are independent.【F:DemiCatPlugin/Plugin.cs†L904-L1023】
 - While each watcher cancels its own token when `Start` is called, overlapping `Stop`/`Start` calls across different services can briefly leave windows in inconsistent states (e.g. chat window networking restarting while the officer watcher is still stopping). Consider funneling every restart through a single coordinator that acquires the same semaphore before invoking `Start`/`Stop` methods.
@@ -18,6 +19,7 @@
 ## Alignment with Dalamud platform APIs
 - The plugin relies on a manually-constructed `HttpClient` with a custom `SocketsHttpHandler`. Dalamud provides `DalamudHttpClientFactory` via `IDalamudPluginInterface.CreateHttpClient()` which automatically inherits the launcher’s proxy, retry, and telemetry behavior. Swapping to that factory would reduce duplication and keep network behavior aligned with the platform.【F:DemiCatPlugin/Plugin.cs†L115-L162】
 - Emoji font integration currently reflects into `Dalamud.Interface.ManagedFontAtlas`. Dalamud 9 introduced helper extensions through `IManagedFontAtlas`. Investigate whether those cover the current reflection usage to simplify upgrades when the managed atlas API changes.【F:DemiCatPlugin/Plugin.cs†L181-L352】
+
 
 ## Tooling to stay on .NET 9.0.3 and Dalamud 13
 - `global.json` already pins the .NET SDK to `9.0.300`, matching Dalamud 9.0.3 expectations.【F:global.json†L1-L6】
