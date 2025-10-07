@@ -139,12 +139,12 @@ public class MainWindow : Window, IDisposable
         _syncshellEnabled = config.FCSyncShell;
         _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient, tokenManager) : null;
         RespectCloseHotkey = false;
-        Flags = ImGuiWindowFlags.NoDecoration
-            | ImGuiWindowFlags.NoInputs
-            | ImGuiWindowFlags.NoBackground
-            | ImGuiWindowFlags.NoSavedSettings
-            | ImGuiWindowFlags.NoFocusOnAppearing
-            | ImGuiWindowFlags.NoBringToFrontOnFocus;
+        Flags = Dalamud.Bindings.ImGui.ImGuiWindowFlags.NoDecoration
+            | Dalamud.Bindings.ImGui.ImGuiWindowFlags.NoInputs
+            | Dalamud.Bindings.ImGui.ImGuiWindowFlags.NoBackground
+            | Dalamud.Bindings.ImGui.ImGuiWindowFlags.NoSavedSettings
+            | Dalamud.Bindings.ImGui.ImGuiWindowFlags.NoFocusOnAppearing
+            | Dalamud.Bindings.ImGui.ImGuiWindowFlags.NoBringToFrontOnFocus;
 
         _eventsWindowHost = new EventsDockableWindow(config, ui, IsLinked);
         _eventCreateWindowHost = new EventCreateDockableWindow(config, _create, IsLinked);
