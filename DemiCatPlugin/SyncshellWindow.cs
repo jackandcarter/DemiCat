@@ -370,98 +370,101 @@ public class SyncshellWindow : IDisposable
                             SetSyncPreferences(autoSync, _manualSyncAllUsers, _manualSyncCustom);
                         }
 
-        var manualAll = _manualSyncAllUsers;
-        if (ImGui.Checkbox("Manual Sync (All Users)", ref manualAll))
-        {
-            SetSyncPreferences(manualAll ? false : _autoSyncAllUsers, manualAll, _manualSyncCustom);
-        }
+                        var manualAll = _manualSyncAllUsers;
+                        if (ImGui.Checkbox("Manual Sync (All Users)", ref manualAll))
+                        {
+                            SetSyncPreferences(manualAll ? false : _autoSyncAllUsers, manualAll, _manualSyncCustom);
+                        }
 
-        var manualCustom = _manualSyncCustom;
-        if (ImGui.Checkbox("Manual Sync (Custom)", ref manualCustom))
-        {
-            SetSyncPreferences(manualCustom ? false : _autoSyncAllUsers, _manualSyncAllUsers, manualCustom);
-        }
+                        var manualCustom = _manualSyncCustom;
+                        if (ImGui.Checkbox("Manual Sync (Custom)", ref manualCustom))
+                        {
+                            SetSyncPreferences(manualCustom ? false : _autoSyncAllUsers, _manualSyncAllUsers, manualCustom);
+                        }
 
-        var manualModeActive = IsManualModeActive;
-        ImGui.BeginDisabled(!manualModeActive);
-        if (ImGui.Button("Sync now"))
-        {
-            _ = RunManualSyncAsync();
-        }
-        ImGui.EndDisabled();
-        if (!manualModeActive && ImGui.IsItemHovered())
-            ImGui.SetTooltip("Enable a manual sync mode to push pending changes.");
+                        var manualModeActive = IsManualModeActive;
+                        ImGui.BeginDisabled(!manualModeActive);
+                        if (ImGui.Button("Sync now"))
+                        {
+                            _ = RunManualSyncAsync();
+                        }
+                        ImGui.EndDisabled();
+                        if (!manualModeActive && ImGui.IsItemHovered())
+                            ImGui.SetTooltip("Enable a manual sync mode to push pending changes.");
 
-        if (ManualSyncPending)
-        {
-            ImGui.SameLine();
-            ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), GetManualPendingLabel());
-        }
-        var limitChanged = ImGui.SliderFloat("File-size limit (MB)", ref _fileSizeLimitMb, 100f, 5120f, "%.0f MB");
-        long sessionBytes;
-        long reservedBytes;
-        long limitBytes;
-        string? budgetStatus;
-        lock (_budgetLock)
-        {
-            sessionBytes = _sessionBytesDownloaded;
-            reservedBytes = _sessionBytesReserved;
-            limitBytes = GetFileSizeLimitBytes();
-            budgetStatus = _budgetStatusMessage;
-        }
+                        if (ManualSyncPending)
+                        {
+                            ImGui.SameLine();
+                            ImGui.TextColored(new Vector4(1f, 0.8f, 0.2f, 1f), GetManualPendingLabel());
+                        }
 
-        var usageLabel = reservedBytes > 0
-            ? $"Session usage: {FormatSize(sessionBytes)} / {FormatSize(limitBytes)} ({FormatSize(reservedBytes)} pending)"
-            : $"Session usage: {FormatSize(sessionBytes)} / {FormatSize(limitBytes)}";
-        ImGui.TextUnformatted(usageLabel);
-        if (!string.IsNullOrEmpty(budgetStatus))
-        {
-            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), budgetStatus);
-        }
+                        var limitChanged = ImGui.SliderFloat("File-size limit (MB)", ref _fileSizeLimitMb, 100f, 5120f, "%.0f MB");
+                        long sessionBytes;
+                        long reservedBytes;
+                        long limitBytes;
+                        string? budgetStatus;
+                        lock (_budgetLock)
+                        {
+                            sessionBytes = _sessionBytesDownloaded;
+                            reservedBytes = _sessionBytesReserved;
+                            limitBytes = GetFileSizeLimitBytes();
+                            budgetStatus = _budgetStatusMessage;
+                        }
 
-        if (limitChanged)
-        {
-            OnFileSizeLimitChanged();
-        }
-        var peerSync = _peerSyncEnabled;
-        if (ImGui.Checkbox("Enable Peer Sync", ref peerSync))
-        {
-            _peerSyncEnabled = peerSync;
-            _config.SyncshellPeerSyncEnabled = peerSync;
-            PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
-            UpdateSyncClientState();
-        }
+                        var usageLabel = reservedBytes > 0
+                            ? $"Session usage: {FormatSize(sessionBytes)} / {FormatSize(limitBytes)} ({FormatSize(reservedBytes)} pending)"
+                            : $"Session usage: {FormatSize(sessionBytes)} / {FormatSize(limitBytes)}";
+                        ImGui.TextUnformatted(usageLabel);
+                        if (!string.IsNullOrEmpty(budgetStatus))
+                        {
+                            ImGui.TextColored(new Vector4(1f, 0.6f, 0.6f, 1f), budgetStatus);
+                        }
 
-        var cacheLimit = _cacheSizeLimitMb;
-        if (ImGui.SliderInt("Cache size limit (MB)", ref cacheLimit, 256, 16384))
-        {
-            cacheLimit = Math.Clamp(cacheLimit, 256, 16384);
-            if (cacheLimit != _cacheSizeLimitMb)
-            {
-                _cacheSizeLimitMb = cacheLimit;
-                _config.SyncshellCacheLimitMb = cacheLimit;
-                PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
-                _ = TrimCacheAsync();
-            }
-        }
-        if (ImGui.Button("Resync All"))
-        {
-            _ = ResyncAll();
-        }
-        ImGui.SameLine();
-        if (ImGui.Button("Clear Cache"))
-        {
-            _ = ClearRemoteCache();
-        }
-        ImGui.SameLine();
-        var pauseLabel = _syncPaused ? "Resume Sync" : "Pause Sync";
-        if (ImGui.Button(pauseLabel))
-        {
-            SetSyncPaused(!_syncPaused);
-        }
-                ImGui.EndTabItem();
-            }
+                        if (limitChanged)
+                        {
+                            OnFileSizeLimitChanged();
+                        }
 
+                        var peerSync = _peerSyncEnabled;
+                        if (ImGui.Checkbox("Enable Peer Sync", ref peerSync))
+                        {
+                            _peerSyncEnabled = peerSync;
+                            _config.SyncshellPeerSyncEnabled = peerSync;
+                            PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+                            UpdateSyncClientState();
+                        }
+
+                        var cacheLimit = _cacheSizeLimitMb;
+                        if (ImGui.SliderInt("Cache size limit (MB)", ref cacheLimit, 256, 16384))
+                        {
+                            cacheLimit = Math.Clamp(cacheLimit, 256, 16384);
+                            if (cacheLimit != _cacheSizeLimitMb)
+                            {
+                                _cacheSizeLimitMb = cacheLimit;
+                                _config.SyncshellCacheLimitMb = cacheLimit;
+                                PluginServices.Instance?.PluginInterface?.SavePluginConfig(_config);
+                                _ = TrimCacheAsync();
+                            }
+                        }
+
+                        if (ImGui.Button("Resync All"))
+                        {
+                            _ = ResyncAll();
+                        }
+                        ImGui.SameLine();
+                        if (ImGui.Button("Clear Cache"))
+                        {
+                            _ = ClearRemoteCache();
+                        }
+                        ImGui.SameLine();
+                        var pauseLabel = _syncPaused ? "Resume Sync" : "Pause Sync";
+                        if (ImGui.Button(pauseLabel))
+                        {
+                            SetSyncPaused(!_syncPaused);
+                        }
+
+                        ImGui.EndTabItem();
+                    }
                     ImGui.EndTabBar();
                 }
             }
@@ -599,7 +602,9 @@ public class SyncshellWindow : IDisposable
             return MinSyncSettingsHeight;
 
         var membershipSplitterHeight = Math.Max(4f, ImGui.GetStyle().FramePadding.Y);
-        var minRemaining = splitterHeight + MinMembershipPanelHeight * MembershipPanelCount + membershipSplitterHeight * (MembershipPanelCount - 1);
+        var minRemaining = splitterHeight
+            + MinMembershipPanelHeight * MembershipPanelCount
+            + membershipSplitterHeight * (MembershipPanelCount - 1);
         var maxHeight = MathF.Max(MinSyncSettingsHeight, availableHeight - minRemaining);
         maxHeight = MathF.Min(MaxSyncSettingsHeight, maxHeight);
         return MathF.Max(MinSyncSettingsHeight, maxHeight);
