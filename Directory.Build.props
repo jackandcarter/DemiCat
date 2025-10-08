@@ -1,47 +1,49 @@
 <Project>
   <PropertyGroup>
-    <TargetFramework>net9.0-windows10.0.19041</TargetFramework>
-    <EnableWindowsTargeting>true</EnableWindowsTargeting>
-    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
-    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
-    <!-- Resolve Dalamud dev hooks automatically if not provided -->
-    <DalamudHooksDev Condition="'$(DalamudHooksDev)'=='' and '$(OS)'=='Windows_NT'">
-      $(LOCALAPPDATA)\XIVLauncher\addon\Hooks\dev
-    </DalamudHooksDev>
-    <!-- XIV on Mac / Linux -->
-    <DalamudHooksDev Condition="'$(DalamudHooksDev)'=='' and '$(OS)'!='Windows_NT'">
-      $(HOME)/.xlcore/dalamud/Hooks/dev
-    </DalamudHooksDev>
-    <!-- Back-compat alias for older property name -->
-    <DalamudLibPath Condition="'$(DalamudLibPath)'==''">$(DalamudHooksDev)</DalamudLibPath>
-    <!-- Only projects that set this to true will enforce/check ImGui.NET -->
-    <RequiresDalamudImGui>false</RequiresDalamudImGui>
+    <!-- Optional override if you want: export DALAMUD_HOME=/path/to/.../dalamud -->
+    <DalamudHome>$(DALAMUD_HOME)</DalamudHome>
+
+    <!-- Known XIV on Mac + XLCore locations -->
+    <XivOnMacHooks>$(HOME)/Library/Application Support/XIV on Mac/dalamud/Hooks/dev</XivOnMacHooks>
+    <XlCoreHooks>$(HOME)/.xlcore/dalamud/Hooks/dev</XlCoreHooks>
   </PropertyGroup>
 
-  <ItemGroup>
+  <!-- Resolve hooks dir: env var first, then XIV on Mac, then XLCore -->
+  <PropertyGroup Condition="Exists('$(DalamudHome)/Hooks/dev/ImGui.NET.dll')">
+    <DalamudHooksDir>$(DalamudHome)/Hooks/dev</DalamudHooksDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(DalamudHooksDir)'=='' and Exists('$(XivOnMacHooks)/ImGui.NET.dll')">
+    <DalamudHooksDir>$(XivOnMacHooks)</DalamudHooksDir>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(DalamudHooksDir)'=='' and Exists('$(XlCoreHooks)/ImGui.NET.dll')">
+    <DalamudHooksDir>$(XlCoreHooks)</DalamudHooksDir>
+  </PropertyGroup>
+
+  <ItemGroup Condition="Exists('$(DalamudHooksDir)/ImGui.NET.dll')">
     <Reference Include="Dalamud">
-      <HintPath>$(DalamudHooksDev)/Dalamud.dll</HintPath>
+      <HintPath>$(DalamudHooksDir)/Dalamud.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="ImGui.NET">
-      <HintPath>$(DalamudHooksDev)/ImGui.NET.dll</HintPath>
+      <HintPath>$(DalamudHooksDir)/ImGui.NET.dll</HintPath>
       <Private>false</Private>
     </Reference>
-    <Reference Include="ImGuizmo.NET" Condition="Exists('$(DalamudHooksDev)/ImGuizmo.NET.dll')">
-      <HintPath>$(DalamudHooksDev)/ImGuizmo.NET.dll</HintPath>
+    <Reference Include="ImGuiScene">
+      <HintPath>$(DalamudHooksDir)/ImGuiScene.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Lumina">
+      <HintPath>$(DalamudHooksDir)/Lumina.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="FFXIVClientStructs">
+      <HintPath>$(DalamudHooksDir)/FFXIVClientStructs.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>
 
-  <!-- Make sure *no* PackageReference pulls its own ImGui.NET -->
-  <ItemGroup>
-    <PackageReference Update="ImGui.NET" Version="" PrivateAssets="all" Condition="'0'=='1'" />
-  </ItemGroup>
-
-  <!-- Fail fast ONLY for projects that opt in -->
-  <Target Name="CheckDalamudLibs" BeforeTargets="Build"
-          Condition="'$(RequiresDalamudImGui)'=='true' and !Exists('$(DalamudHooksDev)/ImGui.NET.dll')">
-    <Error Text="ImGui.NET.dll not found in $(DalamudHooksDev).
-Launch the game once and run Dalamud → Dev Tools → Scan Dev Plugins so Hooks/dev is populated, then rebuild." />
+  <Target Name="CheckHooks" BeforeTargets="Build">
+    <Error Condition="!Exists('$(DalamudHooksDir)/ImGui.NET.dll')"
+           Text="ImGui.NET.dll not found. In-game: Dalamud → Dev Tools → Scan Dev Plugins to populate Hooks/dev, then rebuild." />
   </Target>
 </Project>
