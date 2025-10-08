@@ -1086,7 +1086,7 @@ public class ChatWindow : IDisposable
         var availableWidth = ImGui.GetContentRegionAvail().X;
         var framePadding = style.FramePadding.X * 2f;
         var emojiButtonWidth = 0f;
-        using (var _ = _emojiManager.PushEmojiFont())
+        using (var emojiMeasurementFont = _emojiManager.PushEmojiFont())
         {
             emojiButtonWidth = ImGui.CalcTextSize("😊").X + framePadding;
         }
@@ -1178,7 +1178,7 @@ public class ChatWindow : IDisposable
         }
 
         ImGui.SameLine();
-        using (var _ = _emojiManager.PushEmojiFont())
+        using (var emojiButtonFont = _emojiManager.PushEmojiFont())
         {
             if (ImGui.Button("😊")) ImGui.OpenPopup("##dc_emoji_picker");
         }

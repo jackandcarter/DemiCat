@@ -5,21 +5,43 @@
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
     <!-- Resolve Dalamud dev hooks automatically if not provided -->
-    <DalamudLibPath Condition="'$(DalamudLibPath)'=='' and '$(OS)'=='Windows_NT'">
+    <DalamudHooksDev Condition="'$(DalamudHooksDev)'=='' and '$(OS)'=='Windows_NT'">
       $(LOCALAPPDATA)\XIVLauncher\addon\Hooks\dev
-    </DalamudLibPath>
+    </DalamudHooksDev>
     <!-- XIV on Mac / Linux -->
-    <DalamudLibPath Condition="'$(DalamudLibPath)'=='' and '$(OS)'!='Windows_NT'">
+    <DalamudHooksDev Condition="'$(DalamudHooksDev)'=='' and '$(OS)'!='Windows_NT'">
       $(HOME)/.xlcore/dalamud/Hooks/dev
-    </DalamudLibPath>
+    </DalamudHooksDev>
+    <!-- Back-compat alias for older property name -->
+    <DalamudLibPath Condition="'$(DalamudLibPath)'==''">$(DalamudHooksDev)</DalamudLibPath>
     <!-- Only projects that set this to true will enforce/check ImGui.NET -->
     <RequiresDalamudImGui>false</RequiresDalamudImGui>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Reference Include="Dalamud">
+      <HintPath>$(DalamudHooksDev)/Dalamud.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ImGui.NET">
+      <HintPath>$(DalamudHooksDev)/ImGui.NET.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="ImGuizmo.NET" Condition="Exists('$(DalamudHooksDev)/ImGuizmo.NET.dll')">
+      <HintPath>$(DalamudHooksDev)/ImGuizmo.NET.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Make sure *no* PackageReference pulls its own ImGui.NET -->
+  <ItemGroup>
+    <PackageReference Update="ImGui.NET" Version="" PrivateAssets="all" Condition="'0'=='1'" />
+  </ItemGroup>
+
   <!-- Fail fast ONLY for projects that opt in -->
   <Target Name="CheckDalamudLibs" BeforeTargets="Build"
-          Condition="'$(RequiresDalamudImGui)'=='true' and !Exists('$(DalamudLibPath)/ImGui.NET.dll')">
-    <Error Text="ImGui.NET.dll not found in $(DalamudLibPath).
+          Condition="'$(RequiresDalamudImGui)'=='true' and !Exists('$(DalamudHooksDev)/ImGui.NET.dll')">
+    <Error Text="ImGui.NET.dll not found in $(DalamudHooksDev).
 Launch the game once and run Dalamud → Dev Tools → Scan Dev Plugins so Hooks/dev is populated, then rebuild." />
   </Target>
 </Project>

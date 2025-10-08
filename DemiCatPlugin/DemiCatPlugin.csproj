@@ -28,14 +28,6 @@
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
   </ItemGroup>
 
-  <!-- Always build the plugin against Dalamud's ImGui.NET to match the runtime -->
-  <ItemGroup>
-    <Reference Include="ImGui.NET">
-      <HintPath>$(DalamudLibPath)/ImGui.NET.dll</HintPath>
-      <Private>false</Private>
-    </Reference>
-  </ItemGroup>
-
   <ItemGroup>
     <Reference Include="Lumina.Excel">
       <HintPath>$(DalamudLibPath)/Lumina.Excel.dll</HintPath>
