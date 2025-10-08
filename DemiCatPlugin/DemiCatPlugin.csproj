@@ -25,6 +25,18 @@
     <PackageReference Include="Penumbra.Api" Version="5.12.0" />
     <PackageReference Include="Glamourer.Api" Version="2.6.0" />
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
+  </ItemGroup>
+
+  <!-- Prefer Dalamud's ImGui.NET if available -->
+  <ItemGroup Condition="Exists('$(DalamudLibPath)/ImGui.NET.dll')">
+    <Reference Include="ImGui.NET">
+      <HintPath>$(DalamudLibPath)/ImGui.NET.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Cross-OS fallback: compiler sees ImGui types, nothing gets shipped -->
+  <ItemGroup Condition="!Exists('$(DalamudLibPath)/ImGui.NET.dll')">
     <PackageReference Include="ImGui.NET" Version="1.90.8.1">
       <IncludeAssets>compile</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
