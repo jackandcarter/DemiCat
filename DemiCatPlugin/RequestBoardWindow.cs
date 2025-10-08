@@ -8,6 +8,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using ImGuiNET;
 using System.Numerics;
+using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
@@ -50,115 +51,154 @@ public class RequestBoardWindow
 
     public void Draw()
     {
-        if (!_config.Requests)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
-            ImGui.TextUnformatted("Feature disabled");
             return;
         }
-        if (!_tokenManager.IsReady())
-        {
-            ImGui.TextUnformatted("Link DemiCat to view requests");
-            return;
-        }
-        if (ImGui.Button("Create Request"))
-            ImGui.OpenPopup("createRequest");
 
-        var mode = (int)_sortMode;
-        if (ImGui.Combo("Sort By", ref mode, SortLabels, SortLabels.Length))
-            _sortMode = (SortMode)mode;
-
-        var requests = RequestStateService.All;
-        requests = _sortMode switch
+        try
         {
-            SortMode.Type => requests.OrderBy(r => r.Type),
-            SortMode.Name => requests.OrderBy(r => r.Title),
-            _ => requests.OrderByDescending(r => r.CreatedAt)
-        };
-        var requestList = requests.ToList();
-
-        if (requestList.Count == 0)
-        {
-            ImGui.TextUnformatted("No requests available.");
-        }
-        else
-        {
-            ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 8f);
-            ImGui.PushStyleVar(ImGuiStyleVar.ChildBorderSize, 1f);
-            ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(0.35f, 0.45f, 0.55f, 0.5f));
-
-            foreach (var req in requestList)
+            if (!_config.Requests)
             {
-                ImGui.PushID(req.Id);
-                ImGui.PushStyleColor(ImGuiCol.ChildBg, UrgencyColor(req.Urgency));
-                ImGui.BeginChild("card", new Vector2(-1, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+                ImGui.TextUnformatted("Feature disabled");
+                return;
+            }
+            if (!_tokenManager.IsReady())
+            {
+                ImGui.TextUnformatted("Link DemiCat to view requests");
+                return;
+            }
+            if (ImGui.Button("Create Request"))
+                ImGui.OpenPopup("createRequest");
 
-                ImGui.TextUnformatted(req.Title);
-                ImGui.Spacing();
-                ImGui.TextUnformatted($"Status: {req.Status}   Type: {req.Type}   Urgency: {req.Urgency}");
-                if (!string.IsNullOrWhiteSpace(req.CreatedBy))
-                    ImGui.TextUnformatted($"Created by {req.CreatedBy}");
-                if (req.CreatedAt != DateTime.MinValue)
-                    ImGui.TextUnformatted($"Created at {req.CreatedAt:u}");
+            var mode = (int)_sortMode;
+            if (ImGui.Combo("Sort By", ref mode, SortLabels, SortLabels.Length))
+                _sortMode = (SortMode)mode;
 
-                ImGui.Separator();
-                var desc = string.IsNullOrWhiteSpace(req.Description) ? "No description provided." : req.Description;
-                ImGui.TextWrapped(desc);
+            var requests = RequestStateService.All;
+            requests = _sortMode switch
+            {
+                SortMode.Type => requests.OrderBy(r => r.Type),
+                SortMode.Name => requests.OrderBy(r => r.Title),
+                _ => requests.OrderByDescending(r => r.CreatedAt)
+            };
+            var requestList = requests.ToList();
 
-                if (_conflicts.TryGetValue(req.Id, out var conflicted) && conflicted)
+            if (requestList.Count == 0)
+            {
+                ImGui.TextUnformatted("No requests available.");
+            }
+            else
+            {
+                ImGui.PushStyleVar(ImGuiStyleVar.ChildRounding, 8f);
+                ImGui.PushStyleVar(ImGuiStyleVar.ChildBorderSize, 1f);
+                ImGui.PushStyleColor(ImGuiCol.Border, new Vector4(0.35f, 0.45f, 0.55f, 0.5f));
+                try
                 {
-                    ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
-                    ImGui.TextWrapped("Unable to update request because it was modified elsewhere. Refresh and try again.");
+                    foreach (var req in requestList)
+                    {
+                        ImGui.PushID(req.Id);
+                        ImGui.PushStyleColor(ImGuiCol.ChildBg, UrgencyColor(req.Urgency));
+                        ImGui.BeginChild("card", new Vector2(-1, 0), true, ImGuiWindowFlags.None);
+                        try
+                        {
+                            ImGui.TextUnformatted(req.Title);
+                            ImGui.Spacing();
+                            ImGui.TextUnformatted($"Status: {req.Status}   Type: {req.Type}   Urgency: {req.Urgency}");
+                            if (!string.IsNullOrWhiteSpace(req.CreatedBy))
+                                ImGui.TextUnformatted($"Created by {req.CreatedBy}");
+                            if (req.CreatedAt != DateTime.MinValue)
+                                ImGui.TextUnformatted($"Created at {req.CreatedAt:u}");
+
+                            ImGui.Separator();
+                            var desc = string.IsNullOrWhiteSpace(req.Description) ? "No description provided." : req.Description;
+                            ImGui.TextWrapped(desc);
+
+                            if (_conflicts.TryGetValue(req.Id, out var conflicted) && conflicted)
+                            {
+                                ImGui.PushStyleColor(ImGuiCol.Text, new Vector4(1f, 0.4f, 0.4f, 1f));
+                                try
+                                {
+                                    ImGui.TextWrapped("Unable to update request because it was modified elsewhere. Refresh and try again.");
+                                }
+                                finally
+                                {
+                                    ImGui.PopStyleColor();
+                                }
+                            }
+
+                            ImGui.Spacing();
+                            DrawActionButtons(req);
+
+                            ImGui.Separator();
+                            DrawRequirements(req);
+                        }
+                        finally
+                        {
+                            ImGui.EndChild();
+                        }
+                        ImGui.PopStyleColor();
+                        ImGui.PopID();
+                        ImGui.Spacing();
+                    }
+                }
+                finally
+                {
                     ImGui.PopStyleColor();
+                    ImGui.PopStyleVar();
+                    ImGui.PopStyleVar();
                 }
-
-                ImGui.Spacing();
-                DrawActionButtons(req);
-
-                ImGui.Separator();
-                DrawRequirements(req);
-
-                ImGui.EndChild();
-                ImGui.PopStyleColor();
-                ImGui.PopID();
-                ImGui.Spacing();
             }
 
-            ImGui.PopStyleColor();
-            ImGui.PopStyleVar();
-            ImGui.PopStyleVar();
-        }
+            DrawMessagePopup();
 
-        DrawMessagePopup();
-
-        if (ImGui.BeginPopup("createRequest"))
-        {
-            ImGui.InputText("Title", ref _newTitle, 100);
-            ImGui.InputTextMultiline("Description", ref _newDescription, 1000, new Vector2(300, 80));
-            var typeIdx = (int)_newType;
-            var typeLabels = Enum.GetNames<RequestType>();
-            if (ImGui.Combo("Type", ref typeIdx, typeLabels, typeLabels.Length))
-                _newType = (RequestType)typeIdx;
-            var urgIdx = (int)_newUrgency;
-            var urgLabels = Enum.GetNames<RequestUrgency>();
-            if (ImGui.Combo("Urgency", ref urgIdx, urgLabels, urgLabels.Length))
-                _newUrgency = (RequestUrgency)urgIdx;
-            if (!string.IsNullOrEmpty(_createStatus))
-                ImGui.TextUnformatted(_createStatus);
-            if (ImGui.Button("Create"))
+            if (ImGui.BeginPopup("createRequest"))
             {
-                if (ValidateNewRequest())
+                try
                 {
-                    _ = CreateRequest();
-                    _createStatus = string.Empty;
-                    ImGui.CloseCurrentPopup();
+                    ImGui.InputText("Title", ref _newTitle, 100);
+                    ImGui.InputTextMultiline("Description", ref _newDescription, 1000, new Vector2(300, 80));
+                    var typeIdx = (int)_newType;
+                    var typeLabels = Enum.GetNames<RequestType>();
+                    if (ImGui.Combo("Type", ref typeIdx, typeLabels, typeLabels.Length))
+                        _newType = (RequestType)typeIdx;
+                    var urgIdx = (int)_newUrgency;
+                    var urgLabels = Enum.GetNames<RequestUrgency>();
+                    if (ImGui.Combo("Urgency", ref urgIdx, urgLabels, urgLabels.Length))
+                        _newUrgency = (RequestUrgency)urgIdx;
+                    if (!string.IsNullOrEmpty(_createStatus))
+                        ImGui.TextUnformatted(_createStatus);
+                    if (ImGui.Button("Create"))
+                    {
+                        if (ValidateNewRequest())
+                        {
+                            _ = CreateRequest();
+                            _createStatus = string.Empty;
+                            ImGui.CloseCurrentPopup();
+                        }
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("Cancel"))
+                    {
+                        ImGui.CloseCurrentPopup();
+                    }
+                }
+                finally
+                {
+                    ImGui.EndPopup();
                 }
             }
-            ImGui.SameLine();
-            if (ImGui.Button("Cancel"))
+        }
+        catch (Exception ex)
+        {
+            try
             {
-                ImGui.CloseCurrentPopup();
+                PluginServices.Instance?.Log.Error(ex, "RequestBoardWindow.Draw()");
             }
-            ImGui.EndPopup();
+            catch
+            {
+                // ignored
+            }
         }
     }
 
@@ -255,37 +295,41 @@ public class RequestBoardWindow
         if (!ImGui.BeginPopup("requestMessage"))
             return;
 
-        if (_messagePopupRequestId == null || !RequestStateService.TryGet(_messagePopupRequestId, out var req))
+        try
         {
-            ImGui.TextUnformatted("No request selected.");
-            if (ImGui.Button("Close"))
+            if (_messagePopupRequestId == null || !RequestStateService.TryGet(_messagePopupRequestId, out var req))
+            {
+                ImGui.TextUnformatted("No request selected.");
+                if (ImGui.Button("Close"))
+                {
+                    ImGui.CloseCurrentPopup();
+                    _messagePopupRequestId = null;
+                }
+                return;
+            }
+
+            var draft = _messageDrafts.TryGetValue(req.Id, out var existing) ? existing : string.Empty;
+            ImGui.InputTextMultiline("##message", ref draft, 1000, new Vector2(320, 120));
+            _messageDrafts[req.Id] = draft;
+
+            if (ImGui.Button("Send") && !string.IsNullOrWhiteSpace(draft))
+            {
+                _ = CommentAndRefresh(req, draft);
+                _messageDrafts[req.Id] = string.Empty;
+                ImGui.CloseCurrentPopup();
+                _messagePopupRequestId = null;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Cancel"))
             {
                 ImGui.CloseCurrentPopup();
                 _messagePopupRequestId = null;
             }
+        }
+        finally
+        {
             ImGui.EndPopup();
-            return;
         }
-
-        var draft = _messageDrafts.TryGetValue(req.Id, out var existing) ? existing : string.Empty;
-        ImGui.InputTextMultiline("##message", ref draft, 1000, new Vector2(320, 120));
-        _messageDrafts[req.Id] = draft;
-
-        if (ImGui.Button("Send") && !string.IsNullOrWhiteSpace(draft))
-        {
-            _ = CommentAndRefresh(req, draft);
-            _messageDrafts[req.Id] = string.Empty;
-            ImGui.CloseCurrentPopup();
-            _messagePopupRequestId = null;
-        }
-        ImGui.SameLine();
-        if (ImGui.Button("Cancel"))
-        {
-            ImGui.CloseCurrentPopup();
-            _messagePopupRequestId = null;
-        }
-
-        ImGui.EndPopup();
     }
 
     private async Task UpdateAndRefresh(RequestState req, RequestStatus newStatus)

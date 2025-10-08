@@ -152,50 +152,71 @@ public class OfficerChatWindow : ChatWindow
             return;
         }
 
-        if (!OfficerPermissions.HasAccess(_config))
+        try
         {
-            var message = string.IsNullOrEmpty(_statusMessage)
-                ? NoOfficerAccessMessage
-                : _statusMessage;
-            ImGui.TextUnformatted(message);
-            return;
-        }
-
-        if (!_bridge.IsReady())
-        {
-            if (!string.IsNullOrEmpty(_statusMessage))
+            if (!OfficerPermissions.HasAccess(_config))
             {
-                ImGui.TextUnformatted(_statusMessage);
+                var message = string.IsNullOrEmpty(_statusMessage)
+                    ? NoOfficerAccessMessage
+                    : _statusMessage;
+                ImGui.TextUnformatted(message);
+                return;
             }
-            else
+
+            if (!_bridge.IsReady())
             {
-                ImGui.TextUnformatted("Link DemiCat…");
+                if (!string.IsNullOrEmpty(_statusMessage))
+                {
+                    ImGui.TextUnformatted(_statusMessage);
+                }
+                else
+                {
+                    ImGui.TextUnformatted("Link DemiCat…");
+                }
+                return;
             }
-            return;
+
+            if (!_subscribed)
+            {
+                Subscribe();
+            }
+
+            var showPresence = _presenceSidebar != null && _tokenManager.IsReady();
+            var childOpened = false;
+            if (showPresence)
+            {
+                _ = RoleCache.EnsureLoaded(_httpClient, _config, _tokenManager);
+                _presenceSidebar!.Draw(ref _presenceWidth);
+                ImGui.SameLine();
+                ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), false, ImGuiWindowFlags.None);
+                childOpened = true;
+            }
+
+            try
+            {
+                base.Draw();
+
+                // Reserved padded area beneath the standard chat input for upcoming officer tools.
+                ImGui.Dummy(new Vector2(0, ImGui.GetFrameHeightWithSpacing()));
+            }
+            finally
+            {
+                if (childOpened)
+                {
+                    ImGui.EndChild();
+                }
+            }
         }
-
-        if (!_subscribed)
+        catch (Exception ex)
         {
-            Subscribe();
-        }
-
-        var showPresence = _presenceSidebar != null && _tokenManager.IsReady();
-        if (showPresence)
-        {
-        _ = RoleCache.EnsureLoaded(_httpClient, _config, _tokenManager);
-            _presenceSidebar!.Draw(ref _presenceWidth);
-            ImGui.SameLine();
-            ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
-        }
-
-        base.Draw();
-
-        // Reserved padded area beneath the standard chat input for upcoming officer tools.
-        ImGui.Dummy(new Vector2(0, ImGui.GetFrameHeightWithSpacing()));
-
-        if (showPresence)
-        {
-            ImGui.EndChild();
+            try
+            {
+                PluginServices.Instance?.Log.Error(ex, "OfficerChatWindow.Draw()");
+            }
+            catch
+            {
+                // ignored
+            }
         }
     }
 

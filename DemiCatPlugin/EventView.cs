@@ -244,7 +244,7 @@ public class EventView : IDisposable
             childHeight = 0f;
         }
 
-        ImGui.BeginChild($"eventEmbed{dto.Id}", new Vector2(availWidth, childHeight), ImGuiChildFlags.None, ImGuiWindowFlags.None);
+        ImGui.BeginChild($"eventEmbed{dto.Id}", new Vector2(availWidth, childHeight), false, ImGuiWindowFlags.None);
 
         ImGui.Indent(indent);
         ImGui.Dummy(new Vector2(0f, verticalPadding));
@@ -722,7 +722,7 @@ public class EventView : IDisposable
 
 internal static class EventViewImGuiHelpers
 {
-    public static float BeginPreviewChild(string childId, ImGuiChildFlags childFlags = ImGuiChildFlags.None, float minHeight = 0f, ImGuiWindowFlags windowFlags = ImGuiWindowFlags.None)
+    public static float BeginPreviewChild(string childId, bool border = false, float minHeight = 0f, ImGuiWindowFlags windowFlags = ImGuiWindowFlags.None)
     {
         var avail = ImGui.GetContentRegionAvail();
         var width = float.IsFinite(avail.X) ? Math.Max(avail.X, 0f) : 0f;
@@ -734,7 +734,7 @@ internal static class EventViewImGuiHelpers
         }
 
         var size = new Vector2(width, height);
-        ImGui.BeginChild(childId, size, childFlags, windowFlags);
+        ImGui.BeginChild(childId, size, border, windowFlags);
         return size.Y;
     }
 }

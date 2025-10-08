@@ -33,6 +33,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     private readonly List<ChannelDto> _channels = new();
     private string[] _channelDisplayNames = Array.Empty<string>();
     private bool _channelsLoaded;
+    private bool _channelsFetchInFlight;
     private bool _channelFetchFailed;
     private string _channelErrorMessage = string.Empty;
     private int _selectedIndex;
@@ -900,7 +901,11 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
             if (!_channelsLoaded)
             {
-                _ = FetchChannels();
+                if (!_channelsFetchInFlight)
+                {
+                    _channelsFetchInFlight = true;
+                    _ = FetchChannels();
+                }
                 ImGui.TextUnformatted("Loading channels...");
                 return;
             }
@@ -1000,7 +1005,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
             _embedWarningShown = false;
 
-            ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+            ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), true, ImGuiWindowFlags.None);
             foreach (var view in embeds)
             {
                 view?.Draw();
@@ -1206,37 +1211,102 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     private async Task FetchChannels(bool refreshed = false)
     {
-        if (!_tokenManager.IsReady()) return;
-        if (!ApiHelpers.ValidateApiBaseUrl(_config))
-        {
-            PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                _channelFetchFailed = true;
-                _channelErrorMessage = "Invalid API URL";
-                _channelsLoaded = true;
-            });
-            return;
-        }
-
+        var resetFetchFlag = false;
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
-            ApiHelpers.AddAuthHeader(request, _tokenManager);
-            var response = await _httpClient.SendAsync(request);
-            if (response.StatusCode == HttpStatusCode.Unauthorized)
+            _channelsFetchInFlight = true;
+            resetFetchFlag = true;
+
+            if (!_tokenManager.IsReady()) return;
+            if (!ApiHelpers.ValidateApiBaseUrl(_config))
             {
-                var responseBody = await response.Content.ReadAsStringAsync();
+                PluginServices.Instance!.Log.Warning("Cannot fetch channels: API base URL is not configured.");
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Invalid API URL";
+                    _channelsLoaded = true;
+                });
+                return;
+            }
+
+            try
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels");
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
+                var response = await _httpClient.SendAsync(request);
+                if (response.StatusCode == HttpStatusCode.Unauthorized)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    PluginServices.Instance!.Log.Warning(
+                        $"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}. Clearing token");
+                    _tokenManager.Clear("Invalid API key");
+                    return;
+                }
+                if (response.StatusCode == HttpStatusCode.Forbidden)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    PluginServices.Instance!.Log.Warning(
+                        $"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}.");
+                    ShowPermissionToast();
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    {
+                        _channelFetchFailed = true;
+                        _channelErrorMessage = ForbiddenMessage;
+                        _channelsLoaded = true;
+                    });
+                    return;
+                }
+                if (!response.IsSuccessStatusCode)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                    _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                    {
+                        _channelFetchFailed = true;
+                        _channelErrorMessage = "Failed to load channels";
+                        _channelsLoaded = true;
+                    });
+                    return;
+                }
+                var stream = await response.Content.ReadAsStreamAsync();
+                var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
+                var eventChannels = (dto.Event ?? new List<ChannelDto>())
+                    .Where(c => c != null)
+                    .ToList();
+                foreach (var channel in eventChannels)
+                {
+                    channel.EnsureKind(ChannelKind.Event);
+                }
+                if (await ChannelNameResolver.Resolve(
+                        eventChannels,
+                        _httpClient,
+                        _config,
+                        refreshed,
+                        () => FetchChannels(true),
+                        _tokenManager))
+                {
+                    return;
+                }
+                ResetPermissionToast();
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    ApplyEventChannels(eventChannels);
+                });
+            }
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
+            {
                 PluginServices.Instance!.Log.Warning(
-                    $"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}. Clearing token");
+                    ex,
+                    "Failed to fetch channels due to authorization failure; clearing token");
                 _tokenManager.Clear("Invalid API key");
                 return;
             }
-            if (response.StatusCode == HttpStatusCode.Forbidden)
+            catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
             {
-                var responseBody = await response.Content.ReadAsStringAsync();
                 PluginServices.Instance!.Log.Warning(
-                    $"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}.");
+                    ex,
+                    "Failed to fetch channels due to forbidden response");
                 ShowPermissionToast();
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
@@ -1244,85 +1314,34 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                     _channelErrorMessage = ForbiddenMessage;
                     _channelsLoaded = true;
                 });
-                return;
             }
-            if (!response.IsSuccessStatusCode)
+            catch (HttpRequestException ex)
             {
-                var responseBody = await response.Content.ReadAsStringAsync();
-                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {response.StatusCode}. Response Body: {responseBody}");
+                PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
                 _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
                     _channelFetchFailed = true;
                     _channelErrorMessage = "Failed to load channels";
                     _channelsLoaded = true;
                 });
-                return;
             }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var dto = await JsonSerializer.DeserializeAsync<ChannelListDto>(stream) ?? new ChannelListDto();
-            var eventChannels = (dto.Event ?? new List<ChannelDto>())
-                .Where(c => c != null)
-                .ToList();
-            foreach (var channel in eventChannels)
+            catch (Exception ex)
             {
-                channel.EnsureKind(ChannelKind.Event);
+                PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                {
+                    _channelFetchFailed = true;
+                    _channelErrorMessage = "Failed to load channels";
+                    _channelsLoaded = true;
+                });
             }
-            if (await ChannelNameResolver.Resolve(
-                    eventChannels,
-                    _httpClient,
-                    _config,
-                    refreshed,
-                    () => FetchChannels(true),
-                    _tokenManager))
+        }
+        finally
+        {
+            if (resetFetchFlag)
             {
-                return;
+                _channelsFetchInFlight = false;
             }
-            ResetPermissionToast();
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                ApplyEventChannels(eventChannels);
-            });
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Unauthorized)
-        {
-            PluginServices.Instance!.Log.Warning(
-                ex,
-                "Failed to fetch channels due to authorization failure; clearing token");
-            _tokenManager.Clear("Invalid API key");
-            return;
-        }
-        catch (HttpRequestException ex) when (ex.StatusCode == HttpStatusCode.Forbidden)
-        {
-            PluginServices.Instance!.Log.Warning(
-                ex,
-                "Failed to fetch channels due to forbidden response");
-            ShowPermissionToast();
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                _channelFetchFailed = true;
-                _channelErrorMessage = ForbiddenMessage;
-                _channelsLoaded = true;
-            });
-        }
-        catch (HttpRequestException ex)
-        {
-            PluginServices.Instance!.Log.Warning($"Failed to fetch channels. Status: {ex.StatusCode}");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                _channelFetchFailed = true;
-                _channelErrorMessage = "Failed to load channels";
-                _channelsLoaded = true;
-            });
-        }
-        catch (Exception ex)
-        {
-            PluginServices.Instance!.Log.Error(ex, "Error fetching channels");
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                _channelFetchFailed = true;
-                _channelErrorMessage = "Failed to load channels";
-                _channelsLoaded = true;
-            });
         }
     }
 
