@@ -42,7 +42,7 @@ public static class EmbedPreviewRenderer
             avail = 400;
         }
 
-        ImGui.BeginChild($"embedprev{dto.Id}", new Vector2(avail, 0), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
+        ImGui.BeginChild($"embedprev{dto.Id}", new Vector2(avail, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
 
         ImGui.Indent(indent);
         ImGui.Dummy(new Vector2(0f, verticalPadding));

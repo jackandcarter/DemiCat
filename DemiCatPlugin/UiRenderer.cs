@@ -1005,7 +1005,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
             _embedWarningShown = false;
 
-            ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
+            ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
             foreach (var view in embeds)
             {
                 view?.Draw();

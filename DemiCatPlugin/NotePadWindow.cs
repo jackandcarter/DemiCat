@@ -101,7 +101,7 @@ public sealed class NotePadWindow : IDisposable
         var pageListWidth = Math.Clamp(region.X * ratio, 160f, Math.Max(160f, region.X - 200f));
         var editorWidth = Math.Max(200f, region.X - pageListWidth - splitterWidth);
 
-        ImGui.BeginChild("NotePadPageList", new Vector2(pageListWidth, region.Y), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
+        ImGui.BeginChild("NotePadPageList", new Vector2(pageListWidth, region.Y), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
         try
         {
             DrawPageList(selectedSection, selectedPage);
