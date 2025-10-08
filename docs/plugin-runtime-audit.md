@@ -18,7 +18,7 @@
 
 ## Alignment with Dalamud platform APIs
 - Dalamud v9 removed `IDalamudPluginInterface.CreateHttpClient()`, so the plugin now constructs a singleton `HttpClient` with a `SocketsHttpHandler` that opts into `HappyEyeballsCallback.ConnectAsync` for dual-stack connection attempts while keeping decompression, pooling, and timeout behavior consistent.【F:DemiCatPlugin/Plugin.cs†L115-L177】
-- Emoji font integration currently reflects into `Dalamud.Interface.ManagedFontAtlas`. Dalamud 9 introduced helper extensions through `IManagedFontAtlas`. Investigate whether those cover the current reflection usage to simplify upgrades when the managed atlas API changes.【F:DemiCatPlugin/Plugin.cs†L181-L352】
+- Emoji font integration previously reflected into `Dalamud.Interface.ManagedFontAtlas`. The plugin now probes both `FontAtlas` and `ManagedFontAtlas` properties on `IUiBuilder` and resolves the backing assembly from the atlas instance to remain compatible with Dalamud 13’s renamed APIs.【F:DemiCatPlugin/Plugin.cs†L585-L737】
 
 
 ## Tooling to stay on .NET 9.0.3 and Dalamud 13

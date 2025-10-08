@@ -608,7 +608,7 @@ public class Plugin : IDalamudPlugin
             }
 
             var fontSize = TryGetDefaultFontSize();
-            var managedFontAtlasAssembly = TryLoadManagedFontAtlasAssembly();
+            var managedFontAtlasAssembly = TryLoadManagedFontAtlasAssembly(atlas);
             if (managedFontAtlasAssembly == null)
             {
                 return null;
@@ -684,8 +684,18 @@ public class Plugin : IDalamudPlugin
 
     private object? TryGetManagedFontAtlas()
     {
-        var property = _uiBuilder.GetType().GetProperty("FontAtlas");
-        var atlas = property?.GetValue(_uiBuilder);
+        var builderType = _uiBuilder.GetType();
+        var property = builderType.GetProperty("FontAtlas")
+                       ?? builderType.GetProperty("ManagedFontAtlas");
+
+        if (property == null)
+        {
+            Services.Log.Info(
+                "Managed font atlas property not found on UiBuilder; skipping emoji font initialization.");
+            return null;
+        }
+
+        var atlas = property.GetValue(_uiBuilder);
         if (atlas == null)
         {
             Services.Log.Info("Managed font atlas not available; skipping emoji font initialization.");
@@ -696,7 +706,9 @@ public class Plugin : IDalamudPlugin
 
     private float TryGetDefaultFontSize()
     {
-        var property = _uiBuilder.GetType().GetProperty("FontDefaultSizePx");
+        var builderType = _uiBuilder.GetType();
+        var property = builderType.GetProperty("FontDefaultSizePx")
+                       ?? builderType.GetProperty("DefaultFontSizePx");
         var value = property?.GetValue(_uiBuilder);
         return value switch
         {
@@ -706,8 +718,21 @@ public class Plugin : IDalamudPlugin
         };
     }
 
-    private Assembly? TryLoadManagedFontAtlasAssembly()
+    private Assembly? TryLoadManagedFontAtlasAssembly(object atlas)
     {
+        try
+        {
+            var assembly = atlas.GetType().Assembly;
+            if (assembly != null)
+            {
+                return assembly;
+            }
+        }
+        catch (Exception ex)
+        {
+            Services.Log.Debug(ex, "Failed to resolve managed font atlas assembly from atlas instance.");
+        }
+
         var existing = AppDomain.CurrentDomain.GetAssemblies().FirstOrDefault(
             asm => string.Equals(asm.GetName().Name, ManagedFontAtlasAssemblyName, StringComparison.Ordinal));
         if (existing != null)
