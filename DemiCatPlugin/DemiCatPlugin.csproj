@@ -27,20 +27,12 @@
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
   </ItemGroup>
 
-  <!-- Prefer Dalamud's ImGui.NET if available -->
-  <ItemGroup Condition="Exists('$(DalamudLibPath)/ImGui.NET.dll')">
+  <!-- Always build against Dalamud's ImGui.NET to match the runtime -->
+  <ItemGroup>
     <Reference Include="ImGui.NET">
       <HintPath>$(DalamudLibPath)/ImGui.NET.dll</HintPath>
       <Private>false</Private>
     </Reference>
-  </ItemGroup>
-
-  <!-- Cross-OS fallback: compiler sees ImGui types, nothing gets shipped -->
-  <ItemGroup Condition="!Exists('$(DalamudLibPath)/ImGui.NET.dll')">
-    <PackageReference Include="ImGui.NET" Version="1.90.8.1">
-      <IncludeAssets>compile</IncludeAssets>
-      <PrivateAssets>all</PrivateAssets>
-    </PackageReference>
   </ItemGroup>
 
   <ItemGroup>

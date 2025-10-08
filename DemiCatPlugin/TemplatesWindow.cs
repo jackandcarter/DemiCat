@@ -177,7 +177,7 @@ public class TemplatesWindow
                 ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
             }
 
-            ImGui.BeginChild("TemplateList", new Vector2(150, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+            ImGui.BeginChild("TemplateList", new Vector2(150, 0), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
             try
             {
                 using var emojiFont = _emojiManager.PushEmojiFont();

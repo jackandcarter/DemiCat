@@ -1,11 +1,23 @@
 <Project>
   <PropertyGroup>
     <TargetFramework>net9.0-windows10.0.19041</TargetFramework>
-    <EnableWindowsTargeting Condition="'$(OS)' != 'Windows_NT'">true</EnableWindowsTargeting>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
     <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+    <!-- Resolve Dalamud dev hooks automatically if not provided -->
+    <DalamudLibPath Condition="'$(DalamudLibPath)'=='' and '$(OS)'=='Windows_NT'">
+      $(LOCALAPPDATA)\XIVLauncher\addon\Hooks\dev
+    </DalamudLibPath>
+    <!-- XIV on Mac / Linux -->
+    <DalamudLibPath Condition="'$(DalamudLibPath)'=='' and '$(OS)'!='Windows_NT'">
+      $(HOME)/.xlcore/dalamud/Hooks/dev
+    </DalamudLibPath>
   </PropertyGroup>
-  <PropertyGroup>
-    <DalamudLibPath>/root/.xlcore/dalamud/Hooks/dev</DalamudLibPath>
-  </PropertyGroup>
+
+  <!-- Fail fast if we can't find Dalamud's ImGui.NET -->
+  <Target Name="CheckDalamudLibs" BeforeTargets="Build"
+          Condition="!Exists('$(DalamudLibPath)/ImGui.NET.dll')">
+    <Error Text="ImGui.NET.dll not found in $(DalamudLibPath).
+Launch the game once and run Dalamud → Dev Tools → Scan Dev Plugins so Hooks/dev is populated, then rebuild." />
+  </Target>
 </Project>
