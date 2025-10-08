@@ -8,7 +8,7 @@ namespace ImGuiNET
     {
         public static bool BeginChild(string str_id, Vector2 size, bool border, ImGuiWindowFlags flags = ImGuiWindowFlags.None)
         {
-            var childFlags = border ? ImGuiChildFlags.Border : ImGuiChildFlags.None;
+            var childFlags = border ? ImGuiChildFlags.Borders : ImGuiChildFlags.None;
             return BeginChild(str_id, size, childFlags, flags);
         }
     }
