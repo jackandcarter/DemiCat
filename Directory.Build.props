@@ -12,11 +12,13 @@
     <DalamudLibPath Condition="'$(DalamudLibPath)'=='' and '$(OS)'!='Windows_NT'">
       $(HOME)/.xlcore/dalamud/Hooks/dev
     </DalamudLibPath>
+    <!-- Only projects that set this to true will enforce/check ImGui.NET -->
+    <RequiresDalamudImGui>false</RequiresDalamudImGui>
   </PropertyGroup>
 
-  <!-- Fail fast if we can't find Dalamud's ImGui.NET -->
+  <!-- Fail fast ONLY for projects that opt in -->
   <Target Name="CheckDalamudLibs" BeforeTargets="Build"
-          Condition="!Exists('$(DalamudLibPath)/ImGui.NET.dll')">
+          Condition="'$(RequiresDalamudImGui)'=='true' and !Exists('$(DalamudLibPath)/ImGui.NET.dll')">
     <Error Text="ImGui.NET.dll not found in $(DalamudLibPath).
 Launch the game once and run Dalamud → Dev Tools → Scan Dev Plugins so Hooks/dev is populated, then rebuild." />
   </Target>
