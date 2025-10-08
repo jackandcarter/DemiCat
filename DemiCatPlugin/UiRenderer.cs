@@ -933,7 +933,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             }
 
             {
-                using var _ = _emojiManager.PushEmojiFont();
+                using var emojiFontScope = _emojiManager.PushEmojiFont();
                 if (ImGui.Combo("Channel", ref comboIndex, channelNames, channelNames.Length))
                 {
                     if (comboIndex >= 0 && comboIndex < _channels.Count)
@@ -1005,7 +1005,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
             _embedWarningShown = false;
 
-            ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), true, ImGuiWindowFlags.None);
+            ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
             foreach (var view in embeds)
             {
                 view?.Draw();

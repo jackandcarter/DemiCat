@@ -80,7 +80,7 @@ public class FcChatWindow : ChatWindow
                 ImGui.SameLine();
             }
 
-            ImGui.BeginChild("##fcChat", ImGui.GetContentRegionAvail(), false, ImGuiWindowFlags.None);
+            ImGui.BeginChild("##fcChat", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
             try
             {
                 base.Draw();

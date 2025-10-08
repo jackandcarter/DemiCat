@@ -177,7 +177,7 @@ public class TemplatesWindow
                 ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
             }
 
-            ImGui.BeginChild("TemplateList", new Vector2(150, 0), true, ImGuiWindowFlags.None);
+            ImGui.BeginChild("TemplateList", new Vector2(150, 0), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
             try
             {
                 using var emojiFont = _emojiManager.PushEmojiFont();
@@ -198,7 +198,7 @@ public class TemplatesWindow
 
             ImGui.SameLine();
 
-            ImGui.BeginChild("TemplateContent", ImGui.GetContentRegionAvail(), false, ImGuiWindowFlags.None);
+            ImGui.BeginChild("TemplateContent", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
             try
             {
                 if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)

@@ -22,7 +22,6 @@ using Penumbra.Api.Enums;
 using Serilog;
 using Serilog.Events;
 using Dalamud.Interface.Utility;
-using Dalamud.Plugin.Services;
 using ImGuiInputTextCallbackData = ImGuiNET.ImGuiInputTextCallbackData;
 using ImGuiMouseCursor = ImGuiNET.ImGuiMouseCursor;
 
@@ -356,7 +355,7 @@ public class SyncshellWindow : IDisposable
                 _syncSettingsHeight = DefaultSyncSettingsHeight;
             maxSettingsHeight = MathF.Max(MinSyncSettingsHeight, maxSettingsHeight);
             _syncSettingsHeight = Math.Clamp(_syncSettingsHeight, MinSyncSettingsHeight, maxSettingsHeight);
-            ImGui.BeginChild("sync-settings", new Vector2(-1, _syncSettingsHeight), true, ImGuiWindowFlags.None);
+            ImGui.BeginChild("sync-settings", new Vector2(-1, _syncSettingsHeight), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
             try
             {
                 if (ImGui.BeginTabBar("syncshell-settings-tabs"))
@@ -525,7 +524,7 @@ public class SyncshellWindow : IDisposable
             var childHeight = 70f;
             if (asset.Kind == "BUNDLE" && asset.Items != null)
                 childHeight += ImGui.GetTextLineHeightWithSpacing() * asset.Items.Count;
-            ImGui.BeginChild("card", new Vector2(-1, childHeight), true, ImGuiWindowFlags.None);
+            ImGui.BeginChild("card", new Vector2(-1, childHeight), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
             ImGui.TextUnformatted(asset.Name);
             if (!_seenAssetIds.Contains(asset.Id))
             {
@@ -878,7 +877,7 @@ public class SyncshellWindow : IDisposable
     {
         var id = $"syncshell-panel-{label.Replace(' ', '-').ToLowerInvariant()}";
         var size = fillRemaining ? new Vector2(-1, 0f) : new Vector2(-1, height);
-        ImGui.BeginChild(id, size, true, ImGuiWindowFlags.None);
+        ImGui.BeginChild(id, size, ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
         ImGui.TextUnformatted(label);
         ImGui.Separator();
         content();
@@ -2882,7 +2881,7 @@ public class SyncshellWindow : IDisposable
                 }
                 catch (Exception ex)
                 {
-                    PluginServices.Instance?.Log.Warning("Failed to refresh SyncShell installations", ex);
+                    PluginServices.Instance?.Log.Warning(ex, "Failed to refresh SyncShell installations");
                 }
             }
             while (Interlocked.CompareExchange(ref _installationsRefreshRequested, 0, 1) == 1);
@@ -4580,7 +4579,7 @@ public class SyncshellWindow : IDisposable
         }
         catch (Exception ex)
         {
-            PluginServices.Instance?.Log.Warning("Failed to push SyncShell manifest", ex);
+            PluginServices.Instance?.Log.Warning(ex, "Failed to push SyncShell manifest");
             return false;
         }
     }
@@ -4677,7 +4676,7 @@ public class SyncshellWindow : IDisposable
         }
         catch (Exception ex)
         {
-            PluginServices.Instance?.Log.Warning("Failed to trim SyncShell cache", ex);
+            PluginServices.Instance?.Log.Warning(ex, "Failed to trim SyncShell cache");
         }
     }
 
@@ -4828,7 +4827,7 @@ public class SyncshellWindow : IDisposable
         }
         catch (Exception ex)
         {
-            PluginServices.Instance?.Log.Warning("Failed to stop SyncShell client", ex);
+            PluginServices.Instance?.Log.Warning(ex, "Failed to stop SyncShell client");
         }
         _syncClient.Dispose();
         if (PluginServices.Instance?.ProgressOverlay == _progressOverlay)

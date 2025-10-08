@@ -139,7 +139,7 @@ public sealed class EmojiPicker
         }
 
         var childSize = _gridHeight > 0f ? new Vector2(0, _gridHeight) : Vector2.Zero;
-        ImGui.BeginChild("##emoji_std_grid", childSize, false, ImGuiWindowFlags.None);
+        ImGui.BeginChild("##emoji_std_grid", childSize, ImGuiChildFlags.None, ImGuiWindowFlags.None);
         var avail = ImGui.GetContentRegionAvail().X;
         var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (_tileSize + 4f)));
         var column = 0;
@@ -155,7 +155,7 @@ public sealed class EmojiPicker
 
             var emoji = filtered[i];
             ImGui.PushID(i);
-            using var _ = _manager.PushEmojiFont();
+            using var emojiFontScope = _manager.PushEmojiFont();
             if (ImGui.Button(emoji.Emoji, new Vector2(_tileSize, _tileSize)))
             {
                 selected = EmojiFormatter.CreateUnicodeToken(emoji);
@@ -238,7 +238,7 @@ public sealed class EmojiPicker
         }
 
         var childSize = _gridHeight > 0f ? new Vector2(0, _gridHeight) : Vector2.Zero;
-        ImGui.BeginChild("##emoji_custom_grid", childSize, false, ImGuiWindowFlags.None);
+        ImGui.BeginChild("##emoji_custom_grid", childSize, ImGuiChildFlags.None, ImGuiWindowFlags.None);
         var avail = ImGui.GetContentRegionAvail().X;
         var columns = Math.Max(1, (int)Math.Floor((avail + 6f) / (_tileSize + 6f)));
         var column = 0;
