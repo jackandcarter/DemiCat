@@ -595,6 +595,8 @@ public class SyncshellWindow : IDisposable
         }
     }
 
+    }
+
     private static float CalculateMaxSyncSettingsHeight(float availableHeight, float splitterHeight)
     {
         if (!float.IsFinite(availableHeight) || availableHeight <= 0f)
