@@ -881,60 +881,71 @@ public class UiRenderer : IAsyncDisposable, IDisposable
 
     public void Draw()
     {
-        if (!_tokenManager.IsReady())
-        {
-            ImGui.TextUnformatted("Link DemiCat to view events");
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
             return;
-        }
 
-        if (!_config.Events)
+        try
         {
-            ImGui.TextUnformatted("Feature disabled");
-            return;
-        }
-
-        if (!_channelsLoaded)
-        {
-            _ = FetchChannels();
-            ImGui.TextUnformatted("Loading channels...");
-            return;
-        }
-
-        if (_channels.Count == 0)
-        {
-            ShowWarningOrToast(_channelFetchFailed ? _channelErrorMessage : "No channels available", ref _channelWarningShown);
-            return;
-        }
-
-        var channelNames = _channelDisplayNames;
-
-        if (channelNames.Length == 0)
-        {
-            ShowWarningOrToast(_channelFetchFailed ? _channelErrorMessage : "No channels available", ref _channelWarningShown);
-            return;
-        }
-
-        _channelWarningShown = false;
-
-        var comboIndex = _selectedIndex;
-        if (comboIndex < 0 || comboIndex >= channelNames.Length)
-        {
-            comboIndex = Math.Clamp(comboIndex, 0, channelNames.Length - 1);
-        }
-
-        {
-            using var emojiFont = _emojiManager.PushEmojiFont();
-            if (ImGui.Combo("Channel", ref comboIndex, channelNames, channelNames.Length))
+            if (!_tokenManager.IsReady())
             {
-                if (comboIndex >= 0 && comboIndex < _channels.Count)
+                ImGui.TextUnformatted("Link DemiCat to view events");
+                return;
+            }
+
+            if (!_config.Events)
+            {
+                ImGui.TextUnformatted("Feature disabled");
+                return;
+            }
+
+            if (!_channelsLoaded)
+            {
+                _ = FetchChannels();
+                ImGui.TextUnformatted("Loading channels...");
+                return;
+            }
+
+            if (_channels.Count == 0)
+            {
+                ShowWarningOrToast(_channelFetchFailed ? _channelErrorMessage : "No channels available", ref _channelWarningShown);
+                return;
+            }
+
+            var channelNames = _channelDisplayNames;
+
+            if (channelNames.Length == 0)
+            {
+                ShowWarningOrToast(_channelFetchFailed ? _channelErrorMessage : "No channels available", ref _channelWarningShown);
+                return;
+            }
+
+            _channelWarningShown = false;
+
+            var comboIndex = _selectedIndex;
+            if (comboIndex < 0 || comboIndex >= channelNames.Length)
+            {
+                comboIndex = Math.Clamp(comboIndex, 0, channelNames.Length - 1);
+            }
+
+            {
+                using var _ = _emojiManager.PushEmojiFont();
+                if (ImGui.Combo("Channel", ref comboIndex, channelNames, channelNames.Length))
                 {
-                    var selectedChannel = _channels[comboIndex];
-                    if (!string.IsNullOrEmpty(selectedChannel?.Id))
+                    if (comboIndex >= 0 && comboIndex < _channels.Count)
                     {
-                        _selectedIndex = comboIndex;
-                        _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, selectedChannel.Id);
-                        _ = RefreshChannels();
-                        _ = RefreshEmbeds();
+                        var selectedChannel = _channels[comboIndex];
+                        if (!string.IsNullOrEmpty(selectedChannel?.Id))
+                        {
+                            _selectedIndex = comboIndex;
+                            _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, selectedChannel.Id);
+                            _ = RefreshChannels();
+                            _ = RefreshEmbeds();
+                        }
+                        else
+                        {
+                            ShowWarningOrToast("Select a valid channel to view events.", ref _channelSelectionWarningShown);
+                            return;
+                        }
                     }
                     else
                     {
@@ -944,64 +955,70 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 }
                 else
                 {
-                    ShowWarningOrToast("Select a valid channel to view events.", ref _channelSelectionWarningShown);
-                    return;
+                    _selectedIndex = comboIndex;
                 }
             }
-            else
+
+            if (_selectedIndex < 0 || _selectedIndex >= _channels.Count)
             {
-                _selectedIndex = comboIndex;
+                ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
+                return;
+            }
+
+            var selected = _channels[_selectedIndex];
+            if (selected == null || string.IsNullOrEmpty(selected.Id))
+            {
+                ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
+                return;
+            }
+
+            var channelId = ChannelId;
+            var currentGuildId = ChannelKeyHelper.NormalizeGuildId(_config.GuildId);
+            if (string.IsNullOrWhiteSpace(channelId))
+            {
+                ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
+                return;
+            }
+
+            _channelSelectionWarningShown = false;
+
+            List<EventView> embeds;
+            lock (_embedLock)
+            {
+                embeds = _embeds.Values
+                    .Where(v => v != null
+                        && v.ChannelId == channelId
+                        && string.Equals(ChannelKeyHelper.NormalizeGuildId(v.GuildId), currentGuildId, StringComparison.Ordinal))
+                    .ToList();
+            }
+
+            if (_embedDtos.Count == 0 || embeds.Count == 0)
+            {
+                ShowWarningOrToast("No events to display.", ref _embedWarningShown);
+                return;
+            }
+
+            _embedWarningShown = false;
+
+            ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+            foreach (var view in embeds)
+            {
+                view?.Draw();
+            }
+
+            ImGui.EndChild();
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                PluginServices.Instance?.Log.Error(ex, "UiRenderer.Draw()");
+            }
+            catch
+            {
+                // ignored
             }
         }
-
-        if (_selectedIndex < 0 || _selectedIndex >= _channels.Count)
-        {
-            ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
-            return;
-        }
-
-        var selected = _channels[_selectedIndex];
-        if (selected == null || string.IsNullOrEmpty(selected.Id))
-        {
-            ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
-            return;
-        }
-
-        var channelId = ChannelId;
-        var currentGuildId = ChannelKeyHelper.NormalizeGuildId(_config.GuildId);
-        if (string.IsNullOrWhiteSpace(channelId))
-        {
-            ShowWarningOrToast("Select a channel to view events.", ref _channelSelectionWarningShown);
-            return;
-        }
-
-        _channelSelectionWarningShown = false;
-
-        List<EventView> embeds;
-        lock (_embedLock)
-        {
-            embeds = _embeds.Values
-                .Where(v => v != null
-                    && v.ChannelId == channelId
-                    && string.Equals(ChannelKeyHelper.NormalizeGuildId(v.GuildId), currentGuildId, StringComparison.Ordinal))
-                .ToList();
-        }
-
-        if (_embedDtos.Count == 0 || embeds.Count == 0)
-        {
-            ShowWarningOrToast("No events to display.", ref _embedWarningShown);
-            return;
-        }
-
-        _embedWarningShown = false;
-
-        ImGui.BeginChild("##eventScroll", ImGui.GetContentRegionAvail(), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
-        foreach (var view in embeds)
-        {
-            view?.Draw();
-        }
-
-        ImGui.EndChild();
     }
 
     private void ShowWarningOrToast(string message, ref bool toastShown)

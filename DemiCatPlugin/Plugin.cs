@@ -319,6 +319,11 @@ public class Plugin : IDalamudPlugin
     {
         EnsureInitializationAttempted();
         _log?.Info("Config open requested");
+        RequestSettingsOpen();
+    }
+
+    private void RequestSettingsOpen()
+    {
         if (_settings == null)
             return;
 
@@ -326,11 +331,10 @@ public class Plugin : IDalamudPlugin
         if (framework != null)
         {
             framework.RunOnTick(() => _settings!.IsOpen = true);
+            return;
         }
-        else
-        {
-            _settings.IsOpen = true;
-        }
+
+        _settings.IsOpen = true;
     }
 
     private void RegisterDeveloperWindow()
@@ -428,19 +432,13 @@ public class Plugin : IDalamudPlugin
 
         if (!_initialized)
         {
-            if (_settings != null)
-            {
-                _settings.IsOpen = true;
-            }
+            RequestSettingsOpen();
             return;
         }
 
         if (!_tokenManager.IsReady())
         {
-            if (_settings != null)
-            {
-                _settings.IsOpen = true;
-            }
+            RequestSettingsOpen();
             return;
         }
 
