@@ -99,7 +99,7 @@ public class RequestBoardWindow
                     {
                         ImGui.PushID(req.Id);
                         ImGui.PushStyleColor(ImGuiCol.ChildBg, UrgencyColor(req.Urgency));
-                        ImGui.BeginChild("card", new Vector2(-1, 0), true, ImGuiWindowFlags.None);
+                        ImGui.BeginChild("card", new Vector2(-1, 0), ImGuiChildFlags.Borders, ImGuiWindowFlags.None);
                         try
                         {
                             ImGui.TextUnformatted(req.Title);
