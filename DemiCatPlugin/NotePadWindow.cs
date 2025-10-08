@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
 using ImGuiNET;
+using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
@@ -67,6 +68,13 @@ public sealed class NotePadWindow : IDisposable
 
     public void Draw()
     {
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
+        {
+            return;
+        }
+
+        try
+        {
         HandleKeyboardShortcuts();
         HandleAutosave();
 
@@ -93,9 +101,15 @@ public sealed class NotePadWindow : IDisposable
         var pageListWidth = Math.Clamp(region.X * ratio, 160f, Math.Max(160f, region.X - 200f));
         var editorWidth = Math.Max(200f, region.X - pageListWidth - splitterWidth);
 
-        ImGui.BeginChild("NotePadPageList", new Vector2(pageListWidth, region.Y), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
-        DrawPageList(selectedSection, selectedPage);
-        ImGui.EndChild();
+        ImGui.BeginChild("NotePadPageList", new Vector2(pageListWidth, region.Y), true, ImGuiWindowFlags.None);
+        try
+        {
+            DrawPageList(selectedSection, selectedPage);
+        }
+        finally
+        {
+            ImGui.EndChild();
+        }
 
         ImGui.SameLine();
         ImGui.InvisibleButton("NotePadSplitter", new Vector2(splitterWidth, region.Y));
@@ -119,9 +133,15 @@ public sealed class NotePadWindow : IDisposable
         }
 
         ImGui.SameLine();
-        ImGui.BeginChild("NotePadEditor", new Vector2(editorWidth, region.Y), ImGuiChildFlags.None, ImGuiWindowFlags.None);
-        DrawEditor(selectedSection, selectedPage);
-        ImGui.EndChild();
+        ImGui.BeginChild("NotePadEditor", new Vector2(editorWidth, region.Y), false, ImGuiWindowFlags.None);
+        try
+        {
+            DrawEditor(selectedSection, selectedPage);
+        }
+        finally
+        {
+            ImGui.EndChild();
+        }
 
         if (_sectionOrderDirty)
         {
@@ -134,6 +154,18 @@ public sealed class NotePadWindow : IDisposable
             _pageOrderDirty = false;
             var order = selectedSection.Pages.Select(p => p.Id).ToList();
             _ = Task.Run(() => _service.ReorderPagesAsync(selectedSection.Id, order, CancellationToken.None));
+        }
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                PluginServices.Instance?.Log.Error(ex, "NotePadWindow.Draw()");
+            }
+            catch
+            {
+                // ignored
+            }
         }
     }
 

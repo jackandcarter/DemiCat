@@ -11,6 +11,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Globalization;
 using ImGuiNET;
+using Dalamud.Plugin.Services;
 using DiscordHelper;
 using DemiCat.UI;
 using DemiCatPlugin.Emoji;
@@ -127,97 +128,110 @@ public class TemplatesWindow
 
     public void Draw()
     {
-        if (!_config.Templates)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
-            ImGui.TextUnformatted("Feature disabled");
             return;
         }
 
-        if (!_tokenManager.IsReady())
+        try
         {
-            ImGui.TextUnformatted("Link DemiCat to manage templates");
-            return;
-        }
+            if (!_config.Templates)
+            {
+                ImGui.TextUnformatted("Feature disabled");
+                return;
+            }
 
-        if (!_rolesLoaded && !_rolesLoading)
-        {
-            _ = LoadRoles();
-        }
+            if (!_tokenManager.IsReady())
+            {
+                ImGui.TextUnformatted("Link DemiCat to manage templates");
+                return;
+            }
 
-        if (!_channelsLoaded && !_channelsLoading)
-        {
-            _ = FetchChannels();
-        }
-        if (!_templatesLoaded && !_templatesLoading)
-        {
-            _ = LoadTemplates();
-        }
-        if (_channels.Count > 0)
-        {
-            var channelNames = _channelDisplayNames;
+            if (!_rolesLoaded && !_rolesLoading)
+            {
+                _ = LoadRoles();
+            }
+
+            if (!_channelsLoaded && !_channelsLoading)
+            {
+                _ = FetchChannels();
+            }
+            if (!_templatesLoaded && !_templatesLoading)
+            {
+                _ = LoadTemplates();
+            }
+            if (_channels.Count > 0)
+            {
+                var channelNames = _channelDisplayNames;
+                {
+                    using var emojiFont = _emojiManager.PushEmojiFont();
+                    if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
+                    {
+                        var newId = _channels[_channelIndex].Id;
+                        _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
+                    }
+                }
+            }
+            else
+            {
+                ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
+            }
+
+            ImGui.BeginChild("TemplateList", new Vector2(150, 0), true, ImGuiWindowFlags.None);
+            try
             {
                 using var emojiFont = _emojiManager.PushEmojiFont();
-                if (ImGui.Combo("Channel", ref _channelIndex, channelNames, channelNames.Length))
+                for (var i = 0; i < _templates.Count; i++)
                 {
-                    var newId = _channels[_channelIndex].Id;
-                    _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
+                    var tmplItem = _templates[i];
+                    var name = tmplItem.Template.Name;
+                    if (ImGui.Selectable(name, _selectedIndex == i))
+                    {
+                        SelectTemplate(i, tmplItem.Template);
+                    }
                 }
             }
-        }
-        else
-        {
-            ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
-        }
-
-        ImGui.BeginChild("TemplateList", new Vector2(150, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
-        {
-            using var emojiFont = _emojiManager.PushEmojiFont();
-            for (var i = 0; i < _templates.Count; i++)
+            finally
             {
-                var tmplItem = _templates[i];
-                var name = tmplItem.Template.Name;
-                if (ImGui.Selectable(name, _selectedIndex == i))
-                {
-                    SelectTemplate(i, tmplItem.Template);
-                }
+                ImGui.EndChild();
             }
-        }
-        ImGui.EndChild();
 
-        ImGui.SameLine();
-
-        ImGui.BeginChild("TemplateContent", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
-        if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)
-        {
-            var tmpl = _templates[_selectedIndex].Template;
-            ImGui.TextUnformatted("Event Time");
-            if (_timePicker.Draw("TemplateTime", out var selectedTime))
-            {
-                ApplyTime(tmpl, selectedTime);
-            }
-            ImGui.Spacing();
-            if (ImGui.Button("Preview"))
-            {
-                OpenPreview(tmpl);
-            }
             ImGui.SameLine();
-            if (ImGui.Button("Post"))
-            {
-                _pendingTemplate = tmpl;
-                _confirmPost = true;
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("Delete"))
-            {
-                var id = _templates[_selectedIndex].Id;
-                _ = DeleteTemplate(id);
-            }
 
-            if (_rolesLoaded)
+            ImGui.BeginChild("TemplateContent", ImGui.GetContentRegionAvail(), false, ImGuiWindowFlags.None);
+            try
             {
-                if (_roles.Count > 0)
+                if (_selectedIndex >= 0 && _selectedIndex < _templates.Count)
                 {
-                    ImGui.Separator();
+                    var tmpl = _templates[_selectedIndex].Template;
+                    ImGui.TextUnformatted("Event Time");
+                    if (_timePicker.Draw("TemplateTime", out var selectedTime))
+                    {
+                        ApplyTime(tmpl, selectedTime);
+                    }
+                    ImGui.Spacing();
+                    if (ImGui.Button("Preview"))
+                    {
+                        OpenPreview(tmpl);
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("Post"))
+                    {
+                        _pendingTemplate = tmpl;
+                        _confirmPost = true;
+                    }
+                    ImGui.SameLine();
+                    if (ImGui.Button("Delete"))
+                    {
+                        var id = _templates[_selectedIndex].Id;
+                        _ = DeleteTemplate(id);
+                    }
+
+                    if (_rolesLoaded)
+                    {
+                        if (_roles.Count > 0)
+                        {
+                            ImGui.Separator();
                     ImGui.Text("Mention Roles");
                     {
                         using var emojiFont = _emojiManager.PushEmojiFont();
@@ -291,7 +305,10 @@ public class TemplatesWindow
         {
             ImGui.TextUnformatted("Select a template");
         }
-        ImGui.EndChild();
+            finally
+            {
+                ImGui.EndChild();
+            }
 
         if (!string.IsNullOrEmpty(_lastResult))
         {
@@ -315,6 +332,18 @@ public class TemplatesWindow
                 ImGui.EndChild();
             }
             ImGui.End();
+        }
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                PluginServices.Instance?.Log.Error(ex, "TemplatesWindow.Draw()");
+            }
+            catch
+            {
+                // ignored
+            }
         }
     }
 

@@ -22,6 +22,7 @@ using Penumbra.Api.Enums;
 using Serilog;
 using Serilog.Events;
 using Dalamud.Interface.Utility;
+using Dalamud.Plugin.Services;
 using ImGuiInputTextCallbackData = ImGuiNET.ImGuiInputTextCallbackData;
 using ImGuiMouseCursor = ImGuiNET.ImGuiMouseCursor;
 
@@ -292,78 +293,82 @@ public class SyncshellWindow : IDisposable
             return;
         }
 
-        if (!_config.FCSyncShell)
+        try
         {
-            const string message = "SyncShell is under development";
-            var size = ImGui.CalcTextSize(message);
-            var avail = ImGui.GetContentRegionAvail();
-            ImGui.SetCursorPos(new Vector2((avail.X - size.X) / 2, (avail.Y - size.Y) / 2));
-            ImGui.TextUnformatted(message);
-            return;
-        }
-
-        if (!_loading && (Volatile.Read(ref _needsRefresh) || DateTimeOffset.UtcNow - _lastRefresh > TimeSpan.FromMinutes(5)))
-            _ = Refresh();
-
-        if (Volatile.Read(ref _membershipRefreshInProgress) == 0)
-        {
-            var refreshAge = DateTimeOffset.UtcNow - _lastMembershipFetch;
-            if (Volatile.Read(ref _membershipNeedsRefresh) || refreshAge > TimeSpan.FromSeconds(45))
+            if (!_config.FCSyncShell)
             {
-                RequestMembershipRefresh();
+                const string message = "SyncShell is under development";
+                var size = ImGui.CalcTextSize(message);
+                var avail = ImGui.GetContentRegionAvail();
+                ImGui.SetCursorPos(new Vector2((avail.X - size.X) / 2, (avail.Y - size.Y) / 2));
+                ImGui.TextUnformatted(message);
+                return;
             }
-        }
 
-        if (_loading)
-        {
-            ImGui.TextUnformatted("Loading...");
-            return;
-        }
+            if (!_loading && (Volatile.Read(ref _needsRefresh) || DateTimeOffset.UtcNow - _lastRefresh > TimeSpan.FromMinutes(5)))
+                _ = Refresh();
 
-        if (_penumbraConflict != null)
-            ImGui.OpenPopup("Penumbra Conflict");
-        var openConflict = true;
-        if (_penumbraConflict != null && ImGui.BeginPopupModal("Penumbra Conflict", ref openConflict, ImGuiWindowFlags.AlwaysAutoResize))
-        {
-            ImGui.TextUnformatted($"Mod {_penumbraConflict.ModName} already exists. Use vault version or keep mine?");
-            if (ImGui.Button("Use vault version"))
+            if (Volatile.Read(ref _membershipRefreshInProgress) == 0)
             {
-                _penumbraConflict?.Tcs.TrySetResult(true);
-                _penumbraConflict = null;
+                var refreshAge = DateTimeOffset.UtcNow - _lastMembershipFetch;
+                if (Volatile.Read(ref _membershipNeedsRefresh) || refreshAge > TimeSpan.FromSeconds(45))
+                {
+                    RequestMembershipRefresh();
+                }
             }
-            ImGui.SameLine();
-            if (ImGui.Button("Keep mine"))
+
+            if (_loading)
+            {
+                ImGui.TextUnformatted("Loading...");
+                return;
+            }
+
+            if (_penumbraConflict != null)
+                ImGui.OpenPopup("Penumbra Conflict");
+            var openConflict = true;
+            if (_penumbraConflict != null && ImGui.BeginPopupModal("Penumbra Conflict", ref openConflict, ImGuiWindowFlags.AlwaysAutoResize))
+            {
+                ImGui.TextUnformatted($"Mod {_penumbraConflict.ModName} already exists. Use vault version or keep mine?");
+                if (ImGui.Button("Use vault version"))
+                {
+                    _penumbraConflict?.Tcs.TrySetResult(true);
+                    _penumbraConflict = null;
+                }
+                ImGui.SameLine();
+                if (ImGui.Button("Keep mine"))
+                {
+                    _penumbraConflict?.Tcs.TrySetResult(false);
+                    _penumbraConflict = null;
+                }
+                ImGui.EndPopup();
+            }
+            else if (_penumbraConflict != null && !openConflict)
             {
                 _penumbraConflict?.Tcs.TrySetResult(false);
                 _penumbraConflict = null;
             }
-            ImGui.EndPopup();
-        }
-        else if (_penumbraConflict != null && !openConflict)
-        {
-            _penumbraConflict?.Tcs.TrySetResult(false);
-            _penumbraConflict = null;
-        }
 
-        var style = ImGui.GetStyle();
-        var settingsSplitterHeight = Math.Max(4f, style.FramePadding.Y);
-        var totalAvailableHeight = ImGui.GetContentRegionAvail().Y;
-        var maxSettingsHeight = CalculateMaxSyncSettingsHeight(totalAvailableHeight, settingsSplitterHeight);
-        if (!float.IsFinite(_syncSettingsHeight) || _syncSettingsHeight <= 0f)
-            _syncSettingsHeight = DefaultSyncSettingsHeight;
-        maxSettingsHeight = MathF.Max(MinSyncSettingsHeight, maxSettingsHeight);
-        _syncSettingsHeight = Math.Clamp(_syncSettingsHeight, MinSyncSettingsHeight, maxSettingsHeight);
-        ImGui.BeginChild("sync-settings", new Vector2(-1, _syncSettingsHeight), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
-        if (ImGui.BeginTabBar("syncshell-settings-tabs"))
-        {
-            if (ImGui.BeginTabItem("Sync"))
+            var style = ImGui.GetStyle();
+            var settingsSplitterHeight = Math.Max(4f, style.FramePadding.Y);
+            var totalAvailableHeight = ImGui.GetContentRegionAvail().Y;
+            var maxSettingsHeight = CalculateMaxSyncSettingsHeight(totalAvailableHeight, settingsSplitterHeight);
+            if (!float.IsFinite(_syncSettingsHeight) || _syncSettingsHeight <= 0f)
+                _syncSettingsHeight = DefaultSyncSettingsHeight;
+            maxSettingsHeight = MathF.Max(MinSyncSettingsHeight, maxSettingsHeight);
+            _syncSettingsHeight = Math.Clamp(_syncSettingsHeight, MinSyncSettingsHeight, maxSettingsHeight);
+            ImGui.BeginChild("sync-settings", new Vector2(-1, _syncSettingsHeight), true, ImGuiWindowFlags.None);
+            try
             {
-                ImGui.TextUnformatted("Sync Settings");
-                var autoSync = _autoSyncAllUsers;
-                if (ImGui.Checkbox("Auto Sync to all Connected Users", ref autoSync))
+                if (ImGui.BeginTabBar("syncshell-settings-tabs"))
                 {
-                    SetSyncPreferences(autoSync, _manualSyncAllUsers, _manualSyncCustom);
-                }
+                    if (ImGui.BeginTabItem("Sync"))
+                    {
+                        ImGui.TextUnformatted("Sync Settings");
+                        var autoSync = _autoSyncAllUsers;
+                        if (ImGui.Checkbox("Auto Sync to all Connected Users", ref autoSync))
+                        {
+                            SetSyncPreferences(autoSync, _manualSyncAllUsers, _manualSyncCustom);
+                        }
 
         var manualAll = _manualSyncAllUsers;
         if (ImGui.Checkbox("Manual Sync (All Users)", ref manualAll))
@@ -457,10 +462,13 @@ public class SyncshellWindow : IDisposable
                 ImGui.EndTabItem();
             }
 
-            ImGui.EndTabBar();
-        }
-        ImGui.EndChild();
-
+                    ImGui.EndTabBar();
+                }
+            }
+            finally
+            {
+                ImGui.EndChild();
+            }
         var splitterWidth = ImGui.GetContentRegionAvail().X;
         if (splitterWidth <= 0f)
         {
@@ -514,7 +522,7 @@ public class SyncshellWindow : IDisposable
             var childHeight = 70f;
             if (asset.Kind == "BUNDLE" && asset.Items != null)
                 childHeight += ImGui.GetTextLineHeightWithSpacing() * asset.Items.Count;
-            ImGui.BeginChild("card", new Vector2(-1, childHeight), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+            ImGui.BeginChild("card", new Vector2(-1, childHeight), true, ImGuiWindowFlags.None);
             ImGui.TextUnformatted(asset.Name);
             if (!_seenAssetIds.Contains(asset.Id))
             {
@@ -572,6 +580,17 @@ public class SyncshellWindow : IDisposable
 
         if (saveSeen)
             PluginServices.Instance?.PluginInterface.SavePluginConfig(_config);
+    }
+    catch (Exception ex)
+    {
+        try
+        {
+            PluginServices.Instance?.Log.Error(ex, "SyncshellWindow.Draw()");
+        }
+        catch
+        {
+            // ignored
+        }
     }
 
     private static float CalculateMaxSyncSettingsHeight(float availableHeight, float splitterHeight)
@@ -854,7 +873,7 @@ public class SyncshellWindow : IDisposable
     {
         var id = $"syncshell-panel-{label.Replace(' ', '-').ToLowerInvariant()}";
         var size = fillRemaining ? new Vector2(-1, 0f) : new Vector2(-1, height);
-        ImGui.BeginChild(id, size, ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+        ImGui.BeginChild(id, size, true, ImGuiWindowFlags.None);
         ImGui.TextUnformatted(label);
         ImGui.Separator();
         content();

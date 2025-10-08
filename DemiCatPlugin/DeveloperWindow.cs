@@ -3,6 +3,7 @@ using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Interface.Windowing;
 using Dalamud.Plugin;
+using Dalamud.Plugin.Services;
 using ImGuiNET;
 
 namespace DemiCatPlugin;
@@ -45,19 +46,38 @@ public class DeveloperWindow : Window
 
     public override void Draw()
     {
-        ImGui.InputText("API Base URL", ref _apiBaseUrl, 256);
-        ImGui.InputText("WebSocket Path", ref _wsPath, 64);
-
-        if (ImGui.Button("Apply"))
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
-            ApplyApiBaseUrlChange(_apiBaseUrl);
+            return;
         }
 
-        ImGui.SameLine();
-
-        if (ImGui.Button("Reset to default"))
+        try
         {
-            ApplyApiBaseUrlChange(Config.DefaultApiBaseUrl);
+            ImGui.InputText("API Base URL", ref _apiBaseUrl, 256);
+            ImGui.InputText("WebSocket Path", ref _wsPath, 64);
+
+            if (ImGui.Button("Apply"))
+            {
+                ApplyApiBaseUrlChange(_apiBaseUrl);
+            }
+
+            ImGui.SameLine();
+
+            if (ImGui.Button("Reset to default"))
+            {
+                ApplyApiBaseUrlChange(Config.DefaultApiBaseUrl);
+            }
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                PluginServices.Instance?.Log.Error(ex, "DeveloperWindow.Draw()");
+            }
+            catch
+            {
+                // ignored
+            }
         }
     }
 

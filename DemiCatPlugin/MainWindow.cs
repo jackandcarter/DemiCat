@@ -241,13 +241,36 @@ public class MainWindow : Window, IDisposable
 
     public override void Draw()
     {
-        if (!_isTokenReady())
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
-            HandleUnlinkedState();
+            if (!_isTokenReady())
+            {
+                HandleUnlinkedState();
+            }
             return;
         }
 
-        DrawFeatures();
+        try
+        {
+            if (!_isTokenReady())
+            {
+                HandleUnlinkedState();
+                return;
+            }
+
+            DrawFeatures();
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                PluginServices.Instance?.Log.Error(ex, "MainWindow.Draw()");
+            }
+            catch
+            {
+                // ignored
+            }
+        }
     }
 
     internal void DrawFeatures()
@@ -314,16 +337,30 @@ public class MainWindow : Window, IDisposable
             ImGui.PushStyleColor(ImGuiCol.Border, Vector4.Zero);
 
             var open = true;
-            if (ImGui.Begin(DockWindowTitle, ref open, windowFlags))
+            var windowPos = Vector2.Zero;
+            try
             {
-                _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor, dockBgColor);
-                DrawDockContextMenu();
-            }
-            var windowPos = ImGui.GetWindowPos();
-            ImGui.End();
+                var beginOpen = ImGui.Begin(DockWindowTitle, ref open, windowFlags);
+                try
+                {
+                    if (beginOpen)
+                    {
+                        _ = DrawDockStrip(visibleFeatures, settingsItem, iconSize, spacing, separatorThickness, indicatorHeight, accentColor, dockBgColor);
+                        DrawDockContextMenu();
+                    }
 
-            ImGui.PopStyleColor(2);
-            ImGui.PopStyleVar(2);
+                    windowPos = ImGui.GetWindowPos();
+                }
+                finally
+                {
+                    ImGui.End();
+                }
+            }
+            finally
+            {
+                ImGui.PopStyleColor(2);
+                ImGui.PopStyleVar(2);
+            }
 
             if (!open)
             {

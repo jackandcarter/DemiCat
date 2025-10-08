@@ -129,34 +129,23 @@ public class SettingsWindow : Window, IDisposable
 
         try
         {
-            if (ImGui.BeginTabBar("SettingsTabs"))
+            if (!ServicesReady)
             {
-                if (!ServicesReady)
-                {
-                    ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Some services are still starting; features that depend on them are temporarily disabled.");
-                    ImGui.Separator();
-                }
-
-                if (ImGui.BeginTabItem("General"))
-                {
-                    DrawGeneralTab();
-                    ImGui.EndTabItem();
-                }
-
-                if (ImGui.BeginTabItem("Appearance"))
-                {
-                    DrawAppearanceTab();
-                    ImGui.EndTabItem();
-                }
-
-                if (ImGui.BeginTabItem("SyncShell Settings"))
-                {
-                    DrawSyncshellTab();
-                    ImGui.EndTabItem();
-                }
-
-                ImGui.EndTabBar();
+                ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Some services are still starting; features that depend on them are temporarily disabled.");
+                ImGui.Separator();
             }
+
+            DrawGeneralTab();
+
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            DrawAppearanceTab();
+
+            ImGui.Separator();
+            ImGui.Spacing();
+
+            DrawSyncshellTab();
         }
         catch (Exception ex)
         {

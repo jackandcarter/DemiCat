@@ -1,6 +1,7 @@
 using System;
 using System.Numerics;
 using ImGuiNET;
+using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
@@ -65,6 +66,9 @@ public abstract class DockableWindow
         if (!IsOpen)
             return;
 
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
+            return;
+
         if (InitialSize is { } initialSize)
         {
             var sanitizedSize = new Vector2(
@@ -75,47 +79,78 @@ public abstract class DockableWindow
 
         var open = IsOpen;
         var colorsPushed = 0;
-        _hasDrawnHeaderThisFrame = false;
-        if (UseThemedColors)
+        var pushedCornerRadius = false;
+        var pushedAlpha = false;
+        var beginCalled = false;
+        try
         {
-            colorsPushed = PushWindowThemeColors();
-        }
-
-        var pushedCornerRadius = TryPushWindowCornerRadius();
-        var pushedAlpha = TryPushWindowOpacityOverride(ComputeEffectiveOpacity());
-
-        if (ImGui.Begin(WindowTitle, ref open, WindowFlags))
-        {
-            if (SupportsFade && (ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows)
-                || ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows)
-                || ImGui.IsAnyItemActive()))
+            _hasDrawnHeaderThisFrame = false;
+            if (UseThemedColors)
             {
-                ResetFadeTimer();
+                colorsPushed = PushWindowThemeColors();
             }
 
-            DrawHeaderWithSettingsButton();
-            DrawContents();
-        }
-        ImGui.End();
+            pushedCornerRadius = TryPushWindowCornerRadius();
+            pushedAlpha = TryPushWindowOpacityOverride(ComputeEffectiveOpacity());
 
-        if (pushedAlpha)
-        {
-            ImGui.PopStyleVar();
-        }
+            var beginOpen = ImGui.Begin(WindowTitle, ref open, WindowFlags);
+            beginCalled = true;
+            try
+            {
+                if (beginOpen)
+                {
+                    if (SupportsFade && (ImGui.IsWindowHovered(ImGuiHoveredFlags.RootAndChildWindows)
+                        || ImGui.IsWindowFocused(ImGuiFocusedFlags.RootAndChildWindows)
+                        || ImGui.IsAnyItemActive()))
+                    {
+                        ResetFadeTimer();
+                    }
 
-        if (pushedCornerRadius)
-        {
-            ImGui.PopStyleVar();
+                    DrawHeaderWithSettingsButton();
+                    DrawContents();
+                }
+            }
+            finally
+            {
+                if (beginCalled)
+                {
+                    ImGui.End();
+                }
+            }
         }
-
-        if (UseThemedColors)
+        catch (Exception ex)
         {
-            ImGui.PopStyleColor(colorsPushed);
+            try
+            {
+                var typeName = GetType().Name;
+                PluginServices.Instance?.Log.Error(ex, $"{typeName}.Draw()");
+            }
+            catch
+            {
+                // ignored
+            }
         }
-
-        if (open != IsOpen)
+        finally
         {
-            IsOpen = open;
+            if (pushedAlpha)
+            {
+                ImGui.PopStyleVar();
+            }
+
+            if (pushedCornerRadius)
+            {
+                ImGui.PopStyleVar();
+            }
+
+            if (UseThemedColors && colorsPushed > 0)
+            {
+                ImGui.PopStyleColor(colorsPushed);
+            }
+
+            if (open != IsOpen)
+            {
+                IsOpen = open;
+            }
         }
     }
 

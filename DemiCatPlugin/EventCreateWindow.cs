@@ -13,6 +13,7 @@ using System.Collections.Generic;
 using System.Linq;
 using ImGuiNET;
 using Dalamud.Interface.ImGuiFileDialog;
+using Dalamud.Plugin.Services;
 using DiscordHelper;
 using DemiCat.UI;
 using DemiCatPlugin.Emoji;
@@ -129,57 +130,65 @@ public class EventCreateWindow
 
     public void Draw()
     {
-        if (!_tokenManager.IsReady())
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
-            ImGui.TextUnformatted("Link DemiCat to create events");
             return;
         }
 
-        if (!_config.Events)
+        try
         {
-            ImGui.TextUnformatted("Feature disabled");
-            return;
-        }
-
-        _imageFileDialog.Draw();
-        _thumbnailFileDialog.Draw();
-
-        var footer = ImGui.GetFrameHeightWithSpacing() * 2;
-        var avail = ImGui.GetContentRegionAvail();
-        ImGui.BeginChild("eventCreateScroll", new Vector2(avail.X, avail.Y - footer), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
-
-        if (!_channelsLoaded)
-        {
-            _ = RefreshChannels();
-        }
-        if (_channels.Count > 0)
-        {
-            var channelNames = _channelDisplayNames;
+            if (!_tokenManager.IsReady())
             {
-                using var emojiFont = _emojiManager.PushEmojiFont();
-                if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
-                {
-                    var newId = _channels[_selectedIndex].Id;
-                    _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
-                }
+                ImGui.TextUnformatted("Link DemiCat to create events");
+                return;
             }
-        }
-        else
-        {
-            ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
-        }
 
-        var style = ImGui.GetStyle();
-        var labelColumnWidth = ImGui.CalcTextSize("Thumbnail URL").X + style.ItemInnerSpacing.X * 2f;
-        if (!_rolesLoaded)
-        {
-            _ = LoadRoles();
-        }
+            if (!_config.Events)
+            {
+                ImGui.TextUnformatted("Feature disabled");
+                return;
+            }
 
-        if (ImGui.BeginTable("eventCreateForm", 2, ImGuiTableFlags.SizingStretchSame))
-        {
-            ImGui.TableSetupColumn("Label", ImGuiTableColumnFlags.WidthFixed, labelColumnWidth);
-            ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
+            _imageFileDialog.Draw();
+            _thumbnailFileDialog.Draw();
+
+            var footer = ImGui.GetFrameHeightWithSpacing() * 2;
+            var avail = ImGui.GetContentRegionAvail();
+            ImGui.BeginChild("eventCreateScroll", new Vector2(avail.X, avail.Y - footer), true, ImGuiWindowFlags.None);
+            try
+            {
+                if (!_channelsLoaded)
+                {
+                    _ = RefreshChannels();
+                }
+                if (_channels.Count > 0)
+                {
+                    var channelNames = _channelDisplayNames;
+                    {
+                        using var emojiFont = _emojiManager.PushEmojiFont();
+                        if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
+                        {
+                            var newId = _channels[_selectedIndex].Id;
+                            _channelSelection.SetChannel(ChannelKind.Event, _config.GuildId, newId);
+                        }
+                    }
+                }
+                else
+                {
+                    ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
+                }
+
+                var style = ImGui.GetStyle();
+                var labelColumnWidth = ImGui.CalcTextSize("Thumbnail URL").X + style.ItemInnerSpacing.X * 2f;
+                if (!_rolesLoaded)
+                {
+                    _ = LoadRoles();
+                }
+
+                if (ImGui.BeginTable("eventCreateForm", 2, ImGuiTableFlags.SizingStretchSame))
+                {
+                    ImGui.TableSetupColumn("Label", ImGuiTableColumnFlags.WidthFixed, labelColumnWidth);
+                    ImGui.TableSetupColumn("Value", ImGuiTableColumnFlags.WidthStretch);
 
             void DrawFormRow(string label, Action drawControl, bool alignLabel = true, bool setFullWidth = true)
             {
@@ -541,8 +550,11 @@ public class EventCreateWindow
         {
             ImGui.TextUnformatted(_lastResult);
         }
-
-        ImGui.EndChild();
+            }
+            finally
+            {
+                ImGui.EndChild();
+            }
 
         if (ImGui.Button("Create"))
         {
@@ -584,6 +596,18 @@ public class EventCreateWindow
             ImGui.EndPopup();
         }
         if (!_confirmCreate || !openConfirm) _confirmCreate = false;
+        }
+        catch (Exception ex)
+        {
+            try
+            {
+                PluginServices.Instance?.Log.Error(ex, "EventCreateWindow.Draw()");
+            }
+            catch
+            {
+                // ignored
+            }
+        }
     }
 
     private async Task LoadRoles()

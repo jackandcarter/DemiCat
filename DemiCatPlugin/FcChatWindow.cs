@@ -5,6 +5,7 @@ using ImGuiNET;
 using System.Numerics;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
+using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin;
 
@@ -52,29 +53,54 @@ public class FcChatWindow : ChatWindow
 
     public override void Draw()
     {
-        if (!_config.SyncedChat || !_config.EnableFcChat)
+        if (ImGui.GetCurrentContext() == IntPtr.Zero)
         {
-            ImGui.TextUnformatted("Feature disabled");
             return;
         }
 
-        if (!_tokenManager.IsReady())
+        try
         {
-            base.Draw();
-            return;
+            if (!_config.SyncedChat || !_config.EnableFcChat)
+            {
+                ImGui.TextUnformatted("Feature disabled");
+                return;
+            }
+
+            if (!_tokenManager.IsReady())
+            {
+                base.Draw();
+                return;
+            }
+
+            _ = RoleCache.EnsureLoaded(_httpClient, _config, _tokenManager);
+
+            if (_presenceSidebar != null)
+            {
+                _presenceSidebar.Draw(ref _presenceWidth);
+                ImGui.SameLine();
+            }
+
+            ImGui.BeginChild("##fcChat", ImGui.GetContentRegionAvail(), false, ImGuiWindowFlags.None);
+            try
+            {
+                base.Draw();
+            }
+            finally
+            {
+                ImGui.EndChild();
+            }
         }
-
-        _ = RoleCache.EnsureLoaded(_httpClient, _config, _tokenManager);
-
-        if (_presenceSidebar != null)
+        catch (Exception ex)
         {
-            _presenceSidebar.Draw(ref _presenceWidth);
-            ImGui.SameLine();
+            try
+            {
+                PluginServices.Instance?.Log.Error(ex, "FcChatWindow.Draw()");
+            }
+            catch
+            {
+                // ignored
+            }
         }
-
-        ImGui.BeginChild("##fcChat", ImGui.GetContentRegionAvail(), ImGuiChildFlags.None, ImGuiWindowFlags.None);
-        base.Draw();
-        ImGui.EndChild();
     }
 
     public override Task RefreshMessages()

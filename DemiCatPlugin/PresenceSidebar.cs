@@ -65,7 +65,7 @@ public class PresenceSidebar : IDisposable
             shouldReturn = true;
         }
 
-        ImGui.BeginChild("##presence", new Vector2(width, 0), ImGuiChildFlags.Border, ImGuiWindowFlags.None);
+        ImGui.BeginChild("##presence", new Vector2(width, 0), true, ImGuiWindowFlags.None);
 
         try
         {
