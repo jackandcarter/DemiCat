@@ -232,79 +232,83 @@ public class TemplatesWindow
                         if (_roles.Count > 0)
                         {
                             ImGui.Separator();
-                    ImGui.Text("Mention Roles");
-                    {
-                        using var emojiFont = _emojiManager.PushEmojiFont();
-                        foreach (var role in _roles)
-                        {
-                            var roleId = role.Id;
-                            var sel = _mentions.Contains(roleId);
-                            if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
+                            ImGui.Text("Mention Roles");
+                            using var emojiFont = _emojiManager.PushEmojiFont();
+                            foreach (var role in _roles)
                             {
-                                if (sel) _mentions.Add(roleId); else _mentions.Remove(roleId);
+                                var roleId = role.Id;
+                                var sel = _mentions.Contains(roleId);
+                                if (ImGui.Checkbox($"{role.Name}##role{role.Id}", ref sel))
+                                {
+                                    if (sel)
+                                        _mentions.Add(roleId);
+                                    else
+                                        _mentions.Remove(roleId);
+                                }
                             }
                         }
+                        else
+                        {
+                            var msg = _config.MentionRoleIds.Count > 0 && RoleCache.LastErrorMessage == null
+                                ? "No mentionable roles configured"
+                                : RoleCache.LastErrorMessage ?? "No roles available";
+                            ImGui.TextUnformatted(msg);
+                        }
+                    }
+
+                    ButtonRowsImGui.Draw(_buttonRows, "template-button-rows");
+                    if (_confirmPost)
+                        ImGui.OpenPopup("Confirm Template Post");
+                    var openConfirm = _confirmPost;
+                    if (_confirmPost && ImGui.BeginPopupModal("Confirm Template Post", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
+                    {
+                        var channelName = _channels.FirstOrDefault(c => c.Id == ChannelId)?.Name ?? ChannelId;
+                        using (var emojiFont = _emojiManager.PushEmojiFont())
+                        {
+                            ImGui.TextUnformatted($"Channel: {channelName}");
+                        }
+
+                        var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
+                        using (var emojiFont = _emojiManager.PushEmojiFont())
+                        {
+                            ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
+                        }
+
+                        var buttonsCount = _buttonRows.FlattenNonEmpty().Count();
+                        var canConfirm = !string.IsNullOrWhiteSpace(ChannelId)
+                            && DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl)
+                            && DiscordValidation.IsImageUrlAllowed(tmpl.ThumbnailUrl)
+                            && buttonsCount > 0;
+                        ImGui.BeginDisabled(!canConfirm);
+                        if (ImGui.Button("Confirm"))
+                        {
+                            if (_pendingTemplate != null)
+                                _ = PostTemplate(_pendingTemplate);
+                            _confirmPost = false;
+                            _pendingTemplate = null;
+                            ImGui.CloseCurrentPopup();
+                        }
+                        ImGui.EndDisabled();
+                        ImGui.SameLine();
+                        if (ImGui.Button("Cancel"))
+                        {
+                            _confirmPost = false;
+                            _pendingTemplate = null;
+                            ImGui.CloseCurrentPopup();
+                        }
+                        ImGui.EndPopup();
+                    }
+                    if (!_confirmPost || !openConfirm)
+                    {
+                        _confirmPost = false;
+                        _pendingTemplate = null;
                     }
                 }
                 else
                 {
-                    var msg = _config.MentionRoleIds.Count > 0 && RoleCache.LastErrorMessage == null
-                        ? "No mentionable roles configured"
-                        : RoleCache.LastErrorMessage ?? "No roles available";
-                    ImGui.TextUnformatted(msg);
+                    ImGui.TextUnformatted("Select a template");
                 }
             }
-
-            ButtonRowsImGui.Draw(_buttonRows, "template-button-rows");
-            if (_confirmPost)
-                ImGui.OpenPopup("Confirm Template Post");
-            var openConfirm = _confirmPost;
-            if (_confirmPost && ImGui.BeginPopupModal("Confirm Template Post", ref openConfirm, ImGuiWindowFlags.AlwaysAutoResize))
-            {
-            var channelName = _channels.FirstOrDefault(c => c.Id == ChannelId)?.Name ?? ChannelId;
-                {
-                    using var emojiFont = _emojiManager.PushEmojiFont();
-                    ImGui.TextUnformatted($"Channel: {channelName}");
-                }
-                var roleNames = _roles.Where(r => _mentions.Contains(r.Id)).Select(r => r.Name).ToList();
-                {
-                    using var emojiFont = _emojiManager.PushEmojiFont();
-                    ImGui.TextUnformatted("Roles: " + (roleNames.Count > 0 ? string.Join(", ", roleNames) : "None"));
-                }
-                var buttonsCount = _buttonRows.FlattenNonEmpty().Count();
-                bool canConfirm = !string.IsNullOrWhiteSpace(ChannelId)
-                    && DiscordValidation.IsImageUrlAllowed(tmpl.ImageUrl)
-                    && DiscordValidation.IsImageUrlAllowed(tmpl.ThumbnailUrl)
-                    && buttonsCount > 0;
-                ImGui.BeginDisabled(!canConfirm);
-                if (ImGui.Button("Confirm"))
-                {
-                    if (_pendingTemplate != null)
-                        _ = PostTemplate(_pendingTemplate);
-                    _confirmPost = false;
-                    _pendingTemplate = null;
-                    ImGui.CloseCurrentPopup();
-                }
-                ImGui.EndDisabled();
-                ImGui.SameLine();
-                if (ImGui.Button("Cancel"))
-                {
-                    _confirmPost = false;
-                    _pendingTemplate = null;
-                    ImGui.CloseCurrentPopup();
-                }
-                ImGui.EndPopup();
-            }
-            if (!_confirmPost || !openConfirm)
-            {
-                _confirmPost = false;
-                _pendingTemplate = null;
-            }
-        }
-        else
-        {
-            ImGui.TextUnformatted("Select a template");
-        }
             finally
             {
                 ImGui.EndChild();
