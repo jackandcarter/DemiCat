@@ -22,6 +22,7 @@ public class DiscordPresenceService : IDisposable
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly List<PresenceDto> _presences = new();
+    private readonly Dictionary<string, int> _indexById = new(StringComparer.Ordinal);
     private readonly SemaphoreSlim _resetGate = new(1, 1);
     private readonly object _refreshSync = new();
     private ClientWebSocket? _ws;
@@ -505,59 +506,99 @@ public class DiscordPresenceService : IDisposable
 
     internal void ApplyPresenceUpdate(PresenceDto dto)
     {
-        var idx = _presences.FindIndex(p => p.Id == dto.Id);
-        if (idx >= 0)
+        if (dto == null || string.IsNullOrWhiteSpace(dto.Id))
         {
-            var existing = _presences[idx];
-            _presences[idx] = MergePresence(existing, dto);
+            return;
+        }
+
+        if (_indexById.TryGetValue(dto.Id, out var idx))
+        {
+            MutatePresenceInPlace(_presences[idx], dto);
         }
         else
         {
-            _presences.Add(dto);
+            idx = _presences.FindIndex(p => string.Equals(p.Id, dto.Id, StringComparison.Ordinal));
+            if (idx >= 0)
+            {
+                MutatePresenceInPlace(_presences[idx], dto);
+                _indexById[dto.Id] = idx;
+            }
+            else
+            {
+                _presences.Add(dto);
+                _indexById[dto.Id] = _presences.Count - 1;
+            }
         }
     }
 
-    private static PresenceDto MergePresence(PresenceDto existing, PresenceDto dto)
+    private static void MutatePresenceInPlace(PresenceDto existing, PresenceDto dto)
     {
-        dto.AvatarUrl ??= existing.AvatarUrl;
-        dto.AvatarTexture ??= existing.AvatarTexture;
-        var existingBannerUrl = existing.BannerUrl;
-        if (string.IsNullOrWhiteSpace(dto.BannerUrl) && !string.IsNullOrWhiteSpace(existingBannerUrl))
+        if (!string.IsNullOrWhiteSpace(dto.AvatarUrl) &&
+            !string.Equals(dto.AvatarUrl, existing.AvatarUrl, StringComparison.Ordinal))
         {
-            dto.BannerUrl = existingBannerUrl;
+            existing.AvatarTexture = null;
         }
-        else if (!string.IsNullOrWhiteSpace(dto.BannerUrl) && !string.IsNullOrWhiteSpace(existingBannerUrl) &&
-                 !string.Equals(dto.BannerUrl, existingBannerUrl, StringComparison.Ordinal))
+
+        if (!string.IsNullOrWhiteSpace(dto.BannerUrl) &&
+            !string.Equals(dto.BannerUrl, existing.BannerUrl, StringComparison.Ordinal))
         {
-            dto.BannerTexture = null;
+            existing.BannerTexture = null;
         }
-        if (dto.BannerTexture == null && string.Equals(dto.BannerUrl, existingBannerUrl, StringComparison.Ordinal))
+
+        if (dto.AvatarUrl != null)
         {
-            dto.BannerTexture = existing.BannerTexture;
+            existing.AvatarUrl = dto.AvatarUrl;
         }
-        if (!dto.AccentColorValue.HasValue && existing.AccentColorValue.HasValue)
-            dto.AccentColorValue = existing.AccentColorValue;
-        if (dto.Roles.Count == 0)
-            dto.Roles = existing.Roles;
-        if (dto.RoleDetails.Count == 0 && existing.RoleDetails.Count > 0)
-            dto.RoleDetails = existing.RoleDetails;
-        if (string.IsNullOrWhiteSpace(dto.StatusText) && !string.IsNullOrWhiteSpace(existing.StatusText))
-            dto.StatusText = existing.StatusText;
-        return dto;
+
+        if (dto.BannerUrl != null)
+        {
+            existing.BannerUrl = dto.BannerUrl;
+        }
+
+        if (dto.AvatarTexture != null)
+        {
+            existing.AvatarTexture = dto.AvatarTexture;
+        }
+
+        if (dto.BannerTexture != null)
+        {
+            existing.BannerTexture = dto.BannerTexture;
+        }
+
+        if (dto.AccentColorValue.HasValue)
+        {
+            existing.AccentColorValue = dto.AccentColorValue;
+        }
+
+        if (dto.Roles.Count > 0)
+        {
+            existing.Roles = dto.Roles;
+        }
+
+        if (dto.RoleDetails.Count > 0)
+        {
+            existing.RoleDetails = dto.RoleDetails;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.StatusText))
+        {
+            existing.StatusText = dto.StatusText;
+        }
+
+        existing.Id = dto.Id;
+        existing.Name = dto.Name;
+        existing.Status = dto.Status;
     }
 
     private void ApplyPresenceSnapshot(List<PresenceDto> list)
     {
-        var existingById = new Dictionary<string, PresenceDto>(StringComparer.Ordinal);
-        foreach (var presence in _presences)
+        if (list == null)
         {
-            if (!string.IsNullOrWhiteSpace(presence?.Id))
-            {
-                existingById[presence.Id] = presence;
-            }
+            return;
         }
 
-        var updated = new List<PresenceDto>(list.Count);
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
         foreach (var dto in list)
         {
             if (dto == null || string.IsNullOrWhiteSpace(dto.Id))
@@ -565,24 +606,51 @@ public class DiscordPresenceService : IDisposable
                 continue;
             }
 
-            if (existingById.TryGetValue(dto.Id, out var existing))
+            if (_indexById.TryGetValue(dto.Id, out var idx))
             {
-                updated.Add(MergePresence(existing, dto));
-                existingById.Remove(dto.Id);
+                MutatePresenceInPlace(_presences[idx], dto);
+                seen.Add(dto.Id);
             }
             else
             {
-                updated.Add(dto);
+                idx = _presences.FindIndex(p => string.Equals(p.Id, dto.Id, StringComparison.Ordinal));
+                if (idx >= 0)
+                {
+                    MutatePresenceInPlace(_presences[idx], dto);
+                    seen.Add(dto.Id);
+                }
+                else
+                {
+                    _presences.Add(dto);
+                    seen.Add(dto.Id);
+                }
             }
         }
 
-        foreach (var leftover in existingById.Values)
+        for (var i = _presences.Count - 1; i >= 0; i--)
         {
-            DisposePresenceTextures(leftover);
+            var presence = _presences[i];
+            if (string.IsNullOrWhiteSpace(presence.Id) || !seen.Contains(presence.Id))
+            {
+                DisposePresenceTextures(presence);
+                _presences.RemoveAt(i);
+            }
         }
 
-        _presences.Clear();
-        _presences.AddRange(updated);
+        Reindex();
+    }
+
+    private void Reindex()
+    {
+        _indexById.Clear();
+        for (var i = 0; i < _presences.Count; i++)
+        {
+            var presence = _presences[i];
+            if (!string.IsNullOrWhiteSpace(presence.Id))
+            {
+                _indexById[presence.Id] = i;
+            }
+        }
     }
 
     private static void DisposePresenceTextures(PresenceDto presence)
@@ -636,6 +704,7 @@ public class DiscordPresenceService : IDisposable
         {
             DisposePresencesUnlocked(_presences);
             _presences.Clear();
+            _indexById.Clear();
             return;
         }
 
@@ -643,6 +712,7 @@ public class DiscordPresenceService : IDisposable
         {
             DisposePresencesUnlocked(_presences);
             _presences.Clear();
+            _indexById.Clear();
         });
     }
 
