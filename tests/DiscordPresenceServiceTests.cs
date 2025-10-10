@@ -393,6 +393,41 @@ public class DiscordPresenceServiceTests
     }
 
     [Fact]
+    public void ApplyPresenceUpdate_MutatesInPlace()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var field = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)field.GetValue(service)!;
+
+        var existing = new PresenceDto
+        {
+            Id = "99",
+            Name = "Old",
+            Status = "offline",
+            AvatarUrl = "https://example.com/avatar.png"
+        };
+        list.Add(existing);
+
+        var update = new PresenceDto
+        {
+            Id = "99",
+            Name = "New",
+            Status = "online"
+        };
+
+        service.ApplyPresenceUpdate(update);
+
+        Assert.Single(list);
+        Assert.Same(existing, list[0]);
+        Assert.Equal("New", existing.Name);
+        Assert.Equal("online", existing.Status);
+        Assert.Equal("https://example.com/avatar.png", existing.AvatarUrl);
+    }
+
+    [Fact]
     public void ApplyPresenceUpdate_NewBannerClearsOldTexture()
     {
         var config = new Config { ApiBaseUrl = "http://unit-test" };
@@ -426,6 +461,59 @@ public class DiscordPresenceServiceTests
         var updated = list[0];
         Assert.Equal("https://example.com/new.png", updated.BannerUrl);
         Assert.Null(updated.BannerTexture);
+    }
+
+    [Fact]
+    public void ApplyPresenceSnapshot_MutatesExistingEntriesAndRemovesMissing()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var listField = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)listField.GetValue(service)!;
+
+        var existing = new PresenceDto
+        {
+            Id = "alpha",
+            Name = "Original",
+            Status = "idle"
+        };
+        var toRemove = new PresenceDto
+        {
+            Id = "beta",
+            Name = "Remove",
+            Status = "offline"
+        };
+
+        list.Add(existing);
+        list.Add(toRemove);
+
+        var snapshot = new List<PresenceDto>
+        {
+            new()
+            {
+                Id = "alpha",
+                Name = "Updated",
+                Status = "online"
+            },
+            new()
+            {
+                Id = "gamma",
+                Name = "Added",
+                Status = "online"
+            }
+        };
+
+        var method = typeof(DiscordPresenceService).GetMethod("ApplyPresenceSnapshot", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        method.Invoke(service, new object?[] { snapshot });
+
+        Assert.Equal(2, list.Count);
+        Assert.Same(existing, list[0]);
+        Assert.Equal("Updated", existing.Name);
+        Assert.Equal("online", existing.Status);
+        Assert.DoesNotContain(list, p => p.Id == "beta");
+        Assert.Contains(list, p => p.Id == "gamma");
     }
 
     private static void ConfigurePluginServices(PluginServices services, IFramework framework, IPluginLog log)
