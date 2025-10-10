@@ -3672,7 +3672,7 @@ public class ChatWindow : IDisposable
     private void HandleBridgeLinked()
     {
         _presence?.Reload();
-        _ = _presence?.Refresh();
+        _ = _presence?.Refresh(force: true);
         TrySubscribeCurrentChannel(force: true, refreshMessages: false);
     }
 

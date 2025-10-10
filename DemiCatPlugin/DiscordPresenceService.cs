@@ -23,6 +23,7 @@ public class DiscordPresenceService : IDisposable
     private readonly HttpClient _httpClient;
     private readonly List<PresenceDto> _presences = new();
     private readonly SemaphoreSlim _resetGate = new(1, 1);
+    private readonly object _refreshSync = new();
     private ClientWebSocket? _ws;
     private Task? _wsTask;
     private CancellationTokenSource? _wsCts;
@@ -32,7 +33,12 @@ public class DiscordPresenceService : IDisposable
     private int _retryAttempt;
     private string? _lastErrorSignature;
     private DateTime _lastErrorLog;
+    private Task<RefreshOutcome>? _refreshTask;
+    private DateTime _nextRefreshAllowed = DateTime.MinValue;
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan RefreshSuccessCooldown = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan RefreshFailureCooldown = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan RefreshRateLimitFallback = TimeSpan.FromSeconds(20);
     private const string InvalidApiStatus = "Invalid API URL";
     private const string ApiKeyMissingStatus = "API key not configured";
     private const string PluginDisabledStatus = "Plugin disabled";
@@ -58,7 +64,8 @@ public class DiscordPresenceService : IDisposable
     public void Reload()
     {
         _loaded = false;
-        _presences.Clear();
+        _nextRefreshAllowed = DateTime.MinValue;
+        DisposeAllPresences();
     }
 
     /// <summary>
@@ -131,6 +138,8 @@ public class DiscordPresenceService : IDisposable
 
         var socket = Interlocked.Exchange(ref _ws, null);
         socket?.Dispose();
+
+        DisposeAllPresences();
     }
 
     public void Dispose()
@@ -141,46 +150,147 @@ public class DiscordPresenceService : IDisposable
 
         var socket = Interlocked.Exchange(ref _ws, null);
         socket?.Dispose();
+
+        DisposeAllPresences();
     }
 
-    public async Task Refresh()
+    public Task Refresh(bool force = false)
+    {
+        lock (_refreshSync)
+        {
+            if (_refreshTask != null)
+            {
+                return _refreshTask;
+            }
+
+            if (!force)
+            {
+                if (DateTime.UtcNow < _nextRefreshAllowed)
+                {
+                    return Task.CompletedTask;
+                }
+            }
+
+            var task = RefreshInternalAsync();
+            _refreshTask = task;
+
+            if (task.IsCompleted)
+            {
+                FinalizeRefreshTask(task);
+            }
+            else
+            {
+                task.ContinueWith(FinalizeRefreshTask, TaskScheduler.Default);
+            }
+
+            return task;
+        }
+    }
+
+    private async Task<RefreshOutcome> RefreshInternalAsync()
     {
         if (!ApiHelpers.ValidateApiBaseUrl(_config))
         {
             PluginServices.Instance!.Log.Warning("Cannot refresh presences: API base URL is not configured.");
             UpdateStatusMessage(InvalidApiStatus);
-            return;
+            return RefreshOutcome.Failure(RefreshFailureCooldown);
         }
 
         if (TokenManager.Instance?.IsReady() != true)
         {
             PluginServices.Instance!.Log.Warning("Cannot refresh presences: API key is not configured.");
             UpdateStatusMessage(ApiKeyMissingStatus);
-            return;
+            return RefreshOutcome.Failure(RefreshFailureCooldown);
         }
 
         try
         {
             var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
-            var response = await _httpClient.SendAsync(request);
+            using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
+            if (response.StatusCode == (HttpStatusCode)429)
+            {
+                var delay = ParseRetryAfter(response) ?? RefreshRateLimitFallback;
+                UpdateStatusMessage($"Rate limited. Retrying in {delay.TotalSeconds:0.#}s...");
+                return RefreshOutcome.Failure(delay);
+            }
+
             if (!response.IsSuccessStatusCode)
             {
-                return;
+                UpdateStatusMessage($"Presence refresh failed ({(int)response.StatusCode})");
+                return RefreshOutcome.Failure(RefreshFailureCooldown);
             }
-            var stream = await response.Content.ReadAsStreamAsync();
-            var list = await JsonSerializer.DeserializeAsync<List<PresenceDto>>(stream) ?? new List<PresenceDto>();
+
+            var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+            var list = await JsonSerializer.DeserializeAsync<List<PresenceDto>>(stream).ConfigureAwait(false) ?? new List<PresenceDto>();
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
+                DisposePresencesUnlocked(_presences);
                 _presences.Clear();
                 _presences.AddRange(list);
             });
             _loaded = true;
+            UpdateStatusMessage(string.Empty);
+            return RefreshOutcome.Success(RefreshSuccessCooldown);
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            PluginServices.Instance?.Log.Debug("presence.refresh", ex);
+            UpdateStatusMessage("Presence refresh failed");
+            return RefreshOutcome.Failure(RefreshFailureCooldown);
         }
+    }
+
+    private void FinalizeRefreshTask(Task<RefreshOutcome> task)
+    {
+        RefreshOutcome outcome;
+
+        if (task.IsFaulted)
+        {
+            outcome = RefreshOutcome.Failure(RefreshFailureCooldown);
+        }
+        else if (task.IsCanceled)
+        {
+            outcome = RefreshOutcome.Failure(RefreshFailureCooldown);
+        }
+        else
+        {
+            outcome = task.Result;
+        }
+
+        lock (_refreshSync)
+        {
+            if (ReferenceEquals(_refreshTask, task))
+            {
+                _refreshTask = null;
+                var delay = outcome.Delay;
+                _nextRefreshAllowed = DateTime.UtcNow + delay;
+            }
+        }
+    }
+
+    private static TimeSpan? ParseRetryAfter(HttpResponseMessage response)
+    {
+        if (response.Headers.TryGetValues("Retry-After", out var values))
+        {
+            foreach (var value in values)
+            {
+                if (double.TryParse(value, out var seconds) && seconds > 0)
+                {
+                    return TimeSpan.FromSeconds(seconds);
+                }
+                if (DateTimeOffset.TryParse(value, out var retryTime))
+                {
+                    var delta = retryTime - DateTimeOffset.UtcNow;
+                    if (delta > TimeSpan.Zero)
+                    {
+                        return delta;
+                    }
+                }
+            }
+        }
+
+        return null;
     }
 
     private async Task RunWebSocket(CancellationToken token)
@@ -262,7 +372,7 @@ public class DiscordPresenceService : IDisposable
                 _retryAttempt = 0;
                 hadTransportError = false;
                 _loaded = false;
-                await Refresh().ConfigureAwait(false);
+                await Refresh(force: true).ConfigureAwait(false);
                 UpdateStatusMessage(string.Empty);
 
                 await ReceiveLoopAsync(socket, token).ConfigureAwait(false);
@@ -431,6 +541,82 @@ public class DiscordPresenceService : IDisposable
         {
             _presences.Add(dto);
         }
+    }
+
+    private static void DisposePresenceTextures(PresenceDto presence)
+    {
+        try
+        {
+            if (presence.AvatarTexture?.GetWrapOrEmpty() is IDisposable avatar)
+            {
+                avatar.Dispose();
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            presence.AvatarTexture = null;
+        }
+
+        try
+        {
+            if (presence.BannerTexture?.GetWrapOrEmpty() is IDisposable banner)
+            {
+                banner.Dispose();
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            presence.BannerTexture = null;
+        }
+    }
+
+    private void DisposePresencesUnlocked(IEnumerable<PresenceDto> presences)
+    {
+        foreach (var presence in presences)
+        {
+            if (presence != null)
+            {
+                DisposePresenceTextures(presence);
+            }
+        }
+    }
+
+    private void DisposeAllPresences()
+    {
+        var framework = PluginServices.Instance?.Framework;
+        if (framework == null)
+        {
+            DisposePresencesUnlocked(_presences);
+            _presences.Clear();
+            return;
+        }
+
+        framework.RunOnTick(() =>
+        {
+            DisposePresencesUnlocked(_presences);
+            _presences.Clear();
+        });
+    }
+
+    private readonly struct RefreshOutcome
+    {
+        public RefreshOutcome(bool success, TimeSpan delay)
+        {
+            Success = success;
+            Delay = delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
+        }
+
+        public bool Success { get; }
+        public TimeSpan Delay { get; }
+
+        public static RefreshOutcome Success(TimeSpan delay) => new(true, delay);
+        public static RefreshOutcome Failure(TimeSpan delay) => new(false, delay);
     }
 
     private void HandleConnectionException(Exception ex)
