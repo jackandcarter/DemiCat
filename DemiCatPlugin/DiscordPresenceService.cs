@@ -608,11 +608,11 @@ public class DiscordPresenceService : IDisposable
     {
         public RefreshOutcome(bool success, TimeSpan delay)
         {
-            Success = success;
+            Succeeded = success;
             Delay = delay > TimeSpan.Zero ? delay : TimeSpan.Zero;
         }
 
-        public bool Success { get; }
+        public bool Succeeded { get; }
         public TimeSpan Delay { get; }
 
         public static RefreshOutcome Success(TimeSpan delay) => new(true, delay);
