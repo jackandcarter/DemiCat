@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import logging
 import os
-from types import SimpleNamespace
 from typing import Any
 
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 
 from ..db.session import get_session
-from .deps import RequestContext, api_key_auth
+from .deps import RequestContext
 from .routes import syncshell as syncshell_routes
+from .ws_common import authenticate_websocket
 
 
 LOGGER = logging.getLogger(__name__)
@@ -17,17 +17,6 @@ LOGGER = logging.getLogger(__name__)
 DEFAULT_LIMITS = syncshell_routes.DEFAULT_TRANSFER_LIMITS
 
 HELLO_MESSAGE = {"type": "hello", "payload": {"version": 1, "limits": DEFAULT_LIMITS}}
-
-
-def _ws_request(ws: WebSocket) -> SimpleNamespace:
-    client_host = getattr(getattr(ws, "client", None), "host", "unknown")
-    return SimpleNamespace(
-        client=SimpleNamespace(host=client_host),
-        method="WS",
-        url=SimpleNamespace(path=ws.scope.get("path", "")),
-    )
-
-
 async def _handle_manifest_message(
     websocket: WebSocket, ctx: RequestContext, payload: dict[str, Any]
 ) -> bool:
@@ -92,31 +81,18 @@ def _extract_payload(message: dict[str, Any]) -> dict[str, Any]:
 
 async def websocket_endpoint_syncshell(websocket: WebSocket) -> None:
     path = websocket.scope.get("path", "")
-    token = websocket.headers.get("X-Api-Key")
-    if websocket.query_params.get("token"):
-        LOGGER.warning("WS %s closing with 1008: token in url", path)
-        await websocket.close(code=1008, reason="token in url")
-        return
-    if not token:
-        LOGGER.warning("WS %s closing with 1008: missing token", path)
-        await websocket.close(code=1008, reason="missing token")
-        return
-
     try:
-        async with get_session() as db:
-            ctx = await api_key_auth(
-                _ws_request(websocket),
-                x_api_key=token,
-                x_discord_id=None,
-                db=db,
-            )
-    except HTTPException as exc:
-        LOGGER.warning("WS %s auth failed (%s): %s", path, exc.status_code, exc.detail)
-        await websocket.close(code=1008, reason="auth failed")
-        return
+        ctx = await authenticate_websocket(
+            websocket,
+            logger=LOGGER,
+            session_factory=get_session,
+        )
     except Exception:  # pragma: no cover - defensive logging
         LOGGER.exception("WS %s unexpected auth failure", path)
         await websocket.close(code=1011, reason="internal error")
+        return
+
+    if ctx is None:
         return
 
     await websocket.accept()
