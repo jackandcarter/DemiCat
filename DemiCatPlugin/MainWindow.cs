@@ -26,7 +26,6 @@ public class MainWindow : IDisposable
     private readonly EmojiManager _emojiManager;
     private SyncshellWindow? _syncshell;
     private bool _syncshellEnabled;
-    private bool _templatesTabActive;
     private readonly HttpClient _httpClient;
     private const float FadeAlphaTolerance = 0.001f;
     private const float MinimumFadeDuration = 0.001f;
@@ -636,17 +635,9 @@ public class MainWindow : IDisposable
 
         _windowStates[id] = open;
 
-        if (id == DockIds.Templates)
+        if (id == DockIds.Templates && open)
         {
-            if (open)
-            {
-                _templatesTabActive = true;
-                _templates.OnTabActivated();
-            }
-            else
-            {
-                _templatesTabActive = false;
-            }
+            _templates.OnTabActivated();
         }
 
         if (!open && (id == DockIds.Chat || id == DockIds.Officer))
@@ -668,11 +659,6 @@ public class MainWindow : IDisposable
         }
 
         _windowStates[id] = false;
-
-        if (id == DockIds.Templates)
-        {
-            _templatesTabActive = false;
-        }
 
         if (id == DockIds.Chat || id == DockIds.Officer)
         {
