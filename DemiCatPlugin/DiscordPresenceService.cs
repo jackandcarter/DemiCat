@@ -225,9 +225,7 @@ public class DiscordPresenceService : IDisposable
             var list = await JsonSerializer.DeserializeAsync<List<PresenceDto>>(stream).ConfigureAwait(false) ?? new List<PresenceDto>();
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
-                DisposePresencesUnlocked(_presences);
-                _presences.Clear();
-                _presences.AddRange(list);
+                ApplyPresenceSnapshot(list);
             });
             _loaded = true;
             UpdateStatusMessage(string.Empty);
@@ -511,36 +509,80 @@ public class DiscordPresenceService : IDisposable
         if (idx >= 0)
         {
             var existing = _presences[idx];
-            dto.AvatarUrl ??= existing.AvatarUrl;
-            dto.AvatarTexture ??= existing.AvatarTexture;
-            var existingBannerUrl = existing.BannerUrl;
-            if (string.IsNullOrWhiteSpace(dto.BannerUrl) && !string.IsNullOrWhiteSpace(existingBannerUrl))
-            {
-                dto.BannerUrl = existingBannerUrl;
-            }
-            else if (!string.IsNullOrWhiteSpace(dto.BannerUrl) && !string.IsNullOrWhiteSpace(existingBannerUrl) &&
-                     !string.Equals(dto.BannerUrl, existingBannerUrl, StringComparison.Ordinal))
-            {
-                dto.BannerTexture = null;
-            }
-            if (dto.BannerTexture == null && string.Equals(dto.BannerUrl, existingBannerUrl, StringComparison.Ordinal))
-            {
-                dto.BannerTexture = existing.BannerTexture;
-            }
-            if (!dto.AccentColorValue.HasValue && existing.AccentColorValue.HasValue)
-                dto.AccentColorValue = existing.AccentColorValue;
-            if (dto.Roles.Count == 0)
-                dto.Roles = existing.Roles;
-            if (dto.RoleDetails.Count == 0 && existing.RoleDetails.Count > 0)
-                dto.RoleDetails = existing.RoleDetails;
-            if (string.IsNullOrWhiteSpace(dto.StatusText) && !string.IsNullOrWhiteSpace(existing.StatusText))
-                dto.StatusText = existing.StatusText;
-            _presences[idx] = dto;
+            _presences[idx] = MergePresence(existing, dto);
         }
         else
         {
             _presences.Add(dto);
         }
+    }
+
+    private static PresenceDto MergePresence(PresenceDto existing, PresenceDto dto)
+    {
+        dto.AvatarUrl ??= existing.AvatarUrl;
+        dto.AvatarTexture ??= existing.AvatarTexture;
+        var existingBannerUrl = existing.BannerUrl;
+        if (string.IsNullOrWhiteSpace(dto.BannerUrl) && !string.IsNullOrWhiteSpace(existingBannerUrl))
+        {
+            dto.BannerUrl = existingBannerUrl;
+        }
+        else if (!string.IsNullOrWhiteSpace(dto.BannerUrl) && !string.IsNullOrWhiteSpace(existingBannerUrl) &&
+                 !string.Equals(dto.BannerUrl, existingBannerUrl, StringComparison.Ordinal))
+        {
+            dto.BannerTexture = null;
+        }
+        if (dto.BannerTexture == null && string.Equals(dto.BannerUrl, existingBannerUrl, StringComparison.Ordinal))
+        {
+            dto.BannerTexture = existing.BannerTexture;
+        }
+        if (!dto.AccentColorValue.HasValue && existing.AccentColorValue.HasValue)
+            dto.AccentColorValue = existing.AccentColorValue;
+        if (dto.Roles.Count == 0)
+            dto.Roles = existing.Roles;
+        if (dto.RoleDetails.Count == 0 && existing.RoleDetails.Count > 0)
+            dto.RoleDetails = existing.RoleDetails;
+        if (string.IsNullOrWhiteSpace(dto.StatusText) && !string.IsNullOrWhiteSpace(existing.StatusText))
+            dto.StatusText = existing.StatusText;
+        return dto;
+    }
+
+    private void ApplyPresenceSnapshot(List<PresenceDto> list)
+    {
+        var existingById = new Dictionary<string, PresenceDto>(StringComparer.Ordinal);
+        foreach (var presence in _presences)
+        {
+            if (!string.IsNullOrWhiteSpace(presence?.Id))
+            {
+                existingById[presence.Id] = presence;
+            }
+        }
+
+        var updated = new List<PresenceDto>(list.Count);
+        foreach (var dto in list)
+        {
+            if (dto == null || string.IsNullOrWhiteSpace(dto.Id))
+            {
+                continue;
+            }
+
+            if (existingById.TryGetValue(dto.Id, out var existing))
+            {
+                updated.Add(MergePresence(existing, dto));
+                existingById.Remove(dto.Id);
+            }
+            else
+            {
+                updated.Add(dto);
+            }
+        }
+
+        foreach (var leftover in existingById.Values)
+        {
+            DisposePresenceTextures(leftover);
+        }
+
+        _presences.Clear();
+        _presences.AddRange(updated);
     }
 
     private static void DisposePresenceTextures(PresenceDto presence)
