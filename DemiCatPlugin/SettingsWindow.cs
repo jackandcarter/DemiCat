@@ -81,6 +81,12 @@ public class SettingsWindow : IDisposable
                         ImGui.EndTabItem();
                     }
 
+                    if (ImGui.BeginTabItem("SyncShell Settings"))
+                    {
+                        DrawSyncshellTab();
+                        ImGui.EndTabItem();
+                    }
+
                     if (ImGui.BeginTabItem("Appearance"))
                     {
                         DrawAppearanceTab();
@@ -137,68 +143,8 @@ public class SettingsWindow : IDisposable
             _devWindow.IsOpen = true;
         }
 
-        var enableFc = _config.EnableFcChat;
-        if (!linked)
-            ImGui.BeginDisabled();
-        if (ImGui.Checkbox("Enable FC Chat", ref enableFc))
-        {
-            _config.EnableFcChat = enableFc;
-            _config.EnableFcChatUserSet = true;
-            SaveConfig();
-            if (ChatWindow != null)
-            {
-                ChatWindow.ChannelsLoaded = false;
-                if (enableFc)
-                {
-                    ChatWindow.StartNetworking();
-                }
-                else
-                {
-                    ChatWindow.StopNetworking();
-                    var presenceService = ChatWindow.Presence ?? OfficerChatWindow?.Presence;
-                    presenceService?.SetPresenceReady(false);
-                    presenceService?.Stop();
-                }
-            }
-        }
-        if (!linked)
-        {
-            ImGui.EndDisabled();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Link DemiCat to enable chat and presence.");
-        }
-
-        var syncEnabled = _config.FCSyncShell;
-        if (!linked)
-            ImGui.BeginDisabled();
-        if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
-        {
-            _config.FCSyncShell = syncEnabled;
-            SaveConfig();
-            _ = Task.Run(PushSettings);
-        }
-        if (!linked)
-        {
-            ImGui.EndDisabled();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Link DemiCat to enable Syncshell.");
-        }
-
-        var overlayVisible = _config.ShowSyncshellProgressOverlay;
-        var overlayDisabled = !_config.FCSyncShell;
-        if (overlayDisabled)
-            ImGui.BeginDisabled();
-        if (ImGui.Checkbox("Show Sync Progress Overlay", ref overlayVisible))
-        {
-            _config.ShowSyncshellProgressOverlay = overlayVisible;
-            SaveConfig();
-        }
-        if (overlayDisabled)
-        {
-            ImGui.EndDisabled();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Enable Syncshell to display transfer progress overlay.");
-        }
+        ImGui.TextWrapped("FC Chat is enabled automatically when your DemiCat account is connected.");
+        ImGui.Spacing();
 
         var paused = !_config.Enabled;
         if (ImGui.Checkbox("Pause", ref paused))
@@ -280,6 +226,46 @@ public class SettingsWindow : IDisposable
             }
 
             ImGui.TextColored(color, _syncStatus);
+        }
+    }
+
+    private void DrawSyncshellTab()
+    {
+        DrawConnectionIndicator(_isLinked);
+        ImGui.Spacing();
+
+        var linked = _isLinked;
+
+        var syncEnabled = _config.FCSyncShell;
+        if (!linked)
+            ImGui.BeginDisabled();
+        if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
+        {
+            _config.FCSyncShell = syncEnabled;
+            SaveConfig();
+            _ = Task.Run(PushSettings);
+        }
+        if (!linked)
+        {
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Link DemiCat to enable Syncshell.");
+        }
+
+        var overlayVisible = _config.ShowSyncshellProgressOverlay;
+        var overlayDisabled = !_config.FCSyncShell;
+        if (overlayDisabled)
+            ImGui.BeginDisabled();
+        if (ImGui.Checkbox("Show Sync Progress Overlay", ref overlayVisible))
+        {
+            _config.ShowSyncshellProgressOverlay = overlayVisible;
+            SaveConfig();
+        }
+        if (overlayDisabled)
+        {
+            ImGui.EndDisabled();
+            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+                ImGui.SetTooltip("Enable Syncshell to display transfer progress overlay.");
         }
     }
 
@@ -982,7 +968,7 @@ public class SettingsWindow : IDisposable
 
             try
             {
-                if (_config.EnableFcChat)
+                if (_config.SyncedChat && _config.EnableFcChat)
                 {
                     ChatWindow?.StartNetworking();
                 }
@@ -1006,7 +992,7 @@ public class SettingsWindow : IDisposable
 
             try
             {
-                if (_config.EnableFcChat)
+                if (_config.SyncedChat && _config.EnableFcChat)
                 {
                     _ = ChatWindow?.RefreshChannels();
                 }
@@ -1024,7 +1010,7 @@ public class SettingsWindow : IDisposable
 
             try
             {
-                if (_config.EnableFcChat)
+                if (_config.SyncedChat && _config.EnableFcChat)
                 {
                     _ = ChatWindow?.RefreshMessages();
                 }

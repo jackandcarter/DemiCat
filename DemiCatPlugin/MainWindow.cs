@@ -39,6 +39,7 @@ public class MainWindow : IDisposable
     private readonly string? _dockIconDirectory;
     private string? _draggedDockId;
     private bool _dockOrderDirty;
+    private bool _linkNotificationShown;
 
     private const float DockIconSize = 48f;
     private const float DockIconSpacing = 12f;
@@ -104,23 +105,25 @@ public class MainWindow : IDisposable
         _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _requestBoard = new RequestBoardWindow(config, httpClient);
         _notePad = notePad;
-        _syncshellEnabled = config.FCSyncShell;
-        _syncshell = _syncshellEnabled ? new SyncshellWindow(config, httpClient) : null;
+        _syncshellEnabled = false;
+        _syncshell = null;
         _dockIconDirectory = PluginServices.Instance?.PluginInterface.AssemblyLocation.DirectoryName is { } dir
-            ? Path.Combine(dir, "dock")
+            ? Path.Combine(dir, "Dock")
             : null;
 
         InitializeDockItems();
         EnsureDockOrder();
+        UpdateSyncshell();
         Instance = this;
     }
 
     internal void UpdateSyncshell()
     {
-        if (_syncshellEnabled == _config.FCSyncShell)
+        var shouldEnable = _config.FCSyncShell && IsLinked();
+        if (_syncshellEnabled == shouldEnable)
             return;
 
-        _syncshellEnabled = _config.FCSyncShell;
+        _syncshellEnabled = shouldEnable;
         if (_syncshellEnabled)
         {
             _syncshell = new SyncshellWindow(_config, _httpClient);
@@ -138,6 +141,23 @@ public class MainWindow : IDisposable
     {
         UpdateSyncshell();
 
+        var linked = IsLinked();
+
+        if (!linked)
+        {
+            EnforceWindowAvailability(false);
+            if (IsOpen)
+            {
+                NotifyLinkRequired();
+                IsOpen = false;
+            }
+
+            ResetFadeTimer();
+            return;
+        }
+
+        ResetLinkNotification();
+
         if (!IsOpen)
         {
             ResetFadeTimer();
@@ -147,15 +167,6 @@ public class MainWindow : IDisposable
         var io = ImGui.GetIO();
         var deltaTime = Math.Max(0f, io.DeltaTime);
         var fadeAlpha = GetCurrentFadeAlpha();
-
-        var linked = TokenManager.Instance?.State == LinkState.Linked;
-        if (!linked)
-        {
-            EnforceWindowAvailability(false);
-            var interactedWithPrompt = DrawLinkPrompt();
-            UpdateFadeState(interactedWithPrompt, deltaTime);
-            return;
-        }
 
         EnforceWindowAvailability(true);
 
@@ -194,80 +205,82 @@ public class MainWindow : IDisposable
         AddDockItem(new DockItem(
             DockIds.Events,
             "Events",
-            "events.png",
-            () => _config.Events,
-            () => _config.Events,
+            "Events.png",
+            () => _config.Events && IsLinked(),
+            () => _config.Events && IsLinked(),
             () => GetWindowOpen(DockIds.Events),
             () => ToggleWindow(DockIds.Events)));
 
         AddDockItem(new DockItem(
             DockIds.Create,
             "Create",
-            "create.png",
-            () => _config.Events,
-            () => _config.Events,
+            "Create.png",
+            () => _config.Events && IsLinked(),
+            () => _config.Events && IsLinked(),
             () => GetWindowOpen(DockIds.Create),
             () => ToggleWindow(DockIds.Create)));
 
         AddDockItem(new DockItem(
             DockIds.Templates,
             "Templates",
-            "templates.png",
-            () => _config.Templates,
-            () => _config.Templates,
+            "Templates.png",
+            () => _config.Templates && IsLinked(),
+            () => _config.Templates && IsLinked(),
             () => GetWindowOpen(DockIds.Templates),
             () => ToggleWindow(DockIds.Templates)));
 
         AddDockItem(new DockItem(
             DockIds.NotePad,
             "NotePad",
-            "notepad.png",
-            () => _config.NotePadEnabled,
-            () => _config.NotePadEnabled,
+            "Notepad.png",
+            () => _config.NotePadEnabled && IsLinked(),
+            () => _config.NotePadEnabled && IsLinked(),
             () => GetWindowOpen(DockIds.NotePad),
             () => ToggleWindow(DockIds.NotePad)));
 
         AddDockItem(new DockItem(
             DockIds.Requests,
             "Requests",
-            "requests.png",
-            () => _config.Requests,
-            () => _config.Requests,
+            "Request.png",
+            () => _config.Requests && IsLinked(),
+            () => _config.Requests && IsLinked(),
             () => GetWindowOpen(DockIds.Requests),
             () => ToggleWindow(DockIds.Requests)));
 
         AddDockItem(new DockItem(
             DockIds.Syncshell,
             "Syncshell",
-            "syncshell.png",
-            () => _config.FCSyncShell && _syncshell != null,
-            () => _config.FCSyncShell && _syncshell != null,
+            "SyncShell.png",
+            () => _config.FCSyncShell && _syncshell != null && IsLinked(),
+            () => _config.FCSyncShell && _syncshell != null && IsLinked(),
             () => GetWindowOpen(DockIds.Syncshell),
             () => ToggleWindow(DockIds.Syncshell)));
 
         AddDockItem(new DockItem(
             DockIds.Chat,
             _chat is FcChatWindow ? "FC Chat" : "Chat",
-            "chat.png",
-            () => _chat != null,
-            () => _chat != null && _config.EnableFcChat,
+            "FCChat.png",
+            () => _chat != null && IsLinked(),
+            () => _chat != null && _config.EnableFcChat && _config.SyncedChat && IsLinked(),
             () => GetWindowOpen(DockIds.Chat),
             () => ToggleWindow(DockIds.Chat),
-            () => _chat != null && !_config.EnableFcChat ? "Enable FC Chat in settings to use chat." : null));
+            () => _chat != null && (!_config.EnableFcChat || !_config.SyncedChat)
+                ? "FC Chat is unavailable for your account."
+                : null));
 
         AddDockItem(new DockItem(
             DockIds.Officer,
             "Officer",
-            "officer.png",
-            () => HasOfficerAccess,
-            () => HasOfficerAccess,
+            "Officer.png",
+            () => HasOfficerAccess && IsLinked(),
+            () => HasOfficerAccess && IsLinked(),
             () => GetWindowOpen(DockIds.Officer),
             () => ToggleWindow(DockIds.Officer)));
 
         AddDockItem(new DockItem(
             DockIds.Settings,
             "Settings",
-            "settings.png",
+            "settingscog.png",
             () => true,
             () => true,
             () => _settings.IsOpen,
@@ -312,47 +325,6 @@ public class MainWindow : IDisposable
         _config.DockOrder = order;
     }
 
-    private bool DrawLinkPrompt()
-    {
-        if (_styleNeedsUpdate)
-        {
-            ApplyAccentColors();
-            _styleNeedsUpdate = false;
-        }
-
-        var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
-        var childBaseColor = AdjustBrightness(primaryColor, 0.9f);
-        var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
-        var tabBaseColor = AdjustBrightness(primaryColor, 1.05f);
-        var tabActiveBaseColor = accentColor;
-        var tabHoveredBaseColor = AdjustBrightness(accentColor, 1.1f);
-
-        PushWindowOpacityStyles(primaryColor, childBaseColor, tabBaseColor, tabActiveBaseColor, tabHoveredBaseColor, 1f);
-
-        ImGui.SetNextWindowSize(new Vector2(420f, 160f), ImGuiCond.FirstUseEver);
-        var open = IsOpen;
-        var interacted = false;
-        if (ImGui.Begin("DemiCat", ref open, ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.AlwaysAutoResize))
-        {
-            interacted = HasWindowInteraction();
-            ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
-            ImGui.Spacing();
-            if (ImGui.Button("Open Settings"))
-            {
-                _settings.IsOpen = true;
-            }
-        }
-        ImGui.End();
-        ImGui.PopStyleColor(5);
-
-        if (!open)
-        {
-            IsOpen = false;
-        }
-
-        return interacted;
-    }
-
     private void EnforceWindowAvailability(bool linked)
     {
         if (!linked || !_config.Events)
@@ -381,7 +353,7 @@ public class MainWindow : IDisposable
             ForceWindowClosed(DockIds.Syncshell);
         }
 
-        if (!linked || _chat == null || !_config.EnableFcChat)
+        if (!linked || _chat == null || !_config.EnableFcChat || !_config.SyncedChat)
         {
             ForceWindowClosed(DockIds.Chat);
         }
@@ -634,6 +606,12 @@ public class MainWindow : IDisposable
 
     private void ToggleWindow(string id)
     {
+        if (!IsLinked() && id != DockIds.Settings)
+        {
+            NotifyLinkRequired();
+            return;
+        }
+
         var desired = !GetWindowOpen(id);
         SetWindowOpen(id, desired);
     }
@@ -647,6 +625,12 @@ public class MainWindow : IDisposable
 
         if (_windowStates[id] == open)
         {
+            return;
+        }
+
+        if (open && !IsLinked() && id != DockIds.Settings)
+        {
+            NotifyLinkRequired();
             return;
         }
 
@@ -694,6 +678,26 @@ public class MainWindow : IDisposable
         {
             ResetFadeTimer();
         }
+    }
+
+    private static bool IsLinked()
+        => TokenManager.Instance?.State == LinkState.Linked;
+
+    internal void NotifyLinkRequired()
+    {
+        if (_linkNotificationShown)
+        {
+            return;
+        }
+
+        var services = PluginServices.Instance;
+        services?.ToastGui.ShowError("Enter your DemiCat sync key in settings to connect.");
+        _linkNotificationShown = true;
+    }
+
+    internal void ResetLinkNotification()
+    {
+        _linkNotificationShown = false;
     }
 
     private sealed class DockItem
