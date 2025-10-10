@@ -67,6 +67,7 @@ public class ChatWindow : IDisposable
     };
     private const int TextureCacheCapacity = 100;
     private const int MaxMessages = 100;
+    private const float MessageVirtualizationOverscan = 200f;
     private const float DefaultComposeSplitRatio = 0.35f;
     private const float MinComposeSplitRatio = 0.2f;
     private const float MaxComposeSplitRatio = 0.8f;
@@ -79,6 +80,7 @@ public class ChatWindow : IDisposable
     private static readonly Vector4 MessageIdleBgColor = new(1f, 1f, 1f, 0.03f);
     private const float MessageHoverTextBlend = 0.2f;
     private readonly Dictionary<string, bool> _messageHoverStates = new();
+    private readonly Dictionary<string, float> _messageHeightCache = new(StringComparer.Ordinal);
     private bool _networkingActive;
     private string? _lastSubscribedChannelId;
     private string? _lastSubscribedGuildId;
@@ -704,9 +706,32 @@ public class ChatWindow : IDisposable
             ImGui.Dummy(new Vector2(1f, topPadding));
         }
 
+        var virtualizationPadding = MessageVirtualizationOverscan * ImGuiHelpers.GlobalScale;
+        var scrollY = ImGui.GetScrollY();
+        var windowHeight = ImGui.GetWindowHeight();
+        if (!float.IsFinite(windowHeight))
+        {
+            windowHeight = 0f;
+        }
+        var minVisibleY = MathF.Max(0f, scrollY - virtualizationPadding);
+        var maxVisibleY = scrollY + MathF.Max(windowHeight, 0f) + virtualizationPadding;
+
         for (var i = 0; i < _messages.Count; i++)
         {
             var msg = _messages[i];
+            var itemStartY = ImGui.GetCursorPosY();
+            var hasCachedHeight = _messageHeightCache.TryGetValue(msg.Id, out var cachedHeight) && cachedHeight > 0f && float.IsFinite(cachedHeight);
+            if (hasCachedHeight)
+            {
+                var itemEndY = itemStartY + cachedHeight;
+                if (itemEndY < minVisibleY || itemStartY > maxVisibleY)
+                {
+                    _messageHoverStates[msg.Id] = false;
+                    ImGui.Dummy(new Vector2(0f, cachedHeight));
+                    continue;
+                }
+            }
+
             ImGui.PushID(msg.Id);
             using var emojiFont = _emojiManager.PushEmojiFont();
             var drawList = ImGui.GetWindowDrawList();
@@ -955,6 +980,17 @@ public class ChatWindow : IDisposable
                 {
                     ImGui.Dummy(new Vector2(0f, spacingY));
                 }
+            }
+
+            var itemEnd = ImGui.GetCursorPosY();
+            var measuredHeight = itemEnd - itemStartY;
+            if (float.IsFinite(measuredHeight) && measuredHeight > 0f)
+            {
+                _messageHeightCache[msg.Id] = measuredHeight;
+            }
+            else
+            {
+                _messageHeightCache.Remove(msg.Id);
             }
 
             ImGui.PopID();
@@ -3308,6 +3344,7 @@ public class ChatWindow : IDisposable
                 }
 
                 _messages.Clear();
+                _messageHeightCache.Clear();
 
                 if (all.Count > 0)
                 {
@@ -3403,6 +3440,11 @@ public class ChatWindow : IDisposable
     private void DisposeMessageTextures(DiscordMessageDto msg)
     {
         msg.AvatarTexture = null;
+        if (!string.IsNullOrEmpty(msg.Id))
+        {
+            _messageHeightCache.Remove(msg.Id);
+            _messageHoverStates.Remove(msg.Id);
+        }
         if (msg.Attachments != null)
         {
             foreach (var a in msg.Attachments)
@@ -3630,7 +3672,7 @@ public class ChatWindow : IDisposable
     private void HandleBridgeLinked()
     {
         _presence?.Reload();
-        _ = _presence?.Refresh();
+        _ = _presence?.Refresh(force: true);
         TrySubscribeCurrentChannel(force: true, refreshMessages: false);
     }
 
