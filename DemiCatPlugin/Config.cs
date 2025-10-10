@@ -15,6 +15,7 @@ public class Config : IPluginConfiguration
     public const float MaxChatImageScale = 3f;
     public static readonly Vector4 DefaultPrimaryWindowColor = new(0.11f, 0.11f, 0.12f, 1f);
     public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
+    public static readonly Vector4 DefaultDockBackgroundColor = new(0.05f, 0.05f, 0.06f, 1f);
 
     // Required by Dalamud
     public const float MinEmojiTileSize = 16f;
@@ -24,7 +25,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 16;
+    public const int CurrentVersion = 17;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -97,6 +98,15 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("secondaryAccentColor")]
     public Vector4 SecondaryAccentColor { get; set; } = DefaultSecondaryAccentColor;
+
+    [JsonPropertyName("dockBackgroundColor")]
+    public Vector4 DockBackgroundColor { get; set; } = DefaultDockBackgroundColor;
+
+    [JsonPropertyName("dockOpacity")]
+    public float DockOpacity { get; set; } = 0.85f;
+
+    [JsonPropertyName("dockOrder")]
+    public List<string> DockOrder { get; set; } = new();
 
     [JsonPropertyName("chatInputSplitRatio")]
     public float ChatInputSplitRatio { get; set; } = 0.35f;
@@ -479,6 +489,19 @@ public class Config : IPluginConfiguration
             OfficerEmbedBorder.Glyph = SanitizeEmbedBorderGlyph(OfficerEmbedBorder.Glyph);
 
             Version = 16;
+            ExtensionData = null;
+        }
+        if (Version < 17)
+        {
+            DockBackgroundColor = SanitizeColor(DockBackgroundColor, DefaultDockBackgroundColor);
+            if (!float.IsFinite(DockOpacity))
+            {
+                DockOpacity = 0.85f;
+            }
+            DockOpacity = Math.Clamp(DockOpacity, 0f, 1f);
+            DockOrder ??= new List<string>();
+
+            Version = 17;
             ExtensionData = null;
         }
     }

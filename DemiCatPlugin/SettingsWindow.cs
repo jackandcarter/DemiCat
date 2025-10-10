@@ -358,6 +358,30 @@ public class SettingsWindow : IDisposable
             }
         }
 
+        var dockColor = _config.DockBackgroundColor;
+        var dockColorVec3 = new Vector3(dockColor.X, dockColor.Y, dockColor.Z);
+        if (ImGui.ColorEdit3("Dock background color", ref dockColorVec3))
+        {
+            var sanitized = Config.SanitizeColor(new Vector4(dockColorVec3, 1f), Config.DefaultDockBackgroundColor);
+            var current = _config.DockBackgroundColor;
+            if (!ColorsAlmostEqual(sanitized, current))
+            {
+                _config.DockBackgroundColor = new Vector4(sanitized.X, sanitized.Y, sanitized.Z, 1f);
+                SaveConfig();
+            }
+        }
+
+        var dockOpacity = _config.DockOpacity * 100f;
+        if (ImGui.SliderFloat("Dock background opacity", ref dockOpacity, 0f, 100f, "%.0f%%"))
+        {
+            var normalized = Math.Clamp(dockOpacity / 100f, 0f, 1f);
+            if (Math.Abs(normalized - _config.DockOpacity) > 0.0001f)
+            {
+                _config.DockOpacity = normalized;
+                SaveConfig();
+            }
+        }
+
         ImGui.Spacing();
 
         ImGui.BeginDisabled(fadeOutEnabled);
