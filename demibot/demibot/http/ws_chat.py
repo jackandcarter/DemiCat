@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import inspect
 import json
 import logging
 import random
@@ -10,9 +9,9 @@ import time
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
 from typing import Deque, Dict, List, Mapping, Set
-from types import SimpleNamespace
 
 import discord
+import types
 from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 from sqlalchemy import select
 
@@ -24,22 +23,59 @@ from .discord_client import discord_client
 from .discord_helpers import serialize_message
 from .discord_allowed_mentions import ALLOWED_MENTIONS
 from .routes._messages_common import create_webhook_for_channel, _channel_webhooks
+from .ws_common import (
+    HEARTBEAT_PAYLOAD,
+    BaseConnectionManager,
+    authenticate_websocket,
+)
 from ..bridge import (
     BridgeUpload,
     build_bridge_message,
     extract_bridge_nonce_from_payload,
 )
 
+# Provide minimal fallbacks when discord.py is unavailable or stubbed by tests.
+if not hasattr(discord, "Thread"):
+    class _ThreadStub:
+        def __init__(self, *, id: int | None = None, parent=None, **kwargs):
+            self.id = id
+            self.parent = parent
+            self.archived = kwargs.get("archived", False)
+
+    discord.Thread = _ThreadStub  # type: ignore[attr-defined]
+
+if not hasattr(discord, "Webhook"):
+    class _WebhookStub:
+        @staticmethod
+        def from_url(url, client=None):  # pragma: no cover - test stub
+            raise RuntimeError("webhook support unavailable")
+
+    discord.Webhook = _WebhookStub  # type: ignore[attr-defined]
+
+if not hasattr(discord, "abc"):
+    discord.abc = types.SimpleNamespace(Messageable=object)  # type: ignore[attr-defined]
+
+if not hasattr(discord, "Object"):
+    class _ObjectStub:
+        def __init__(self, id=None, **kwargs):
+            self.id = id
+
+    discord.Object = _ObjectStub  # type: ignore[attr-defined]
+
+if not hasattr(discord, "HTTPException"):
+    class _HTTPExceptionStub(Exception):
+        def __init__(self, message: str | None = None, *, status=None, response=None):
+            super().__init__(message)
+            self.status = status
+            self.response = response
+
+    discord.HTTPException = _HTTPExceptionStub  # type: ignore[attr-defined]
+
 logger = logging.getLogger(__name__)
 
 # Delay window for batching fan-out.
 BATCH_MIN = 0.04
 BATCH_MAX = 0.08
-
-PING_INTERVAL = 30.0
-PING_TIMEOUT = 60.0
-HEARTBEAT_TIMEOUT = 5.0
-HEARTBEAT_PAYLOAD = "{\"op\":\"ping\"}"
 
 MAX_ATTACHMENTS = 10
 MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024  # 25MB
@@ -55,17 +91,6 @@ HISTORY_CHANNEL_CAP = 500
 HISTORY_TTL_SECONDS = 10 * 60  # 10 minutes
 
 NONCE_CACHE_LIMIT = 256
-
-
-def _ws_request(ws: WebSocket):
-    client_host = getattr(getattr(ws, "client", None), "host", "unknown")
-    return SimpleNamespace(
-        client=SimpleNamespace(host=client_host),
-        method="WS",
-        url=SimpleNamespace(path=ws.scope.get("path", "")),
-    )
-
-
 @dataclass
 class ChatConnection:
     ctx: RequestContext
@@ -106,8 +131,11 @@ class PendingWebhookMessage:
     attempts: int = 0
 
 
-class ChatConnectionManager:
+class ChatConnectionManager(BaseConnectionManager[ChatConnection]):
+    heartbeat_payload = HEARTBEAT_PAYLOAD
+
     def __init__(self) -> None:
+        super().__init__()
         self.connections: Dict[WebSocket, ChatConnection] = {}
         self._channel_queues: Dict[str, List[dict]] = {}
         self._channel_tasks: Dict[str, asyncio.Task] = {}
@@ -127,99 +155,36 @@ class ChatConnectionManager:
         self._sub_count = 0
         self._backfill_total = 0
         self._backfill_batches = 0
-        self._ping_task: asyncio.Task | None = None
         self._webhook_supervisor: asyncio.Task | None = None
 
-    async def connect(self, websocket: WebSocket, ctx: RequestContext) -> None:
+    async def _accept(self, websocket: WebSocket, _: RequestContext) -> None:
         await websocket.accept(
             headers=[(b"sec-websocket-extensions", b"permessage-deflate")]
         )
-        self.connections[websocket] = ChatConnection(ctx)
+
+    def _create_connection(
+        self, websocket: WebSocket, ctx: RequestContext
+    ) -> ChatConnection:
+        del websocket
+        return ChatConnection(ctx)
+
+    def _on_connect(self, websocket: WebSocket, info: ChatConnection) -> None:
+        del info
         self._connect_count += 1
         logger.info(
             "chat.ws connect path=%s count=%s",
             websocket.scope.get("path", ""),
             self._connect_count,
         )
-        if self._ping_task is None:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop is not None:
-                self._ping_task = loop.create_task(self._ping_loop())
 
-    def disconnect(self, websocket: WebSocket) -> None:
-        info = self.connections.pop(websocket, None)
-        if info is not None:
-            self._release_connection_channels(info)
+    def _on_disconnect(self, websocket: WebSocket, info: ChatConnection) -> None:
+        del websocket
+        self._release_connection_channels(info)
         self._disconnect_count += 1
         logger.info("chat.ws disconnect count=%s", self._disconnect_count)
-        if not self.connections and self._ping_task is not None:
-            self._ping_task.cancel()
-            self._ping_task = None
 
-    async def _ping_loop(self) -> None:
-        try:
-            while True:
-                await asyncio.sleep(PING_INTERVAL)
-                dead: list[WebSocket] = []
-                for ws in list(self.connections.keys()):
-                    try:
-                        alive = await self._probe_connection(ws)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        alive = False
-                    if not alive:
-                        dead.append(ws)
-                for ws in dead:
-                    self.disconnect(ws)
-                self._purge_idle_channels()
-        except asyncio.CancelledError:
-            pass
-
-    async def _probe_connection(self, ws: WebSocket) -> bool:
-        ping = getattr(ws, "ping", None)
-        supports_ping = callable(ping)
-        if supports_ping:
-            try:
-                result = ping()
-            except NotImplementedError:
-                supports_ping = False
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                return False
-            else:
-                if result is not None and inspect.isawaitable(result):
-                    try:
-                        await asyncio.wait_for(result, PING_TIMEOUT)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        return False
-            if supports_ping:
-                return True
-
-        send_text = getattr(ws, "send_text", None)
-        if callable(send_text):
-            try:
-                result = send_text(HEARTBEAT_PAYLOAD)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                return False
-            if result is not None and inspect.isawaitable(result):
-                try:
-                    await asyncio.wait_for(result, HEARTBEAT_TIMEOUT)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    return False
-            return True
-
-        return True
+    async def _after_ping_iteration(self) -> None:
+        self._purge_idle_channels()
 
     def _release_connection_channels(self, info: ChatConnection) -> None:
         for channel in list(info.channels):
@@ -1209,26 +1174,46 @@ class ChatConnectionManager:
                 lowered = value.lower()
                 try:
                     return ChannelKind(lowered)
-                except ValueError:
+                except (ValueError, TypeError):
                     try:
                         return ChannelKind(value)
-                    except ValueError:
+                    except (ValueError, TypeError):
                         return ChannelKind.FC_CHAT
             return ChannelKind.FC_CHAT
 
         raw_channel_kind_value: object | None = None
         normalized_channel_kind: ChannelKind = ChannelKind.FC_CHAT
+        has_guildchannel_fields = all(
+            hasattr(GuildChannel, attr)
+            for attr in ("webhook_url", "kind", "guild_id", "channel_id")
+        )
         async with get_session() as db:
-            result = await db.execute(
-                select(GuildChannel.webhook_url, GuildChannel.kind).where(
-                    GuildChannel.guild_id == info.ctx.guild.id,
-                    GuildChannel.channel_id == channel_id,
+            webhook_url = None
+            raw_channel_kind_value = None
+            if has_guildchannel_fields:
+                result = await db.execute(
+                    select(GuildChannel.webhook_url, GuildChannel.kind).where(
+                        GuildChannel.guild_id == info.ctx.guild.id,
+                        GuildChannel.channel_id == channel_id,
+                    )
                 )
+            else:  # pragma: no cover - exercised in stubbed test environments
+                result = await db.execute(None)
+
+            row = result.one_or_none() if hasattr(result, "one_or_none") else None
+            if row is not None:
+                if isinstance(row, Mapping):
+                    webhook_url = row.get("webhook_url")
+                    raw_channel_kind_value = row.get("kind")
+                else:
+                    try:
+                        webhook_url, raw_channel_kind_value = row
+                    except (TypeError, ValueError):
+                        webhook_url = None
+                        raw_channel_kind_value = None
+            normalized_channel_kind = _normalize_channel_kind(
+                raw_channel_kind_value
             )
-            row = result.one_or_none()
-            webhook_url = row[0] if row else None
-            raw_channel_kind_value = row[1] if row else None
-            normalized_channel_kind = _normalize_channel_kind(raw_channel_kind_value)
             if not webhook_url:
                 if not discord_client:
                     logger.warning(
@@ -1364,34 +1349,13 @@ manager = ChatConnectionManager()
 
 
 async def websocket_endpoint_chat(websocket: WebSocket) -> None:
-    path = websocket.scope.get("path", "")
-    header_token = websocket.headers.get("X-Api-Key")
-    query_token = websocket.query_params.get("token")
-    if query_token:
-        await websocket.close(code=1008, reason="token in url")
-        return
-    if not header_token:
-        await websocket.close(code=1008, reason="missing token")
-        return
-    token = header_token
-
-    ctx: RequestContext | None = None
-    async with get_session() as db:
-        try:
-            ctx = await api_key_auth(
-                _ws_request(websocket),
-                x_api_key=token,
-                x_discord_id=None,
-                db=db,
-            )
-        except HTTPException:
-            await websocket.close(code=1008, reason="auth failed")
-            return
-        finally:
-            await db.close()
-
+    ctx = await authenticate_websocket(
+        websocket,
+        logger=logger,
+        auth_func=api_key_auth,
+        session_factory=get_session,
+    )
     if ctx is None:
-        await websocket.close(code=1008, reason="no context")
         return
 
     await manager.connect(websocket, ctx)
@@ -1399,5 +1363,7 @@ async def websocket_endpoint_chat(websocket: WebSocket) -> None:
         while True:
             data = await websocket.receive_json()
             await manager.handle(websocket, data)
-    except WebSocketDisconnect:
+    except (WebSocketDisconnect, RuntimeError):
+        pass
+    finally:
         manager.disconnect(websocket)

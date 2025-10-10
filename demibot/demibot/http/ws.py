@@ -1,33 +1,24 @@
 from __future__ import annotations
+
 import asyncio
-import inspect
 from dataclasses import dataclass
 from typing import Dict
 
-from fastapi import HTTPException, WebSocket, WebSocketDisconnect
 import logging
-from types import SimpleNamespace
+from fastapi import WebSocket, WebSocketDisconnect
 
 from ..db.session import get_session
 from .deps import RequestContext, api_key_auth
-
-PING_INTERVAL = 30.0
-PING_TIMEOUT = 60.0
-SEND_TIMEOUT = 5.0
-HEARTBEAT_PAYLOAD = "{\"op\":\"ping\"}"
+from .ws_common import (
+    HEARTBEAT_PAYLOAD,
+    SEND_TIMEOUT,
+    BaseConnectionManager,
+    authenticate_websocket,
+)
 
 # Mapping of websocket paths to roles required to access them.
 # Additional entries can be added as new protected paths are introduced.
 PROTECTED_PATH_ROLES: dict[str, str] = {"/ws/officer-messages": "officer"}
-
-
-def _ws_request(ws: WebSocket):
-    client_host = getattr(getattr(ws, "client", None), "host", "unknown")
-    return SimpleNamespace(
-        client=SimpleNamespace(host=client_host),
-        method="WS",
-        url=SimpleNamespace(path=ws.scope.get("path", "")),
-    )
 
 
 @dataclass
@@ -37,30 +28,19 @@ class ConnectionInfo:
     path: str
 
 
-class ConnectionManager:
-    def __init__(self) -> None:
-        self.connections: Dict[WebSocket, ConnectionInfo] = {}
-        self._ping_task: asyncio.Task | None = None
+class ConnectionManager(BaseConnectionManager[ConnectionInfo]):
+    heartbeat_payload = HEARTBEAT_PAYLOAD
 
-    async def connect(self, websocket: WebSocket, ctx: RequestContext) -> None:
-        await websocket.accept()
-        self.connections[websocket] = ConnectionInfo(
+    def __init__(self) -> None:
+        super().__init__()
+        self.connections: Dict[WebSocket, ConnectionInfo] = {}
+
+    def _create_connection(
+        self, websocket: WebSocket, ctx: RequestContext
+    ) -> ConnectionInfo:
+        return ConnectionInfo(
             ctx.guild.id, ctx.roles, websocket.scope.get("path", "")
         )
-        if self._ping_task is None:
-            try:
-                loop = asyncio.get_running_loop()
-            except RuntimeError:
-                loop = None
-            if loop is not None:
-                self._ping_task = loop.create_task(self._ping_loop())
-
-    def disconnect(self, websocket: WebSocket) -> None:
-        if websocket in self.connections:
-            del self.connections[websocket]
-        if not self.connections and self._ping_task is not None:
-            self._ping_task.cancel()
-            self._ping_task = None
 
     async def broadcast_text(
         self,
@@ -91,120 +71,18 @@ class ConnectionManager:
             if isinstance(result, Exception):
                 self.disconnect(ws)
 
-    async def _ping_loop(self) -> None:
-        try:
-            while True:
-                await asyncio.sleep(PING_INTERVAL)
-                dead: list[WebSocket] = []
-                for ws in list(self.connections.keys()):
-                    try:
-                        alive = await self._probe_connection(ws)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        alive = False
-                    if not alive:
-                        dead.append(ws)
-                for ws in dead:
-                    self.disconnect(ws)
-        except asyncio.CancelledError:
-            pass
-
-    async def _probe_connection(self, ws: WebSocket) -> bool:
-        ping = getattr(ws, "ping", None)
-        supports_ping = callable(ping)
-        if supports_ping:
-            try:
-                result = ping()
-            except NotImplementedError:
-                supports_ping = False
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                return False
-            else:
-                if result is not None and inspect.isawaitable(result):
-                    try:
-                        await asyncio.wait_for(result, PING_TIMEOUT)
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception:
-                        return False
-            if supports_ping:
-                return True
-
-        send_text = getattr(ws, "send_text", None)
-        if callable(send_text):
-            try:
-                result = send_text(HEARTBEAT_PAYLOAD)
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                return False
-            if result is not None and inspect.isawaitable(result):
-                try:
-                    await asyncio.wait_for(result, SEND_TIMEOUT)
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
-                    return False
-            return True
-
-        # Without ping or the ability to send a heartbeat, assume the socket
-        # remains healthy and let other send paths detect failures.
-        return True
-
 manager = ConnectionManager()
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
     path = websocket.scope.get("path", "")
-    header_token = websocket.headers.get("X-Api-Key")
-    query_token = websocket.query_params.get("token")
-    if query_token:
-        logging.warning("WS %s closing with 1008: token in url", path)
-        await websocket.close(code=1008, reason="token in url")
-        return
-    if header_token:
-        logging.debug("WS %s received X-Api-Key header", path)
-    else:
-        logging.debug("WS %s missing X-Api-Key header", path)
-        logging.warning("WS %s closing with 1008: missing token", path)
-        await websocket.close(code=1008, reason="missing token")
-        return
-    token = header_token
-
-    ctx: RequestContext | None = None
-    async with get_session() as db:
-        try:
-            ctx = await api_key_auth(
-                _ws_request(websocket),
-                x_api_key=token,
-                x_discord_id=None,
-                db=db,
-            )
-        except HTTPException as exc:
-            logging.warning(
-                "WS %s auth failed (%s): %s",
-                path,
-                exc.status_code,
-                exc.detail,
-            )
-            await websocket.close(code=1008, reason="auth failed")
-            return
-        finally:
-            await db.close()
-
-    if ctx is None:
-        logging.error("WS %s api_key_auth returned no context", path)
-        await websocket.close(code=1008, reason="no context")
-        return
-
     required_role = PROTECTED_PATH_ROLES.get(path)
-    if required_role and required_role not in ctx.roles:
-        logging.warning(
-            "WS %s closing with 1008: missing role %s", path, required_role
-        )
-        await websocket.close(code=1008, reason="unauthorized")
+    ctx = await authenticate_websocket(
+        websocket,
+        require_role=required_role,
+        auth_func=api_key_auth,
+        session_factory=get_session,
+    )
+    if ctx is None:
         return
 
     logging.debug("WS %s authenticated, invoking manager.connect", path)
