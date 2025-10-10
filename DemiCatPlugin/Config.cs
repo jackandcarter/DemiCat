@@ -25,7 +25,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -502,6 +502,13 @@ public class Config : IPluginConfiguration
             DockOrder ??= new List<string>();
 
             Version = 17;
+            ExtensionData = null;
+        }
+        if (Version < 18)
+        {
+            EnableFcChat = true;
+            EnableFcChatUserSet = true;
+            Version = 18;
             ExtensionData = null;
         }
     }

@@ -28,7 +28,6 @@ public class RefreshRolesTests
             Events = false,
             Requests = false,
             EnableFcChat = true,
-            EnableFcChatUserSet = true,
             Roles = new List<string> { "member" }
         };
 
@@ -91,7 +90,6 @@ public class RefreshRolesTests
 
             Assert.True(success);
             Assert.True(config.EnableFcChat);
-            Assert.True(config.EnableFcChatUserSet);
             Assert.Contains(log.WarningMessages, message => message.Contains("channels could not be fetched", StringComparison.OrdinalIgnoreCase));
             Assert.True(chatWindow.ChannelsLoaded);
             Assert.True(((ChatWindow)officerChatWindow).ChannelsLoaded);

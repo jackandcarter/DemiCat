@@ -161,7 +161,14 @@ public class Plugin : IDalamudPlugin
         _tokenManager.OnUnlinked += HandleTokenUnlinked;
 
         if (_tokenManager.IsReady())
+        {
             HandleTokenLinked();
+        }
+        else
+        {
+            _mainWindow.NotifyLinkRequired();
+            _settings.IsOpen = true;
+        }
 
         _services.Log.Info("DemiCat loaded.");
     }
@@ -628,6 +635,7 @@ public class Plugin : IDalamudPlugin
     {
         _invalidTokenToastShown = false;
         try { _services.ChatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
+        _mainWindow.ResetLinkNotification();
         _mainWindow.SetNotePadReadOnly(false);
         StartWatchers();
     }
@@ -637,7 +645,10 @@ public class Plugin : IDalamudPlugin
         void Execute()
         {
             StopWatchers();
+            _mainWindow.IsOpen = false;
             _mainWindow.SetNotePadReadOnly(true);
+            _mainWindow.NotifyLinkRequired();
+            _settings.IsOpen = true;
 
             var hadOfficerAccess = _config.IsOfficerToken;
             _config.IsOfficerToken = false;
@@ -963,15 +974,7 @@ public class Plugin : IDalamudPlugin
 
                 if (channelsFetched)
                 {
-                    if (!hasChat)
-                    {
-                        _config.EnableFcChat = false;
-                        _config.EnableFcChatUserSet = false;
-                    }
-                    else if (!_config.EnableFcChatUserSet)
-                    {
-                        _config.EnableFcChat = true;
-                    }
+                    _config.EnableFcChat = hasChat;
 
                     _chatWindow.ChannelsLoaded = false;
                     _officerChatWindow.ChannelsLoaded = false;
