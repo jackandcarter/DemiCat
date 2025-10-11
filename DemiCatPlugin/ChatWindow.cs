@@ -102,6 +102,9 @@ public class ChatWindow : IDisposable
     private const float MentionDrawerBaseOffset = 4f;
     private const float MentionDrawerTravelDistance = 10f;
     private MentionDrawerState? _mentionDrawerState;
+    private long _frameIndex;
+    private const long TextureDisposeSafeLag = 2;
+    private readonly List<ISharedImmediateTexture> _pendingDisposes = new();
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -110,12 +113,150 @@ public class ChatWindow : IDisposable
     {
         public ISharedImmediateTexture? Texture;
         public LinkedListNode<string> Node;
+        public long LastUsedFrame;
 
         public TextureCacheEntry(ISharedImmediateTexture? texture, LinkedListNode<string> node)
         {
             Texture = texture;
             Node = node;
+            LastUsedFrame = 0;
         }
+    }
+
+    private void TouchTexture(string? key)
+    {
+        if (string.IsNullOrEmpty(key))
+        {
+            return;
+        }
+
+        if (_textureCache.TryGetValue(key, out var entry))
+        {
+            entry.LastUsedFrame = _frameIndex;
+        }
+    }
+
+    private static void SafeImage(ISharedImmediateTexture? tex, Vector2 size, float rounding = 0f)
+    {
+        if (tex == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var wrap = tex.GetWrapOrEmpty();
+            var handle = wrap.Handle;
+            if (handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            if (rounding > 0f)
+            {
+                ImGui.Image(handle, size);
+            }
+            else
+            {
+                ImGui.Image(handle, size);
+            }
+        }
+        catch (ObjectDisposedException)
+        {
+            // texture disposed between frames – skip draw
+        }
+    }
+
+    private static bool SafeImageButton(ISharedImmediateTexture? tex, Vector2 size)
+    {
+        if (tex == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            var wrap = tex.GetWrapOrEmpty();
+            var handle = wrap.Handle;
+            if (handle == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            return ImGui.ImageButton(handle, size);
+        }
+        catch (ObjectDisposedException)
+        {
+            return false;
+        }
+    }
+
+    private void QueueTextureForDispose(ISharedImmediateTexture? texture)
+    {
+        if (texture == null)
+        {
+            return;
+        }
+
+        _pendingDisposes.Add(texture);
+    }
+
+    private void CollectAndDisposeTextures()
+    {
+        var toRemove = new List<(string Key, TextureCacheEntry Entry)>();
+
+        foreach (var kvp in _textureCache)
+        {
+            var entry = kvp.Value;
+            if (entry.Texture == null)
+            {
+                if (entry.LastUsedFrame + TextureDisposeSafeLag < _frameIndex)
+                {
+                    toRemove.Add((kvp.Key, entry));
+                }
+                continue;
+            }
+
+            if (entry.LastUsedFrame + TextureDisposeSafeLag < _frameIndex)
+            {
+                _pendingDisposes.Add(entry.Texture);
+                entry.Texture = null;
+                toRemove.Add((kvp.Key, entry));
+            }
+        }
+
+        foreach (var (key, entry) in toRemove)
+        {
+            _textureCache.Remove(key);
+            if (entry.Node.List != null)
+            {
+                _textureLru.Remove(entry.Node);
+            }
+        }
+
+        FlushPendingTextureDisposes();
+    }
+
+    private void FlushPendingTextureDisposes()
+    {
+        if (_pendingDisposes.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var tex in _pendingDisposes)
+        {
+            try
+            {
+                (tex.GetWrapOrEmpty() as IDisposable)?.Dispose();
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+
+        _pendingDisposes.Clear();
     }
 
     private float GetManualImageScale()
@@ -613,6 +754,9 @@ public class ChatWindow : IDisposable
 
     public virtual void Draw()
     {
+        _frameIndex++;
+        try
+        {
         _fileDialog.Draw();
         if (!_bridge.IsReady())
         {
@@ -784,8 +928,7 @@ public class ChatWindow : IDisposable
             }
             if (msg.AvatarTexture != null)
             {
-                var wrap = msg.AvatarTexture.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                SafeImage(msg.AvatarTexture, new Vector2(20, 20));
             }
             else
             {
@@ -824,7 +967,7 @@ public class ChatWindow : IDisposable
             {
                 foreach (var embed in msg.Embeds)
                 {
-                    EmbedRenderer.Draw(embed, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
+                    EmbedRenderer.Draw(embed, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid), touchTexture: TouchTexture);
                 }
             }
             if (msg.Attachments != null)
@@ -840,20 +983,28 @@ public class ChatWindow : IDisposable
                         }
                         if (att.Texture != null)
                         {
-                            var wrapAtt = att.Texture.GetWrapOrEmpty();
-                            var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
-                            var bounds = GetAttachmentBounds(attachmentCap);
-                            var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
-                            ImGui.Image(wrapAtt.Handle, displaySize);
-                            if (ImGui.IsItemHovered())
+                            try
                             {
-                                ImGui.BeginTooltip();
-                                ImGui.TextUnformatted("Open original");
-                                ImGui.EndTooltip();
+                                var wrapAtt = att.Texture.GetWrapOrEmpty();
+                                var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
+                                var bounds = GetAttachmentBounds(attachmentCap);
+                                var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
+                                SafeImage(att.Texture, displaySize);
+                                TouchTexture(att.Url);
+                                if (ImGui.IsItemHovered())
+                                {
+                                    ImGui.BeginTooltip();
+                                    ImGui.TextUnformatted("Open original");
+                                    ImGui.EndTooltip();
+                                }
+                                if (ImGui.IsItemClicked())
+                                {
+                                    try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
+                                }
                             }
-                            if (ImGui.IsItemClicked())
+                            catch (ObjectDisposedException)
                             {
-                                try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
+                                // texture disposed before draw completed
                             }
                         }
                     }
@@ -881,7 +1032,7 @@ public class ChatWindow : IDisposable
                     RowIndex = c.RowIndex
                 }).ToList();
                 var pseudo = new EmbedDto { Id = msg.Id + "_components", Buttons = buttons };
-                EmbedRenderer.Draw(pseudo, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid));
+                EmbedRenderer.Draw(pseudo, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid), touchTexture: TouchTexture);
             }
             ImGui.Spacing();
             if (msg.Reactions != null && msg.Reactions.Count > 0)
@@ -894,16 +1045,22 @@ public class ChatWindow : IDisposable
 
                     if (!string.IsNullOrEmpty(reaction.EmojiId))
                     {
+                        string? textureUrl = null;
                         if (reaction.Texture == null)
                         {
                             var ext = reaction.IsAnimated ? "gif" : "png";
-                            var url = $"https://cdn.discordapp.com/emojis/{reaction.EmojiId}.{ext}";
-                            LoadTexture(url, t => reaction.Texture = t);
+                            textureUrl = $"https://cdn.discordapp.com/emojis/{reaction.EmojiId}.{ext}";
+                            LoadTexture(textureUrl, t => reaction.Texture = t);
+                        }
+                        else
+                        {
+                            var ext = reaction.IsAnimated ? "gif" : "png";
+                            textureUrl = $"https://cdn.discordapp.com/emojis/{reaction.EmojiId}.{ext}";
                         }
                         if (reaction.Texture != null)
                         {
-                            var wrap = reaction.Texture.GetWrapOrEmpty();
-                            if (ImGui.ImageButton(wrap.Handle, new Vector2(20, 20)))
+                            TouchTexture(textureUrl);
+                            if (SafeImageButton(reaction.Texture, new Vector2(20, 20)))
                             {
                                 _ = React(msg.Id, reaction.Emoji, reaction.Me);
                             }
@@ -1426,6 +1583,11 @@ public class ChatWindow : IDisposable
         }
 
         composerFontScope.Dispose();
+        }
+        finally
+        {
+            CollectAndDisposeTextures();
+        }
     }
 
     protected List<ChannelDto> PrepareChannelsForDisplay(IEnumerable<ChannelDto> channels)
@@ -1609,8 +1771,8 @@ public class ChatWindow : IDisposable
                     LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
                 if (emoji.Texture != null)
                 {
-                    var wrap = emoji.Texture.GetWrapOrEmpty();
-                    ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                    TouchTexture(emoji.ImageUrl);
+                    SafeImage(emoji.Texture, new Vector2(20, 20));
                 }
                 else
                 {
@@ -2098,12 +2260,23 @@ public class ChatWindow : IDisposable
                 LoadTexture(presence.AvatarUrl, t => presence.AvatarTexture = t);
             }
 
-            var wrap = presence.AvatarTexture?.GetWrapOrEmpty();
-            if (wrap != null && wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+            if (presence.AvatarTexture != null)
             {
-                ImGui.SetCursorScreenPos(position);
-                ImGui.Image(wrap.Handle, textureSize);
-                return;
+                try
+                {
+                    var wrap = presence.AvatarTexture.GetWrapOrEmpty();
+                    if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                    {
+                        TouchTexture(presence.AvatarUrl);
+                        ImGui.SetCursorScreenPos(position);
+                        SafeImage(presence.AvatarTexture, textureSize);
+                        return;
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // avatar texture disposed before draw
+                }
             }
         }
 
@@ -2439,14 +2612,21 @@ public class ChatWindow : IDisposable
             var renderedPreview = false;
             if (previewReady && previewTexture != null)
             {
-                var wrap = previewTexture.GetWrapOrEmpty();
-                if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                try
                 {
-                    var maxThumbnail = new Vector2(40f, 40f) * scale;
-                    var bounds = GetAttachmentBounds(maxThumbnail, allowAutoStretch: false);
-                    var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds, allowAutoStretch: false);
-                    ImGui.Image(wrap.Handle, size);
-                    renderedPreview = true;
+                    var wrap = previewTexture.GetWrapOrEmpty();
+                    if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                    {
+                        var maxThumbnail = new Vector2(40f, 40f) * scale;
+                        var bounds = GetAttachmentBounds(maxThumbnail, allowAutoStretch: false);
+                        var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds, allowAutoStretch: false);
+                        SafeImage(previewTexture, size);
+                        renderedPreview = true;
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    // preview texture disposed before draw
                 }
             }
 
@@ -2744,13 +2924,20 @@ public class ChatWindow : IDisposable
         EnsureAttachmentPreview(attachment.Path);
         if (_attachmentPreviewTextures.TryGetValue(attachment.Path, out var texture) && texture != null)
         {
-            var wrap = texture.GetWrapOrEmpty();
-            if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+            try
             {
-                var attachmentCap = new Vector2(480f, 360f) * ImGuiHelpers.GlobalScale;
-                var bounds = GetAttachmentBounds(attachmentCap);
-                var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds);
-                ImGui.Image(wrap.Handle, size);
+                var wrap = texture.GetWrapOrEmpty();
+                if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                {
+                    var attachmentCap = new Vector2(480f, 360f) * ImGuiHelpers.GlobalScale;
+                    var bounds = GetAttachmentBounds(attachmentCap);
+                    var size = CalculateAttachmentDisplaySize(new Vector2(wrap.Width, wrap.Height), bounds);
+                    SafeImage(texture, size);
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                // preview texture disposed before draw
             }
         }
     }
@@ -2792,8 +2979,7 @@ public class ChatWindow : IDisposable
         {
             if (!active.Contains(kvp.Key))
             {
-                if (kvp.Value?.GetWrapOrEmpty() is IDisposable wrap)
-                    wrap.Dispose();
+                QueueTextureForDispose(kvp.Value);
                 _attachmentPreviewTextures.Remove(kvp.Key);
             }
         }
@@ -3477,10 +3663,20 @@ public class ChatWindow : IDisposable
         {
             foreach (var a in msg.Attachments)
             {
-                if (a.Texture?.GetWrapOrEmpty() is IDisposable wrapAtt)
+                if (a.Texture != null)
                 {
-                    wrapAtt.Dispose();
+                    QueueTextureForDispose(a.Texture);
                     a.Texture = null;
+                }
+
+                if (!string.IsNullOrEmpty(a.Url) && _textureCache.TryGetValue(a.Url, out var cached))
+                {
+                    cached.Texture = null;
+                    if (cached.Node.List != null)
+                    {
+                        _textureLru.Remove(cached.Node);
+                    }
+                    _textureCache.Remove(a.Url);
                 }
             }
         }
@@ -3490,8 +3686,11 @@ public class ChatWindow : IDisposable
     {
         foreach (var entry in _textureCache.Values)
         {
-            if (entry.Texture?.GetWrapOrEmpty() is IDisposable wrap)
-                wrap.Dispose();
+            if (entry.Texture != null)
+            {
+                QueueTextureForDispose(entry.Texture);
+                entry.Texture = null;
+            }
         }
         _textureCache.Clear();
         _textureLru.Clear();
@@ -3501,13 +3700,13 @@ public class ChatWindow : IDisposable
         }
         foreach (var tex in _attachmentPreviewTextures.Values)
         {
-            if (tex?.GetWrapOrEmpty() is IDisposable wrap)
-                wrap.Dispose();
+            QueueTextureForDispose(tex);
         }
         _attachmentPreviewTextures.Clear();
         _previewMessage = BridgeMessageFormatter.BridgeFormattedMessage.Empty;
         _previewKey = string.Empty;
         EmbedRenderer.ClearCache();
+        FlushPendingTextureDisposes();
     }
 
     public void Dispose()
@@ -3756,26 +3955,45 @@ public class ChatWindow : IDisposable
         {
             _textureLru.Remove(cached.Node);
             _textureLru.AddFirst(cached.Node);
+            cached.LastUsedFrame = _frameIndex;
             set(cached.Texture);
             return;
         }
 
         var node = _textureLru.AddFirst(url);
-        _textureCache[url] = new TextureCacheEntry(null, node);
+        var entry = new TextureCacheEntry(null, node)
+        {
+            LastUsedFrame = _frameIndex
+        };
+        _textureCache[url] = entry;
 
-        if (_textureCache.Count > TextureCacheCapacity)
+        while (_textureCache.Count > TextureCacheCapacity)
         {
             var last = _textureLru.Last;
-            if (last != null)
+            if (last == null)
             {
-                if (_textureCache.TryGetValue(last.Value, out var toRemove))
-                {
-                    if (toRemove.Texture?.GetWrapOrEmpty() is IDisposable wrap)
-                        wrap.Dispose();
-                    _textureCache.Remove(last.Value);
-                }
-                _textureLru.RemoveLast();
+                break;
             }
+
+            if (!_textureCache.TryGetValue(last.Value, out var toRemove))
+            {
+                _textureLru.RemoveLast();
+                continue;
+            }
+
+            if (toRemove.LastUsedFrame + TextureDisposeSafeLag >= _frameIndex)
+            {
+                break;
+            }
+
+            if (toRemove.Texture != null)
+            {
+                QueueTextureForDispose(toRemove.Texture);
+                toRemove.Texture = null;
+            }
+
+            _textureCache.Remove(last.Value);
+            _textureLru.RemoveLast();
         }
 
         _ = Task.Run(async () =>
@@ -3789,15 +4007,24 @@ public class ChatWindow : IDisposable
                     RawImageSpecification.Rgba32(image.Width, image.Height),
                     image.Data);
                 var texture = new ForwardingSharedImmediateTexture(wrap);
-                if (_textureCache.TryGetValue(url, out var entry))
+                if (_textureCache.TryGetValue(url, out var cachedEntry))
                 {
-                    entry.Texture = texture;
+                    cachedEntry.Texture = texture;
+                    cachedEntry.LastUsedFrame = _frameIndex;
                 }
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
             }
             catch
             {
                 _ = PluginServices.Instance!.Framework.RunOnTick(() => set(null));
+                if (_textureCache.TryGetValue(url, out var failedEntry))
+                {
+                    if (failedEntry.Node.List != null)
+                    {
+                        _textureLru.Remove(failedEntry.Node);
+                    }
+                    _textureCache.Remove(url);
+                }
             }
         });
     }

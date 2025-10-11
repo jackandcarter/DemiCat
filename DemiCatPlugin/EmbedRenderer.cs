@@ -14,7 +14,7 @@ public static class EmbedRenderer
 {
     private static readonly Dictionary<string, ISharedImmediateTexture?> ThumbnailCache = new();
 
-    public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null)
+    public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null, Action<string?>? touchTexture = null)
     {
         using var emojiFont = emojiManager.PushEmojiFont();
         if (!string.IsNullOrEmpty(dto.Title))
@@ -78,8 +78,8 @@ public static class EmbedRenderer
             }
             if (tex != null)
             {
-                var wrap = tex.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, new Vector2(wrap.Width, wrap.Height));
+                touchTexture?.Invoke(dto.ThumbnailUrl);
+                SafeImage(tex);
             }
         }
 
@@ -152,6 +152,30 @@ public static class EmbedRenderer
     public static void ClearCache()
     {
         ThumbnailCache.Clear();
+    }
+
+    private static void SafeImage(ISharedImmediateTexture? tex)
+    {
+        if (tex == null)
+        {
+            return;
+        }
+
+        try
+        {
+            var wrap = tex.GetWrapOrEmpty();
+            var handle = wrap.Handle;
+            if (handle == IntPtr.Zero)
+            {
+                return;
+            }
+
+            ImGui.Image(handle, new Vector2(wrap.Width, wrap.Height));
+        }
+        catch (ObjectDisposedException)
+        {
+            // disposed while drawing – ignore
+        }
     }
 }
 
