@@ -23,7 +23,8 @@ public class FcChatWindow : ChatWindow
         ChannelService channelService,
         ChannelSelectionService channelSelection,
         AvatarCache avatarCache,
-        EmojiManager emojiManager)
+        EmojiManager emojiManager,
+        IChatBridge? chatBridge = null)
         : base(
             config,
             httpClient,
@@ -33,7 +34,8 @@ public class FcChatWindow : ChatWindow
             channelSelection,
             global::DemiCatPlugin.ChannelKind.FcChat,
             avatarCache,
-            emojiManager)
+            emojiManager,
+            chatBridge)
     {
         if (presence != null)
         {

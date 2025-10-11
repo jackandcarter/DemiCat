@@ -35,7 +35,8 @@ public class OfficerChatWindow : ChatWindow
         ChannelService channelService,
         ChannelSelectionService channelSelection,
         AvatarCache avatarCache,
-        EmojiManager emojiManager)
+        EmojiManager emojiManager,
+        IChatBridge? chatBridge = null)
         : base(
             config,
             httpClient,
@@ -45,7 +46,8 @@ public class OfficerChatWindow : ChatWindow
             channelSelection,
             global::DemiCatPlugin.ChannelKind.OfficerChat,
             avatarCache,
-            emojiManager)
+            emojiManager,
+            chatBridge)
     {
         if (presence != null)
         {
@@ -114,7 +116,13 @@ public class OfficerChatWindow : ChatWindow
             return;
         }
 
-        MarkNetworkingStarted();
+        if (!MarkNetworkingStarted())
+        {
+            Subscribe();
+            TryRefreshRoles();
+            return;
+        }
+
         _presence?.SetPresenceReady(true);
         _bridge.Start();
         Subscribe();

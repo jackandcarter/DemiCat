@@ -56,7 +56,8 @@ public class ChatWindow : IDisposable
     private readonly EmojiManager _emojiManager;
     private readonly EmojiPicker _emojiPicker;
     private readonly Dictionary<string, EmojiData> _emojiCatalog = new();
-    protected readonly ChatBridge _bridge;
+    protected readonly IChatBridge _bridge;
+    private readonly bool _ownsBridge;
     private readonly ChannelSelectionService _channelSelection;
     private readonly AvatarCache? _avatarCache;
     private readonly string _channelKind;
@@ -396,7 +397,8 @@ public class ChatWindow : IDisposable
         ChannelSelectionService channelSelection,
         string channelKind,
         AvatarCache? avatarCache,
-        EmojiManager emojiManager)
+        EmojiManager emojiManager,
+        IChatBridge? chatBridge = null)
     {
         _config = config;
         _httpClient = httpClient;
@@ -411,17 +413,9 @@ public class ChatWindow : IDisposable
         _ = _emojiManager.EnsureUnicodeAsync();
         _ = _emojiManager.EnsureCustomAsync();
         _useCharacterName = config.UseCharacterName;
-        _bridge = new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri, channelSelection);
-        _bridge.MessageReceived += HandleBridgeMessage;
-        _bridge.TypingReceived += HandleBridgeTyping;
-        _bridge.Linked += HandleBridgeLinked;
-        _bridge.Unlinked += HandleBridgeUnlinked;
-        _bridge.StatusChanged += s => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = s);
-        _bridge.ResyncRequested += (ch, cur) =>
-            PluginServices.Instance!.Framework.RunOnTick(async () =>
-            {
-                if (ch == CurrentChannelId) await RefreshMessages();
-            });
+        _bridge = chatBridge ?? new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri, channelSelection);
+        _ownsBridge = chatBridge == null;
+        AttachBridgeEvents();
 
         _channelSelection.ChannelChanged += HandleChannelSelectionChanged;
     }
@@ -446,9 +440,35 @@ public class ChatWindow : IDisposable
     {
     }
 
-    protected void MarkNetworkingStarted()
+    private void AttachBridgeEvents()
     {
+        _bridge.MessageReceived += HandleBridgeMessage;
+        _bridge.TypingReceived += HandleBridgeTyping;
+        _bridge.Linked += HandleBridgeLinked;
+        _bridge.Unlinked += HandleBridgeUnlinked;
+        _bridge.StatusChanged += HandleBridgeStatusChanged;
+        _bridge.ResyncRequested += HandleBridgeResyncRequested;
+    }
+
+    private void DetachBridgeEvents()
+    {
+        _bridge.MessageReceived -= HandleBridgeMessage;
+        _bridge.TypingReceived -= HandleBridgeTyping;
+        _bridge.Linked -= HandleBridgeLinked;
+        _bridge.Unlinked -= HandleBridgeUnlinked;
+        _bridge.StatusChanged -= HandleBridgeStatusChanged;
+        _bridge.ResyncRequested -= HandleBridgeResyncRequested;
+    }
+
+    protected bool MarkNetworkingStarted()
+    {
+        if (_networkingActive)
+        {
+            return false;
+        }
+
         _networkingActive = true;
+        return true;
     }
 
     protected void MarkNetworkingStopped()
@@ -537,7 +557,12 @@ public class ChatWindow : IDisposable
 
     public virtual void StartNetworking()
     {
-        MarkNetworkingStarted();
+        if (!MarkNetworkingStarted())
+        {
+            TrySubscribeCurrentChannel(force: true);
+            return;
+        }
+
         _presence?.SetPresenceReady(true);
         _bridge.Start();
         TrySubscribeCurrentChannel(force: true);
@@ -3488,8 +3513,12 @@ public class ChatWindow : IDisposable
     public void Dispose()
     {
         StopNetworking();
+        DetachBridgeEvents();
         _channelSelection.ChannelChanged -= HandleChannelSelectionChanged;
-        _bridge.Dispose();
+        if (_ownsBridge)
+        {
+            _bridge.Dispose();
+        }
         foreach (var message in _messages)
         {
             DisposeMessageTextures(message);
@@ -3608,6 +3637,22 @@ public class ChatWindow : IDisposable
                 _channelsLoading = false;
             });
         }
+    }
+
+    private void HandleBridgeStatusChanged(string status)
+    {
+        _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = status);
+    }
+
+    private void HandleBridgeResyncRequested(string channel, long cursor)
+    {
+        PluginServices.Instance!.Framework.RunOnTick(async () =>
+        {
+            if (channel == CurrentChannelId)
+            {
+                await RefreshMessages();
+            }
+        });
     }
 
     private void HandleBridgeMessage(string json)

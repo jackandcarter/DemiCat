@@ -12,7 +12,7 @@ using System.Diagnostics;
 
 namespace DemiCatPlugin;
 
-public class ChatBridge : IDisposable
+public class ChatBridge : IChatBridge
 {
     private readonly Config _config;
     private readonly HttpClient _httpClient;
