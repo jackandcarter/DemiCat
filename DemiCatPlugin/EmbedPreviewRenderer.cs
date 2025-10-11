@@ -218,7 +218,8 @@ public static class EmbedPreviewRenderer
         if (borderEnabled && rectMax.X > rectMin.X && rectMax.Y > rectMin.Y)
         {
             var drawList = ImGui.GetWindowDrawList();
-            var color = ColorUtils.RgbToImGui(borderColor);
+            var colorVec = ColorUtils.RgbToImGui(borderColor);
+            var color = ImGui.ColorConvertFloat4ToU32(colorVec);
             var inset = new Vector2(1f, 1f);
             drawList.AddRect(rectMin + inset, rectMax - inset, color, 0f, ImDrawFlags.None, 1.5f);
         }
