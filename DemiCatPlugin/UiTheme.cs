@@ -137,10 +137,7 @@ public static class UiTheme
         RequestCloseThisFrame = false;
 
         var drawList = ImGui.GetWindowDrawList();
-        if (drawList.NativePtr == IntPtr.Zero)
-        {
-            return;
-        }
+        // drawList is valid inside a begun window; no NativePtr check needed
 
         var windowPos = ImGui.GetWindowPos();
         var windowSize = ImGui.GetWindowSize();
@@ -227,11 +224,7 @@ public static class UiTheme
     public static void DrawSectionSeparator()
     {
         var drawList = ImGui.GetWindowDrawList();
-        if (drawList.NativePtr == IntPtr.Zero)
-        {
-            ImGui.Separator();
-            return;
-        }
+        // drawList is valid inside a begun window; no NativePtr check needed
 
         var style = ImGui.GetStyle();
         var scale = ImGuiHelpers.GlobalScale;
@@ -243,7 +236,7 @@ public static class UiTheme
         var min = new Vector2(startPos.X, centerY - thickness * 0.5f);
         var max = new Vector2(startPos.X + width, centerY + thickness * 0.5f);
 
-        var color = _frameState.Frame == ImGui.GetFrameCount()
+        var color = _frameState.Frame == (uint)ImGui.GetFrameCount()
             ? _frameState.SeparatorColor
             : ImGui.GetStyle().Colors[(int)ImGuiCol.Separator];
         drawList.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(color), thickness * 0.5f);
@@ -269,7 +262,7 @@ public static class UiTheme
 
     private static void CacheFrameState(Vector4 primary, Vector4 secondary, Vector4 accent, ImGuiStylePtr style)
     {
-        var frame = ImGui.GetFrameCount();
+        var frame = (uint)ImGui.GetFrameCount();
         if (_frameState.Frame == frame)
         {
             return;
