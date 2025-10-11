@@ -138,7 +138,7 @@ public class ChatWindow : IDisposable
         }
     }
 
-    private void TouchTexture(string? key)
+    protected void TouchTexture(string? key)
     {
         if (string.IsNullOrEmpty(key))
         {
@@ -645,6 +645,7 @@ public class ChatWindow : IDisposable
 
     public DiscordPresenceService? Presence => _presence;
     public Action<string?, Action<ISharedImmediateTexture?>> TextureLoader => LoadTexture;
+    public Action<string?> TextureTouchAction => TouchTexture;
 
     protected virtual string MessagesPath => "/api/messages";
     protected virtual bool MentionsEnabled => false;
