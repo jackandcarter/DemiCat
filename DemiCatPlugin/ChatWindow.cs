@@ -773,7 +773,7 @@ public class ChatWindow : IDisposable
 
         if (!_channelsLoaded && !_channelsLoading)
         {
-            _ = FetchChannels();
+            _ = FetchChannelsSafe();
         }
 
         if (_channels.Count > 0)
@@ -3752,10 +3752,24 @@ public class ChatWindow : IDisposable
             return Task.CompletedTask;
         }
         _channelsLoaded = false;
-        return FetchChannels();
+        return FetchChannelsSafe();
     }
 
-    protected virtual async Task FetchChannels(bool refreshed = false)
+    private async Task FetchChannelsSafe(bool refreshed = false)
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+        try
+        {
+            await FetchChannels(refreshed, cts.Token);
+        }
+        catch (TaskCanceledException)
+        {
+            using var retryCts = new CancellationTokenSource(TimeSpan.FromSeconds(25));
+            await FetchChannels(refreshed, retryCts.Token);
+        }
+    }
+
+    protected virtual async Task FetchChannels(bool refreshed = false, CancellationToken cancellationToken = default)
     {
         if (_channelsLoading && !refreshed)
         {
@@ -3786,7 +3800,7 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var channels = (await _channelService.FetchAsync(_channelKind, CancellationToken.None)).ToList();
+            var channels = (await _channelService.FetchAsync(_channelKind, cancellationToken)).ToList();
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
             {
                 if (refreshed)

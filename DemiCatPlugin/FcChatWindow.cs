@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using System.Numerics;
@@ -88,13 +89,13 @@ public class FcChatWindow : ChatWindow
         return base.RefreshMessages();
     }
 
-    protected override Task FetchChannels(bool refreshed = false)
+    protected override Task FetchChannels(bool refreshed = false, CancellationToken cancellationToken = default)
     {
         if (!_config.SyncedChat || !_config.EnableFcChat)
         {
             return Task.CompletedTask;
         }
-        return base.FetchChannels(refreshed);
+        return base.FetchChannels(refreshed, cancellationToken);
     }
 }
 
