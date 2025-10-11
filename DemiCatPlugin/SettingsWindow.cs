@@ -68,9 +68,16 @@ public class SettingsWindow : IDisposable
         {
             using var scope = new UiStyleScope(_config);
             var open = IsOpen;
-            if (ImGui.Begin("DemiCat Settings", ref open))
+            var flags = ImGuiWindowFlags.NoTitleBar;
+            if (ImGui.Begin("DemiCat Settings", ref open, flags))
             {
-                UiTheme.DrawWindowChrome(_config, null, () => open = false);
+                UiTheme.DrawWindowChrome(_config, "DemiCat Settings", () => open = false);
+
+                var dragHeight = ImGui.GetFrameHeight();
+                ImGui.SetCursorPosY(ImGui.GetStyle().WindowPadding.Y);
+                ImGui.InvisibleButton("##drag_zone_settings", new Vector2(ImGui.GetContentRegionAvail().X, dragHeight));
+
+                ImGui.Dummy(new Vector2(0f, ImGui.GetStyle().FramePadding.Y * 2f));
 
                 if (!_settingsLoaded)
                 {
@@ -103,14 +110,7 @@ public class SettingsWindow : IDisposable
             }
             ImGui.End();
 
-            if (!open || UiTheme.RequestCloseThisFrame)
-            {
-                IsOpen = false;
-            }
-            else
-            {
-                IsOpen = open;
-            }
+            IsOpen = (!open || UiTheme.RequestCloseThisFrame) ? false : open;
         }
 
         _devWindow.Draw();

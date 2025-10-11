@@ -994,14 +994,20 @@ public class MainWindow : IDisposable
         var openRef = open;
         var windowInteracted = false;
         var closeRequested = false;
-        if (ImGui.Begin($"{title}##dc_{id}", ref openRef, ImGuiWindowFlags.NoCollapse))
+        var windowFlags = ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoTitleBar;
+        if (ImGui.Begin($"{title}##dc_{id}", ref openRef, windowFlags))
         {
-            UiTheme.DrawWindowChrome(_config, null, () =>
+            UiTheme.DrawWindowChrome(_config, title, () =>
             {
                 openRef = false;
                 closeRequested = true;
             });
 
+            var dragHeight = ImGui.GetFrameHeight();
+            ImGui.SetCursorPosY(ImGui.GetStyle().WindowPadding.Y);
+            ImGui.InvisibleButton($"##drag_zone_dc_{id}", new Vector2(ImGui.GetContentRegionAvail().X, dragHeight));
+
+            ImGui.Dummy(new Vector2(0f, ImGui.GetStyle().FramePadding.Y * 2f));
             drawContent();
             windowInteracted = HasWindowInteraction();
         }

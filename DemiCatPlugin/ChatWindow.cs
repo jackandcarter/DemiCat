@@ -1893,22 +1893,22 @@ public class ChatWindow : IDisposable
     public virtual void DrawThemedWindow(string title, ref bool isOpen, ImGuiWindowFlags flags = ImGuiWindowFlags.None)
     {
         using var scope = new UiStyleScope(_config);
+        flags |= ImGuiWindowFlags.NoTitleBar;
         var open = isOpen;
         if (ImGui.Begin(title, ref open, flags))
         {
-            UiTheme.DrawWindowChrome(_config, null, () => open = false);
+            UiTheme.DrawWindowChrome(_config, title, () => open = false);
+
+            var dragHeight = ImGui.GetFrameHeight();
+            ImGui.SetCursorPosY(ImGui.GetStyle().WindowPadding.Y);
+            ImGui.InvisibleButton($"##drag_zone_{title}", new Vector2(ImGui.GetContentRegionAvail().X, dragHeight));
+
+            ImGui.Dummy(new Vector2(0f, ImGui.GetStyle().FramePadding.Y * 2f));
             Draw();
         }
         ImGui.End();
 
-        if (!open || UiTheme.RequestCloseThisFrame)
-        {
-            isOpen = false;
-        }
-        else
-        {
-            isOpen = open;
-        }
+        isOpen = (!open || UiTheme.RequestCloseThisFrame) ? false : open;
     }
 
     protected List<ChannelDto> PrepareChannelsForDisplay(IEnumerable<ChannelDto> channels)
