@@ -87,13 +87,13 @@ public class FcChatWindow : ChatWindow
         ImGui.EndChild();
     }
 
-    public override Task RefreshMessages()
+    public override Task RefreshMessages(CancellationToken cancellationToken = default)
     {
         if (!_config.SyncedChat || !_config.EnableFcChat)
         {
             return Task.CompletedTask;
         }
-        return base.RefreshMessages();
+        return base.RefreshMessages(cancellationToken);
     }
 
     protected override Task FetchChannels(bool refreshed = false, CancellationToken cancellationToken = default)
