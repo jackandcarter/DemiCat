@@ -89,17 +89,33 @@ public static class EmbedRenderer
             }
             else
             {
-                var wrap = tex.GetWrapOrEmpty();
-                var width = wrap.Width <= 0 ? DefaultThumbSize : wrap.Width;
-                var height = wrap.Height <= 0 ? DefaultThumbSize : wrap.Height;
-                if (isVisible == null || isVisible(startY, height))
+                try
                 {
-                    touchTexture?.Invoke(dto.ThumbnailUrl);
-                    SafeImage(tex);
+                    var wrap = tex.GetWrapOrEmpty();
+                    var width = wrap.Width <= 0 ? DefaultThumbSize : wrap.Width;
+                    var height = wrap.Height <= 0 ? DefaultThumbSize : wrap.Height;
+                    if (isVisible == null || isVisible(startY, height))
+                    {
+                        touchTexture?.Invoke(dto.ThumbnailUrl);
+                        if (wrap.Handle != IntPtr.Zero)
+                        {
+                            ImGui.Image(wrap.Handle, new Vector2(width, height));
+                        }
+                        else
+                        {
+                            ThumbnailCache[dto.ThumbnailUrl] = null;
+                            ImGui.Dummy(new Vector2(DefaultThumbSize, DefaultThumbSize));
+                        }
+                    }
+                    else
+                    {
+                        ImGui.Dummy(new Vector2(width, height));
+                    }
                 }
-                else
+                catch (ObjectDisposedException)
                 {
-                    ImGui.Dummy(new Vector2(width, height));
+                    ThumbnailCache[dto.ThumbnailUrl] = null;
+                    ImGui.Dummy(new Vector2(DefaultThumbSize, DefaultThumbSize));
                 }
             }
         }
@@ -175,28 +191,5 @@ public static class EmbedRenderer
         ThumbnailCache.Clear();
     }
 
-    private static void SafeImage(ISharedImmediateTexture? tex)
-    {
-        if (tex == null)
-        {
-            return;
-        }
-
-        try
-        {
-            var wrap = tex.GetWrapOrEmpty();
-            var handle = wrap.Handle;
-            if (handle == IntPtr.Zero)
-            {
-                return;
-            }
-
-            ImGui.Image(handle, new Vector2(wrap.Width, wrap.Height));
-        }
-        catch (ObjectDisposedException)
-        {
-            // disposed while drawing – ignore
-        }
-    }
 }
 
