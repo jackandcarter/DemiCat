@@ -941,8 +941,6 @@ public class ChatWindow : IDisposable
             }
             if (msg.AvatarTexture != null)
             {
-                // prevent eviction this frame
-                TouchTexture($"avatar:{msg.Author?.Id}");
                 SafeImage(msg.AvatarTexture, new Vector2(20, 20));
             }
             else
@@ -4167,33 +4165,36 @@ public class ChatWindow : IDisposable
         };
         _textureCache[url] = entry;
 
-        while (_textureCache.Count > TextureCacheCapacity)
+        if (_textureCache.Count > TextureCacheCapacity)
         {
-            var last = _textureLru.Last;
-            if (last == null)
+            var nodeToCheck = _textureLru.Last;
+            while (_textureCache.Count > TextureCacheCapacity && nodeToCheck != null)
             {
-                break;
-            }
+                var previous = nodeToCheck.Previous;
 
-            if (!_textureCache.TryGetValue(last.Value, out var toRemove))
-            {
-                _textureLru.RemoveLast();
-                continue;
-            }
+                if (!_textureCache.TryGetValue(nodeToCheck.Value, out var toRemove))
+                {
+                    _textureLru.Remove(nodeToCheck);
+                    nodeToCheck = previous;
+                    continue;
+                }
 
-            if (toRemove.LastUsedFrame + TextureDisposeSafeLag >= _frameIndex)
-            {
-                break;
-            }
+                if (toRemove.LastUsedFrame + TextureDisposeSafeLag >= _frameIndex)
+                {
+                    nodeToCheck = previous;
+                    continue;
+                }
 
-            if (toRemove.Texture != null)
-            {
-                QueueTextureForDispose(toRemove.Texture);
-                toRemove.Texture = null;
-            }
+                if (toRemove.Texture != null)
+                {
+                    QueueTextureForDispose(toRemove.Texture);
+                    toRemove.Texture = null;
+                }
 
-            _textureCache.Remove(last.Value);
-            _textureLru.RemoveLast();
+                _textureCache.Remove(nodeToCheck.Value);
+                _textureLru.Remove(nodeToCheck);
+                nodeToCheck = previous;
+            }
         }
 
         _ = Task.Run(async () =>
@@ -4207,24 +4208,45 @@ public class ChatWindow : IDisposable
                     RawImageSpecification.Rgba32(image.Width, image.Height),
                     image.Data);
                 var texture = new ForwardingSharedImmediateTexture(wrap);
-                if (_textureCache.TryGetValue(url, out var cachedEntry))
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
-                    cachedEntry.Texture = texture;
-                    cachedEntry.LastUsedFrame = _frameIndex;
-                }
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(texture));
+                    if (_textureCache.TryGetValue(url, out var cachedEntry))
+                    {
+                        cachedEntry.Texture = texture;
+                        cachedEntry.LastUsedFrame = _frameIndex;
+
+                        if (cachedEntry.Node.List != null)
+                        {
+                            _textureLru.Remove(cachedEntry.Node);
+                            _textureLru.AddFirst(cachedEntry.Node);
+                        }
+                    }
+
+                    set(texture);
+                });
             }
             catch
             {
-                _ = PluginServices.Instance!.Framework.RunOnTick(() => set(null));
-                if (_textureCache.TryGetValue(url, out var failedEntry))
+                _ = PluginServices.Instance!.Framework.RunOnTick(() =>
                 {
-                    if (failedEntry.Node.List != null)
+                    set(null);
+
+                    if (_textureCache.TryGetValue(url, out var failedEntry))
                     {
-                        _textureLru.Remove(failedEntry.Node);
+                        if (failedEntry.Texture != null)
+                        {
+                            QueueTextureForDispose(failedEntry.Texture);
+                            failedEntry.Texture = null;
+                        }
+
+                        if (failedEntry.Node.List != null)
+                        {
+                            _textureLru.Remove(failedEntry.Node);
+                        }
+
+                        _textureCache.Remove(url);
                     }
-                    _textureCache.Remove(url);
-                }
+                });
             }
         });
     }
