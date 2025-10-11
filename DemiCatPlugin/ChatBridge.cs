@@ -843,9 +843,21 @@ public class ChatBridge : IChatBridge
                     const int SliceSize = 100;
                     if (SpreadAcrossFrames)
                     {
-                        DispatchInTicks(deliveries, SliceSize, p => MessageReceived?.Invoke(p));
-                        DispatchInTicks(deleted, SliceSize, id => MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}"));
-                        DispatchInTicks(typings, SliceSize, a => TypingReceived?.Invoke(a));
+                        DispatchInTicks(deliveries, SliceSize, p =>
+                        {
+                            var handler = MessageReceived;
+                            handler?.Invoke(p);
+                        });
+                        DispatchInTicks(deleted, SliceSize, id =>
+                        {
+                            var handler = MessageReceived;
+                            handler?.Invoke($"{\"deletedId\":\"{id}\"}");
+                        });
+                        DispatchInTicks(typings, SliceSize, a =>
+                        {
+                            var handler = TypingReceived;
+                            handler?.Invoke(a);
+                        });
                     }
                     else
                     {
