@@ -49,6 +49,10 @@ public class Plugin : IDalamudPlugin
     private readonly ChannelSelectionService _channelSelection;
     private readonly EmojiManager _emojiManager;
     private readonly RefCountedChatBridge _sharedChatBridge;
+    private readonly MessageCache _messageCache;
+    private readonly ChatBridge _baseChatBridge;
+    private readonly Timer _queueMetricsTimer;
+    private bool _disposed;
 
     private Config _config = null!;
     private readonly HttpClient _httpClient;
@@ -95,6 +99,7 @@ public class Plugin : IDalamudPlugin
         _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
         _emojiFontHandle = InitializeEmojiFont();
         _emojiManager.EmojiFontHandle = _emojiFontHandle;
+        _messageCache = new MessageCache();
         var baseChatBridge = new ChatBridge(
             _config,
             _httpClient,
@@ -115,6 +120,7 @@ public class Plugin : IDalamudPlugin
                 return builder.Uri;
             },
             _channelSelection);
+        _baseChatBridge = baseChatBridge;
         _sharedChatBridge = new RefCountedChatBridge(baseChatBridge);
         _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
@@ -125,8 +131,8 @@ public class Plugin : IDalamudPlugin
 
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
         _avatarCache = new AvatarCache(TextureProvider, _httpClient);
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager, _sharedChatBridge);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager, _sharedChatBridge);
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _messageCache, _avatarCache, _emojiManager, _sharedChatBridge);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _messageCache, _avatarCache, _emojiManager, _sharedChatBridge);
 
         _presenceService?.Reset();
 
@@ -193,10 +199,13 @@ public class Plugin : IDalamudPlugin
         }
 
         _services.Log.Info("DemiCat loaded.");
+        _queueMetricsTimer = new Timer(LogQueueStats, null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(30));
     }
 
     public void Dispose()
     {
+        _disposed = true;
+        _queueMetricsTimer.Dispose();
         WebTextureCache.FetchOverride = null;
         try
         {
@@ -246,6 +255,25 @@ public class Plugin : IDalamudPlugin
         if (PluginServices.Instance != null)
         {
             PluginServices.Instance.ProgressOverlay = null;
+        }
+    }
+
+    private void LogQueueStats(object? state)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        try
+        {
+            var stats = _baseChatBridge.GetQueueStats();
+            _services.Log?.Info(
+                $"chat.q hiText={stats.HighText} hiDel={stats.HighDelete} midTy={stats.MediumTyping} lowAsset={stats.LowAssets} shedMid={stats.ShedMedium} shedLow={stats.ShedLow}");
+        }
+        catch (Exception ex)
+        {
+            _services.Log?.Warning(ex, "Failed to log chat queue stats.");
         }
     }
 

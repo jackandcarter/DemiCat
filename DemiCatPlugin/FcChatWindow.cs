@@ -23,6 +23,7 @@ public class FcChatWindow : ChatWindow
         TokenManager tokenManager,
         ChannelService channelService,
         ChannelSelectionService channelSelection,
+        MessageCache messageCache,
         AvatarCache avatarCache,
         EmojiManager emojiManager,
         IChatBridge? chatBridge = null)
@@ -33,6 +34,7 @@ public class FcChatWindow : ChatWindow
             tokenManager,
             channelService,
             channelSelection,
+            messageCache,
             global::DemiCatPlugin.ChannelKind.FcChat,
             avatarCache,
             emojiManager,

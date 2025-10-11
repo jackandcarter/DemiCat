@@ -14,7 +14,13 @@ public static class EmbedRenderer
 {
     private static readonly Dictionary<string, ISharedImmediateTexture?> ThumbnailCache = new();
 
-    public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null, Action<string?>? touchTexture = null)
+    public static void Draw(
+        EmbedDto dto,
+        Action<string?, Action<ISharedImmediateTexture?>> loadTexture,
+        EmojiManager emojiManager,
+        Action<string>? onButtonClick = null,
+        Action<string?>? touchTexture = null,
+        Func<float, float, bool>? isVisible = null)
     {
         using var emojiFont = emojiManager.PushEmojiFont();
         if (!string.IsNullOrEmpty(dto.Title))
@@ -70,16 +76,31 @@ public static class EmbedRenderer
 
         if (!string.IsNullOrEmpty(dto.ThumbnailUrl))
         {
-            if (!ThumbnailCache.TryGetValue(dto.ThumbnailUrl, out var tex))
+            var startY = ImGui.GetCursorPosY();
+            const float DefaultThumbSize = 40f;
+            if (!ThumbnailCache.TryGetValue(dto.ThumbnailUrl, out var tex) || tex == null)
             {
-                ThumbnailCache[dto.ThumbnailUrl] = null;
-                loadTexture(dto.ThumbnailUrl, t => ThumbnailCache[dto.ThumbnailUrl] = t);
-                tex = null;
+                if (isVisible == null || isVisible(startY, DefaultThumbSize))
+                {
+                    ThumbnailCache[dto.ThumbnailUrl] = null;
+                    loadTexture(dto.ThumbnailUrl, t => ThumbnailCache[dto.ThumbnailUrl] = t);
+                }
+                ImGui.Dummy(new Vector2(DefaultThumbSize, DefaultThumbSize));
             }
-            if (tex != null)
+            else
             {
-                touchTexture?.Invoke(dto.ThumbnailUrl);
-                SafeImage(tex);
+                var wrap = tex.GetWrapOrEmpty();
+                var width = wrap.Width <= 0 ? DefaultThumbSize : wrap.Width;
+                var height = wrap.Height <= 0 ? DefaultThumbSize : wrap.Height;
+                if (isVisible == null || isVisible(startY, height))
+                {
+                    touchTexture?.Invoke(dto.ThumbnailUrl);
+                    SafeImage(tex);
+                }
+                else
+                {
+                    ImGui.Dummy(new Vector2(width, height));
+                }
             }
         }
 

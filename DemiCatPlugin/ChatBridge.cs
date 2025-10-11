@@ -64,20 +64,61 @@ public class ChatBridge : IChatBridge
 
     private static readonly bool SpreadAcrossFrames = true;
 
-    private readonly Queue<string> _msgQ = new();
-    private readonly Queue<string> _deletedQ = new();
-    private readonly Queue<DiscordUserDto> _typingQ = new();
+    // Priority queues
+    private readonly Queue<string> _qHighText = new();
+    private readonly Queue<string> _qHighDelete = new();
+    private readonly Queue<DiscordUserDto> _qMediumTyping = new();
+    private readonly Queue<Action> _qLowAssets = new();
+
+    private const int BudgetHigh = 120;
+    private const int BudgetMedium = 60;
+    private const int BudgetLow = 20;
+    private const int MaxQueuedItems = 10_000;
+
+    private long _shedLowCount;
+    private long _shedMediumCount;
     private bool _drainScheduled;
 
     private void EnqueueDeliveries(List<string> msgs, List<string> deleted, List<DiscordUserDto> typings)
     {
         lock (_stateLock)
         {
-            foreach (var m in msgs) _msgQ.Enqueue(m);
-            foreach (var d in deleted) _deletedQ.Enqueue(d);
-            foreach (var t in typings) _typingQ.Enqueue(t);
+            foreach (var m in msgs)
+            {
+                _qHighText.Enqueue(m);
+            }
 
-            if (_drainScheduled) return;
+            foreach (var d in deleted)
+            {
+                _qHighDelete.Enqueue(d);
+            }
+
+            foreach (var t in typings)
+            {
+                _qMediumTyping.Enqueue(t);
+            }
+
+            var total = _qHighText.Count + _qHighDelete.Count + _qMediumTyping.Count + _qLowAssets.Count;
+
+            while (total > MaxQueuedItems && _qLowAssets.Count > 0)
+            {
+                _qLowAssets.Dequeue();
+                _shedLowCount++;
+                total--;
+            }
+
+            while (total > MaxQueuedItems && _qMediumTyping.Count > 0)
+            {
+                _qMediumTyping.Dequeue();
+                _shedMediumCount++;
+                total--;
+            }
+
+            if (_drainScheduled)
+            {
+                return;
+            }
+
             _drainScheduled = true;
         }
 
@@ -86,61 +127,136 @@ public class ChatBridge : IChatBridge
 
     private void DrainQueues()
     {
-        const int MaxPerFrame = 300;
-        var count = 0;
+        var hi = BudgetHigh;
+        var mid = BudgetMedium;
+        var lo = BudgetLow;
 
-        while (count < MaxPerFrame)
+        while (hi > 0)
         {
             string? payload = null;
+            string? deleteId = null;
+
             lock (_stateLock)
             {
-                if (_msgQ.Count == 0) break;
-                payload = _msgQ.Dequeue();
+                if (_qHighText.Count > 0)
+                {
+                    payload = _qHighText.Dequeue();
+                }
+                else if (_qHighDelete.Count > 0)
+                {
+                    deleteId = _qHighDelete.Dequeue();
+                }
+                else
+                {
+                    break;
+                }
             }
 
-            MessageReceived?.Invoke(payload);
-            count++;
+            if (payload != null)
+            {
+                MessageReceived?.Invoke(payload);
+            }
+            else if (deleteId != null)
+            {
+                MessageReceived?.Invoke($"{{\"deletedId\":\"{deleteId}\"}}");
+            }
+
+            hi--;
         }
 
-        while (count < MaxPerFrame)
+        while (mid > 0)
         {
-            string? id = null;
+            DiscordUserDto? typing = null;
             lock (_stateLock)
             {
-                if (_deletedQ.Count == 0) break;
-                id = _deletedQ.Dequeue();
+                if (_qMediumTyping.Count == 0)
+                {
+                    break;
+                }
+
+                typing = _qMediumTyping.Dequeue();
             }
 
-            MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}");
-            count++;
+            TypingReceived?.Invoke(typing!);
+            mid--;
         }
 
-        while (count < MaxPerFrame)
+        while (lo > 0)
         {
-            DiscordUserDto? author = null;
+            Action? action = null;
             lock (_stateLock)
             {
-                if (_typingQ.Count == 0) break;
-                author = _typingQ.Dequeue();
+                if (_qLowAssets.Count == 0)
+                {
+                    break;
+                }
+
+                action = _qLowAssets.Dequeue();
             }
 
-            TypingReceived?.Invoke(author);
-            count++;
+            try
+            {
+                action?.Invoke();
+            }
+            catch
+            {
+                // ignored
+            }
+
+            lo--;
         }
 
-        bool more;
+        bool hasMore;
         lock (_stateLock)
         {
-            more = _msgQ.Count > 0 || _deletedQ.Count > 0 || _typingQ.Count > 0;
-            if (!more)
+            hasMore = _qHighText.Count + _qHighDelete.Count + _qMediumTyping.Count + _qLowAssets.Count > 0;
+            if (!hasMore)
             {
                 _drainScheduled = false;
             }
         }
 
-        if (more)
+        if (hasMore)
         {
             OnFramework(DrainQueues);
+        }
+    }
+
+    public readonly struct QueueStats
+    {
+        public QueueStats(int highText, int highDelete, int mediumTyping, int lowAssets, long shedMedium, long shedLow)
+        {
+            HighText = highText;
+            HighDelete = highDelete;
+            MediumTyping = mediumTyping;
+            LowAssets = lowAssets;
+            ShedMedium = shedMedium;
+            ShedLow = shedLow;
+        }
+
+        public int HighText { get; }
+        public int HighDelete { get; }
+        public int MediumTyping { get; }
+        public int LowAssets { get; }
+        public long ShedMedium { get; }
+        public long ShedLow { get; }
+    }
+
+    public QueueStats GetQueueStats()
+    {
+        lock (_stateLock)
+        {
+            var stats = new QueueStats(
+                _qHighText.Count,
+                _qHighDelete.Count,
+                _qMediumTyping.Count,
+                _qLowAssets.Count,
+                _shedMediumCount,
+                _shedLowCount);
+
+            _shedMediumCount = 0;
+            _shedLowCount = 0;
+            return stats;
         }
     }
 #if TEST

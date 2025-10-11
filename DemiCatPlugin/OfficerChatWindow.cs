@@ -34,6 +34,7 @@ public class OfficerChatWindow : ChatWindow
         TokenManager tokenManager,
         ChannelService channelService,
         ChannelSelectionService channelSelection,
+        MessageCache messageCache,
         AvatarCache avatarCache,
         EmojiManager emojiManager,
         IChatBridge? chatBridge = null)
@@ -44,6 +45,7 @@ public class OfficerChatWindow : ChatWindow
             tokenManager,
             channelService,
             channelSelection,
+            messageCache,
             global::DemiCatPlugin.ChannelKind.OfficerChat,
             avatarCache,
             emojiManager,
@@ -79,6 +81,7 @@ public class OfficerChatWindow : ChatWindow
             tokenManager,
             channelService,
             new ChannelSelectionService(config),
+            new MessageCache(),
             null!,
             new EmojiManager(httpClient, tokenManager, config))
     {

@@ -59,6 +59,7 @@ public class ChatWindow : IDisposable
     protected readonly IChatBridge _bridge;
     private readonly bool _ownsBridge;
     private readonly ChannelSelectionService _channelSelection;
+    private readonly MessageCache _messageCache;
     private readonly AvatarCache? _avatarCache;
     private readonly string _channelKind;
     private const string ChannelUnavailableMessage = "Selected channel is no longer available";
@@ -76,7 +77,9 @@ public class ChatWindow : IDisposable
     private const int MaxInputLines = 8;
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
     private readonly LinkedList<string> _textureLru = new();
-    private readonly Dictionary<string, TypingUser> _typingUsers = new();
+    private readonly TypingCoalescer _typingCoalescer;
+    private readonly Dictionary<string, string> _typingNameMap = new(StringComparer.Ordinal);
+    private readonly List<string> _typingDisplayNames = new();
     private static readonly Vector4 MessageHoverBgColor = new(0.24f, 0.33f, 0.53f, 0.22f);
     private static readonly Vector4 MessageIdleBgColor = new(1f, 1f, 1f, 0.03f);
     private const float MessageHoverTextBlend = 0.2f;
@@ -105,6 +108,9 @@ public class ChatWindow : IDisposable
     private long _frameIndex;
     private const long TextureDisposeSafeLag = 2;
     private readonly List<ISharedImmediateTexture> _pendingDisposes = new();
+    private DateTime _lastConfigSave = DateTime.MinValue;
+    private CancellationTokenSource? _configSaveCts;
+    private static readonly TimeSpan ConfigSaveDebounceInterval = TimeSpan.FromSeconds(3);
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -406,6 +412,9 @@ public class ChatWindow : IDisposable
         return new Vector2(width, height);
     }
 
+    private static bool IsRectVisible(float itemStartY, float itemHeight, float minY, float maxY)
+        => !(itemStartY + itemHeight < minY || itemStartY > maxY);
+
     private readonly struct WindowFontScaleScope : IDisposable
     {
         private readonly bool _active;
@@ -432,18 +441,6 @@ public class ChatWindow : IDisposable
     }
 
     private WindowFontScaleScope PushWindowFontScale(float scale) => new(scale);
-
-    private class TypingUser
-    {
-        public string Name;
-        public DateTime Expires;
-
-        public TypingUser(string name, DateTime expires)
-        {
-            Name = name;
-            Expires = expires;
-        }
-    }
 
     private class EmojiData
     {
@@ -536,6 +533,7 @@ public class ChatWindow : IDisposable
         TokenManager tokenManager,
         ChannelService channelService,
         ChannelSelectionService channelSelection,
+        MessageCache messageCache,
         string channelKind,
         AvatarCache? avatarCache,
         EmojiManager emojiManager,
@@ -547,6 +545,7 @@ public class ChatWindow : IDisposable
         _tokenManager = tokenManager;
         _channelService = channelService;
         _channelSelection = channelSelection;
+        _messageCache = messageCache;
         _avatarCache = avatarCache;
         _channelKind = channelKind;
         _emojiManager = emojiManager;
@@ -557,6 +556,9 @@ public class ChatWindow : IDisposable
         _bridge = chatBridge ?? new ChatBridge(config, httpClient, tokenManager, BuildWebSocketUri, channelSelection);
         _ownsBridge = chatBridge == null;
         AttachBridgeEvents();
+
+        _typingCoalescer = new TypingCoalescer();
+        _typingCoalescer.TypingUsersChanged += HandleTypingUsersChanged;
 
         _channelSelection.ChannelChanged += HandleChannelSelectionChanged;
     }
@@ -570,6 +572,7 @@ public class ChatWindow : IDisposable
             tokenManager,
             channelService,
             new ChannelSelectionService(config),
+            new MessageCache(),
             global::DemiCatPlugin.ChannelKind.Chat,
             null,
             new EmojiManager(httpClient, tokenManager, config))
@@ -618,6 +621,9 @@ public class ChatWindow : IDisposable
         _lastSubscribedChannelId = null;
         _lastSubscribedGuildId = null;
         _pendingRefreshAfterSubscribe = false;
+        _typingCoalescer.Clear();
+        _typingNameMap.Clear();
+        _typingDisplayNames.Clear();
     }
 
     protected bool TrySubscribeCurrentChannel(bool force = false, bool refreshMessages = true)
@@ -737,6 +743,10 @@ public class ChatWindow : IDisposable
                 _bridge.Unsubscribe(oldId);
             }
 
+            _typingCoalescer.Clear();
+            _typingNameMap.Clear();
+            _typingDisplayNames.Clear();
+
             if (string.IsNullOrEmpty(newId))
             {
                 _lastSubscribedChannelId = null;
@@ -745,6 +755,7 @@ public class ChatWindow : IDisposable
                 return;
             }
 
+            ApplyCachedMessages(newId);
             _lastSubscribedChannelId = null;
             _lastSubscribedGuildId = null;
             OnSubscriptionStateChanged(false);
@@ -755,57 +766,58 @@ public class ChatWindow : IDisposable
     public virtual void Draw()
     {
         _frameIndex++;
+        _typingCoalescer.Tick();
         try
         {
-        _fileDialog.Draw();
-        if (!_bridge.IsReady())
-        {
-            if (!string.IsNullOrEmpty(_statusMessage))
+            _fileDialog.Draw();
+            if (!_bridge.IsReady())
             {
-                ImGui.TextUnformatted(_statusMessage);
-            }
-            else
-            {
-                ImGui.TextUnformatted("Link DemiCat…");
-            }
-            return;
-        }
-
-        if (!_channelsLoaded && !_channelsLoading)
-        {
-            _ = FetchChannelsSafe();
-        }
-
-        if (_channels.Count > 0)
-        {
-            var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
-            var previousIndex = _selectedIndex;
-            var activeChannelId = CurrentChannelId;
-            string? selectedChannelId = null;
-
-            {
-                using var emojiFont = _emojiManager.PushEmojiFont();
-                if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
+                if (!string.IsNullOrEmpty(_statusMessage))
                 {
-                    selectedChannelId = _channels[_selectedIndex].Id;
-                    if (string.Equals(selectedChannelId, activeChannelId, StringComparison.Ordinal))
-                    {
-                        if (previousIndex != _selectedIndex)
-                        {
-                            _selectedIndex = previousIndex;
-                        }
+                    ImGui.TextUnformatted(_statusMessage);
+                }
+                else
+                {
+                    ImGui.TextUnformatted("Link DemiCat…");
+                }
+                return;
+            }
 
-                        selectedChannelId = null;
+            if (!_channelsLoaded && !_channelsLoading)
+            {
+                _ = FetchChannelsSafe();
+            }
+
+            if (_channels.Count > 0)
+            {
+                var channelNames = _channels.Select(c => c.ParentId == null ? c.Name : "  " + c.Name).ToArray();
+                var previousIndex = _selectedIndex;
+                var activeChannelId = CurrentChannelId;
+                string? selectedChannelId = null;
+
+                {
+                    using var emojiFont = _emojiManager.PushEmojiFont();
+                    if (ImGui.Combo("Channel", ref _selectedIndex, channelNames, channelNames.Length))
+                    {
+                        selectedChannelId = _channels[_selectedIndex].Id;
+                        if (string.Equals(selectedChannelId, activeChannelId, StringComparison.Ordinal))
+                        {
+                            if (previousIndex != _selectedIndex)
+                            {
+                                _selectedIndex = previousIndex;
+                            }
+
+                            selectedChannelId = null;
+                        }
                     }
                 }
-            }
 
-            if (selectedChannelId != null)
-            {
-                _channelSelection.SetChannel(_channelKind, _config.GuildId, selectedChannelId);
+                if (selectedChannelId != null)
+                {
+                    _channelSelection.SetChannel(_channelKind, _config.GuildId, selectedChannelId);
+                }
             }
-        }
-        else
+            else
         {
             ImGui.TextUnformatted(_channelFetchFailed ? _channelErrorMessage : "No channels available");
         }
@@ -921,7 +933,8 @@ public class ChatWindow : IDisposable
             }
 
             ImGui.BeginGroup();
-            if (msg.Author != null && msg.AvatarTexture == null && _avatarCache != null)
+            var avatarVisible = IsRectVisible(itemStartY, 20f, minVisibleY, maxVisibleY);
+            if (msg.Author != null && msg.AvatarTexture == null && _avatarCache != null && avatarVisible)
             {
                 _ = _avatarCache.GetAsync(msg.Author.AvatarUrl, msg.Author.Id)
                     .ContinueWith(t => PluginServices.Instance!.Framework.RunOnTick(() => msg.AvatarTexture = t.Result));
@@ -969,7 +982,13 @@ public class ChatWindow : IDisposable
             {
                 foreach (var embed in msg.Embeds)
                 {
-                    EmbedRenderer.Draw(embed, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid), touchTexture: TouchTexture);
+                    EmbedRenderer.Draw(
+                        embed,
+                        LoadTexture,
+                        _emojiManager,
+                        cid => _ = Interact(msg.Id, msg.ChannelId, cid),
+                        touchTexture: TouchTexture,
+                        isVisible: (start, height) => IsRectVisible(start, height, minVisibleY, maxVisibleY));
                 }
             }
             if (msg.Attachments != null)
@@ -979,35 +998,50 @@ public class ChatWindow : IDisposable
                 {
                     if (att.ContentType != null && att.ContentType.StartsWith("image"))
                     {
+                        var imageStartY = ImGui.GetCursorPosY();
+                        var bounds = GetAttachmentBounds(attachmentCap);
+
                         if (att.Texture == null)
                         {
+                            if (!IsRectVisible(imageStartY, bounds.Y, minVisibleY, maxVisibleY))
+                            {
+                                ImGui.Dummy(bounds);
+                                continue;
+                            }
+
                             LoadTexture(att.Url, t => att.Texture = t);
+                            ImGui.Dummy(bounds);
+                            continue;
                         }
-                        if (att.Texture != null)
+
+                        try
                         {
-                            try
+                            var wrapAtt = att.Texture.GetWrapOrEmpty();
+                            var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
+                            var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
+
+                            if (!IsRectVisible(imageStartY, displaySize.Y, minVisibleY, maxVisibleY))
                             {
-                                var wrapAtt = att.Texture.GetWrapOrEmpty();
-                                var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
-                                var bounds = GetAttachmentBounds(attachmentCap);
-                                var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
-                                SafeImage(att.Texture, displaySize);
-                                TouchTexture(att.Url);
-                                if (ImGui.IsItemHovered())
-                                {
-                                    ImGui.BeginTooltip();
-                                    ImGui.TextUnformatted("Open original");
-                                    ImGui.EndTooltip();
-                                }
-                                if (ImGui.IsItemClicked())
-                                {
-                                    try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
-                                }
+                                ImGui.Dummy(new Vector2(bounds.X, displaySize.Y));
+                                continue;
                             }
-                            catch (ObjectDisposedException)
+
+                            SafeImage(att.Texture, displaySize);
+                            TouchTexture(att.Url);
+                            if (ImGui.IsItemHovered())
                             {
-                                // texture disposed before draw completed
+                                ImGui.BeginTooltip();
+                                ImGui.TextUnformatted("Open original");
+                                ImGui.EndTooltip();
                             }
+                            if (ImGui.IsItemClicked())
+                            {
+                                try { Process.Start(new ProcessStartInfo(att.Url) { UseShellExecute = true }); } catch { }
+                            }
+                        }
+                        catch (ObjectDisposedException)
+                        {
+                            // texture disposed before draw completed
                         }
                     }
                     else
@@ -1034,7 +1068,13 @@ public class ChatWindow : IDisposable
                     RowIndex = c.RowIndex
                 }).ToList();
                 var pseudo = new EmbedDto { Id = msg.Id + "_components", Buttons = buttons };
-                EmbedRenderer.Draw(pseudo, LoadTexture, _emojiManager, cid => _ = Interact(msg.Id, msg.ChannelId, cid), touchTexture: TouchTexture);
+                EmbedRenderer.Draw(
+                    pseudo,
+                    LoadTexture,
+                    _emojiManager,
+                    cid => _ = Interact(msg.Id, msg.ChannelId, cid),
+                    touchTexture: TouchTexture,
+                    isVisible: (start, height) => IsRectVisible(start, height, minVisibleY, maxVisibleY));
             }
             ImGui.Spacing();
             if (msg.Reactions != null && msg.Reactions.Count > 0)
@@ -1359,19 +1399,12 @@ public class ChatWindow : IDisposable
             DrawAttachmentChips();
         }
 
-        var now = DateTime.UtcNow;
-        foreach (var key in _typingUsers.Where(kvp => kvp.Value.Expires < now).Select(kvp => kvp.Key).ToList())
+        if (_typingDisplayNames.Count > 0)
         {
-            _typingUsers.Remove(key);
-        }
-        if (_typingUsers.Count > 0)
-        {
-            var names = string.Join(", ", _typingUsers.Values.Select(v => v.Name));
-            var verb = _typingUsers.Count > 1 ? "are" : "is";
-            {
-                using var emojiFont = _emojiManager.PushEmojiFont();
-                ImGui.TextUnformatted($"{names} {verb} typing...");
-            }
+            var names = string.Join(", ", _typingDisplayNames);
+            var verb = _typingDisplayNames.Count > 1 ? "are" : "is";
+            using var emojiFont = _emojiManager.PushEmojiFont();
+            ImGui.TextUnformatted($"{names} {verb} typing...");
         }
 
         DrawEmbedStyleControls();
@@ -3551,6 +3584,7 @@ public class ChatWindow : IDisposable
                     }
 
                     TrimMessages();
+                    _messageCache.Upsert(requestedChannelId, _messages);
                     return;
                 }
 
@@ -3576,6 +3610,7 @@ public class ChatWindow : IDisposable
                     }
                 }
                 TrimMessages();
+                _messageCache.Upsert(requestedChannelId, _messages);
                 _pendingInitialScroll = true;
                 _wasAtBottomLastFrame = true;
                 _chatTopPadding = 0f;
@@ -3595,6 +3630,32 @@ public class ChatWindow : IDisposable
             _messages.RemoveAt(0);
         }
         UpdateRestCursorBounds();
+    }
+
+    private void ApplyCachedMessages(string channelId)
+    {
+        foreach (var message in _messages)
+        {
+            DisposeMessageTextures(message);
+        }
+
+        _messages.Clear();
+        _messageHeightCache.Clear();
+        _messageHoverStates.Clear();
+
+        var snapshot = _messageCache.Snapshot(channelId);
+        if (snapshot.Count > 0)
+        {
+            foreach (var message in snapshot)
+            {
+                _messages.Add(message);
+            }
+        }
+
+        TrimMessages();
+        _pendingInitialScroll = true;
+        _wasAtBottomLastFrame = true;
+        _chatTopPadding = 0f;
     }
 
     private async Task<(bool hadExistingMessages, bool hasMatchingChannel, bool hasConflictingChannel)> GetExistingMessageStateAsync(string requestedChannelId)
@@ -3716,6 +3777,8 @@ public class ChatWindow : IDisposable
         StopNetworking();
         DetachBridgeEvents();
         _channelSelection.ChannelChanged -= HandleChannelSelectionChanged;
+        _typingCoalescer.TypingUsersChanged -= HandleTypingUsersChanged;
+        _typingCoalescer.Dispose();
         if (_ownsBridge)
         {
             _bridge.Dispose();
@@ -3725,6 +3788,7 @@ public class ChatWindow : IDisposable
             DisposeMessageTextures(message);
         }
         ClearTextureCache();
+        FlushPendingConfigSave();
     }
 
     protected void SaveConfig()
@@ -3736,14 +3800,108 @@ public class ChatWindow : IDisposable
             return;
         }
 
+        var now = DateTime.UtcNow;
+        if (_lastConfigSave == DateTime.MinValue || now - _lastConfigSave >= ConfigSaveDebounceInterval)
+        {
+            FlushPendingConfigSave(forceSave: false);
+            _lastConfigSave = now;
+            var framework = services?.Framework;
+            if (framework != null)
+            {
+                framework.RunOnTick(() => pluginInterface.SavePluginConfig(_config));
+            }
+            else
+            {
+                pluginInterface.SavePluginConfig(_config);
+            }
+            return;
+        }
+
+        _configSaveCts?.Cancel();
+        _configSaveCts?.Dispose();
+        var delay = ConfigSaveDebounceInterval - (now - _lastConfigSave);
+        var cts = new CancellationTokenSource();
+        _configSaveCts = cts;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(delay, cts.Token).ConfigureAwait(false);
+            }
+            catch (TaskCanceledException)
+            {
+                cts.Dispose();
+                return;
+            }
+
+            var svc = PluginServices.Instance;
+            var pi = svc?.PluginInterface;
+            if (pi == null)
+            {
+                cts.Dispose();
+                return;
+            }
+
+            var framework = svc?.Framework;
+
+            void SaveAction()
+            {
+                if (!ReferenceEquals(_configSaveCts, cts))
+                {
+                    cts.Dispose();
+                    return;
+                }
+
+                _configSaveCts = null;
+                _lastConfigSave = DateTime.UtcNow;
+                pi.SavePluginConfig(_config);
+                cts.Dispose();
+            }
+
+            if (framework != null)
+            {
+                framework.RunOnTick(SaveAction);
+            }
+            else
+            {
+                SaveAction();
+            }
+        });
+    }
+
+    private void FlushPendingConfigSave(bool forceSave = true)
+    {
+        _configSaveCts?.Cancel();
+        _configSaveCts?.Dispose();
+        _configSaveCts = null;
+
+        var services = PluginServices.Instance;
+        var pluginInterface = services?.PluginInterface;
+        if (pluginInterface == null)
+        {
+            return;
+        }
+
+        if (!forceSave)
+        {
+            return;
+        }
+
         var framework = services?.Framework;
+        void Save()
+        {
+            _lastConfigSave = DateTime.UtcNow;
+            pluginInterface.SavePluginConfig(_config);
+        }
+
         if (framework != null)
         {
-            framework.RunOnTick(() => pluginInterface.SavePluginConfig(_config));
+            framework.RunOnTick(Save);
         }
         else
         {
-            pluginInterface.SavePluginConfig(_config);
+            Save();
         }
     }
 
@@ -3888,6 +4046,7 @@ public class ChatWindow : IDisposable
                             DisposeMessageTextures(_messages[index]);
                             _messages.RemoveAt(index);
                             TrimMessages();
+                            _messageCache.RemoveOne(CurrentChannelId, id);
                         }
                     });
                 }
@@ -3913,6 +4072,7 @@ public class ChatWindow : IDisposable
                                 _messages.Add(msg);
                             }
                             TrimMessages();
+                            _messageCache.UpsertOne(current, msg);
                         }
                     });
                 }
@@ -3928,8 +4088,32 @@ public class ChatWindow : IDisposable
     {
         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
         {
-            _typingUsers[user.Id] = new TypingUser(user.Name, DateTime.UtcNow.AddSeconds(5));
+            _typingNameMap[user.Id] = user.Name;
+            _typingCoalescer.OnTyping(user.Id);
         });
+    }
+
+    private void HandleTypingUsersChanged(IReadOnlyList<string> userIds)
+    {
+        _typingDisplayNames.Clear();
+
+        foreach (var id in userIds)
+        {
+            if (_typingNameMap.TryGetValue(id, out var name) && !string.IsNullOrEmpty(name))
+            {
+                _typingDisplayNames.Add(name);
+            }
+        }
+
+        if (_typingNameMap.Count > 0)
+        {
+            var keep = new HashSet<string>(userIds, StringComparer.Ordinal);
+            var stale = _typingNameMap.Keys.Where(k => !keep.Contains(k)).ToList();
+            foreach (var key in stale)
+            {
+                _typingNameMap.Remove(key);
+            }
+        }
     }
 
     private void HandleBridgeLinked()
