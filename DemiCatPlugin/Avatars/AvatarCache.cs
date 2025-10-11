@@ -16,7 +16,7 @@ public class AvatarCache : IDisposable
     private readonly Dictionary<string, CacheEntry> _cache = new();
     private readonly Dictionary<string, (ISharedImmediateTexture Tex, long LastTouch)> _live = new(StringComparer.Ordinal);
     private readonly Dictionary<string, string> _userToUrl = new(StringComparer.Ordinal);
-    private const int LiveCap = 256;
+    private const int LiveCap = 384;
     private readonly TimeSpan _ttl = TimeSpan.FromHours(12);
     private readonly object _lock = new();
 

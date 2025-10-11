@@ -96,10 +96,10 @@ public static class EmbedRenderer
                     var height = wrap.Height <= 0 ? DefaultThumbSize : wrap.Height;
                     if (isVisible == null || isVisible(startY, height))
                     {
-                        touchTexture?.Invoke(dto.ThumbnailUrl);
                         if (wrap.Handle != IntPtr.Zero)
                         {
                             ImGui.Image(wrap.Handle, new Vector2(width, height));
+                            touchTexture?.Invoke(dto.ThumbnailUrl);
                         }
                         else
                         {
