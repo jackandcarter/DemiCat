@@ -62,7 +62,7 @@ public class ChatBridge : IChatBridge
     private static void OnFramework(Action action)
         => PluginServices.Instance?.Framework.RunOnTick(action);
 
-    private const bool SpreadAcrossFrames = true;
+    private static readonly bool SpreadAcrossFrames = true;
 
     // Dispatch list items to a handler in slices, scheduling each slice over successive framework ticks.
     private static void DispatchInTicks<T>(IReadOnlyList<T> items, int slice, Action<T> handler)
