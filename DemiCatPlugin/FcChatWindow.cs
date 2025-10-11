@@ -42,7 +42,11 @@ public class FcChatWindow : ChatWindow
     {
         if (presence != null)
         {
-            _presenceSidebar = new PresenceSidebar(presence) { TextureLoader = LoadTexture };
+            _presenceSidebar = new PresenceSidebar(presence)
+            {
+                TextureLoader = LoadTexture,
+                TextureTouch = TextureTouchAction
+            };
         }
     }
 

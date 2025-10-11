@@ -53,7 +53,11 @@ public class OfficerChatWindow : ChatWindow
     {
         if (presence != null)
         {
-            _presenceSidebar = new PresenceSidebar(presence) { TextureLoader = LoadTexture };
+            _presenceSidebar = new PresenceSidebar(presence)
+            {
+                TextureLoader = LoadTexture,
+                TextureTouch = TextureTouchAction
+            };
         }
 
         _bridge.StatusChanged += OnBridgeStatusChangedForOfficer;

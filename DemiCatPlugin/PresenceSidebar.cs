@@ -47,6 +47,7 @@ public class PresenceSidebar : IDisposable
     private DateTime _nextRefreshAllowed = DateTime.MinValue;
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
+    public Action<string?>? TextureTouch { get; set; }
 
     public PresenceSidebar(DiscordPresenceService service)
     {
@@ -304,6 +305,7 @@ public class PresenceSidebar : IDisposable
             {
                 var wrap = p.AvatarTexture.GetWrapOrEmpty();
                 ImGui.Image(wrap.Handle, avatarSize);
+                TextureTouch?.Invoke(p.AvatarUrl);
                 drewAvatar = true;
             }
             catch (ObjectDisposedException)
@@ -414,6 +416,7 @@ public class PresenceSidebar : IDisposable
             {
                 var wrap = presence.BannerTexture.GetWrapOrEmpty();
                 drawList.AddImage(wrap.Handle, min, max);
+                TextureTouch?.Invoke(presence.BannerUrl);
                 bannerDrawn = true;
             }
             catch (ObjectDisposedException)

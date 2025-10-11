@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using DemiCatPlugin;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Textures.TextureWraps;
 using Moq;
 using Xunit;
 
@@ -109,6 +110,37 @@ public class PresenceSidebarTests
         scope.EndFrame();
 
         Assert.False(loaderCalled);
+    }
+
+    [Fact]
+    public void DrawPresence_TouchesAvatarTextureWhenDrawn()
+    {
+        using var scope = new ImGuiContextScope();
+        var sidebar = CreateSidebar();
+        var presence = new PresenceDto
+        {
+            Id = "3",
+            Name = "Avatar",
+            Status = "online",
+            AvatarUrl = "https://example.com/avatar.png"
+        };
+
+        var wrapMock = new Mock<IImmediateTextureWrap>();
+        wrapMock.SetupGet(w => w.Handle).Returns(new IntPtr(1));
+
+        var textureMock = new Mock<ISharedImmediateTexture>();
+        textureMock.Setup(t => t.GetWrapOrEmpty()).Returns(wrapMock.Object);
+
+        sidebar.TextureLoader = (url, assign) => assign(textureMock.Object);
+
+        var touches = 0;
+        sidebar.TextureTouch = _ => touches++;
+
+        scope.BeginFrame();
+        InvokeDrawPresence(sidebar, presence);
+        scope.EndFrame();
+
+        Assert.Equal(1, touches);
     }
 
     [Fact]
