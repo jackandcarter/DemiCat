@@ -29,6 +29,7 @@ public class ChatBridge : IDisposable
     private readonly Dictionary<string, long> _acked = new();
     private readonly Dictionary<string, (string GuildId, string Kind)> _channelMetadata = new();
     private readonly HashSet<string> _subs = new();
+    private readonly object _stateLock = new();
     private readonly ChannelSelectionService _channelSelection;
     private readonly Func<ClientWebSocket> _webSocketFactory;
     private readonly Func<ClientWebSocket, Uri, CancellationToken, Task> _connectAsync;
@@ -121,10 +122,20 @@ public class ChatBridge : IDisposable
 
     private void ResetState()
     {
-        _subs.Clear();
-        _channelMetadata.Clear();
-        _cursors.Clear();
-        _acked.Clear();
+        lock (_stateLock)
+        {
+            _subs.Clear();
+            _channelMetadata.Clear();
+            _cursors.Clear();
+            _acked.Clear();
+            _lastDisconnectLog = default;
+            _lastErrorSignature = null;
+            _lastErrorLog = default;
+            _lastSubscribeMismatchSignature = null;
+            _lastSubscribeMismatchLog = default;
+            _lastBatchDropSignature = null;
+            _lastBatchDropLog = default;
+        }
         _reconnectAttempt = 0;
         _connectCount = 0;
         _reconnectCount = 0;
@@ -136,13 +147,6 @@ public class ChatBridge : IDisposable
         _sendLatencyTotal = 0;
         _disconnectCount = 0;
         _connectedSince = default;
-        _lastDisconnectLog = default;
-        _lastErrorSignature = null;
-        _lastErrorLog = default;
-        _lastSubscribeMismatchSignature = null;
-        _lastSubscribeMismatchLog = default;
-        _lastBatchDropSignature = null;
-        _lastBatchDropLog = default;
     }
 
     private void ShowPermissionWarning()
@@ -169,12 +173,16 @@ public class ChatBridge : IDisposable
     public void Subscribe(string channel, string? guildId, string? kind)
     {
         if (string.IsNullOrEmpty(channel)) return;
-        var key = RegisterChannelMetadata(channel, guildId, kind);
-        ValidateSubscription(channel, guildId, kind);
-        if (!string.IsNullOrEmpty(key))
+        string key;
+        lock (_stateLock)
         {
-            _subs.Add(key);
+            key = RegisterChannelMetadataUnsafe(channel, guildId, kind);
+            if (!string.IsNullOrEmpty(key))
+            {
+                _subs.Add(key);
+            }
         }
+        ValidateSubscription(channel, guildId, kind);
         PluginServices.Instance?.Log.Info($"chat.ws subscribe channel={channel}");
         _ = SendSubscriptions();
     }
@@ -182,9 +190,18 @@ public class ChatBridge : IDisposable
     public void Unsubscribe(string channel)
     {
         if (string.IsNullOrEmpty(channel)) return;
-        var key = KeyForChannel(channel);
-        _channelMetadata.Remove(channel);
-        if (!string.IsNullOrEmpty(key) && _subs.Remove(key))
+        string key;
+        var removed = false;
+        lock (_stateLock)
+        {
+            key = KeyForChannelUnsafe(channel);
+            _channelMetadata.Remove(channel);
+            if (!string.IsNullOrEmpty(key))
+            {
+                removed = _subs.Remove(key);
+            }
+        }
+        if (removed)
         {
             PluginServices.Instance?.Log.Info($"chat.ws unsubscribe channel={channel}");
             _ = SendSubscriptions();
@@ -195,13 +212,16 @@ public class ChatBridge : IDisposable
     {
         if (!string.IsNullOrEmpty(channel))
         {
-            if (_channelMetadata.ContainsKey(channel))
+            lock (_stateLock)
             {
-                UpdateChannelMetadata(channel, guildId, kind);
-            }
-            else
-            {
-                RegisterChannelMetadata(channel, guildId, kind);
+                if (_channelMetadata.ContainsKey(channel))
+                {
+                    UpdateChannelMetadataUnsafe(channel, guildId, kind);
+                }
+                else
+                {
+                    RegisterChannelMetadataUnsafe(channel, guildId, kind);
+                }
             }
         }
         _ = AckAsync(channel);
@@ -226,6 +246,14 @@ public class ChatBridge : IDisposable
 
     private string KeyForChannel(string channel)
     {
+        lock (_stateLock)
+        {
+            return KeyForChannelUnsafe(channel);
+        }
+    }
+
+    private string KeyForChannelUnsafe(string channel)
+    {
         if (string.IsNullOrEmpty(channel)) return string.Empty;
         if (_channelMetadata.TryGetValue(channel, out var meta))
         {
@@ -236,13 +264,21 @@ public class ChatBridge : IDisposable
 
     private string RegisterChannelMetadata(string channel, string? guildId, string? kind)
     {
+        lock (_stateLock)
+        {
+            return RegisterChannelMetadataUnsafe(channel, guildId, kind);
+        }
+    }
+
+    private string RegisterChannelMetadataUnsafe(string channel, string? guildId, string? kind)
+    {
         if (string.IsNullOrEmpty(channel)) return string.Empty;
         var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
         var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
-        return StoreChannelMetadata(channel, normalizedGuild, normalizedKind);
+        return StoreChannelMetadataUnsafe(channel, normalizedGuild, normalizedKind);
     }
 
-    private string StoreChannelMetadata(string channel, string normalizedGuild, string normalizedKind)
+    private string StoreChannelMetadataUnsafe(string channel, string normalizedGuild, string normalizedKind)
     {
         if (_channelMetadata.TryGetValue(channel, out var existing))
         {
@@ -265,7 +301,7 @@ public class ChatBridge : IDisposable
             _channelMetadata[channel] = (effectiveGuild, effectiveKind);
             if (!string.Equals(oldKey, newKey, StringComparison.Ordinal))
             {
-                UpdateSubscriptionKey(oldKey, newKey);
+                UpdateSubscriptionKeyUnsafe(oldKey, newKey);
             }
             return newKey;
         }
@@ -277,7 +313,7 @@ public class ChatBridge : IDisposable
         }
     }
 
-    private void UpdateSubscriptionKey(string oldKey, string newKey)
+    private void UpdateSubscriptionKeyUnsafe(string oldKey, string newKey)
     {
         if (_subs.Remove(oldKey))
         {
@@ -305,6 +341,14 @@ public class ChatBridge : IDisposable
 
     private void UpdateChannelMetadata(string channel, string? guildId, string? kind)
     {
+        lock (_stateLock)
+        {
+            UpdateChannelMetadataUnsafe(channel, guildId, kind);
+        }
+    }
+
+    private void UpdateChannelMetadataUnsafe(string channel, string? guildId, string? kind)
+    {
         if (string.IsNullOrEmpty(channel)) return;
 
         var hasGuild = !string.IsNullOrWhiteSpace(guildId);
@@ -315,11 +359,11 @@ public class ChatBridge : IDisposable
         {
             var normalizedGuild = hasGuild ? ChannelKeyHelper.NormalizeGuildId(guildId) : existing.GuildId;
             var normalizedKind = hasKind ? ChannelKeyHelper.NormalizeKind(kind) : existing.Kind;
-            StoreChannelMetadata(channel, normalizedGuild, normalizedKind);
+            StoreChannelMetadataUnsafe(channel, normalizedGuild, normalizedKind);
         }
         else if (hasGuild && hasKind)
         {
-            RegisterChannelMetadata(channel, guildId, kind);
+            RegisterChannelMetadataUnsafe(channel, guildId, kind);
         }
     }
 
@@ -339,13 +383,23 @@ public class ChatBridge : IDisposable
     {
         var now = DateTime.UtcNow;
         var signature = $"{guildId}:{kind}:{selected}";
-        if (_lastSubscribeMismatchSignature == signature && (now - _lastSubscribeMismatchLog) < SubscribeMismatchThrottle)
+        var shouldLog = false;
+        lock (_stateLock)
         {
-            return;
+            if (_lastSubscribeMismatchSignature == signature && (now - _lastSubscribeMismatchLog) < SubscribeMismatchThrottle)
+            {
+                return;
+            }
+
+            _lastSubscribeMismatchSignature = signature;
+            _lastSubscribeMismatchLog = now;
+            shouldLog = true;
         }
-        _lastSubscribeMismatchSignature = signature;
-        _lastSubscribeMismatchLog = now;
-        PluginServices.Instance?.Log.Warning($"chat.ws subscribe mismatch channel={channel} guild={guildId} kind={kind} selected={selected}");
+
+        if (shouldLog)
+        {
+            PluginServices.Instance?.Log.Warning($"chat.ws subscribe mismatch channel={channel} guild={guildId} kind={kind} selected={selected}");
+        }
     }
 
     private bool ShouldAcceptFrame(string op, string channel, string? guildId, string? kind)
@@ -359,18 +413,21 @@ public class ChatBridge : IDisposable
             return false;
         }
 
-        if (_channelMetadata.TryGetValue(channel, out var meta))
+        lock (_stateLock)
         {
-            var defaultGuildSentinel = ChannelKeyHelper.NormalizeGuildId(null);
-            var hasStoredGuild = !string.IsNullOrEmpty(meta.GuildId) &&
-                !string.Equals(meta.GuildId, defaultGuildSentinel, StringComparison.Ordinal);
-            var hasStoredKind = !string.IsNullOrEmpty(meta.Kind);
-            var guildMismatch = hasStoredGuild && !string.Equals(meta.GuildId, normalizedGuild, StringComparison.Ordinal);
-            var kindMismatch = hasStoredKind && !string.Equals(meta.Kind, normalizedKind, StringComparison.Ordinal);
-            if (guildMismatch || kindMismatch)
+            if (_channelMetadata.TryGetValue(channel, out var meta))
             {
-                LogBatchDrop(op, channel, normalizedGuild, normalizedKind, "metadata_mismatch", meta.GuildId, meta.Kind, null);
-                return false;
+                var defaultGuildSentinel = ChannelKeyHelper.NormalizeGuildId(null);
+                var hasStoredGuild = !string.IsNullOrEmpty(meta.GuildId) &&
+                    !string.Equals(meta.GuildId, defaultGuildSentinel, StringComparison.Ordinal);
+                var hasStoredKind = !string.IsNullOrEmpty(meta.Kind);
+                var guildMismatch = hasStoredGuild && !string.Equals(meta.GuildId, normalizedGuild, StringComparison.Ordinal);
+                var kindMismatch = hasStoredKind && !string.Equals(meta.Kind, normalizedKind, StringComparison.Ordinal);
+                if (guildMismatch || kindMismatch)
+                {
+                    LogBatchDrop(op, channel, normalizedGuild, normalizedKind, "metadata_mismatch", meta.GuildId, meta.Kind, null);
+                    return false;
+                }
             }
         }
 
@@ -406,13 +463,23 @@ public class ChatBridge : IDisposable
         }
         var now = DateTime.UtcNow;
         var signature = $"{channel}:{guildId}:{kind}:{reason}:{expectedGuild ?? string.Empty}:{expectedKind ?? string.Empty}:{expectedChannel ?? string.Empty}";
-        if (_lastBatchDropSignature == signature && (now - _lastBatchDropLog) < BatchDropThrottle)
+        var shouldLog = false;
+        lock (_stateLock)
         {
-            return;
+            if (_lastBatchDropSignature == signature && (now - _lastBatchDropLog) < BatchDropThrottle)
+            {
+                return;
+            }
+
+            _lastBatchDropSignature = signature;
+            _lastBatchDropLog = now;
+            shouldLog = true;
         }
-        _lastBatchDropSignature = signature;
-        _lastBatchDropLog = now;
-        PluginServices.Instance?.Log.Warning(message);
+
+        if (shouldLog)
+        {
+            PluginServices.Instance?.Log.Warning(message);
+        }
     }
 
     private async Task Run(CancellationToken token)
@@ -688,22 +755,32 @@ public class ChatBridge : IDisposable
                     {
                         break;
                     }
-                    var key = RegisterChannelMetadata(channel, guildId, kind);
-                    if (string.IsNullOrEmpty(key))
+                    string key;
+                    lock (_stateLock)
                     {
-                        key = KeyForChannel(channel);
+                        key = RegisterChannelMetadataUnsafe(channel, guildId, kind);
+                        if (string.IsNullOrEmpty(key))
+                        {
+                            key = KeyForChannelUnsafe(channel);
+                        }
                     }
+
                     if (string.IsNullOrEmpty(key))
                     {
                         break;
                     }
+
                     var msgs = root.GetProperty("messages");
                     var count = 0;
                     foreach (var msg in msgs.EnumerateArray())
                     {
                         count++;
                         var cursor = msg.GetProperty("cursor").GetInt64();
-                        _cursors[key] = cursor;
+                        lock (_stateLock)
+                        {
+                            _cursors[key] = cursor;
+                        }
+
                         var mOp = msg.GetProperty("op").GetString();
                         if (mOp == "mc" || mOp == "mu")
                         {
@@ -834,12 +911,18 @@ public class ChatBridge : IDisposable
     private Task AckAsync(string channel)
     {
         if (string.IsNullOrEmpty(channel)) return Task.CompletedTask;
-        var key = KeyForChannel(channel);
-        if (string.IsNullOrEmpty(key)) return Task.CompletedTask;
-        if (!_cursors.TryGetValue(key, out var cursor)) return Task.CompletedTask;
-        if (_acked.TryGetValue(key, out var acked) && acked == cursor) return Task.CompletedTask;
-        _acked[key] = cursor;
-        _config.ChatCursors[key] = cursor;
+
+        long cursor;
+        lock (_stateLock)
+        {
+            var key = KeyForChannelUnsafe(channel);
+            if (string.IsNullOrEmpty(key)) return Task.CompletedTask;
+            if (!_cursors.TryGetValue(key, out cursor)) return Task.CompletedTask;
+            if (_acked.TryGetValue(key, out var acked) && acked == cursor) return Task.CompletedTask;
+            _acked[key] = cursor;
+            _config.ChatCursors[key] = cursor;
+        }
+
         var json = JsonSerializer.Serialize(new { op = "ack", channel, cur = cursor });
         return SendRaw(json);
     }
@@ -848,40 +931,46 @@ public class ChatBridge : IDisposable
     {
         if (!IsWebSocketOpen())
             return Task.CompletedTask;
-        var chans = new List<Dictionary<string, object?>>();
-        foreach (var kvp in _channelMetadata)
+
+        List<Dictionary<string, object?>> channels;
+        lock (_stateLock)
         {
-            var channelId = kvp.Key;
-            var meta = kvp.Value;
-            var key = Key(meta.GuildId, meta.Kind, channelId);
-            if (!_subs.Contains(key)) continue;
-
-            _config.ChatCursors.TryGetValue(key, out var since);
-
-            var channel = new Dictionary<string, object?>
+            channels = new List<Dictionary<string, object?>>();
+            foreach (var kvp in _channelMetadata)
             {
-                ["id"] = channelId,
-                ["since"] = since,
-            };
+                var channelId = kvp.Key;
+                var meta = kvp.Value;
+                var key = Key(meta.GuildId, meta.Kind, channelId);
+                if (!_subs.Contains(key)) continue;
 
-            var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(meta.GuildId);
-            var defaultGuildSentinel = ChannelKeyHelper.NormalizeGuildId(null);
-            if (!string.IsNullOrEmpty(normalizedGuild) &&
-                !string.Equals(normalizedGuild, defaultGuildSentinel, StringComparison.Ordinal))
-            {
-                channel["guildId"] = normalizedGuild;
+                _config.ChatCursors.TryGetValue(key, out var since);
+
+                var channel = new Dictionary<string, object?>
+                {
+                    ["id"] = channelId,
+                    ["since"] = since,
+                };
+
+                var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(meta.GuildId);
+                var defaultGuildSentinel = ChannelKeyHelper.NormalizeGuildId(null);
+                if (!string.IsNullOrEmpty(normalizedGuild) &&
+                    !string.Equals(normalizedGuild, defaultGuildSentinel, StringComparison.Ordinal))
+                {
+                    channel["guildId"] = normalizedGuild;
+                }
+
+                var normalizedKind = ChannelKeyHelper.NormalizeKind(meta.Kind);
+                if (!string.IsNullOrEmpty(normalizedKind))
+                {
+                    channel["kind"] = normalizedKind.ToLowerInvariant();
+                }
+
+                channels.Add(channel);
             }
-
-            var normalizedKind = ChannelKeyHelper.NormalizeKind(meta.Kind);
-            if (!string.IsNullOrEmpty(normalizedKind))
-            {
-                channel["kind"] = normalizedKind.ToLowerInvariant();
-            }
-
-            chans.Add(channel);
         }
-        var json = JsonSerializer.Serialize(new { op = "sub", channels = chans });
-        PluginServices.Instance?.Log.Info($"chat.ws subscribe count={chans.Count}");
+
+        var json = JsonSerializer.Serialize(new { op = "sub", channels });
+        PluginServices.Instance?.Log.Info($"chat.ws subscribe count={channels.Count}");
         return SendRaw(json);
     }
 
@@ -987,31 +1076,53 @@ public class ChatBridge : IDisposable
 
     private void LogDisconnect(WebSocketCloseStatus? status, string? description)
     {
-        _disconnectCount++;
         var now = DateTime.UtcNow;
-        if (_disconnectCount > 1 && (now - _lastDisconnectLog) < DisconnectLogThrottle)
+        int disconnectCount;
+        var shouldLog = false;
+        lock (_stateLock)
+        {
+            _disconnectCount++;
+            disconnectCount = _disconnectCount;
+            if (_disconnectCount > 1 && (now - _lastDisconnectLog) < DisconnectLogThrottle)
+            {
+                return;
+            }
+
+            _lastDisconnectLog = now;
+            shouldLog = true;
+        }
+
+        if (!shouldLog)
         {
             return;
         }
 
-        _lastDisconnectLog = now;
         var statusText = status.HasValue ? $"{(int)status} {status}" : "n/a";
         var desc = string.IsNullOrWhiteSpace(description) ? string.Empty : $" desc={description}";
-        PluginServices.Instance?.Log.Info($"chat.ws disconnect count={_disconnectCount} status={statusText}{desc}");
+        PluginServices.Instance?.Log.Info($"chat.ws disconnect count={disconnectCount} status={statusText}{desc}");
     }
 
     private void LogConnectionException(Exception ex, string stage)
     {
         var now = DateTime.UtcNow;
         var signature = $"{stage}:{ex.GetType().FullName}:{ex.Message}";
-        if (_lastErrorSignature == signature && (now - _lastErrorLog) < ErrorLogThrottle)
+        var shouldLog = false;
+        lock (_stateLock)
         {
-            return;
+            if (_lastErrorSignature == signature && (now - _lastErrorLog) < ErrorLogThrottle)
+            {
+                return;
+            }
+
+            _lastErrorSignature = signature;
+            _lastErrorLog = now;
+            shouldLog = true;
         }
 
-        _lastErrorSignature = signature;
-        _lastErrorLog = now;
-        PluginServices.Instance?.Log.Error(ex, $"chat.ws {stage} failed");
+        if (shouldLog)
+        {
+            PluginServices.Instance?.Log.Error(ex, $"chat.ws {stage} failed");
+        }
     }
 
     private async Task CloseWebSocketGracefully(CancellationToken token)
