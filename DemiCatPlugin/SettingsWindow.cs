@@ -561,9 +561,7 @@ public class SettingsWindow : IDisposable
         var color = value;
         const ImGuiColorEditFlags flags = ImGuiColorEditFlags.AlphaBar
                                           | ImGuiColorEditFlags.AlphaPreviewHalf
-                                          | ImGuiColorEditFlags.DisplayHSV
-                                          | ImGuiColorEditFlags.InputRGB
-                                          | ImGuiColorEditFlags.PickerHueBar;
+                                          | ImGuiColorEditFlags.PickerHueWheel;
         var changed = ImGui.ColorPicker4("##picker", ref color, flags);
         ImGui.PopID();
 

@@ -162,19 +162,20 @@ public class ChatWindow : IDisposable
         try
         {
             var wrap = tex.GetWrapOrEmpty();
-            var handle = wrap.Handle;
-            if (handle == IntPtr.Zero)
+            var ip = wrap.Handle;
+            if (ip == IntPtr.Zero)
             {
                 return;
             }
 
+            var texId = ImTextureID.FromIntPtr(ip);
             if (rounding > 0f)
             {
-                ImGui.Image(handle, size);
+                ImGui.Image(texId, size);
             }
             else
             {
-                ImGui.Image(handle, size);
+                ImGui.Image(texId, size);
             }
         }
         catch (ObjectDisposedException)
@@ -193,13 +194,14 @@ public class ChatWindow : IDisposable
         try
         {
             var wrap = tex.GetWrapOrEmpty();
-            var handle = wrap.Handle;
-            if (handle == IntPtr.Zero)
+            var ip = wrap.Handle;
+            if (ip == IntPtr.Zero)
             {
                 return false;
             }
 
-            return ImGui.ImageButton(handle, size);
+            var texId = ImTextureID.FromIntPtr(ip);
+            return ImGui.ImageButton(texId, size);
         }
         catch (ObjectDisposedException)
         {
@@ -1162,7 +1164,8 @@ public class ChatWindow : IDisposable
 
                 if (handle != IntPtr.Zero)
                 {
-                    ImGui.Image(handle, new Vector2(20, 20));
+                    var texId = ImTextureID.FromIntPtr(handle);
+                    ImGui.Image(texId, new Vector2(20, 20));
                 }
                 else
                 {
@@ -1256,8 +1259,8 @@ public class ChatWindow : IDisposable
                                 continue;
                             }
 
-                            var handle = wrapAtt.Handle;
-                            if (handle == IntPtr.Zero)
+                            var ip = wrapAtt.Handle;
+                            if (ip == IntPtr.Zero)
                             {
                                 att.Texture = null;
                                 LoadTexture(att.Url, t => att.Texture = t);
@@ -1265,7 +1268,8 @@ public class ChatWindow : IDisposable
                                 continue;
                             }
 
-                            ImGui.Image(handle, displaySize);
+                            var texId = ImTextureID.FromIntPtr(ip);
+                            ImGui.Image(texId, displaySize);
                             TouchTexture(att.Url);
                             if (ImGui.IsItemHovered())
                             {
@@ -1345,10 +1349,11 @@ public class ChatWindow : IDisposable
                             try
                             {
                                 var wrap = reaction.Texture.GetWrapOrEmpty();
-                                var handle = wrap.Handle;
-                                if (handle != IntPtr.Zero)
+                                var ip = wrap.Handle;
+                                if (ip != IntPtr.Zero)
                                 {
-                                    if (ImGui.ImageButton(handle, new Vector2(20, 20)))
+                                    var texId = ImTextureID.FromIntPtr(ip);
+                                    if (ImGui.ImageButton(texId, new Vector2(20, 20)))
                                     {
                                         _ = React(msg.Id, reaction.Emoji, reaction.Me);
                                     }
@@ -2100,9 +2105,11 @@ public class ChatWindow : IDisposable
                     try
                     {
                         var wrap = emoji.Texture.GetWrapOrEmpty();
-                        if (wrap.Handle != IntPtr.Zero)
+                        var ip = wrap.Handle;
+                        if (ip != IntPtr.Zero)
                         {
-                            ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                            var texId = ImTextureID.FromIntPtr(ip);
+                            ImGui.Image(texId, new Vector2(20, 20));
                             TouchTexture(emoji.ImageUrl);
                         }
                         else
