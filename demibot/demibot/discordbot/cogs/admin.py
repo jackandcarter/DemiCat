@@ -261,6 +261,25 @@ async def key_embed(interaction: discord.Interaction) -> None:
                 ephemeral=True,
             )
 
+        @discord.ui.button(
+            label="Install DemiCat Plugin",
+            style=discord.ButtonStyle.primary,
+        )
+        async def install(
+            self, button_inter: discord.Interaction, button: discord.ui.Button
+        ) -> None:
+            message = (
+                "To install DemiCat for Dalamud, please copy paste the following URL "
+                "in your Settings>Experimental Tab in Dalamud, then proceed to install "
+                "the plugin from the list of available plugins.\n\n"
+                "Repo URL: https://the-demiurge.com/DemiCat.json"
+            )
+
+            if button_inter.response.is_done():
+                await button_inter.followup.send(message, ephemeral=True)
+            else:
+                await button_inter.response.send_message(message, ephemeral=True)
+
     view = KeyView()
     await interaction.response.send_message(embed=embed, view=view)
 
