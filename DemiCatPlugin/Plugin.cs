@@ -48,6 +48,7 @@ public class Plugin : IDalamudPlugin
     private readonly NotePadWindow _notePadWindow;
     private readonly ChannelSelectionService _channelSelection;
     private readonly EmojiManager _emojiManager;
+    private readonly RefCountedChatBridge _sharedChatBridge;
 
     private Config _config = null!;
     private readonly HttpClient _httpClient;
@@ -94,6 +95,27 @@ public class Plugin : IDalamudPlugin
         _emojiManager = new EmojiManager(_httpClient, _tokenManager, _config);
         _emojiFontHandle = InitializeEmojiFont();
         _emojiManager.EmojiFontHandle = _emojiFontHandle;
+        var baseChatBridge = new ChatBridge(
+            _config,
+            _httpClient,
+            _tokenManager,
+            () =>
+            {
+                var baseUri = _config.ApiBaseUrl.TrimEnd('/') + "/ws/chat";
+                var builder = new UriBuilder(baseUri);
+                if (builder.Scheme == "https")
+                {
+                    builder.Scheme = "wss";
+                }
+                else if (builder.Scheme == "http")
+                {
+                    builder.Scheme = "ws";
+                }
+
+                return builder.Uri;
+            },
+            _channelSelection);
+        _sharedChatBridge = new RefCountedChatBridge(baseChatBridge);
         _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
 
@@ -103,8 +125,8 @@ public class Plugin : IDalamudPlugin
 
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
         _avatarCache = new AvatarCache(TextureProvider, _httpClient);
-        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
-        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager);
+        _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager, _sharedChatBridge);
+        _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _avatarCache, _emojiManager, _sharedChatBridge);
 
         _presenceService?.Reset();
 
@@ -214,6 +236,7 @@ public class Plugin : IDalamudPlugin
         _presenceService?.Dispose();
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();
+        _sharedChatBridge.Dispose();
         _mainWindow.Dispose();
         _ui.DisposeAsync().GetAwaiter().GetResult();
         _settings.Dispose();
