@@ -1093,7 +1093,7 @@ public class ChatBridge : IDisposable
     private void LogDisconnect(WebSocketCloseStatus? status, string? description)
     {
         var now = DateTime.UtcNow;
-        int disconnectCount;
+        long disconnectCount;
         var shouldLog = false;
         lock (_stateLock)
         {
