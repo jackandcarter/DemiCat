@@ -109,10 +109,17 @@ public class ChatWindow : IDisposable
     private long _frameIndex;
     private const long TextureDisposeSafeLag = 2;
     private readonly List<ISharedImmediateTexture> _pendingDisposes = new();
+    private const int TextureCollectIntervalFrames = 45;
     private DateTime _lastConfigSave = DateTime.MinValue;
     private CancellationTokenSource? _configSaveCts;
     private static readonly TimeSpan ConfigSaveDebounceInterval = TimeSpan.FromSeconds(3);
     private readonly HashSet<string> _avatarInflight = new(StringComparer.Ordinal);
+    private static readonly TimeSpan RefreshMessagesRequestTimeout = TimeSpan.FromSeconds(25);
+    private static readonly TimeSpan[] RefreshMessagesRetryDelays = new[]
+    {
+        TimeSpan.FromMilliseconds(300),
+        TimeSpan.FromMilliseconds(800)
+    };
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -207,6 +214,24 @@ public class ChatWindow : IDisposable
         }
 
         _pendingDisposes.Add(texture);
+    }
+
+    private static TimeSpan GetRefreshRetryDelay(int attempt)
+    {
+        if (attempt < 0 || attempt >= RefreshMessagesRetryDelays.Length)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var baseDelay = RefreshMessagesRetryDelays[attempt];
+        if (baseDelay <= TimeSpan.Zero)
+        {
+            return TimeSpan.Zero;
+        }
+
+        var jitterMs = Random.Shared.Next(-100, 101);
+        var jittered = baseDelay + TimeSpan.FromMilliseconds(jitterMs);
+        return jittered > TimeSpan.Zero ? jittered : TimeSpan.Zero;
     }
 
     private void CollectAndDisposeTextures()
@@ -1765,7 +1790,14 @@ public class ChatWindow : IDisposable
         }
         finally
         {
-            CollectAndDisposeTextures();
+            if ((_frameIndex % TextureCollectIntervalFrames) == 0)
+            {
+                CollectAndDisposeTextures();
+            }
+            else
+            {
+                FlushPendingTextureDisposes();
+            }
         }
     }
 
@@ -3618,6 +3650,7 @@ public class ChatWindow : IDisposable
                 !messageState.hasConflictingChannel;
 
             var appliedStoredCursor = false;
+            var loggedRefreshRetryWarning = false;
             while (all.Count < MaxMessages)
             {
                 var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{channelId}?limit={PageSize}";
@@ -3643,51 +3676,113 @@ public class ChatWindow : IDisposable
                     appliedStoredCursor = true;
                 }
 
-                var request = new HttpRequestMessage(HttpMethod.Get, url);
-                ApiHelpers.AddAuthHeader(request, _tokenManager);
-
-                var response = await _httpClient.SendAsync(request);
-                if (!response.IsSuccessStatusCode)
+                HttpResponseMessage? response = null;
+                var attempt = 0;
+                while (true)
                 {
-                    var responseBody = await response.Content.ReadAsStringAsync();
-                    PluginServices.Instance!.Log.Warning($"Failed to refresh messages. Status: {response.StatusCode}. Response Body: {responseBody}");
-                    if (response.StatusCode == HttpStatusCode.Forbidden)
+                    using var cts = new CancellationTokenSource(RefreshMessagesRequestTimeout);
+                    using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                    ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+                    try
                     {
-                        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                            _statusMessage = "Forbidden – check API key/roles");
+                        response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
                     }
+                    catch (TaskCanceledException)
+                    {
+                        if (attempt >= RefreshMessagesRetryDelays.Length)
+                        {
+                            throw;
+                        }
+
+                        if (!loggedRefreshRetryWarning)
+                        {
+                            PluginServices.Instance!.Log.Warning("RefreshMessages request timed out; retrying.");
+                            loggedRefreshRetryWarning = true;
+                        }
+
+                        var delay = GetRefreshRetryDelay(attempt);
+                        attempt++;
+                        if (delay > TimeSpan.Zero)
+                        {
+                            await Task.Delay(delay).ConfigureAwait(false);
+                        }
+
+                        continue;
+                    }
+
+                    if (response != null && (int)response.StatusCode >= 500 && attempt < RefreshMessagesRetryDelays.Length)
+                    {
+                        if (!loggedRefreshRetryWarning)
+                        {
+                            PluginServices.Instance!.Log.Warning($"RefreshMessages received {(int)response.StatusCode} from API; retrying.");
+                            loggedRefreshRetryWarning = true;
+                        }
+
+                        var delay = GetRefreshRetryDelay(attempt);
+                        attempt++;
+                        response.Dispose();
+                        response = null;
+                        if (delay > TimeSpan.Zero)
+                        {
+                            await Task.Delay(delay).ConfigureAwait(false);
+                        }
+
+                        continue;
+                    }
+
                     break;
                 }
 
-                var stream = await response.Content.ReadAsStreamAsync();
-
-                var msgs = await JsonSerializer.DeserializeAsync<List<DiscordMessageDto>>(stream, JsonOpts) ?? new List<DiscordMessageDto>();
-
-                if (msgs.Count == 0)
+                if (response == null)
                 {
                     break;
                 }
 
-                var oldestMessageId = msgs[0].Id;
-                if (all.Count == 0)
+                using (response)
                 {
-                    all.AddRange(msgs);
-                }
-                else
-                {
-                    all.InsertRange(0, msgs);
-                }
-                if (all.Count >= MaxMessages || msgs.Count < PageSize)
-                {
-                    break;
-                }
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        var responseBody = await response.Content.ReadAsStringAsync();
+                        PluginServices.Instance!.Log.Warning($"Failed to refresh messages. Status: {response.StatusCode}. Response Body: {responseBody}");
+                        if (response.StatusCode == HttpStatusCode.Forbidden)
+                        {
+                            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                                _statusMessage = "Forbidden – check API key/roles");
+                        }
+                        break;
+                    }
 
-                if (string.IsNullOrEmpty(oldestMessageId))
-                {
-                    break;
-                }
+                    await using var stream = await response.Content.ReadAsStreamAsync();
 
-                before = oldestMessageId;
+                    var msgs = await JsonSerializer.DeserializeAsync<List<DiscordMessageDto>>(stream, JsonOpts) ?? new List<DiscordMessageDto>();
+
+                    if (msgs.Count == 0)
+                    {
+                        break;
+                    }
+
+                    var oldestMessageId = msgs[0].Id;
+                    if (all.Count == 0)
+                    {
+                        all.AddRange(msgs);
+                    }
+                    else
+                    {
+                        all.InsertRange(0, msgs);
+                    }
+                    if (all.Count >= MaxMessages || msgs.Count < PageSize)
+                    {
+                        break;
+                    }
+
+                    if (string.IsNullOrEmpty(oldestMessageId))
+                    {
+                        break;
+                    }
+
+                    before = oldestMessageId;
+                }
             }
 
             if (all.Count > MaxMessages)
@@ -4031,7 +4126,17 @@ public class ChatWindow : IDisposable
             {
                 SaveAction();
             }
-        });
+        }).ContinueWith(t =>
+        {
+            try
+            {
+                _ = t.Exception;
+            }
+            catch
+            {
+                // ignored
+            }
+        }, TaskContinuationOptions.OnlyOnFaulted);
     }
 
     private void FlushPendingConfigSave(bool forceSave = true)
