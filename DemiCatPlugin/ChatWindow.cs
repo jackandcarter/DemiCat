@@ -162,20 +162,18 @@ public class ChatWindow : IDisposable
         try
         {
             var wrap = tex.GetWrapOrEmpty();
-            var ip = wrap.Handle;
-            if (ip == IntPtr.Zero)
+            if (wrap.Width <= 0 || wrap.Height <= 0)
             {
                 return;
             }
 
-            var texId = ImTextureID.FromIntPtr(ip);
             if (rounding > 0f)
             {
-                ImGui.Image(texId, size);
+                ImGui.Image(wrap.Handle, size);
             }
             else
             {
-                ImGui.Image(texId, size);
+                ImGui.Image(wrap.Handle, size);
             }
         }
         catch (ObjectDisposedException)
@@ -194,14 +192,12 @@ public class ChatWindow : IDisposable
         try
         {
             var wrap = tex.GetWrapOrEmpty();
-            var ip = wrap.Handle;
-            if (ip == IntPtr.Zero)
+            if (wrap.Width <= 0 || wrap.Height <= 0)
             {
                 return false;
             }
 
-            var texId = ImTextureID.FromIntPtr(ip);
-            return ImGui.ImageButton(texId, size);
+            return ImGui.ImageButton(wrap.Handle, size);
         }
         catch (ObjectDisposedException)
         {
@@ -1151,23 +1147,24 @@ public class ChatWindow : IDisposable
                     _avatarCache.Touch(msg.Author.Id);
                 }
 
-                IntPtr handle;
                 try
                 {
                     var wrap = msg.AvatarTexture.GetWrapOrEmpty();
-                    handle = wrap.Handle;
+                    if (wrap.Width > 0 && wrap.Height > 0)
+                    {
+                        ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                    }
+                    else
+                    {
+                        msg.AvatarTexture = null;
+                        if (_avatarCache != null && msg.Author != null)
+                        {
+                            RequestAvatar(msg);
+                        }
+                        ImGui.Dummy(new Vector2(20, 20));
+                    }
                 }
                 catch (ObjectDisposedException)
-                {
-                    handle = IntPtr.Zero;
-                }
-
-                if (handle != IntPtr.Zero)
-                {
-                    var texId = ImTextureID.FromIntPtr(handle);
-                    ImGui.Image(texId, new Vector2(20, 20));
-                }
-                else
                 {
                     msg.AvatarTexture = null;
                     if (_avatarCache != null && msg.Author != null)
@@ -1259,8 +1256,7 @@ public class ChatWindow : IDisposable
                                 continue;
                             }
 
-                            var ip = wrapAtt.Handle;
-                            if (ip == IntPtr.Zero)
+                            if (wrapAtt.Width <= 0 || wrapAtt.Height <= 0)
                             {
                                 att.Texture = null;
                                 LoadTexture(att.Url, t => att.Texture = t);
@@ -1268,8 +1264,7 @@ public class ChatWindow : IDisposable
                                 continue;
                             }
 
-                            var texId = ImTextureID.FromIntPtr(ip);
-                            ImGui.Image(texId, displaySize);
+                            ImGui.Image(wrapAtt.Handle, displaySize);
                             TouchTexture(att.Url);
                             if (ImGui.IsItemHovered())
                             {
@@ -1349,11 +1344,9 @@ public class ChatWindow : IDisposable
                             try
                             {
                                 var wrap = reaction.Texture.GetWrapOrEmpty();
-                                var ip = wrap.Handle;
-                                if (ip != IntPtr.Zero)
+                                if (wrap.Width > 0 && wrap.Height > 0)
                                 {
-                                    var texId = ImTextureID.FromIntPtr(ip);
-                                    if (ImGui.ImageButton(texId, new Vector2(20, 20)))
+                                    if (ImGui.ImageButton(wrap.Handle, new Vector2(20, 20)))
                                     {
                                         _ = React(msg.Id, reaction.Emoji, reaction.Me);
                                     }
@@ -2105,11 +2098,9 @@ public class ChatWindow : IDisposable
                     try
                     {
                         var wrap = emoji.Texture.GetWrapOrEmpty();
-                        var ip = wrap.Handle;
-                        if (ip != IntPtr.Zero)
+                        if (wrap.Width > 0 && wrap.Height > 0)
                         {
-                            var texId = ImTextureID.FromIntPtr(ip);
-                            ImGui.Image(texId, new Vector2(20, 20));
+                            ImGui.Image(wrap.Handle, new Vector2(20, 20));
                             TouchTexture(emoji.ImageUrl);
                         }
                         else
@@ -2611,7 +2602,7 @@ public class ChatWindow : IDisposable
                 try
                 {
                     var wrap = presence.AvatarTexture.GetWrapOrEmpty();
-                    if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                    if (wrap.Width > 0 && wrap.Height > 0)
                     {
                         ImGui.SetCursorScreenPos(position);
                         SafeImage(presence.AvatarTexture, textureSize);
@@ -2961,7 +2952,7 @@ public class ChatWindow : IDisposable
                 try
                 {
                     var wrap = previewTexture.GetWrapOrEmpty();
-                    if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                    if (wrap.Width > 0 && wrap.Height > 0)
                     {
                         var maxThumbnail = new Vector2(40f, 40f) * scale;
                         var bounds = GetAttachmentBounds(maxThumbnail, allowAutoStretch: false);
@@ -3273,7 +3264,7 @@ public class ChatWindow : IDisposable
             try
             {
                 var wrap = texture.GetWrapOrEmpty();
-                if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
+                if (wrap.Width > 0 && wrap.Height > 0)
                 {
                     var attachmentCap = new Vector2(480f, 360f) * ImGuiHelpers.GlobalScale;
                     var bounds = GetAttachmentBounds(attachmentCap);
