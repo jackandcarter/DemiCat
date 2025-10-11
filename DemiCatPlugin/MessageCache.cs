@@ -8,7 +8,7 @@ public sealed class MessageCache
 {
     // channelId -> recent messages (newest last)
     private readonly Dictionary<string, LinkedList<DiscordMessageDto>> _perChannel = new();
-    private const int MaxPerChannel = 120; // ~2 pages
+    private const int MaxPerChannel = 180; // ~3 pages for image-heavy channels
 
     public IReadOnlyList<DiscordMessageDto> Snapshot(string channelId)
     {

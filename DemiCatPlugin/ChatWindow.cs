@@ -68,8 +68,8 @@ public class ChatWindow : IDisposable
     {
         PropertyNameCaseInsensitive = true
     };
-    private const int TextureCacheCapacity = 100;
-    private const int MaxMessages = 100;
+    private const int TextureCacheCapacity = 256;
+    private const int MaxMessages = 180;
     private const float MessageVirtualizationOverscan = 200f;
     private const float DefaultComposeSplitRatio = 0.35f;
     private const float MinComposeSplitRatio = 0.2f;
@@ -107,7 +107,7 @@ public class ChatWindow : IDisposable
     private const float MentionDrawerTravelDistance = 10f;
     private MentionDrawerState? _mentionDrawerState;
     private long _frameIndex;
-    private const long TextureDisposeSafeLag = 2;
+    private const long TextureDisposeSafeLag = 8;
     private readonly List<ISharedImmediateTexture> _pendingDisposes = new();
     private const int TextureCollectIntervalFrames = 45;
     private DateTime _lastConfigSave = DateTime.MinValue;
@@ -120,6 +120,7 @@ public class ChatWindow : IDisposable
         TimeSpan.FromMilliseconds(300),
         TimeSpan.FromMilliseconds(800)
     };
+    private CancellationTokenSource? _subscribeCts;
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -748,6 +749,9 @@ public class ChatWindow : IDisposable
         _typingCoalescer.Clear();
         _typingNameMap.Clear();
         _typingDisplayNames.Clear();
+        _subscribeCts?.Cancel();
+        _subscribeCts?.Dispose();
+        _subscribeCts = null;
     }
 
     protected bool TrySubscribeCurrentChannel(bool force = false, bool refreshMessages = true)
@@ -757,9 +761,85 @@ public class ChatWindow : IDisposable
             _pendingRefreshAfterSubscribe = true;
         }
 
+        _subscribeCts?.Cancel();
+        _subscribeCts?.Dispose();
+
+        var cts = new CancellationTokenSource();
+        _subscribeCts = cts;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(150, cts.Token).ConfigureAwait(false);
+
+                void Execute()
+                {
+                    if (!ReferenceEquals(_subscribeCts, cts))
+                    {
+                        return;
+                    }
+
+                    _subscribeCts = null;
+                    DoSubscribeCurrentChannel(force, refreshMessages);
+                }
+
+                var framework = PluginServices.Instance?.Framework;
+                if (framework != null)
+                {
+                    _ = framework.RunOnTick(() =>
+                    {
+                        Execute();
+                        cts.Dispose();
+                    });
+                }
+                else
+                {
+                    Execute();
+                    cts.Dispose();
+                }
+            }
+            catch (TaskCanceledException)
+            {
+                cts.Dispose();
+            }
+            catch (Exception ex)
+            {
+                cts.Dispose();
+                PluginServices.Instance?.Log.Debug("Subscribe throttle failed", ex);
+            }
+        });
+
         if (!_networkingActive)
         {
             return false;
+        }
+
+        var channelId = CurrentChannelId;
+        if (string.IsNullOrEmpty(channelId))
+        {
+            return false;
+        }
+
+        var guildId = _config.GuildId;
+        if (string.IsNullOrWhiteSpace(guildId))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void DoSubscribeCurrentChannel(bool force, bool refreshMessages)
+    {
+        if (refreshMessages)
+        {
+            _pendingRefreshAfterSubscribe = true;
+        }
+
+        if (!_networkingActive)
+        {
+            return;
         }
 
         var channelId = CurrentChannelId;
@@ -773,7 +853,7 @@ public class ChatWindow : IDisposable
             _lastSubscribedChannelId = null;
             _lastSubscribedGuildId = null;
             OnSubscriptionStateChanged(false);
-            return false;
+            return;
         }
 
         var guildId = _config.GuildId;
@@ -787,7 +867,7 @@ public class ChatWindow : IDisposable
             _lastSubscribedChannelId = null;
             _lastSubscribedGuildId = null;
             OnSubscriptionStateChanged(false);
-            return false;
+            return;
         }
 
         var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(guildId);
@@ -804,7 +884,7 @@ public class ChatWindow : IDisposable
             }
 
             OnSubscriptionStateChanged(true);
-            return true;
+            return;
         }
 
         if (!string.IsNullOrEmpty(_lastSubscribedChannelId))
@@ -823,7 +903,6 @@ public class ChatWindow : IDisposable
         _lastSubscribedChannelId = channelId;
         _lastSubscribedGuildId = normalizedGuild;
         OnSubscriptionStateChanged(true);
-        return true;
     }
 
     public virtual void StartNetworking()
@@ -1065,19 +1144,27 @@ public class ChatWindow : IDisposable
 
             if (msg.AvatarTexture != null)
             {
+                if (_avatarCache != null && msg.Author != null)
+                {
+                    _avatarCache.Touch(msg.Author.Id);
+                }
+
+                IntPtr handle;
                 try
                 {
                     var wrap = msg.AvatarTexture.GetWrapOrEmpty();
-                    if (wrap.Handle != IntPtr.Zero)
-                    {
-                        ImGui.Image(wrap.Handle, new Vector2(20, 20));
-                    }
-                    else
-                    {
-                        ImGui.Dummy(new Vector2(20, 20));
-                    }
+                    handle = wrap.Handle;
                 }
                 catch (ObjectDisposedException)
+                {
+                    handle = IntPtr.Zero;
+                }
+
+                if (handle != IntPtr.Zero)
+                {
+                    ImGui.Image(handle, new Vector2(20, 20));
+                }
+                else
                 {
                     msg.AvatarTexture = null;
                     if (_avatarCache != null && msg.Author != null)
@@ -1261,11 +1348,11 @@ public class ChatWindow : IDisposable
                                 var handle = wrap.Handle;
                                 if (handle != IntPtr.Zero)
                                 {
-                                    TouchTexture(textureUrl);
                                     if (ImGui.ImageButton(handle, new Vector2(20, 20)))
                                     {
                                         _ = React(msg.Id, reaction.Emoji, reaction.Me);
                                     }
+                                    TouchTexture(textureUrl);
                                     ImGui.SameLine();
                                     ImGui.TextUnformatted(reaction.Count.ToString());
                                     handled = true;
@@ -1991,8 +2078,8 @@ public class ChatWindow : IDisposable
                         var wrap = emoji.Texture.GetWrapOrEmpty();
                         if (wrap.Handle != IntPtr.Zero)
                         {
-                            TouchTexture(emoji.ImageUrl);
                             ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                            TouchTexture(emoji.ImageUrl);
                         }
                         else
                         {
@@ -2495,9 +2582,9 @@ public class ChatWindow : IDisposable
                     var wrap = presence.AvatarTexture.GetWrapOrEmpty();
                     if (wrap.Handle != IntPtr.Zero && wrap.Width > 0 && wrap.Height > 0)
                     {
-                        TouchTexture(presence.AvatarUrl);
                         ImGui.SetCursorScreenPos(position);
                         SafeImage(presence.AvatarTexture, textureSize);
+                        TouchTexture(presence.AvatarUrl);
                         return;
                     }
                 }
@@ -3621,7 +3708,7 @@ public class ChatWindow : IDisposable
         }
     }
 
-    public virtual async Task RefreshMessages()
+    public virtual async Task RefreshMessages(CancellationToken cancellationToken = default)
     {
         var channelId = CurrentChannelId;
         if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(channelId))
@@ -3631,251 +3718,294 @@ public class ChatWindow : IDisposable
 
         try
         {
-            var requestedChannelId = channelId;
-            const int PageSize = 50;
-            var all = new List<DiscordMessageDto>();
-            string? before = null;
-            var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
-            string? storedAfter = null;
-            if (_config.RestChatCursors.TryGetValue(cursorKey, out var since))
+            var loggedRetryWarning = false;
+            var attempts = RefreshMessagesRetryDelays.Length + 1;
+            for (var attempt = 0; attempt < attempts; attempt++)
             {
-                storedAfter = since.ToString(CultureInfo.InvariantCulture);
-            }
-
-            var messageState = storedAfter != null
-                ? await GetExistingMessageStateAsync(requestedChannelId).ConfigureAwait(false)
-                : (hadExistingMessages: false, hasMatchingChannel: false, hasConflictingChannel: false);
-            var useAfterForInitialRequest = storedAfter != null &&
-                messageState.hadExistingMessages &&
-                messageState.hasMatchingChannel &&
-                !messageState.hasConflictingChannel;
-
-            var appliedStoredCursor = false;
-            var loggedRefreshRetryWarning = false;
-            while (all.Count < MaxMessages)
-            {
-                var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{channelId}?limit={PageSize}";
-                if (before != null)
+                if (attempt > 0)
                 {
-                    url += $"&before={before}";
-                }
-                // Use the stored "after" cursor for true incremental refreshes, and retain it for
-                // subsequent pagination requests so we don't lose the existing boundary.
-                var shouldApplyAfter = false;
-                if (before == null)
-                {
-                    shouldApplyAfter = useAfterForInitialRequest;
-                }
-                else if (storedAfter != null)
-                {
-                    shouldApplyAfter = true;
-                }
-
-                if (shouldApplyAfter && storedAfter != null)
-                {
-                    url += $"&after={storedAfter}";
-                    appliedStoredCursor = true;
-                }
-
-                HttpResponseMessage? response = null;
-                var attempt = 0;
-                while (true)
-                {
-                    using var cts = new CancellationTokenSource(RefreshMessagesRequestTimeout);
-                    using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                    ApiHelpers.AddAuthHeader(request, _tokenManager);
-
-                    try
+                    var retryDelay = RefreshMessagesRetryDelays[attempt - 1];
+                    if (retryDelay > TimeSpan.Zero)
                     {
-                        response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token);
-                    }
-                    catch (TaskCanceledException)
-                    {
-                        if (attempt >= RefreshMessagesRetryDelays.Length)
+                        try
                         {
-                            throw;
+                            await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
                         }
-
-                        if (!loggedRefreshRetryWarning)
+                        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                         {
-                            PluginServices.Instance!.Log.Warning("RefreshMessages request timed out; retrying.");
-                            loggedRefreshRetryWarning = true;
+                            return;
                         }
-
-                        var delay = GetRefreshRetryDelay(attempt);
-                        attempt++;
-                        if (delay > TimeSpan.Zero)
+                        catch (OperationCanceledException)
                         {
-                            await Task.Delay(delay).ConfigureAwait(false);
+                            return;
                         }
-
-                        continue;
                     }
-
-                    if (response != null && (int)response.StatusCode >= 500 && attempt < RefreshMessagesRetryDelays.Length)
-                    {
-                        if (!loggedRefreshRetryWarning)
-                        {
-                            PluginServices.Instance!.Log.Warning($"RefreshMessages received {(int)response.StatusCode} from API; retrying.");
-                            loggedRefreshRetryWarning = true;
-                        }
-
-                        var delay = GetRefreshRetryDelay(attempt);
-                        attempt++;
-                        response.Dispose();
-                        response = null;
-                        if (delay > TimeSpan.Zero)
-                        {
-                            await Task.Delay(delay).ConfigureAwait(false);
-                        }
-
-                        continue;
-                    }
-
-                    break;
                 }
 
-                if (response == null)
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cts.CancelAfter(RefreshMessagesRequestTimeout);
+
+                try
                 {
-                    break;
+                    await DoRefreshMessagesAsync(channelId, cts.Token).ConfigureAwait(false);
+                    return;
                 }
-
-                using (response)
-                {
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        var responseBody = await response.Content.ReadAsStringAsync();
-                        PluginServices.Instance!.Log.Warning($"Failed to refresh messages. Status: {response.StatusCode}. Response Body: {responseBody}");
-                        if (response.StatusCode == HttpStatusCode.Forbidden)
-                        {
-                            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-                                _statusMessage = "Forbidden – check API key/roles");
-                        }
-                        break;
-                    }
-
-                    await using var stream = await response.Content.ReadAsStreamAsync();
-
-                    var msgs = await JsonSerializer.DeserializeAsync<List<DiscordMessageDto>>(stream, JsonOpts) ?? new List<DiscordMessageDto>();
-
-                    if (msgs.Count == 0)
-                    {
-                        break;
-                    }
-
-                    var oldestMessageId = msgs[0].Id;
-                    if (all.Count == 0)
-                    {
-                        all.AddRange(msgs);
-                    }
-                    else
-                    {
-                        all.InsertRange(0, msgs);
-                    }
-                    if (all.Count >= MaxMessages || msgs.Count < PageSize)
-                    {
-                        break;
-                    }
-
-                    if (string.IsNullOrEmpty(oldestMessageId))
-                    {
-                        break;
-                    }
-
-                    before = oldestMessageId;
-                }
-            }
-
-            if (all.Count > MaxMessages)
-            {
-                all = all.Skip(all.Count - MaxMessages).ToList();
-            }
-
-            _ = PluginServices.Instance!.Framework.RunOnTick(() =>
-            {
-                if (!string.Equals(requestedChannelId, CurrentChannelId, StringComparison.Ordinal))
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     return;
                 }
-
-                var hadExistingMessages = _messages.Count > 0;
-                var hasMatchingChannel = _messages.Any(m => string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
-                var hasConflictingChannel = _messages.Any(m => !string.IsNullOrEmpty(m.ChannelId) && !string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
-                var canMergeIncremental = appliedStoredCursor && hadExistingMessages && hasMatchingChannel && !hasConflictingChannel;
-
-                if (canMergeIncremental)
+                catch (OperationCanceledException)
                 {
-                    if (all.Count == 0)
+                    if (!loggedRetryWarning)
                     {
-                        return;
-                    }
-
-                    var existingIndices = new Dictionary<string, int>(StringComparer.Ordinal);
-                    for (var i = 0; i < _messages.Count; i++)
-                    {
-                        var id = _messages[i].Id;
-                        if (!string.IsNullOrEmpty(id) && !existingIndices.ContainsKey(id))
-                        {
-                            existingIndices[id] = i;
-                        }
-                    }
-
-                    foreach (var message in all)
-                    {
-                        if (string.IsNullOrEmpty(message.Id))
-                        {
-                            continue;
-                        }
-
-                        if (existingIndices.TryGetValue(message.Id, out var index))
-                        {
-                            DisposeMessageTextures(_messages[index]);
-                            _messages[index] = message;
-                        }
-                        else
-                        {
-                            _messages.Add(message);
-                            existingIndices[message.Id] = _messages.Count - 1;
-                        }
-                    }
-
-                    TrimMessages();
-                    _messageCache.Upsert(requestedChannelId, _messages);
-                    return;
-                }
-
-                foreach (var message in _messages)
-                {
-                    DisposeMessageTextures(message);
-                }
-
-                _messages.Clear();
-                _messageHeightCache.Clear();
-
-                if (all.Count > 0)
-                {
-                    var seenIds = new HashSet<string>(StringComparer.Ordinal);
-                    foreach (var m in all)
-                    {
-                        if (!string.IsNullOrEmpty(m.Id) && !seenIds.Add(m.Id))
-                        {
-                            continue;
-                        }
-
-                        _messages.Add(m);
+                        PluginServices.Instance!.Log.Warning("RefreshMessages request timed out; retrying.");
+                        loggedRetryWarning = true;
                     }
                 }
-                TrimMessages();
-                _messageCache.Upsert(requestedChannelId, _messages);
-                _pendingInitialScroll = true;
-                _wasAtBottomLastFrame = true;
-                _chatTopPadding = 0f;
-            });
+                catch (HttpRequestException)
+                {
+                    if (!loggedRetryWarning)
+                    {
+                        PluginServices.Instance!.Log.Warning("RefreshMessages request failed; retrying.");
+                        loggedRetryWarning = true;
+                    }
+                }
+            }
+
+            _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = "Refresh failed (timeout).");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
         }
         catch (Exception ex)
         {
             PluginServices.Instance!.Log.Error(ex, "Error refreshing messages");
         }
+    }
+
+    private async Task DoRefreshMessagesAsync(string channelId, CancellationToken token)
+    {
+        var requestedChannelId = channelId;
+        const int PageSize = 50;
+        var all = new List<DiscordMessageDto>();
+        string? before = null;
+        var cursorKey = ChannelKeyHelper.BuildCursorKey(_config.GuildId, _channelKind, channelId);
+        string? storedAfter = null;
+        if (_config.RestChatCursors.TryGetValue(cursorKey, out var since))
+        {
+            storedAfter = since.ToString(CultureInfo.InvariantCulture);
+        }
+
+        var messageState = storedAfter != null
+            ? await GetExistingMessageStateAsync(requestedChannelId).ConfigureAwait(false)
+            : (hadExistingMessages: false, hasMatchingChannel: false, hasConflictingChannel: false);
+        var useAfterForInitialRequest = storedAfter != null &&
+            messageState.hadExistingMessages &&
+            messageState.hasMatchingChannel &&
+            !messageState.hasConflictingChannel;
+
+        var appliedStoredCursor = false;
+        var loggedRefreshRetryWarning = false;
+
+        while (all.Count < MaxMessages)
+        {
+            token.ThrowIfCancellationRequested();
+
+            var url = $"{_config.ApiBaseUrl.TrimEnd('/')}{MessagesPath}/{channelId}?limit={PageSize}";
+            if (before != null)
+            {
+                url += $"&before={before}";
+            }
+
+            var shouldApplyAfter = false;
+            if (before == null)
+            {
+                shouldApplyAfter = useAfterForInitialRequest;
+            }
+            else if (storedAfter != null)
+            {
+                shouldApplyAfter = true;
+            }
+
+            if (shouldApplyAfter && storedAfter != null)
+            {
+                url += $"&after={storedAfter}";
+                appliedStoredCursor = true;
+            }
+
+            HttpResponseMessage? response = null;
+            var attempt = 0;
+            while (true)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+                token.ThrowIfCancellationRequested();
+                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, token).ConfigureAwait(false);
+
+                if (response != null && (int)response.StatusCode >= 500 && attempt < RefreshMessagesRetryDelays.Length)
+                {
+                    if (!loggedRefreshRetryWarning)
+                    {
+                        PluginServices.Instance!.Log.Warning($"RefreshMessages received {(int)response.StatusCode} from API; retrying.");
+                        loggedRefreshRetryWarning = true;
+                    }
+
+                    var delay = GetRefreshRetryDelay(attempt);
+                    attempt++;
+                    response.Dispose();
+                    response = null;
+
+                    if (delay > TimeSpan.Zero)
+                    {
+                        await Task.Delay(delay, token).ConfigureAwait(false);
+                    }
+
+                    continue;
+                }
+
+                break;
+            }
+
+            if (response == null)
+            {
+                break;
+            }
+
+            using (response)
+            {
+                token.ThrowIfCancellationRequested();
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    PluginServices.Instance!.Log.Warning($"Failed to refresh messages. Status: {response.StatusCode}. Response Body: {responseBody}");
+                    if (response.StatusCode == HttpStatusCode.Forbidden)
+                    {
+                        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+                            _statusMessage = "Forbidden – check API key/roles");
+                    }
+                    break;
+                }
+
+                await using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
+                var msgs = await JsonSerializer.DeserializeAsync<List<DiscordMessageDto>>(stream, JsonOpts, token).ConfigureAwait(false) ?? new List<DiscordMessageDto>();
+
+                if (msgs.Count == 0)
+                {
+                    break;
+                }
+
+                var oldestMessageId = msgs[0].Id;
+                if (all.Count == 0)
+                {
+                    all.AddRange(msgs);
+                }
+                else
+                {
+                    all.InsertRange(0, msgs);
+                }
+
+                if (all.Count >= MaxMessages || msgs.Count < PageSize)
+                {
+                    break;
+                }
+
+                if (string.IsNullOrEmpty(oldestMessageId))
+                {
+                    break;
+                }
+
+                before = oldestMessageId;
+            }
+        }
+
+        if (all.Count > MaxMessages)
+        {
+            all = all.Skip(all.Count - MaxMessages).ToList();
+        }
+
+        _ = PluginServices.Instance!.Framework.RunOnTick(() =>
+        {
+            if (!string.Equals(requestedChannelId, CurrentChannelId, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var hadExistingMessages = _messages.Count > 0;
+            var hasMatchingChannel = _messages.Any(m => string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+            var hasConflictingChannel = _messages.Any(m => !string.IsNullOrEmpty(m.ChannelId) && !string.Equals(m.ChannelId, requestedChannelId, StringComparison.Ordinal));
+            var canMergeIncremental = appliedStoredCursor && hadExistingMessages && hasMatchingChannel && !hasConflictingChannel;
+
+            if (canMergeIncremental)
+            {
+                if (all.Count == 0)
+                {
+                    return;
+                }
+
+                var existingIndices = new Dictionary<string, int>(StringComparer.Ordinal);
+                for (var i = 0; i < _messages.Count; i++)
+                {
+                    var id = _messages[i].Id;
+                    if (!string.IsNullOrEmpty(id) && !existingIndices.ContainsKey(id))
+                    {
+                        existingIndices[id] = i;
+                    }
+                }
+
+                foreach (var message in all)
+                {
+                    if (string.IsNullOrEmpty(message.Id))
+                    {
+                        continue;
+                    }
+
+                    if (existingIndices.TryGetValue(message.Id, out var index))
+                    {
+                        DisposeMessageTextures(_messages[index]);
+                        _messages[index] = message;
+                    }
+                    else
+                    {
+                        _messages.Add(message);
+                        existingIndices[message.Id] = _messages.Count - 1;
+                    }
+                }
+
+                TrimMessages();
+                _messageCache.Upsert(requestedChannelId, _messages);
+                return;
+            }
+
+            foreach (var message in _messages)
+            {
+                DisposeMessageTextures(message);
+            }
+
+            _messages.Clear();
+            _messageHeightCache.Clear();
+
+            if (all.Count > 0)
+            {
+                var seenIds = new HashSet<string>(StringComparer.Ordinal);
+                foreach (var m in all)
+                {
+                    if (!string.IsNullOrEmpty(m.Id) && !seenIds.Add(m.Id))
+                    {
+                        continue;
+                    }
+
+                    _messages.Add(m);
+                }
+            }
+
+            TrimMessages();
+            _messageCache.Upsert(requestedChannelId, _messages);
+            _pendingInitialScroll = true;
+            _wasAtBottomLastFrame = true;
+            _chatTopPadding = 0f;
+        });
     }
 
     private void TrimMessages()
@@ -4049,6 +4179,9 @@ public class ChatWindow : IDisposable
         }
         ClearTextureCache();
         FlushPendingConfigSave();
+        _subscribeCts?.Cancel();
+        _subscribeCts?.Dispose();
+        _subscribeCts = null;
     }
 
     protected void SaveConfig()
@@ -4087,57 +4220,55 @@ public class ChatWindow : IDisposable
         {
             try
             {
-                await Task.Delay(delay, cts.Token).ConfigureAwait(false);
-            }
-            catch (TaskCanceledException)
-            {
-                cts.Dispose();
-                return;
-            }
-
-            var svc = PluginServices.Instance;
-            var pi = svc?.PluginInterface;
-            if (pi == null)
-            {
-                cts.Dispose();
-                return;
-            }
-
-            var framework = svc?.Framework;
-
-            void SaveAction()
-            {
-                if (!ReferenceEquals(_configSaveCts, cts))
+                try
+                {
+                    await Task.Delay(delay, cts.Token).ConfigureAwait(false);
+                }
+                catch (TaskCanceledException)
                 {
                     cts.Dispose();
                     return;
                 }
 
-                _configSaveCts = null;
-                _lastConfigSave = DateTime.UtcNow;
-                pi.SavePluginConfig(_config);
-                cts.Dispose();
-            }
+                var svc = PluginServices.Instance;
+                var pi = svc?.PluginInterface;
+                if (pi == null)
+                {
+                    cts.Dispose();
+                    return;
+                }
 
-            if (framework != null)
-            {
-                _ = framework.RunOnTick(SaveAction);
+                var framework = svc?.Framework;
+
+                void SaveAction()
+                {
+                    if (!ReferenceEquals(_configSaveCts, cts))
+                    {
+                        cts.Dispose();
+                        return;
+                    }
+
+                    _configSaveCts = null;
+                    _lastConfigSave = DateTime.UtcNow;
+                    pi.SavePluginConfig(_config);
+                    cts.Dispose();
+                }
+
+                if (framework != null)
+                {
+                    _ = framework.RunOnTick(SaveAction);
+                }
+                else
+                {
+                    SaveAction();
+                }
             }
-            else
+            catch (Exception ex)
             {
-                SaveAction();
+                cts.Dispose();
+                PluginServices.Instance?.Log.Debug("Deferred config save failed", ex);
             }
-        }).ContinueWith(t =>
-        {
-            try
-            {
-                _ = t.Exception;
-            }
-            catch
-            {
-                // ignored
-            }
-        }, TaskContinuationOptions.OnlyOnFaulted);
+        });
     }
 
     private void FlushPendingConfigSave(bool forceSave = true)

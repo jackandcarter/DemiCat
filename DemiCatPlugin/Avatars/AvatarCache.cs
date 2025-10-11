@@ -14,6 +14,9 @@ public class AvatarCache : IDisposable
     private readonly ITextureProvider _textureProvider;
     private readonly HttpClient _httpClient;
     private readonly Dictionary<string, CacheEntry> _cache = new();
+    private readonly Dictionary<string, (ISharedImmediateTexture Tex, long LastTouch)> _live = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, string> _userToUrl = new(StringComparer.Ordinal);
+    private const int LiveCap = 256;
     private readonly TimeSpan _ttl = TimeSpan.FromHours(12);
     private readonly object _lock = new();
 
@@ -38,6 +41,10 @@ public class AvatarCache : IDisposable
 
         lock (_lock)
         {
+            if (!string.IsNullOrEmpty(userId))
+            {
+                _userToUrl[userId] = url;
+            }
             if (_cache.TryGetValue(url, out var entry))
             {
                 if (entry.Texture != null && entry.Expiration > DateTime.UtcNow)
@@ -83,6 +90,60 @@ public class AvatarCache : IDisposable
         }
     }
 
+    public void Touch(string? userId)
+    {
+        if (string.IsNullOrEmpty(userId))
+        {
+            return;
+        }
+
+        lock (_lock)
+        {
+            if (!_userToUrl.TryGetValue(userId, out var url))
+            {
+                return;
+            }
+
+            if (!_cache.TryGetValue(url, out var entry) || entry.Texture == null)
+            {
+                return;
+            }
+
+            _live[userId] = (entry.Texture, Environment.TickCount64);
+            TrimLiveCache();
+        }
+    }
+
+    private void TrimLiveCache()
+    {
+        if (_live.Count <= LiveCap)
+        {
+            return;
+        }
+
+        while (_live.Count > LiveCap)
+        {
+            string? oldestKey = null;
+            long oldestTouch = long.MaxValue;
+
+            foreach (var kvp in _live)
+            {
+                if (kvp.Value.LastTouch < oldestTouch)
+                {
+                    oldestTouch = kvp.Value.LastTouch;
+                    oldestKey = kvp.Key;
+                }
+            }
+
+            if (oldestKey == null)
+            {
+                break;
+            }
+
+            _live.Remove(oldestKey);
+        }
+    }
+
     private static string DefaultAvatarUrl(string? userId)
     {
         if (string.IsNullOrEmpty(userId))
@@ -102,6 +163,8 @@ public class AvatarCache : IDisposable
                     wrap.Dispose();
             }
             _cache.Clear();
+            _live.Clear();
+            _userToUrl.Clear();
         }
     }
 }
