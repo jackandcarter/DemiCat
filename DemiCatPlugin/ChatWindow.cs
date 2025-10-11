@@ -4178,6 +4178,7 @@ public class ChatWindow : IDisposable
             DisposeMessageTextures(message);
         }
         ClearTextureCache();
+        _avatarInflight.Clear();
         FlushPendingConfigSave();
         _subscribeCts?.Cancel();
         _subscribeCts?.Dispose();
