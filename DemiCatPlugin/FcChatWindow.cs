@@ -6,6 +6,7 @@ using Dalamud.Bindings.ImGui;
 using System.Numerics;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -103,5 +104,8 @@ public class FcChatWindow : ChatWindow
         }
         return base.FetchChannels(refreshed, cancellationToken);
     }
+
+    public void DrawThemedWindow(ref bool isOpen, ImGuiWindowFlags flags = ImGuiWindowFlags.None)
+        => base.DrawThemedWindow("FC Chat", ref isOpen, flags);
 }
 

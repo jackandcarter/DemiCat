@@ -985,27 +985,38 @@ public class MainWindow : IDisposable
             styleVarPushed = true;
         }
 
-        PushWindowOpacityStyles(primaryColor, childBaseColor, tabBaseColor, tabActiveBaseColor, tabHoveredBaseColor, alpha);
+        using var themeScope = new UiStyleScope(_config);
+        var pushedColors = PushWindowOpacityStyles(primaryColor, childBaseColor, tabBaseColor, tabActiveBaseColor, tabHoveredBaseColor, alpha);
 
         ImGui.SetNextWindowSize(new Vector2(800f, 600f), ImGuiCond.FirstUseEver);
         ImGui.SetNextWindowSizeConstraints(new Vector2(600f, 400f), new Vector2(float.MaxValue, float.MaxValue));
 
         var openRef = open;
         var windowInteracted = false;
+        var closeRequested = false;
         if (ImGui.Begin($"{title}##dc_{id}", ref openRef, ImGuiWindowFlags.NoCollapse))
         {
+            UiTheme.DrawWindowChrome(_config, null, () =>
+            {
+                openRef = false;
+                closeRequested = true;
+            });
+
             drawContent();
             windowInteracted = HasWindowInteraction();
         }
         ImGui.End();
 
-        ImGui.PopStyleColor(5);
+        if (pushedColors > 0)
+        {
+            ImGui.PopStyleColor(pushedColors);
+        }
         if (styleVarPushed)
         {
             ImGui.PopStyleVar();
         }
 
-        if (!openRef)
+        if (!openRef || closeRequested || UiTheme.RequestCloseThisFrame)
         {
             ForceWindowClosed(id);
         }
@@ -1132,7 +1143,7 @@ public class MainWindow : IDisposable
         style.Colors[(int)ImGuiCol.SeparatorActive] = accentActive;
     }
 
-    private static void PushWindowOpacityStyles(
+    private static int PushWindowOpacityStyles(
         Vector4 primaryColor,
         Vector4 childBaseColor,
         Vector4 tabBaseColor,
@@ -1145,6 +1156,7 @@ public class MainWindow : IDisposable
         ImGui.PushStyleColor(ImGuiCol.Tab, WithAlpha(tabBaseColor, alpha));
         ImGui.PushStyleColor(ImGuiCol.TabActive, WithAlpha(tabActiveBaseColor, alpha));
         ImGui.PushStyleColor(ImGuiCol.TabHovered, WithAlpha(tabHoveredBaseColor, alpha));
+        return 5;
     }
 
     private static Vector4 AdjustBrightness(Vector4 color, float factor)

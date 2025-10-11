@@ -22,6 +22,7 @@ using System.Runtime.CompilerServices;
 using Dalamud.Interface.ImGuiFileDialog;
 using DemiCatPlugin.Emoji;
 using DemiCatPlugin.Avatars;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -1889,6 +1890,27 @@ public class ChatWindow : IDisposable
         }
     }
 
+    public virtual void DrawThemedWindow(string title, ref bool isOpen, ImGuiWindowFlags flags = ImGuiWindowFlags.None)
+    {
+        using var scope = new UiStyleScope(_config);
+        var open = isOpen;
+        if (ImGui.Begin(title, ref open, flags))
+        {
+            UiTheme.DrawWindowChrome(_config, null, () => open = false);
+            Draw();
+        }
+        ImGui.End();
+
+        if (!open || UiTheme.RequestCloseThisFrame)
+        {
+            isOpen = false;
+        }
+        else
+        {
+            isOpen = open;
+        }
+    }
+
     protected List<ChannelDto> PrepareChannelsForDisplay(IEnumerable<ChannelDto> channels)
     {
         var channelList = channels?.ToList() ?? new List<ChannelDto>();
@@ -2495,7 +2517,7 @@ public class ChatWindow : IDisposable
             {
                 if (i > 0)
                 {
-                    ImGui.Separator();
+                    UiTheme.DrawSectionSeparator();
                 }
 
                 var header = candidate.Type == MentionCandidateType.User ? "Members" : "Roles";
@@ -2981,7 +3003,7 @@ public class ChatWindow : IDisposable
             if (!string.IsNullOrEmpty(fileName))
             {
                 ImGui.TextUnformatted(fileName);
-                ImGui.Separator();
+                UiTheme.DrawSectionSeparator();
             }
 
             long fileSize = 0;
@@ -3025,7 +3047,7 @@ public class ChatWindow : IDisposable
 
             if (errorForAttachment && !string.IsNullOrEmpty(_attachmentError))
             {
-                ImGui.Separator();
+                UiTheme.DrawSectionSeparator();
                 ImGui.TextWrapped(_attachmentError);
             }
 

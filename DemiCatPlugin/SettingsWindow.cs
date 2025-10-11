@@ -66,8 +66,12 @@ public class SettingsWindow : IDisposable
     {
         if (IsOpen)
         {
-            if (ImGui.Begin("DemiCat Settings", ref IsOpen))
+            using var scope = new UiStyleScope(_config);
+            var open = IsOpen;
+            if (ImGui.Begin("DemiCat Settings", ref open))
             {
+                UiTheme.DrawWindowChrome(_config, null, () => open = false);
+
                 if (!_settingsLoaded)
                 {
                     _settingsLoaded = true;
@@ -96,12 +100,16 @@ public class SettingsWindow : IDisposable
 
                     ImGui.EndTabBar();
                 }
+            }
+            ImGui.End();
 
-                ImGui.End();
+            if (!open || UiTheme.RequestCloseThisFrame)
+            {
+                IsOpen = false;
             }
             else
             {
-                ImGui.End();
+                IsOpen = open;
             }
         }
 
@@ -117,7 +125,7 @@ public class SettingsWindow : IDisposable
         if (!linked)
         {
             ImGui.TextColored(new Vector4(1f, 0.85f, 0f, 1f), "Link DemiCat: run `/demibot embed` in Discord and paste the key.");
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
         }
 
         if (ImGui.InputText("API Base URL", ref _apiBaseUrl, 256))
@@ -327,7 +335,7 @@ public class SettingsWindow : IDisposable
             }
         }
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
         ImGui.TextUnformatted("Dock appearance");
         ImGui.Spacing();
 
@@ -417,7 +425,7 @@ public class SettingsWindow : IDisposable
             SaveConfig();
         }
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
         ImGui.TextUnformatted("Dock behavior");
         ImGui.Spacing();
         ImGui.TextWrapped("Select which windows should open automatically when the dock is shown.");
@@ -470,7 +478,7 @@ public class SettingsWindow : IDisposable
             ImGui.SetTooltip("Disable fade-out to adjust per-tab opacity.");
 
         ImGui.NewLine();
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         if (ImGui.Checkbox("Enable fade-out", ref fadeOutEnabled))
         {
