@@ -17,6 +17,7 @@ public class Config : IPluginConfiguration
     public static readonly Vector4 DefaultPrimaryWindowColor = new(0.11f, 0.11f, 0.12f, 1f);
     public static readonly Vector4 DefaultSecondaryAccentColor = new(0.2f, 0.6f, 1f, 1f);
     public static readonly Vector4 DefaultDockBackgroundColor = new(0.05f, 0.05f, 0.06f, 1f);
+    public static readonly Vector4 DefaultDockBorderColor = DefaultSecondaryAccentColor;
 
     // Required by Dalamud
     public const float MinEmojiTileSize = 16f;
@@ -26,7 +27,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 19;
+    public const int CurrentVersion = 20;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -102,6 +103,9 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("dockBackgroundColor")]
     public Vector4 DockBackgroundColor { get; set; } = DefaultDockBackgroundColor;
+
+    [JsonPropertyName("dockBorderColor")]
+    public Vector4 DockBorderColor { get; set; } = DefaultDockBorderColor;
 
     [JsonPropertyName("dockOpacity")]
     public float DockOpacity { get; set; } = 0.85f;
@@ -537,6 +541,13 @@ public class Config : IPluginConfiguration
                 .ToList();
 
             Version = 19;
+            ExtensionData = null;
+        }
+        if (Version < 20)
+        {
+            DockBorderColor = SanitizeColor(DockBorderColor, DefaultDockBorderColor);
+
+            Version = 20;
             ExtensionData = null;
         }
     }

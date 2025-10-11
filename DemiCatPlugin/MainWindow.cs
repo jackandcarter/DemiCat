@@ -45,6 +45,7 @@ public class MainWindow : IDisposable
     private const float DockIconSpacing = 12f;
     private const float DockIndicatorRadius = 4f;
     private const float DockIconRounding = 12f;
+    private const float DockWindowRounding = 20f;
     private const string DockDragPayloadType = "DEMICAT_DOCK_ITEM";
     private static readonly string[] ManagedWindowIds =
     {
@@ -181,6 +182,7 @@ public class MainWindow : IDisposable
         var primaryColor = Config.SanitizeColor(_config.PrimaryWindowColor, Config.DefaultPrimaryWindowColor);
         var childBaseColor = AdjustBrightness(primaryColor, 0.9f);
         var accentColor = Config.SanitizeColor(_config.SecondaryAccentColor, Config.DefaultSecondaryAccentColor);
+        var dockBorderColor = Config.SanitizeColor(_config.DockBorderColor, Config.DefaultDockBorderColor);
         var tabBaseColor = AdjustBrightness(primaryColor, 1.05f);
         var tabActiveBaseColor = accentColor;
         var tabHoveredBaseColor = AdjustBrightness(accentColor, 1.1f);
@@ -194,7 +196,7 @@ public class MainWindow : IDisposable
         var styleAlpha = _config.ChatFadeOutEnabled ? fadeAlpha : 1f;
         var dockFadeAlpha = _config.ChatFadeOutEnabled && _config.DockAutoFadeEnabled ? fadeAlpha : 1f;
 
-        var interactedWithDock = DrawDock(accentColor, dockFadeAlpha);
+        var interactedWithDock = DrawDock(dockBorderColor, dockFadeAlpha);
         var interactedWithWindows = DrawManagedWindows(primaryColor, childBaseColor, tabBaseColor, tabActiveBaseColor, tabHoveredBaseColor, styleAlpha, fadeAlpha);
 
         if (_dockOrderDirty)
@@ -373,23 +375,37 @@ public class MainWindow : IDisposable
         }
     }
 
-    private bool DrawDock(Vector4 accentColor, float fadeAlpha)
+    private bool DrawDock(Vector4 borderColor, float fadeAlpha)
     {
         var background = Config.SanitizeColor(_config.DockBackgroundColor, Config.DefaultDockBackgroundColor);
         var gradientStartColor = Config.SanitizeColor(_config.DockGradientStartColor, Config.DefaultDockBackgroundColor);
         var gradientEndColor = Config.SanitizeColor(_config.DockGradientEndColor, Config.DefaultDockBackgroundColor);
         var opacity = Math.Clamp(_config.DockOpacity, 0f, 1f);
         var fade = Math.Clamp(fadeAlpha, 0f, 1f);
-        var alpha = Math.Clamp(opacity * fade, 0f, 1f);
-        var dockColor = new Vector4(background.X, background.Y, background.Z, alpha);
-        var gradientStart = new Vector4(gradientStartColor.X, gradientStartColor.Y, gradientStartColor.Z, alpha);
-        var gradientEnd = new Vector4(gradientEndColor.X, gradientEndColor.Y, gradientEndColor.Z, alpha);
-        var useGradient = _config.DockGradientEnabled && alpha > 0f;
+
+        var dockColor = new Vector4(
+            background.X,
+            background.Y,
+            background.Z,
+            Math.Clamp(background.W * opacity * fade, 0f, 1f));
+        var gradientStart = new Vector4(
+            gradientStartColor.X,
+            gradientStartColor.Y,
+            gradientStartColor.Z,
+            Math.Clamp(gradientStartColor.W * opacity * fade, 0f, 1f));
+        var gradientEnd = new Vector4(
+            gradientEndColor.X,
+            gradientEndColor.Y,
+            gradientEndColor.Z,
+            Math.Clamp(gradientEndColor.W * opacity * fade, 0f, 1f));
+
+        var useGradient = _config.DockGradientEnabled && (gradientStart.W > 0f || gradientEnd.W > 0f);
+        var borderColorWithFade = WithAlpha(borderColor, fade);
 
         ImGui.PushStyleColor(ImGuiCol.WindowBg, useGradient ? Vector4.Zero : dockColor);
-        ImGui.PushStyleColor(ImGuiCol.Border, accentColor);
+        ImGui.PushStyleColor(ImGuiCol.Border, borderColorWithFade);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(16f, 12f));
-        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 20f);
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, DockWindowRounding);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 2f);
         ImGui.PushStyleVar(ImGuiStyleVar.ItemSpacing, new Vector2(DockIconSpacing, 8f));
 
@@ -406,13 +422,7 @@ public class MainWindow : IDisposable
                 var drawList = ImGui.GetWindowDrawList();
                 var min = ImGui.GetWindowPos();
                 var max = min + ImGui.GetWindowSize();
-                drawList.AddRectFilledMultiColor(
-                    min,
-                    max,
-                    ImGui.GetColorU32(gradientStart),
-                    ImGui.GetColorU32(gradientStart),
-                    ImGui.GetColorU32(gradientEnd),
-                    ImGui.GetColorU32(gradientEnd));
+                DrawRoundedVerticalGradient(drawList, min, max, gradientStart, gradientEnd, DockWindowRounding);
             }
 
             var first = true;
@@ -435,7 +445,7 @@ public class MainWindow : IDisposable
                 first = false;
 
                 EnsureDockIcon(item);
-                DrawDockIcon(item, accentColor);
+                DrawDockIcon(item, borderColor, fade);
             }
         }
         ImGui.End();
@@ -519,7 +529,7 @@ public class MainWindow : IDisposable
         });
     }
 
-    private void DrawDockIcon(DockItem item, Vector4 accentColor)
+    private void DrawDockIcon(DockItem item, Vector4 borderColor, float fadeAlpha)
     {
         ImGui.PushID(item.Id);
 
@@ -584,14 +594,20 @@ public class MainWindow : IDisposable
             drawList.AddText(labelPos, ImGui.GetColorU32(Vector4.One), item.DisplayName);
         }
 
-        var borderAlpha = hovered || active ? 1f : 0.6f;
-        var borderColor = new Vector4(accentColor.X, accentColor.Y, accentColor.Z, Math.Clamp(accentColor.W * borderAlpha, 0f, 1f));
-        drawList.AddRect(iconMin, iconMax, ImGui.GetColorU32(borderColor), DockIconRounding, ImDrawFlags.None, hovered || active ? 2f : 1f);
+        var fade = Math.Clamp(fadeAlpha, 0f, 1f);
+        var baseColor = borderColor;
+        var hoveredColor = AdjustBrightness(borderColor, 1.1f);
+        var activeColor = AdjustBrightness(borderColor, 1.2f);
+        var stateColor = active ? activeColor : hovered ? hoveredColor : baseColor;
+        var drawColor = WithAlpha(stateColor, fade);
+        drawColor.W = Math.Clamp(drawColor.W * (hovered || active ? 1f : 0.6f), 0f, 1f);
+        drawList.AddRect(iconMin, iconMax, ImGui.GetColorU32(drawColor), DockIconRounding, ImDrawFlags.None, hovered || active ? 2f : 1f);
 
         if (active)
         {
             var center = new Vector2(iconMin.X + iconSize * 0.5f, iconMax.Y + DockIndicatorRadius + 2f);
-            drawList.AddCircleFilled(center, DockIndicatorRadius, ImGui.GetColorU32(accentColor));
+            var indicatorColor = WithAlpha(activeColor, fade);
+            drawList.AddCircleFilled(center, DockIndicatorRadius, ImGui.GetColorU32(indicatorColor));
         }
 
         if (hovered)
@@ -1143,6 +1159,54 @@ public class MainWindow : IDisposable
     private static Vector4 WithAlpha(Vector4 color, float alphaMultiplier)
     {
         return new Vector4(color.X, color.Y, color.Z, Math.Clamp(color.W * alphaMultiplier, 0f, 1f));
+    }
+
+    private static void DrawRoundedVerticalGradient(ImDrawListPtr drawList, Vector2 min, Vector2 max, Vector4 topColor, Vector4 bottomColor, float rounding)
+    {
+        var height = max.Y - min.Y;
+        if (height <= 0f)
+        {
+            return;
+        }
+
+        var steps = Math.Clamp((int)Math.Ceiling(height / 2f), 1, 64);
+        var stepHeight = height / steps;
+
+        for (var i = 0; i < steps; i++)
+        {
+            var y0 = min.Y + stepHeight * i;
+            var y1 = i == steps - 1 ? max.Y : y0 + stepHeight;
+            var tMid = height <= 0f ? 0f : ((y0 + y1) * 0.5f - min.Y) / height;
+            var color = Vector4.Lerp(topColor, bottomColor, Math.Clamp(tMid, 0f, 1f));
+            var segmentMin = new Vector2(min.X, y0);
+            var segmentMax = new Vector2(max.X, y1);
+
+            float segmentRounding = 0f;
+            var flags = ImDrawFlags.None;
+            if (rounding > 0f)
+            {
+                if (steps == 1)
+                {
+                    segmentRounding = rounding;
+                    flags = ImDrawFlags.RoundCornersAll;
+                }
+                else
+                {
+                    if (i == 0)
+                    {
+                        segmentRounding = rounding;
+                        flags |= ImDrawFlags.RoundCornersTopLeft | ImDrawFlags.RoundCornersTopRight;
+                    }
+                    if (i == steps - 1)
+                    {
+                        segmentRounding = rounding;
+                        flags |= ImDrawFlags.RoundCornersBottomLeft | ImDrawFlags.RoundCornersBottomRight;
+                    }
+                }
+            }
+
+            drawList.AddRectFilled(segmentMin, segmentMax, ImGui.GetColorU32(color), segmentRounding, flags);
+        }
     }
 
 }
