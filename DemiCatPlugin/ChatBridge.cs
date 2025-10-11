@@ -86,7 +86,7 @@ public class ChatBridge : IChatBridge
 
     private void DrainQueues()
     {
-        const int MaxPerFrame = 500;
+        const int MaxPerFrame = 300;
         var count = 0;
 
         while (count < MaxPerFrame)

@@ -928,6 +928,8 @@ public class ChatWindow : IDisposable
             }
             if (msg.AvatarTexture != null)
             {
+                // prevent eviction this frame
+                TouchTexture($"avatar:{msg.Author?.Id}");
                 SafeImage(msg.AvatarTexture, new Vector2(20, 20));
             }
             else
