@@ -381,7 +381,7 @@ public class DiscordPresenceService : IDisposable
             }
             catch (OperationCanceledException)
             {
-                throw;
+                break;
             }
             catch (ObjectDisposedException)
             {
@@ -390,6 +390,15 @@ public class DiscordPresenceService : IDisposable
             {
                 hadTransportError = true;
                 HandleConnectionException(ex);
+            }
+            catch (WebSocketException ex) when (
+                ex.WebSocketErrorCode == WebSocketError.ConnectionClosedPrematurely ||
+                ex.HResult == unchecked((int)0x80004005))
+            {
+                hadTransportError = true;
+                PluginServices.Instance?.Log.Info("Presence WS dropped, will reconnect...");
+                await BackoffReconnectAsync(token).ConfigureAwait(false);
+                continue;
             }
             catch (WebSocketException ex)
             {
@@ -433,10 +442,7 @@ public class DiscordPresenceService : IDisposable
 
             if (hadTransportError)
             {
-                _retryAttempt++;
-                var delay = GetRetryDelay(_retryAttempt);
-                UpdateStatusMessage($"Reconnecting in {delay.TotalSeconds:0.#}s...");
-                await DelayWithBackoff(delay, token).ConfigureAwait(false);
+                await BackoffReconnectAsync(token).ConfigureAwait(false);
             }
             else
             {
@@ -739,6 +745,14 @@ public class DiscordPresenceService : IDisposable
 
     private void UpdateStatusMessage(string message)
         => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = message);
+
+    private async Task BackoffReconnectAsync(CancellationToken token)
+    {
+        _retryAttempt++;
+        var delay = GetRetryDelay(_retryAttempt);
+        UpdateStatusMessage($"Reconnecting in {delay.TotalSeconds:0.#}s...");
+        await DelayWithBackoff(delay, token).ConfigureAwait(false);
+    }
 
     private async Task DelayWithBackoff(TimeSpan delay, CancellationToken token)
     {
