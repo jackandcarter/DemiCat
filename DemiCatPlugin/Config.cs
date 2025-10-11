@@ -2,6 +2,7 @@ using Dalamud.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -25,7 +26,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 18;
+    public const int CurrentVersion = 19;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -104,6 +105,21 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("dockOpacity")]
     public float DockOpacity { get; set; } = 0.85f;
+
+    [JsonPropertyName("dockGradientEnabled")]
+    public bool DockGradientEnabled { get; set; } = false;
+
+    [JsonPropertyName("dockGradientStartColor")]
+    public Vector4 DockGradientStartColor { get; set; } = DefaultDockBackgroundColor;
+
+    [JsonPropertyName("dockGradientEndColor")]
+    public Vector4 DockGradientEndColor { get; set; } = DefaultDockBackgroundColor;
+
+    [JsonPropertyName("dockAutoFadeEnabled")]
+    public bool DockAutoFadeEnabled { get; set; } = false;
+
+    [JsonPropertyName("dockAutoOpenWindows")]
+    public List<string> DockAutoOpenWindows { get; set; } = new();
 
     [JsonPropertyName("dockOrder")]
     public List<string> DockOrder { get; set; } = new();
@@ -509,6 +525,18 @@ public class Config : IPluginConfiguration
             EnableFcChat = true;
             EnableFcChatUserSet = true;
             Version = 18;
+            ExtensionData = null;
+        }
+        if (Version < 19)
+        {
+            DockGradientStartColor = SanitizeColor(DockGradientStartColor, DefaultDockBackgroundColor);
+            DockGradientEndColor = SanitizeColor(DockGradientEndColor, DefaultDockBackgroundColor);
+            DockAutoOpenWindows = (DockAutoOpenWindows ?? new List<string>())
+                .Where(static s => !string.IsNullOrWhiteSpace(s))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+
+            Version = 19;
             ExtensionData = null;
         }
     }

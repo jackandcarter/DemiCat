@@ -39,6 +39,7 @@ public class MainWindow : IDisposable
     private string? _draggedDockId;
     private bool _dockOrderDirty;
     private bool _linkNotificationShown;
+    private bool _dockWasVisible;
 
     private const float DockIconSize = 48f;
     private const float DockIconSpacing = 12f;
@@ -152,6 +153,7 @@ public class MainWindow : IDisposable
             }
 
             ResetFadeTimer();
+            _dockWasVisible = false;
             return;
         }
 
@@ -160,8 +162,15 @@ public class MainWindow : IDisposable
         if (!IsOpen)
         {
             ResetFadeTimer();
+            _dockWasVisible = false;
             return;
         }
+
+        if (!_dockWasVisible)
+        {
+            ApplyDockAutoOpen();
+        }
+        _dockWasVisible = true;
 
         var io = ImGui.GetIO();
         var deltaTime = Math.Max(0f, io.DeltaTime);
@@ -183,8 +192,9 @@ public class MainWindow : IDisposable
         }
 
         var styleAlpha = _config.ChatFadeOutEnabled ? fadeAlpha : 1f;
+        var dockFadeAlpha = _config.ChatFadeOutEnabled && _config.DockAutoFadeEnabled ? fadeAlpha : 1f;
 
-        var interactedWithDock = DrawDock(accentColor);
+        var interactedWithDock = DrawDock(accentColor, dockFadeAlpha);
         var interactedWithWindows = DrawManagedWindows(primaryColor, childBaseColor, tabBaseColor, tabActiveBaseColor, tabHoveredBaseColor, styleAlpha, fadeAlpha);
 
         if (_dockOrderDirty)
@@ -363,13 +373,20 @@ public class MainWindow : IDisposable
         }
     }
 
-    private bool DrawDock(Vector4 accentColor)
+    private bool DrawDock(Vector4 accentColor, float fadeAlpha)
     {
         var background = Config.SanitizeColor(_config.DockBackgroundColor, Config.DefaultDockBackgroundColor);
+        var gradientStartColor = Config.SanitizeColor(_config.DockGradientStartColor, Config.DefaultDockBackgroundColor);
+        var gradientEndColor = Config.SanitizeColor(_config.DockGradientEndColor, Config.DefaultDockBackgroundColor);
         var opacity = Math.Clamp(_config.DockOpacity, 0f, 1f);
-        var dockColor = new Vector4(background.X, background.Y, background.Z, opacity);
+        var fade = Math.Clamp(fadeAlpha, 0f, 1f);
+        var alpha = Math.Clamp(opacity * fade, 0f, 1f);
+        var dockColor = new Vector4(background.X, background.Y, background.Z, alpha);
+        var gradientStart = new Vector4(gradientStartColor.X, gradientStartColor.Y, gradientStartColor.Z, alpha);
+        var gradientEnd = new Vector4(gradientEndColor.X, gradientEndColor.Y, gradientEndColor.Z, alpha);
+        var useGradient = _config.DockGradientEnabled && alpha > 0f;
 
-        ImGui.PushStyleColor(ImGuiCol.WindowBg, dockColor);
+        ImGui.PushStyleColor(ImGuiCol.WindowBg, useGradient ? Vector4.Zero : dockColor);
         ImGui.PushStyleColor(ImGuiCol.Border, accentColor);
         ImGui.PushStyleVar(ImGuiStyleVar.WindowPadding, new Vector2(16f, 12f));
         ImGui.PushStyleVar(ImGuiStyleVar.WindowRounding, 20f);
@@ -383,6 +400,20 @@ public class MainWindow : IDisposable
         if (ImGui.Begin("DemiCat Dock", flags))
         {
             interacted = HasWindowInteraction();
+
+            if (useGradient)
+            {
+                var drawList = ImGui.GetWindowDrawList();
+                var min = ImGui.GetWindowPos();
+                var max = min + ImGui.GetWindowSize();
+                drawList.AddRectFilledMultiColor(
+                    min,
+                    max,
+                    ImGui.GetColorU32(gradientStart),
+                    ImGui.GetColorU32(gradientStart),
+                    ImGui.GetColorU32(gradientEnd),
+                    ImGui.GetColorU32(gradientEnd));
+            }
 
             var first = true;
             foreach (var id in _config.DockOrder ?? Enumerable.Empty<string>())
@@ -646,6 +677,35 @@ public class MainWindow : IDisposable
         }
     }
 
+    private void ApplyDockAutoOpen()
+    {
+        var targets = _config.DockAutoOpenWindows;
+        if (targets == null || targets.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var id in targets)
+        {
+            if (string.IsNullOrEmpty(id))
+            {
+                continue;
+            }
+
+            if (!_dockItemMap.TryGetValue(id, out var item))
+            {
+                continue;
+            }
+
+            if (!item.IsVisible() || !item.IsEnabled())
+            {
+                continue;
+            }
+
+            SetWindowOpen(id, true);
+        }
+    }
+
     private void ForceWindowClosed(string id)
     {
         if (!_windowStates.ContainsKey(id))
@@ -730,7 +790,7 @@ public class MainWindow : IDisposable
         public void OnClick() => _onClick();
     }
 
-    private static class DockIds
+    internal static class DockIds
     {
         public const string Events = "events";
         public const string Create = "create";
