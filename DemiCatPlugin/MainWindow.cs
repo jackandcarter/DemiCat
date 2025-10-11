@@ -433,8 +433,8 @@ public class MainWindow : IDisposable
                     var topColor = ImGui.GetColorU32(gradientStart);
                     var bottomColor = ImGui.GetColorU32(gradientEnd);
                     drawList.AddRectFilledMultiColor(min, max, topColor, topColor, bottomColor, bottomColor);
-                    var borderColor = ImGui.GetColorU32(style.Colors[(int)ImGuiCol.Border]);
-                    drawList.AddRect(min, max, borderColor, rounding, ImDrawFlags.RoundCornersAll, borderSize);
+                    var borderColorU32 = ImGui.GetColorU32(style.Colors[(int)ImGuiCol.Border]);
+                    drawList.AddRect(min, max, borderColorU32, rounding, ImDrawFlags.RoundCornersAll, borderSize);
                 }
             }
 
