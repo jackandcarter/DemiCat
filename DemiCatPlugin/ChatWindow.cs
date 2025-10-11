@@ -18,6 +18,7 @@ using StbImageSharp;
 using System.IO;
 using DiscordHelper;
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using Dalamud.Interface.ImGuiFileDialog;
 using DemiCatPlugin.Emoji;
 using DemiCatPlugin.Avatars;
@@ -111,6 +112,7 @@ public class ChatWindow : IDisposable
     private DateTime _lastConfigSave = DateTime.MinValue;
     private CancellationTokenSource? _configSaveCts;
     private static readonly TimeSpan ConfigSaveDebounceInterval = TimeSpan.FromSeconds(3);
+    private readonly HashSet<string> _avatarInflight = new(StringComparer.Ordinal);
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -209,25 +211,39 @@ public class ChatWindow : IDisposable
 
     private void CollectAndDisposeTextures()
     {
+        var pinned = GetPinnedUrls();
+        var held = SnapshotMessageTextures();
         var toRemove = new List<(string Key, TextureCacheEntry Entry)>();
 
         foreach (var kvp in _textureCache)
         {
+            var key = kvp.Key;
             var entry = kvp.Value;
+
+            if (pinned.Contains(key))
+            {
+                continue;
+            }
+
             if (entry.Texture == null)
             {
                 if (entry.LastUsedFrame + TextureDisposeSafeLag < _frameIndex)
                 {
-                    toRemove.Add((kvp.Key, entry));
+                    toRemove.Add((key, entry));
                 }
                 continue;
             }
 
             if (entry.LastUsedFrame + TextureDisposeSafeLag < _frameIndex)
             {
-                _pendingDisposes.Add(entry.Texture);
+                if (held.Contains(entry.Texture))
+                {
+                    continue;
+                }
+
+                QueueTextureForDispose(entry.Texture);
                 entry.Texture = null;
-                toRemove.Add((kvp.Key, entry));
+                toRemove.Add((key, entry));
             }
         }
 
@@ -263,6 +279,88 @@ public class ChatWindow : IDisposable
         }
 
         _pendingDisposes.Clear();
+    }
+
+    private HashSet<string> GetPinnedUrls()
+    {
+        var pinned = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var message in _messages)
+        {
+            if (message.Attachments == null)
+            {
+                continue;
+            }
+
+            foreach (var attachment in message.Attachments)
+            {
+                if (attachment?.Texture != null && !string.IsNullOrEmpty(attachment.Url))
+                {
+                    pinned.Add(attachment.Url);
+                }
+            }
+        }
+
+        return pinned;
+    }
+
+    private HashSet<ISharedImmediateTexture> SnapshotMessageTextures()
+    {
+        var set = new HashSet<ISharedImmediateTexture>(SharedImmediateTextureComparer.Instance);
+        foreach (var message in _messages)
+        {
+            if (message.Attachments == null)
+            {
+                continue;
+            }
+
+            foreach (var attachment in message.Attachments)
+            {
+                if (attachment?.Texture != null)
+                {
+                    set.Add(attachment.Texture);
+                }
+            }
+        }
+
+        return set;
+    }
+
+    private void RequestAvatar(DiscordMessageDto msg)
+    {
+        if (_avatarCache == null || msg.Author == null || string.IsNullOrEmpty(msg.Author.Id))
+        {
+            return;
+        }
+
+        var authorId = msg.Author.Id;
+        if (!_avatarInflight.Add(authorId))
+        {
+            return;
+        }
+
+        _ = _avatarCache.GetAsync(msg.Author.AvatarUrl, authorId)
+            .ContinueWith(t => PluginServices.Instance!.Framework.RunOnTick(() =>
+            {
+                try
+                {
+                    msg.AvatarTexture = t.IsCompletedSuccessfully ? t.Result : null;
+                }
+                finally
+                {
+                    _avatarInflight.Remove(authorId);
+                }
+            }), TaskScheduler.Default);
+    }
+
+    private sealed class SharedImmediateTextureComparer : IEqualityComparer<ISharedImmediateTexture>
+    {
+        public static readonly SharedImmediateTextureComparer Instance = new();
+
+        public bool Equals(ISharedImmediateTexture? x, ISharedImmediateTexture? y)
+            => ReferenceEquals(x, y);
+
+        public int GetHashCode(ISharedImmediateTexture obj)
+            => RuntimeHelpers.GetHashCode(obj);
     }
 
     private float GetManualImageScale()
@@ -936,12 +1034,32 @@ public class ChatWindow : IDisposable
             var avatarVisible = IsRectVisible(itemStartY, 20f, minVisibleY, maxVisibleY);
             if (msg.Author != null && msg.AvatarTexture == null && _avatarCache != null && avatarVisible)
             {
-                _ = _avatarCache.GetAsync(msg.Author.AvatarUrl, msg.Author.Id)
-                    .ContinueWith(t => PluginServices.Instance!.Framework.RunOnTick(() => msg.AvatarTexture = t.Result));
+                RequestAvatar(msg);
             }
+
             if (msg.AvatarTexture != null)
             {
-                SafeImage(msg.AvatarTexture, new Vector2(20, 20));
+                try
+                {
+                    var wrap = msg.AvatarTexture.GetWrapOrEmpty();
+                    if (wrap.Handle != IntPtr.Zero)
+                    {
+                        ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                    }
+                    else
+                    {
+                        ImGui.Dummy(new Vector2(20, 20));
+                    }
+                }
+                catch (ObjectDisposedException)
+                {
+                    msg.AvatarTexture = null;
+                    if (_avatarCache != null && msg.Author != null)
+                    {
+                        RequestAvatar(msg);
+                    }
+                    ImGui.Dummy(new Vector2(20, 20));
+                }
             }
             else
             {
@@ -1012,11 +1130,12 @@ public class ChatWindow : IDisposable
                             continue;
                         }
 
+                        var displaySize = bounds;
                         try
                         {
                             var wrapAtt = att.Texture.GetWrapOrEmpty();
                             var originalSize = new Vector2(wrapAtt.Width, wrapAtt.Height);
-                            var displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
+                            displaySize = CalculateAttachmentDisplaySize(originalSize, bounds);
 
                             if (!IsRectVisible(imageStartY, displaySize.Y, minVisibleY, maxVisibleY))
                             {
@@ -1024,7 +1143,16 @@ public class ChatWindow : IDisposable
                                 continue;
                             }
 
-                            SafeImage(att.Texture, displaySize);
+                            var handle = wrapAtt.Handle;
+                            if (handle == IntPtr.Zero)
+                            {
+                                att.Texture = null;
+                                LoadTexture(att.Url, t => att.Texture = t);
+                                ImGui.Dummy(new Vector2(bounds.X, displaySize.Y));
+                                continue;
+                            }
+
+                            ImGui.Image(handle, displaySize);
                             TouchTexture(att.Url);
                             if (ImGui.IsItemHovered())
                             {
@@ -1039,7 +1167,9 @@ public class ChatWindow : IDisposable
                         }
                         catch (ObjectDisposedException)
                         {
-                            // texture disposed before draw completed
+                            att.Texture = null;
+                            LoadTexture(att.Url, t => att.Texture = t);
+                            ImGui.Dummy(new Vector2(bounds.X, displaySize.Y));
                         }
                     }
                     else
@@ -1099,14 +1229,30 @@ public class ChatWindow : IDisposable
                         }
                         if (reaction.Texture != null)
                         {
-                            TouchTexture(textureUrl);
-                            if (SafeImageButton(reaction.Texture, new Vector2(20, 20)))
+                            try
                             {
-                                _ = React(msg.Id, reaction.Emoji, reaction.Me);
+                                var wrap = reaction.Texture.GetWrapOrEmpty();
+                                var handle = wrap.Handle;
+                                if (handle != IntPtr.Zero)
+                                {
+                                    TouchTexture(textureUrl);
+                                    if (ImGui.ImageButton(handle, new Vector2(20, 20)))
+                                    {
+                                        _ = React(msg.Id, reaction.Emoji, reaction.Me);
+                                    }
+                                    ImGui.SameLine();
+                                    ImGui.TextUnformatted(reaction.Count.ToString());
+                                    handled = true;
+                                }
+                                else
+                                {
+                                    reaction.Texture = null;
+                                }
                             }
-                            ImGui.SameLine();
-                            ImGui.TextUnformatted(reaction.Count.ToString());
-                            handled = true;
+                            catch (ObjectDisposedException)
+                            {
+                                reaction.Texture = null;
+                            }
                         }
                     }
 
@@ -1801,15 +1947,31 @@ public class ChatWindow : IDisposable
                     _emojiCatalog[id] = emoji;
                 }
                 if (emoji.Texture == null)
-                    LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
-                if (emoji.Texture != null)
                 {
-                    TouchTexture(emoji.ImageUrl);
-                    SafeImage(emoji.Texture, new Vector2(20, 20));
+                    LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
+                    ImGui.TextUnformatted($":{name}:");
                 }
                 else
                 {
-                    ImGui.TextUnformatted($":{name}:");
+                    try
+                    {
+                        var wrap = emoji.Texture.GetWrapOrEmpty();
+                        if (wrap.Handle != IntPtr.Zero)
+                        {
+                            TouchTexture(emoji.ImageUrl);
+                            ImGui.Image(wrap.Handle, new Vector2(20, 20));
+                        }
+                        else
+                        {
+                            emoji.Texture = null;
+                            ImGui.TextUnformatted($":{name}:");
+                        }
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        emoji.Texture = null;
+                        ImGui.TextUnformatted($":{name}:");
+                    }
                 }
             }
             else
@@ -3715,6 +3877,10 @@ public class ChatWindow : IDisposable
     private void DisposeMessageTextures(DiscordMessageDto msg)
     {
         msg.AvatarTexture = null;
+        if (msg.Author?.Id is { Length: > 0 } authorId)
+        {
+            _avatarInflight.Remove(authorId);
+        }
         if (!string.IsNullOrEmpty(msg.Id))
         {
             _messageHeightCache.Remove(msg.Id);
@@ -4167,10 +4333,17 @@ public class ChatWindow : IDisposable
 
         if (_textureCache.Count > TextureCacheCapacity)
         {
+            var pinned = GetPinnedUrls();
             var nodeToCheck = _textureLru.Last;
             while (_textureCache.Count > TextureCacheCapacity && nodeToCheck != null)
             {
                 var previous = nodeToCheck.Previous;
+
+                if (pinned.Contains(nodeToCheck.Value))
+                {
+                    nodeToCheck = previous;
+                    continue;
+                }
 
                 if (!_textureCache.TryGetValue(nodeToCheck.Value, out var toRemove))
                 {
