@@ -54,13 +54,15 @@ public class OfficerChatWindow : ChatWindow
             _presenceSidebar = new PresenceSidebar(presence) { TextureLoader = LoadTexture };
         }
 
-        _bridge.StatusChanged += s =>
+        _bridge.StatusChanged += OnBridgeStatusChangedForOfficer;
+    }
+
+    private void OnBridgeStatusChangedForOfficer(string s)
+    {
+        if (s.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
         {
-            if (s.Contains("Forbidden", StringComparison.OrdinalIgnoreCase))
-            {
-                TryRefreshRoles();
-            }
-        };
+            TryRefreshRoles();
+        }
     }
 
 #if TEST
@@ -492,6 +494,12 @@ public class OfficerChatWindow : ChatWindow
         }
         _lastRolesRefresh = DateTime.UtcNow;
         _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshRoles());
+    }
+
+    public new void Dispose()
+    {
+        _bridge.StatusChanged -= OnBridgeStatusChangedForOfficer;
+        base.Dispose();
     }
 
     private class RolesDto

@@ -61,6 +61,31 @@ public class ChatBridge : IChatBridge
     private bool _permissionWarningShown;
     private static void OnFramework(Action action)
         => PluginServices.Instance?.Framework.RunOnTick(action);
+
+    private const bool SpreadAcrossFrames = true;
+
+    // Dispatch list items to a handler in slices, scheduling each slice over successive framework ticks.
+    private static void DispatchInTicks<T>(IReadOnlyList<T> items, int slice, Action<T> handler)
+    {
+        if (items == null || items.Count == 0 || slice <= 0 || handler == null) return;
+
+        var idx = 0;
+        void Step()
+        {
+            var end = Math.Min(idx + slice, items.Count);
+            for (; idx < end; idx++)
+            {
+                handler(items[idx]);
+            }
+
+            if (idx < items.Count)
+            {
+                OnFramework(Step); // schedule next frame
+            }
+        }
+
+        OnFramework(Step);
+    }
 #if TEST
     internal bool? ForceWebSocketOpen { get; set; }
     internal Action<string>? SendRawInterceptor { get; set; }
@@ -816,40 +841,49 @@ public class ChatBridge : IChatBridge
                     PluginServices.Instance?.Log.Info($"chat.ws batch channel={channel} size={count} avg_backfill={avg:F1}");
 
                     const int SliceSize = 100;
-                    for (var i = 0; i < deliveries.Count; i += SliceSize)
+                    if (SpreadAcrossFrames)
                     {
-                        var slice = deliveries.GetRange(i, Math.Min(SliceSize, deliveries.Count - i));
-                        OnFramework(() =>
-                        {
-                            foreach (var payload in slice)
-                            {
-                                MessageReceived?.Invoke(payload);
-                            }
-                        });
+                        DispatchInTicks(deliveries, SliceSize, p => MessageReceived?.Invoke(p));
+                        DispatchInTicks(deleted, SliceSize, id => MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}"));
+                        DispatchInTicks(typings, SliceSize, a => TypingReceived?.Invoke(a));
                     }
-
-                    for (var i = 0; i < deleted.Count; i += SliceSize)
+                    else
                     {
-                        var slice = deleted.GetRange(i, Math.Min(SliceSize, deleted.Count - i));
-                        OnFramework(() =>
+                        for (var i = 0; i < deliveries.Count; i += SliceSize)
                         {
-                            foreach (var id in slice)
+                            var slice = deliveries.GetRange(i, Math.Min(SliceSize, deliveries.Count - i));
+                            OnFramework(() =>
                             {
-                                MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}");
-                            }
-                        });
-                    }
+                                foreach (var payload in slice)
+                                {
+                                    MessageReceived?.Invoke(payload);
+                                }
+                            });
+                        }
 
-                    for (var i = 0; i < typings.Count; i += SliceSize)
-                    {
-                        var slice = typings.GetRange(i, Math.Min(SliceSize, typings.Count - i));
-                        OnFramework(() =>
+                        for (var i = 0; i < deleted.Count; i += SliceSize)
                         {
-                            foreach (var author in slice)
+                            var slice = deleted.GetRange(i, Math.Min(SliceSize, deleted.Count - i));
+                            OnFramework(() =>
                             {
-                                TypingReceived?.Invoke(author);
-                            }
-                        });
+                                foreach (var id in slice)
+                                {
+                                    MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}");
+                                }
+                            });
+                        }
+
+                        for (var i = 0; i < typings.Count; i += SliceSize)
+                        {
+                            var slice = typings.GetRange(i, Math.Min(SliceSize, typings.Count - i));
+                            OnFramework(() =>
+                            {
+                                foreach (var author in slice)
+                                {
+                                    TypingReceived?.Invoke(author);
+                                }
+                            });
+                        }
                     }
                     break;
                 case "resync":
