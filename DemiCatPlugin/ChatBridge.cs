@@ -64,27 +64,84 @@ public class ChatBridge : IChatBridge
 
     private static readonly bool SpreadAcrossFrames = true;
 
-    // Dispatch list items to a handler in slices, scheduling each slice over successive framework ticks.
-    private static void DispatchInTicks<T>(IReadOnlyList<T> items, int slice, Action<T> handler)
-    {
-        if (items == null || items.Count == 0 || slice <= 0 || handler == null) return;
+    private readonly Queue<string> _msgQ = new();
+    private readonly Queue<string> _deletedQ = new();
+    private readonly Queue<DiscordUserDto> _typingQ = new();
+    private bool _drainScheduled;
 
-        var idx = 0;
-        void Step()
+    private void EnqueueDeliveries(List<string> msgs, List<string> deleted, List<DiscordUserDto> typings)
+    {
+        lock (_stateLock)
         {
-            var end = Math.Min(idx + slice, items.Count);
-            for (; idx < end; idx++)
+            foreach (var m in msgs) _msgQ.Enqueue(m);
+            foreach (var d in deleted) _deletedQ.Enqueue(d);
+            foreach (var t in typings) _typingQ.Enqueue(t);
+
+            if (_drainScheduled) return;
+            _drainScheduled = true;
+        }
+
+        OnFramework(DrainQueues);
+    }
+
+    private void DrainQueues()
+    {
+        const int MaxPerFrame = 500;
+        var count = 0;
+
+        while (count < MaxPerFrame)
+        {
+            string? payload = null;
+            lock (_stateLock)
             {
-                handler(items[idx]);
+                if (_msgQ.Count == 0) break;
+                payload = _msgQ.Dequeue();
             }
 
-            if (idx < items.Count)
+            MessageReceived?.Invoke(payload);
+            count++;
+        }
+
+        while (count < MaxPerFrame)
+        {
+            string? id = null;
+            lock (_stateLock)
             {
-                OnFramework(Step); // schedule next frame
+                if (_deletedQ.Count == 0) break;
+                id = _deletedQ.Dequeue();
+            }
+
+            MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}");
+            count++;
+        }
+
+        while (count < MaxPerFrame)
+        {
+            DiscordUserDto? author = null;
+            lock (_stateLock)
+            {
+                if (_typingQ.Count == 0) break;
+                author = _typingQ.Dequeue();
+            }
+
+            TypingReceived?.Invoke(author);
+            count++;
+        }
+
+        bool more;
+        lock (_stateLock)
+        {
+            more = _msgQ.Count > 0 || _deletedQ.Count > 0 || _typingQ.Count > 0;
+            if (!more)
+            {
+                _drainScheduled = false;
             }
         }
 
-        OnFramework(Step);
+        if (more)
+        {
+            OnFramework(DrainQueues);
+        }
     }
 #if TEST
     internal bool? ForceWebSocketOpen { get; set; }
@@ -843,21 +900,7 @@ public class ChatBridge : IChatBridge
                     const int SliceSize = 100;
                     if (SpreadAcrossFrames)
                     {
-                        DispatchInTicks(deliveries, SliceSize, p =>
-                        {
-                            var handler = MessageReceived;
-                            handler?.Invoke(p);
-                        });
-                        DispatchInTicks(deleted, SliceSize, id =>
-                        {
-                            var handler = MessageReceived;
-                            handler?.Invoke($"{{\"deletedId\":\"{id}\"}}");
-                        });
-                        DispatchInTicks(typings, SliceSize, a =>
-                        {
-                            var handler = TypingReceived;
-                            handler?.Invoke(a);
-                        });
+                        EnqueueDeliveries(deliveries, deleted, typings);
                     }
                     else
                     {

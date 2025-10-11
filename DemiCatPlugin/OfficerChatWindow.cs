@@ -300,7 +300,7 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
-    protected override async Task FetchChannels(bool refreshed = false)
+    protected override async Task FetchChannels(bool refreshed = false, CancellationToken cancellationToken = default)
     {
         if (_channelsLoading && !refreshed)
         {
@@ -331,7 +331,7 @@ public class OfficerChatWindow : ChatWindow
 
         try
         {
-            var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(global::DemiCatPlugin.ChannelKind.OfficerChat, CancellationToken.None)).ToList());
+            var channels = ChannelDtoExtensions.SortForDisplay((await _channelService.FetchAsync(global::DemiCatPlugin.ChannelKind.OfficerChat, cancellationToken)).ToList());
             if (await ChannelNameResolver.Resolve(channels, _httpClient, _config, refreshed, () => FetchChannels(true)))
             {
                 if (refreshed)
