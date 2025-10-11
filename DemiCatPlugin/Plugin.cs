@@ -89,7 +89,7 @@ public class Plugin : IDalamudPlugin
             PooledConnectionLifetime = TimeSpan.FromMinutes(5),
             AutomaticDecompression = DecompressionMethods.All
         };
-        _httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(10) };
+        _httpClient = new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
 
         WebTextureCache.FetchOverride = FetchWebTexture;
 
