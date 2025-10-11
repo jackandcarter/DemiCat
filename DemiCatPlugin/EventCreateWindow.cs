@@ -36,7 +36,7 @@ public class EventCreateWindow
     private string _imageUrl = string.Empty;
     private string _url = string.Empty;
     private string _thumbnailUrl = string.Empty;
-    private uint _color;
+    private uint? _embedColor;
     private readonly List<Field> _fields = new();
     private string? _lastResult;
     private readonly List<Template.TemplateButton> _buttons = new();
@@ -333,9 +333,12 @@ public class EventCreateWindow
         ImGui.TextUnformatted("Embed Banner Color:");
         ImGui.SameLine();
 
-        var colorVec = ColorUtils.ImGuiToVector(_color);
+        var colorVector4 = _embedColor.HasValue
+            ? ColorUtils.RgbToVector4(_embedColor.Value)
+            : new Vector4(0f, 0f, 0f, 1f);
+        var colorVec = new Vector3(colorVector4.X, colorVector4.Y, colorVector4.Z);
         var colorDisplaySize = new Vector2(ImGui.GetFrameHeight() * 2.5f, ImGui.GetFrameHeight());
-        if (ImGui.ColorButton("##embedColorButton", new Vector4(colorVec, 1f), ImGuiColorEditFlags.None, colorDisplaySize))
+        if (ImGui.ColorButton("##embedColorButton", colorVector4, ImGuiColorEditFlags.NoAlpha, colorDisplaySize))
         {
             ImGui.OpenPopup("embedColorPicker");
         }
@@ -345,11 +348,12 @@ public class EventCreateWindow
             var pickerColor = colorVec;
             if (ImGui.ColorPicker3("##embedColorPicker", ref pickerColor, ImGuiColorEditFlags.NoSidePreview | ImGuiColorEditFlags.NoSmallPreview))
             {
-                _color = ColorUtils.VectorToImGui(pickerColor);
+                var imGuiColor = ColorUtils.Vector4ToImGui(new Vector4(pickerColor, 1f));
+                _embedColor = ColorUtils.ImGuiToRgb(imGuiColor);
             }
             if (ImGui.Button("Clear"))
             {
-                _color = 0;
+                _embedColor = null;
                 ImGui.CloseCurrentPopup();
             }
             ImGui.EndPopup();
@@ -686,7 +690,7 @@ public class EventCreateWindow
         _thumbnailUrl = template.ThumbnailUrl;
         ResetUploadState(_bannerUpload, template.ImageId, template.ImageUrl);
         ResetUploadState(_thumbnailUpload, template.ThumbnailId, template.ThumbnailUrl);
-        _color = ColorUtils.RgbToImGui(template.Color);
+        _embedColor = template.Color != 0 ? template.Color : null;
         _mentions.Clear();
         if (template.Mentions != null)
         {
@@ -1026,7 +1030,7 @@ public class EventCreateWindow
             string.IsNullOrWhiteSpace(_url) ? null : _url,
             string.IsNullOrWhiteSpace(_imageUrl) ? null : _imageUrl,
             string.IsNullOrWhiteSpace(_thumbnailUrl) ? null : _thumbnailUrl,
-            _color > 0 ? (uint?)ColorUtils.ImGuiToRgb(_color) : null,
+            _embedColor,
             fields,
             buttons,
             mentionIds,

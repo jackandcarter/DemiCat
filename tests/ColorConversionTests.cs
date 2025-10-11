@@ -100,10 +100,11 @@ public class ColorConversionTests
         var selection = new ChannelSelectionService(config);
         var emojiManager = new EmojiManager(http, tokenManager, config);
         var window = new EventCreateWindow(config, http, channelService, selection, emojiManager);
-        typeof(EventCreateWindow).GetField("_color", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .SetValue(window, ColorUtils.RgbToImGui(rgb));
-        var preview = (EmbedDto)typeof(EventCreateWindow).GetMethod("BuildPreview", BindingFlags.NonPublic | BindingFlags.Instance)!
+        typeof(EventCreateWindow).GetField("_embedColor", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(window, rgb);
+        var preview = (EventPreviewFormatter.Result)typeof(EventCreateWindow)
+            .GetMethod("BuildPreview", BindingFlags.NonPublic | BindingFlags.Instance)!
             .Invoke(window, Array.Empty<object>())!;
-        Assert.Equal(rgb, preview.Color);
+        Assert.Equal(rgb, preview.Embed.Color);
     }
 }
