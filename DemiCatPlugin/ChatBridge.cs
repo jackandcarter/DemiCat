@@ -774,6 +774,9 @@ public class ChatBridge : IChatBridge
                     }
 
                     var msgs = root.GetProperty("messages");
+                    var deliveries = new List<string>(msgs.GetArrayLength());
+                    var deleted = new List<string>();
+                    var typings = new List<DiscordUserDto>();
                     var count = 0;
                     foreach (var msg in msgs.EnumerateArray())
                     {
@@ -787,17 +790,14 @@ public class ChatBridge : IChatBridge
                         var mOp = msg.GetProperty("op").GetString();
                         if (mOp == "mc" || mOp == "mu")
                         {
-                            var payload = msg.GetProperty("d").GetRawText();
-                            var capturedPayload = payload;
-                            OnFramework(() => MessageReceived?.Invoke(capturedPayload));
+                            deliveries.Add(msg.GetProperty("d").GetRawText());
                         }
                         else if (mOp == "md")
                         {
                             var id = msg.GetProperty("d").GetProperty("id").GetString();
-                            if (id != null)
+                            if (!string.IsNullOrEmpty(id))
                             {
-                                var deletedId = id;
-                                OnFramework(() => MessageReceived?.Invoke($"{{\"deletedId\":\"{deletedId}\"}}"));
+                                deleted.Add(id!);
                             }
                         }
                         else if (mOp == "ty")
@@ -806,8 +806,7 @@ public class ChatBridge : IChatBridge
                             var author = JsonSerializer.Deserialize<DiscordUserDto>(payload, JsonOpts);
                             if (author != null)
                             {
-                                var capturedAuthor = author;
-                                OnFramework(() => TypingReceived?.Invoke(capturedAuthor));
+                                typings.Add(author);
                             }
                         }
                     }
@@ -815,6 +814,43 @@ public class ChatBridge : IChatBridge
                     _backfillBatches++;
                     var avg = _backfillBatches == 0 ? 0 : (double)_backfillTotal / _backfillBatches;
                     PluginServices.Instance?.Log.Info($"chat.ws batch channel={channel} size={count} avg_backfill={avg:F1}");
+
+                    const int SliceSize = 100;
+                    for (var i = 0; i < deliveries.Count; i += SliceSize)
+                    {
+                        var slice = deliveries.GetRange(i, Math.Min(SliceSize, deliveries.Count - i));
+                        OnFramework(() =>
+                        {
+                            foreach (var payload in slice)
+                            {
+                                MessageReceived?.Invoke(payload);
+                            }
+                        });
+                    }
+
+                    for (var i = 0; i < deleted.Count; i += SliceSize)
+                    {
+                        var slice = deleted.GetRange(i, Math.Min(SliceSize, deleted.Count - i));
+                        OnFramework(() =>
+                        {
+                            foreach (var id in slice)
+                            {
+                                MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}");
+                            }
+                        });
+                    }
+
+                    for (var i = 0; i < typings.Count; i += SliceSize)
+                    {
+                        var slice = typings.GetRange(i, Math.Min(SliceSize, typings.Count - i));
+                        OnFramework(() =>
+                        {
+                            foreach (var author in slice)
+                            {
+                                TypingReceived?.Invoke(author);
+                            }
+                        });
+                    }
                     break;
                 case "resync":
                     var ch = root.GetProperty("channel").GetString() ?? string.Empty;
