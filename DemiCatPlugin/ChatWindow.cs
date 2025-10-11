@@ -683,19 +683,22 @@ public class ChatWindow : IDisposable
         var userDragging = chatHovered && ImGui.IsMouseDragging(ImGuiMouseButton.Left);
         var userInteractingWithScroll = userWheelScrolling || userDragging;
 
+        var messagesSnapshot = _messages.ToList();
+        var messageCount = messagesSnapshot.Count;
+
         if (userInteractingWithScroll && _pendingInitialScroll)
         {
             _pendingInitialScroll = false;
         }
 
         var shouldAutoScroll = (_pendingInitialScroll || _wasAtBottomLastFrame) && !userInteractingWithScroll;
-        if (shouldAutoScroll && _messages.Count == 0)
+        if (shouldAutoScroll && messageCount == 0)
         {
             shouldAutoScroll = false;
         }
 
         var topPadding = _chatTopPadding;
-        if (_messages.Count == 0)
+        if (messageCount == 0)
         {
             topPadding = 0f;
             _chatTopPadding = 0f;
@@ -716,9 +719,9 @@ public class ChatWindow : IDisposable
         var minVisibleY = MathF.Max(0f, scrollY - virtualizationPadding);
         var maxVisibleY = scrollY + MathF.Max(windowHeight, 0f) + virtualizationPadding;
 
-        for (var i = 0; i < _messages.Count; i++)
+        for (var i = 0; i < messageCount; i++)
         {
-            var msg = _messages[i];
+            var msg = messagesSnapshot[i];
             var itemStartY = ImGui.GetCursorPosY();
             var hasCachedHeight = _messageHeightCache.TryGetValue(msg.Id, out var cachedHeight) && cachedHeight > 0f && float.IsFinite(cachedHeight);
             if (hasCachedHeight)
@@ -772,7 +775,7 @@ public class ChatWindow : IDisposable
 
             if (msg.Reference?.MessageId != null)
             {
-                var refMsg = _messages.Find(m => m.Id == msg.Reference.MessageId);
+                var refMsg = messagesSnapshot.Find(m => m.Id == msg.Reference.MessageId);
                 if (refMsg != null)
                 {
                     var preview = refMsg.Content ?? string.Empty;
@@ -973,7 +976,7 @@ public class ChatWindow : IDisposable
             }
             drawList.ChannelsMerge();
 
-            if (i < _messages.Count - 1)
+            if (i < messageCount - 1)
             {
                 var spacingY = styleForRow.ItemSpacing.Y * 0.5f;
                 if (spacingY > 0f)
@@ -996,9 +999,9 @@ public class ChatWindow : IDisposable
             ImGui.PopID();
         }
 
-        if (_messageHoverStates.Count > _messages.Count)
+        if (_messageHoverStates.Count > messageCount)
         {
-            var validIds = new HashSet<string>(_messages.Select(m => m.Id));
+            var validIds = new HashSet<string>(messagesSnapshot.Select(m => m.Id));
             foreach (var key in _messageHoverStates.Keys.ToList())
             {
                 if (!validIds.Contains(key))
@@ -1023,7 +1026,7 @@ public class ChatWindow : IDisposable
         var innerHeight = MathF.Max(0f, contentRegionMaxY - cursorStartY);
         var usedHeight = ImGui.GetCursorPosY() - cursorStartY;
         var messageHeight = MathF.Max(0f, usedHeight - topPadding);
-        if (_messages.Count > 0 && innerHeight > 0f)
+        if (messageCount > 0 && innerHeight > 0f)
         {
             var paddingNeeded = innerHeight - messageHeight;
             _chatTopPadding = paddingNeeded > 0f ? paddingNeeded : 0f;
@@ -1086,7 +1089,7 @@ public class ChatWindow : IDisposable
 
         if (_replyToId != null)
         {
-            var refMsg = _messages.Find(m => m.Id == _replyToId);
+            var refMsg = messagesSnapshot.Find(m => m.Id == _replyToId);
             if (refMsg != null)
             {
                 var preview = refMsg.Content ?? string.Empty;
