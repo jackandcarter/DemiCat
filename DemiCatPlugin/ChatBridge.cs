@@ -851,7 +851,7 @@ public class ChatBridge : IChatBridge
                         DispatchInTicks(deleted, SliceSize, id =>
                         {
                             var handler = MessageReceived;
-                            handler?.Invoke($"{\"deletedId\":\"{id}\"}");
+                            handler?.Invoke($"{{\"deletedId\":\"{id}\"}}");
                         });
                         DispatchInTicks(typings, SliceSize, a =>
                         {
