@@ -7,6 +7,7 @@ using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.ManagedFontAtlas;
 using Dalamud.Interface.Textures;
+using Dalamud.Interface.Utility;
 using DemiCatPlugin.Emoji;
 using StbImageSharp;
 
@@ -419,10 +420,22 @@ public class MainWindow : IDisposable
 
             if (useGradient)
             {
+                var style = ImGui.GetStyle();
+                var rounding = style.WindowRounding;
+                var borderSize = Math.Max(1f, style.WindowBorderSize);
                 var drawList = ImGui.GetWindowDrawList();
-                var min = ImGui.GetWindowPos();
-                var max = min + ImGui.GetWindowSize();
-                DrawRoundedVerticalGradient(drawList, min, max, gradientStart, gradientEnd, DockWindowRounding);
+                var winPos = ImGui.GetWindowPos();
+                var winSize = ImGui.GetWindowSize();
+                var min = winPos + new Vector2(borderSize, borderSize);
+                var max = winPos + winSize - new Vector2(borderSize, borderSize);
+                if (max.X > min.X && max.Y > min.Y)
+                {
+                    var topColor = ImGui.GetColorU32(gradientStart);
+                    var bottomColor = ImGui.GetColorU32(gradientEnd);
+                    drawList.AddRectFilledMultiColor(min, max, topColor, topColor, bottomColor, bottomColor);
+                    var borderColor = ImGui.GetColorU32(style.Colors[(int)ImGuiCol.Border]);
+                    drawList.AddRect(min, max, borderColor, rounding, ImDrawFlags.RoundCornersAll, borderSize);
+                }
             }
 
             var first = true;
@@ -1005,11 +1018,18 @@ public class MainWindow : IDisposable
                 closeRequested = true;
             });
 
-            var dragHeight = ImGui.GetFrameHeight();
-            ImGui.SetCursorPosY(ImGui.GetStyle().WindowPadding.Y);
-            ImGui.InvisibleButton($"##drag_zone_dc_{id}", new Vector2(ImGui.GetContentRegionAvail().X, dragHeight));
+            var style = ImGui.GetStyle();
+            var chromeHeight = Math.Max(14f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight());
+            ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y));
+            var dragSize = new Vector2(ImGui.GetContentRegionAvail().X, chromeHeight);
+            ImGui.InvisibleButton($"##drag_zone_dc_{id}", dragSize);
+            if (ImGui.IsItemActive() && ImGui.IsMouseDragging(0))
+            {
+                var io = ImGui.GetIO();
+                ImGui.SetWindowPos(ImGui.GetWindowPos() + io.MouseDelta);
+            }
 
-            ImGui.Dummy(new Vector2(0f, ImGui.GetStyle().FramePadding.Y * 2f));
+            ImGui.Dummy(new Vector2(1f, style.FramePadding.Y + chromeHeight));
             drawContent();
             windowInteracted = HasWindowInteraction();
         }
@@ -1180,54 +1200,6 @@ public class MainWindow : IDisposable
     private static Vector4 WithAlpha(Vector4 color, float alphaMultiplier)
     {
         return new Vector4(color.X, color.Y, color.Z, Math.Clamp(color.W * alphaMultiplier, 0f, 1f));
-    }
-
-    private static void DrawRoundedVerticalGradient(ImDrawListPtr drawList, Vector2 min, Vector2 max, Vector4 topColor, Vector4 bottomColor, float rounding)
-    {
-        var height = max.Y - min.Y;
-        if (height <= 0f)
-        {
-            return;
-        }
-
-        var steps = Math.Clamp((int)Math.Ceiling(height / 2f), 1, 64);
-        var stepHeight = height / steps;
-
-        for (var i = 0; i < steps; i++)
-        {
-            var y0 = min.Y + stepHeight * i;
-            var y1 = i == steps - 1 ? max.Y : y0 + stepHeight;
-            var tMid = height <= 0f ? 0f : ((y0 + y1) * 0.5f - min.Y) / height;
-            var color = Vector4.Lerp(topColor, bottomColor, Math.Clamp(tMid, 0f, 1f));
-            var segmentMin = new Vector2(min.X, y0);
-            var segmentMax = new Vector2(max.X, y1);
-
-            float segmentRounding = 0f;
-            var flags = ImDrawFlags.None;
-            if (rounding > 0f)
-            {
-                if (steps == 1)
-                {
-                    segmentRounding = rounding;
-                    flags = ImDrawFlags.RoundCornersAll;
-                }
-                else
-                {
-                    if (i == 0)
-                    {
-                        segmentRounding = rounding;
-                        flags |= ImDrawFlags.RoundCornersTopLeft | ImDrawFlags.RoundCornersTopRight;
-                    }
-                    if (i == steps - 1)
-                    {
-                        segmentRounding = rounding;
-                        flags |= ImDrawFlags.RoundCornersBottomLeft | ImDrawFlags.RoundCornersBottomRight;
-                    }
-                }
-            }
-
-            drawList.AddRectFilled(segmentMin, segmentMax, ImGui.GetColorU32(color), segmentRounding, flags);
-        }
     }
 
 }

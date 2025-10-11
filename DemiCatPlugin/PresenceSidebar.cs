@@ -41,10 +41,14 @@ public class PresenceSidebar : IDisposable
 
     private const string PresenceUnavailableMessage = "Presence unavailable";
     private static readonly TimeSpan RefreshCooldown = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan RebuildInterval = TimeSpan.FromMilliseconds(250);
 
     private Task? _refreshTask;
     private bool _refreshInFlight;
     private DateTime _nextRefreshAllowed = DateTime.MinValue;
+    private readonly List<PresenceDto> _items = new();
+    private DateTime _lastRebuild = DateTime.MinValue;
+    private PresenceConnectionState _lastConn = PresenceConnectionState.Disconnected;
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
     public Action<string?>? TextureTouch { get; set; }
@@ -64,6 +68,21 @@ public class PresenceSidebar : IDisposable
             ImGui.TextUnformatted(text);
             ImGui.Spacing();
             shouldReturn = true;
+        }
+
+        var snapshot = _service.GetSnapshot();
+        var connection = _service.ConnectionState;
+        if (_lastConn != connection && connection == PresenceConnectionState.Connected)
+        {
+            _items.Clear();
+            _lastRebuild = DateTime.MinValue;
+        }
+        _lastConn = connection;
+
+        if (DateTime.UtcNow - _lastRebuild >= RebuildInterval)
+        {
+            RebuildFrom(snapshot);
+            _lastRebuild = DateTime.UtcNow;
         }
 
         ImGui.BeginChild("##presence", new Vector2(width, 0), true);
@@ -105,7 +124,7 @@ public class PresenceSidebar : IDisposable
             }
             else
             {
-                var presencesSource = _service.Presences;
+                var presencesSource = _items;
                 if (presencesSource == null || presencesSource.Count == 0)
                 {
                     ShowStatus(_service.StatusMessage);
@@ -294,7 +313,15 @@ public class PresenceSidebar : IDisposable
 
         if (TextureLoader != null && !string.IsNullOrEmpty(p.AvatarUrl) && p.AvatarTexture == null)
         {
-            TextureLoader(p.AvatarUrl, t => p.AvatarTexture = t);
+            if (!p.AvatarLoadRequested)
+            {
+                p.AvatarLoadRequested = true;
+                TextureLoader(p.AvatarUrl, t =>
+                {
+                    p.AvatarTexture = t;
+                    p.AvatarLoadRequested = false;
+                });
+            }
         }
 
         var avatarPos = ImGui.GetCursorScreenPos();
@@ -304,16 +331,28 @@ public class PresenceSidebar : IDisposable
             try
             {
                 var wrap = p.AvatarTexture.GetWrapOrEmpty();
-                ImGui.Image(wrap.Handle, avatarSize);
-                TextureTouch?.Invoke(p.AvatarUrl);
-                drewAvatar = true;
+                if (wrap.Width > 0 && wrap.Height > 0)
+                {
+                    ImGui.Image(wrap.Handle, avatarSize);
+                    TextureTouch?.Invoke(p.AvatarUrl);
+                    drewAvatar = true;
+                }
             }
             catch (ObjectDisposedException)
             {
                 p.AvatarTexture = null;
+                p.AvatarLoadRequested = false;
                 if (TextureLoader != null && !string.IsNullOrEmpty(p.AvatarUrl))
                 {
-                    TextureLoader(p.AvatarUrl, t => p.AvatarTexture = t);
+                    if (!p.AvatarLoadRequested)
+                    {
+                        p.AvatarLoadRequested = true;
+                        TextureLoader(p.AvatarUrl, t =>
+                        {
+                            p.AvatarTexture = t;
+                            p.AvatarLoadRequested = false;
+                        });
+                    }
                 }
             }
         }
@@ -404,7 +443,15 @@ public class PresenceSidebar : IDisposable
         {
             if (TextureLoader != null && !string.IsNullOrEmpty(presence.BannerUrl) && presence.BannerTexture == null)
             {
-                TextureLoader(presence.BannerUrl, t => presence.BannerTexture = t);
+                if (!presence.BannerLoadRequested)
+                {
+                    presence.BannerLoadRequested = true;
+                    TextureLoader(presence.BannerUrl, t =>
+                    {
+                        presence.BannerTexture = t;
+                        presence.BannerLoadRequested = false;
+                    });
+                }
             }
             return;
         }
@@ -415,19 +462,31 @@ public class PresenceSidebar : IDisposable
             try
             {
                 var wrap = presence.BannerTexture.GetWrapOrEmpty();
-                drawList.AddImage(wrap.Handle, min, max);
-                TextureTouch?.Invoke(presence.BannerUrl);
-                bannerDrawn = true;
+                if (wrap.Width > 0 && wrap.Height > 0)
+                {
+                    drawList.AddImage(wrap.Handle, min, max);
+                    TextureTouch?.Invoke(presence.BannerUrl);
+                    bannerDrawn = true;
+                }
             }
             catch (ObjectDisposedException)
             {
                 presence.BannerTexture = null;
+                presence.BannerLoadRequested = false;
             }
         }
 
         if (!bannerDrawn && TextureLoader != null && !string.IsNullOrEmpty(presence.BannerUrl) && presence.BannerTexture == null)
         {
-            TextureLoader(presence.BannerUrl, t => presence.BannerTexture = t);
+            if (!presence.BannerLoadRequested)
+            {
+                presence.BannerLoadRequested = true;
+                TextureLoader(presence.BannerUrl, t =>
+                {
+                    presence.BannerTexture = t;
+                    presence.BannerLoadRequested = false;
+                });
+            }
         }
 
         if (!bannerDrawn)
@@ -474,6 +533,25 @@ public class PresenceSidebar : IDisposable
 
         ImGui.InvisibleButton("##badge", totalSize);
         drawList.AddText(cursor + padding, textColor, text);
+    }
+
+    private void RebuildFrom(IReadOnlyList<PresenceDto>? snapshot)
+    {
+        _items.Clear();
+        if (snapshot == null)
+        {
+            return;
+        }
+
+        foreach (var presence in snapshot)
+        {
+            if (presence == null || string.IsNullOrWhiteSpace(presence.Id))
+            {
+                continue;
+            }
+
+            _items.Add(presence);
+        }
     }
 
     public void Dispose()

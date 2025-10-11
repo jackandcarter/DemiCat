@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System.IO;
@@ -36,6 +37,7 @@ public class DiscordPresenceService : IDisposable
     private DateTime _lastErrorLog;
     private Task<RefreshOutcome>? _refreshTask;
     private DateTime _nextRefreshAllowed = DateTime.MinValue;
+    private volatile PresenceConnectionState _connectionState = PresenceConnectionState.Disconnected;
     private static readonly TimeSpan ErrorLogThrottle = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RefreshSuccessCooldown = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan RefreshFailureCooldown = TimeSpan.FromSeconds(5);
@@ -48,6 +50,11 @@ public class DiscordPresenceService : IDisposable
     public string StatusMessage => _statusMessage;
     public bool Loaded => _loaded;
     public bool IsPresenceReady => _presenceReady;
+    public PresenceConnectionState ConnectionState => _connectionState;
+    public IReadOnlyList<PresenceDto> GetSnapshot()
+    {
+        return _presences.ToList();
+    }
 
     public DiscordPresenceService(Config config, HttpClient httpClient)
     {
@@ -141,6 +148,7 @@ public class DiscordPresenceService : IDisposable
         socket?.Dispose();
 
         DisposeAllPresences();
+        SetConnectionState(PresenceConnectionState.Disconnected);
     }
 
     public void Dispose()
@@ -153,6 +161,7 @@ public class DiscordPresenceService : IDisposable
         socket?.Dispose();
 
         DisposeAllPresences();
+        SetConnectionState(PresenceConnectionState.Disconnected);
     }
 
     public Task Refresh(bool force = false)
@@ -298,6 +307,7 @@ public class DiscordPresenceService : IDisposable
         {
             if (!ApiHelpers.ValidateApiBaseUrl(_config))
             {
+                SetConnectionState(PresenceConnectionState.Disconnected);
                 UpdateStatusMessage(InvalidApiStatus);
                 await DelayWithBackoff(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
                 _retryAttempt = 0;
@@ -306,6 +316,7 @@ public class DiscordPresenceService : IDisposable
 
             if (TokenManager.Instance?.IsReady() != true)
             {
+                SetConnectionState(PresenceConnectionState.Disconnected);
                 UpdateStatusMessage(ApiKeyMissingStatus);
                 await DelayWithBackoff(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
                 _retryAttempt = 0;
@@ -314,6 +325,7 @@ public class DiscordPresenceService : IDisposable
 
             if (!_config.Enabled)
             {
+                SetConnectionState(PresenceConnectionState.Disconnected);
                 UpdateStatusMessage(PluginDisabledStatus);
                 await DelayWithBackoff(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
                 _retryAttempt = 0;
@@ -363,6 +375,7 @@ public class DiscordPresenceService : IDisposable
                 }
 
                 connectionScope = EnterConnectionScope();
+                SetConnectionState(PresenceConnectionState.Connecting);
                 await ConnectAsync(socket, uri!, token).ConfigureAwait(false);
 
                 var previousSocket = Interlocked.Exchange(ref _ws, socket);
@@ -371,7 +384,9 @@ public class DiscordPresenceService : IDisposable
                 _retryAttempt = 0;
                 hadTransportError = false;
                 _loaded = false;
+                DisposeAllPresences();
                 await Refresh(force: true).ConfigureAwait(false);
+                SetConnectionState(PresenceConnectionState.Connected);
                 UpdateStatusMessage(string.Empty);
 
                 await ReceiveLoopAsync(socket, token).ConfigureAwait(false);
@@ -417,6 +432,7 @@ public class DiscordPresenceService : IDisposable
             }
             finally
             {
+                SetConnectionState(PresenceConnectionState.Disconnected);
                 connectionScope?.Dispose();
 
                 if (socket != null)
@@ -746,11 +762,31 @@ public class DiscordPresenceService : IDisposable
     private void UpdateStatusMessage(string message)
         => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = message);
 
+    private void SetConnectionState(PresenceConnectionState state)
+    {
+        if (_connectionState == state)
+        {
+            return;
+        }
+
+        var services = PluginServices.Instance;
+        if (services?.Framework != null)
+        {
+            var target = state;
+            services.Framework.RunOnTick(() => _connectionState = target);
+        }
+        else
+        {
+            _connectionState = state;
+        }
+    }
+
     private async Task BackoffReconnectAsync(CancellationToken token)
     {
         _retryAttempt++;
         var delay = GetRetryDelay(_retryAttempt);
         UpdateStatusMessage($"Reconnecting in {delay.TotalSeconds:0.#}s...");
+        SetConnectionState(PresenceConnectionState.Reconnecting);
         await DelayWithBackoff(delay, token).ConfigureAwait(false);
     }
 
@@ -816,5 +852,13 @@ public class DiscordPresenceService : IDisposable
         else if (builder.Scheme == "http") builder.Scheme = "ws";
         return builder.Uri;
     }
+}
+
+public enum PresenceConnectionState
+{
+    Disconnected,
+    Connecting,
+    Connected,
+    Reconnecting
 }
 

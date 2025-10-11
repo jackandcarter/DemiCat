@@ -13,8 +13,10 @@ public class PresenceDto
     [JsonPropertyName("status_text")] public string? StatusText { get; set; }
     [JsonPropertyName("avatar_url")] public string? AvatarUrl { get; set; }
     [JsonIgnore] public ISharedImmediateTexture? AvatarTexture { get; set; }
+    [JsonIgnore] public bool AvatarLoadRequested { get; set; }
     [JsonPropertyName("banner_url")] public string? BannerUrl { get; set; }
     [JsonIgnore] public ISharedImmediateTexture? BannerTexture { get; set; }
+    [JsonIgnore] public bool BannerLoadRequested { get; set; }
     private uint? _accentColorValue;
     [JsonPropertyName("accent_color")]
     public uint? AccentColorValue

@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Utility;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
@@ -74,11 +75,18 @@ public class SettingsWindow : IDisposable
             {
                 UiTheme.DrawWindowChrome(_config, "DemiCat Settings", () => open = false);
 
-                var dragHeight = ImGui.GetFrameHeight();
-                ImGui.SetCursorPosY(ImGui.GetStyle().WindowPadding.Y);
-                ImGui.InvisibleButton("##drag_zone_settings", new Vector2(ImGui.GetContentRegionAvail().X, dragHeight));
+                var style = ImGui.GetStyle();
+                var chromeHeight = Math.Max(14f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight());
+                ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y));
+                var dragSize = new Vector2(ImGui.GetContentRegionAvail().X, chromeHeight);
+                ImGui.InvisibleButton("##drag_zone_settings", dragSize);
+                if (ImGui.IsItemActive() && ImGui.IsMouseDragging(0))
+                {
+                    var io = ImGui.GetIO();
+                    ImGui.SetWindowPos(ImGui.GetWindowPos() + io.MouseDelta);
+                }
 
-                ImGui.Dummy(new Vector2(0f, ImGui.GetStyle().FramePadding.Y * 2f));
+                ImGui.Dummy(new Vector2(1f, style.FramePadding.Y + chromeHeight));
 
                 if (!_settingsLoaded)
                 {
@@ -265,6 +273,9 @@ public class SettingsWindow : IDisposable
     private void DrawAppearanceTab()
     {
         var fadeOutEnabled = _config.ChatFadeOutEnabled;
+        var scale = ImGuiHelpers.GlobalScale;
+        var maxPicker = 420f * scale;
+        var minPicker = 240f * scale;
 
         ImGui.TextUnformatted("Chat Options");
         ImGui.Spacing();
@@ -341,6 +352,17 @@ public class SettingsWindow : IDisposable
         ImGui.TextUnformatted("Dock appearance");
         ImGui.Spacing();
 
+        var style = ImGui.GetStyle();
+        var availWidth = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
+        var twoColumnLayout = availWidth > (maxPicker * 2f + style.ItemSpacing.X * 3f);
+        var pickerWidth = Math.Clamp(twoColumnLayout ? (availWidth - style.ItemSpacing.X * 3f) * 0.5f : availWidth, minPicker, maxPicker);
+
+        if (twoColumnLayout)
+        {
+            ImGui.Columns(2, "appearance_cols", false);
+        }
+
+        ImGui.PushItemWidth(pickerWidth);
         var dockBorderColor = _config.DockBorderColor;
         if (DrawAdvancedColorPicker("Dock border color", ref dockBorderColor))
         {
@@ -351,7 +373,12 @@ public class SettingsWindow : IDisposable
                 SaveConfig();
             }
         }
+        ImGui.PopItemWidth();
 
+        if (twoColumnLayout)
+        {
+            ImGui.Columns(1);
+        }
         ImGui.Spacing();
 
         var gradientEnabled = _config.DockGradientEnabled;
@@ -363,9 +390,30 @@ public class SettingsWindow : IDisposable
 
         ImGui.Spacing();
 
+        if (twoColumnLayout)
+        {
+            ImGui.Columns(2, "appearance_cols", false);
+        }
+
+        void AdvancePickerColumn()
+        {
+            if (twoColumnLayout)
+            {
+                ImGui.NextColumn();
+            }
+            else
+            {
+                ImGui.Spacing();
+            }
+        }
+
         ImGui.BeginDisabled(gradientEnabled);
         var dockColor = _config.DockBackgroundColor;
-        if (DrawAdvancedColorPicker("Dock background color", ref dockColor))
+        ImGui.PushItemWidth(pickerWidth);
+        var dockColorChanged = DrawAdvancedColorPicker("Dock background color", ref dockColor);
+        var solidHovered = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled);
+        ImGui.PopItemWidth();
+        if (dockColorChanged)
         {
             var sanitized = Config.SanitizeColor(dockColor, Config.DefaultDockBackgroundColor);
             if (!ColorsAlmostEqual(sanitized, _config.DockBackgroundColor))
@@ -374,16 +422,16 @@ public class SettingsWindow : IDisposable
                 SaveConfig();
             }
         }
-        var solidHovered = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled);
+        AdvancePickerColumn();
+        ImGui.EndDisabled();
         if (gradientEnabled && solidHovered)
         {
             ImGui.SetTooltip("Disable gradient background to adjust the solid dock color.");
         }
-        ImGui.Spacing();
-        ImGui.EndDisabled();
 
         ImGui.BeginDisabled(!gradientEnabled);
         var gradientStart = _config.DockGradientStartColor;
+        ImGui.PushItemWidth(pickerWidth);
         if (DrawAdvancedColorPicker("Gradient start color", ref gradientStart))
         {
             var sanitized = Config.SanitizeColor(gradientStart, Config.DefaultDockBackgroundColor);
@@ -393,9 +441,11 @@ public class SettingsWindow : IDisposable
                 SaveConfig();
             }
         }
-        ImGui.Spacing();
+        ImGui.PopItemWidth();
+        AdvancePickerColumn();
 
         var gradientEnd = _config.DockGradientEndColor;
+        ImGui.PushItemWidth(pickerWidth);
         if (DrawAdvancedColorPicker("Gradient end color", ref gradientEnd))
         {
             var sanitized = Config.SanitizeColor(gradientEnd, Config.DefaultDockBackgroundColor);
@@ -405,7 +455,14 @@ public class SettingsWindow : IDisposable
                 SaveConfig();
             }
         }
+        ImGui.PopItemWidth();
+        AdvancePickerColumn();
         ImGui.EndDisabled();
+
+        if (twoColumnLayout)
+        {
+            ImGui.Columns(1);
+        }
 
         ImGui.Spacing();
 
@@ -562,7 +619,10 @@ public class SettingsWindow : IDisposable
         const ImGuiColorEditFlags flags = ImGuiColorEditFlags.AlphaBar
                                           | ImGuiColorEditFlags.AlphaPreviewHalf
                                           | ImGuiColorEditFlags.PickerHueWheel;
+        var width = ImGui.CalcItemWidth();
+        ImGui.PushItemWidth(width);
         var changed = ImGui.ColorPicker4("##picker", ref color, flags);
+        ImGui.PopItemWidth();
         ImGui.PopID();
 
         if (changed && !ColorsAlmostEqual(color, value))

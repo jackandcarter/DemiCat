@@ -43,6 +43,7 @@ public class DiscordAttachmentDto
     public string? Filename { get; set; }
     public string? ContentType { get; set; }
     [JsonIgnore] public ISharedImmediateTexture? Texture { get; set; }
+    [JsonIgnore] public bool LoadRequested { get; set; }
 }
 
 public class MessageReferenceDto
@@ -60,6 +61,8 @@ public class ReactionDto
     public bool Me { get; set; }
     [JsonIgnore]
     public ISharedImmediateTexture? Texture { get; set; }
+    [JsonIgnore]
+    public bool TextureRequested { get; set; }
 }
 
 public class ButtonComponentDto

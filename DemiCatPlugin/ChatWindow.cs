@@ -569,6 +569,7 @@ public class ChatWindow : IDisposable
         public string Id;
         public bool Animated;
         public ISharedImmediateTexture? Texture;
+        public bool LoadRequested;
 
         public EmojiData(string id, bool animated)
         {
@@ -1229,6 +1230,20 @@ public class ChatWindow : IDisposable
                     {
                         var imageStartY = ImGui.GetCursorPosY();
                         var bounds = GetAttachmentBounds(attachmentCap);
+                        void RequestAttachmentTexture()
+                        {
+                            if (att.LoadRequested)
+                            {
+                                return;
+                            }
+
+                            att.LoadRequested = true;
+                            LoadTexture(att.Url, t =>
+                            {
+                                att.Texture = t;
+                                att.LoadRequested = false;
+                            });
+                        }
 
                         if (att.Texture == null)
                         {
@@ -1238,7 +1253,7 @@ public class ChatWindow : IDisposable
                                 continue;
                             }
 
-                            LoadTexture(att.Url, t => att.Texture = t);
+                            RequestAttachmentTexture();
                             ImGui.Dummy(bounds);
                             continue;
                         }
@@ -1258,8 +1273,6 @@ public class ChatWindow : IDisposable
 
                             if (wrapAtt.Width <= 0 || wrapAtt.Height <= 0)
                             {
-                                att.Texture = null;
-                                LoadTexture(att.Url, t => att.Texture = t);
                                 ImGui.Dummy(new Vector2(bounds.X, displaySize.Y));
                                 continue;
                             }
@@ -1280,7 +1293,8 @@ public class ChatWindow : IDisposable
                         catch (ObjectDisposedException)
                         {
                             att.Texture = null;
-                            LoadTexture(att.Url, t => att.Texture = t);
+                            att.LoadRequested = false;
+                            RequestAttachmentTexture();
                             ImGui.Dummy(new Vector2(bounds.X, displaySize.Y));
                         }
                     }
@@ -1332,7 +1346,15 @@ public class ChatWindow : IDisposable
                         {
                             var ext = reaction.IsAnimated ? "gif" : "png";
                             textureUrl = $"https://cdn.discordapp.com/emojis/{reaction.EmojiId}.{ext}";
-                            LoadTexture(textureUrl, t => reaction.Texture = t);
+                            if (!reaction.TextureRequested)
+                            {
+                                reaction.TextureRequested = true;
+                                LoadTexture(textureUrl, t =>
+                                {
+                                    reaction.Texture = t;
+                                    reaction.TextureRequested = false;
+                                });
+                            }
                         }
                         else
                         {
@@ -1357,12 +1379,26 @@ public class ChatWindow : IDisposable
                                 }
                                 else
                                 {
-                                    reaction.Texture = null;
+                                    ImGui.Dummy(new Vector2(20f, 20f));
+                                    ImGui.SameLine();
+                                    ImGui.TextUnformatted(reaction.Count.ToString());
+                                    handled = true;
                                 }
                             }
                             catch (ObjectDisposedException)
                             {
                                 reaction.Texture = null;
+                                reaction.TextureRequested = false;
+                                if (!reaction.TextureRequested && textureUrl != null)
+                                {
+                                    var requestUrl = textureUrl;
+                                    reaction.TextureRequested = true;
+                                    LoadTexture(requestUrl, t =>
+                                    {
+                                        reaction.Texture = t;
+                                        reaction.TextureRequested = false;
+                                    });
+                                }
                             }
                         }
                     }
@@ -1898,11 +1934,18 @@ public class ChatWindow : IDisposable
         {
             UiTheme.DrawWindowChrome(_config, title, () => open = false);
 
-            var dragHeight = ImGui.GetFrameHeight();
-            ImGui.SetCursorPosY(ImGui.GetStyle().WindowPadding.Y);
-            ImGui.InvisibleButton($"##drag_zone_{title}", new Vector2(ImGui.GetContentRegionAvail().X, dragHeight));
+            var style = ImGui.GetStyle();
+            var chromeHeight = Math.Max(14f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight());
+            ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y));
+            var dragSize = new Vector2(ImGui.GetContentRegionAvail().X, chromeHeight);
+            ImGui.InvisibleButton($"##drag_zone_{title}", dragSize);
+            if (ImGui.IsItemActive() && ImGui.IsMouseDragging(0))
+            {
+                var io = ImGui.GetIO();
+                ImGui.SetWindowPos(ImGui.GetWindowPos() + io.MouseDelta);
+            }
 
-            ImGui.Dummy(new Vector2(0f, ImGui.GetStyle().FramePadding.Y * 2f));
+            ImGui.Dummy(new Vector2(1f, style.FramePadding.Y + chromeHeight));
             Draw();
         }
         ImGui.End();
@@ -2090,7 +2133,15 @@ public class ChatWindow : IDisposable
                 }
                 if (emoji.Texture == null)
                 {
-                    LoadTexture(emoji.ImageUrl, t => emoji.Texture = t);
+                    if (!emoji.LoadRequested)
+                    {
+                        emoji.LoadRequested = true;
+                        LoadTexture(emoji.ImageUrl, t =>
+                        {
+                            emoji.Texture = t;
+                            emoji.LoadRequested = false;
+                        });
+                    }
                     ImGui.TextUnformatted($":{name}:");
                 }
                 else
@@ -2105,13 +2156,23 @@ public class ChatWindow : IDisposable
                         }
                         else
                         {
-                            emoji.Texture = null;
-                            ImGui.TextUnformatted($":{name}:");
+                            ImGui.Dummy(new Vector2(20f, 20f));
                         }
                     }
                     catch (ObjectDisposedException)
                     {
                         emoji.Texture = null;
+                        emoji.LoadRequested = false;
+                        if (!emoji.LoadRequested)
+                        {
+                            emoji.LoadRequested = true;
+                            var requestUrl = emoji.ImageUrl;
+                            LoadTexture(requestUrl, t =>
+                            {
+                                emoji.Texture = t;
+                                emoji.LoadRequested = false;
+                            });
+                        }
                         ImGui.TextUnformatted($":{name}:");
                     }
                 }
