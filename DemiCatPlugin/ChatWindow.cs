@@ -3859,7 +3859,7 @@ public class ChatWindow : IDisposable
 
             if (framework != null)
             {
-                framework.RunOnTick(SaveAction);
+                _ = framework.RunOnTick(SaveAction);
             }
             else
             {
