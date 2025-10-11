@@ -143,24 +143,6 @@ public class SettingsWindow : IDisposable
             _devWindow.IsOpen = true;
         }
 
-        ImGui.TextWrapped("FC Chat is enabled automatically when your DemiCat account is connected.");
-        ImGui.Spacing();
-
-        var paused = !_config.Enabled;
-        if (ImGui.Checkbox("Pause", ref paused))
-        {
-            _config.Enabled = !paused;
-            SaveConfig();
-            if (_config.Enabled)
-            {
-                _ = HardReloadIdentityAndStartAsync();
-            }
-            else
-            {
-                StopAllWatchersAndPresence();
-            }
-        }
-
         foreach (var kvp in _categoryToggles.ToList())
         {
             var enabled = kvp.Value;
@@ -344,9 +326,13 @@ public class SettingsWindow : IDisposable
             }
         }
 
+        ImGui.Separator();
+        ImGui.TextUnformatted("Dock appearance");
+        ImGui.Spacing();
+
         var dockColor = _config.DockBackgroundColor;
         var dockColorVec3 = new Vector3(dockColor.X, dockColor.Y, dockColor.Z);
-        if (ImGui.ColorEdit3("Dock background color", ref dockColorVec3))
+        if (ImGui.ColorEdit3("Dock base color", ref dockColorVec3))
         {
             var sanitized = Config.SanitizeColor(new Vector4(dockColorVec3, 1f), Config.DefaultDockBackgroundColor);
             var current = _config.DockBackgroundColor;
@@ -357,6 +343,39 @@ public class SettingsWindow : IDisposable
             }
         }
 
+        var gradientEnabled = _config.DockGradientEnabled;
+        if (ImGui.Checkbox("Enable gradient background", ref gradientEnabled))
+        {
+            _config.DockGradientEnabled = gradientEnabled;
+            SaveConfig();
+        }
+
+        ImGui.BeginDisabled(!gradientEnabled);
+        var gradientStart = _config.DockGradientStartColor;
+        var gradientStartVec3 = new Vector3(gradientStart.X, gradientStart.Y, gradientStart.Z);
+        if (ImGui.ColorEdit3("Gradient start color", ref gradientStartVec3))
+        {
+            var sanitized = Config.SanitizeColor(new Vector4(gradientStartVec3, 1f), Config.DefaultDockBackgroundColor);
+            if (!ColorsAlmostEqual(sanitized, _config.DockGradientStartColor))
+            {
+                _config.DockGradientStartColor = new Vector4(sanitized.X, sanitized.Y, sanitized.Z, 1f);
+                SaveConfig();
+            }
+        }
+
+        var gradientEnd = _config.DockGradientEndColor;
+        var gradientEndVec3 = new Vector3(gradientEnd.X, gradientEnd.Y, gradientEnd.Z);
+        if (ImGui.ColorEdit3("Gradient end color", ref gradientEndVec3))
+        {
+            var sanitized = Config.SanitizeColor(new Vector4(gradientEndVec3, 1f), Config.DefaultDockBackgroundColor);
+            if (!ColorsAlmostEqual(sanitized, _config.DockGradientEndColor))
+            {
+                _config.DockGradientEndColor = new Vector4(sanitized.X, sanitized.Y, sanitized.Z, 1f);
+                SaveConfig();
+            }
+        }
+        ImGui.EndDisabled();
+
         var dockOpacity = _config.DockOpacity * 100f;
         if (ImGui.SliderFloat("Dock background opacity", ref dockOpacity, 0f, 100f, "%.0f%%"))
         {
@@ -364,6 +383,39 @@ public class SettingsWindow : IDisposable
             if (Math.Abs(normalized - _config.DockOpacity) > 0.0001f)
             {
                 _config.DockOpacity = normalized;
+                SaveConfig();
+            }
+        }
+
+        var dockAutoFade = _config.DockAutoFadeEnabled;
+        if (ImGui.Checkbox("Allow dock to follow auto-fade", ref dockAutoFade))
+        {
+            _config.DockAutoFadeEnabled = dockAutoFade;
+            SaveConfig();
+        }
+
+        ImGui.Separator();
+        ImGui.TextUnformatted("Dock behavior");
+        ImGui.Spacing();
+        ImGui.TextWrapped("Select which windows should open automatically when the dock is shown.");
+        var dockAutoOpen = _config.DockAutoOpenWindows ??= new List<string>();
+        foreach (var option in GetDockAutoOpenOptions())
+        {
+            var enabled = dockAutoOpen.Contains(option.Id);
+            if (ImGui.Checkbox(option.Label, ref enabled))
+            {
+                if (enabled)
+                {
+                    if (!dockAutoOpen.Contains(option.Id))
+                    {
+                        dockAutoOpen.Add(option.Id);
+                    }
+                }
+                else
+                {
+                    dockAutoOpen.RemoveAll(id => string.Equals(id, option.Id, StringComparison.Ordinal));
+                }
+
                 SaveConfig();
             }
         }
@@ -450,6 +502,19 @@ public class SettingsWindow : IDisposable
         ChatWindow?.OnAppearanceSettingsChanged();
         OfficerChatWindow?.OnAppearanceSettingsChanged();
     }
+
+    private static IReadOnlyList<(string Id, string Label)> GetDockAutoOpenOptions()
+        => new (string Id, string Label)[]
+        {
+            (MainWindow.DockIds.Events, "Events"),
+            (MainWindow.DockIds.Create, "Create"),
+            (MainWindow.DockIds.Templates, "Templates"),
+            (MainWindow.DockIds.NotePad, "NotePad"),
+            (MainWindow.DockIds.Requests, "Requests"),
+            (MainWindow.DockIds.Syncshell, "SyncShell"),
+            (MainWindow.DockIds.Chat, "FC Chat"),
+            (MainWindow.DockIds.Officer, "Officer Chat"),
+        };
 
     private static bool ColorsAlmostEqual(Vector4 a, Vector4 b)
     {
