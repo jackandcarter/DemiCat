@@ -14,6 +14,7 @@ using System.IO;
 using System.Linq;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -508,6 +509,9 @@ public class OfficerChatWindow : ChatWindow
         _bridge.StatusChanged -= OnBridgeStatusChangedForOfficer;
         base.Dispose();
     }
+
+    public void DrawThemedWindow(ref bool isOpen, ImGuiWindowFlags flags = ImGuiWindowFlags.None)
+        => base.DrawThemedWindow("Officer Chat", ref isOpen, flags);
 
     private class RolesDto
     {
