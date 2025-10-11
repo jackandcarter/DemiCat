@@ -69,7 +69,9 @@ public class SettingsWindow : IDisposable
             using var scope = new UiStyleScope(_config);
             var open = IsOpen;
             var flags = ImGuiWindowFlags.NoTitleBar;
-            if (ImGui.Begin("DemiCat Settings", ref open, flags))
+            ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
+            var began = ImGui.Begin("DemiCat Settings", ref open, flags);
+            if (began)
             {
                 UiTheme.DrawWindowChrome(_config, "DemiCat Settings", () => open = false);
 
@@ -109,6 +111,7 @@ public class SettingsWindow : IDisposable
                 }
             }
             ImGui.End();
+            ImGui.PopStyleVar();
 
             IsOpen = (!open || UiTheme.RequestCloseThisFrame) ? false : open;
         }

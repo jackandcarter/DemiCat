@@ -189,7 +189,7 @@ public static class EmbedStyleControls
                 GlyphSearchTerms[searchKey] = search;
             }
 
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
 
             _ = manager.EnsureUnicodeAsync();
             var status = manager.UnicodeStatus;

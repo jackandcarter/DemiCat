@@ -995,7 +995,9 @@ public class MainWindow : IDisposable
         var windowInteracted = false;
         var closeRequested = false;
         var windowFlags = ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoTitleBar;
-        if (ImGui.Begin($"{title}##dc_{id}", ref openRef, windowFlags))
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
+        var began = ImGui.Begin($"{title}##dc_{id}", ref openRef, windowFlags);
+        if (began)
         {
             UiTheme.DrawWindowChrome(_config, title, () =>
             {
@@ -1012,6 +1014,7 @@ public class MainWindow : IDisposable
             windowInteracted = HasWindowInteraction();
         }
         ImGui.End();
+        ImGui.PopStyleVar();
 
         if (pushedColors > 0)
         {

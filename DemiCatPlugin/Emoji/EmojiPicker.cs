@@ -60,7 +60,7 @@ public sealed class EmojiPicker
             SetGridHeight(height);
         }
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         if (ImGui.BeginTabBar("##dc_emoji_tabs"))
         {
@@ -92,7 +92,7 @@ public sealed class EmojiPicker
     private string? DrawStandard()
     {
         ImGui.InputTextWithHint("##emoji_std_search", "Search…", ref _search, 64);
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         if (!_manager.CanLoadStandard)
         {
@@ -193,7 +193,7 @@ public sealed class EmojiPicker
             _ = _manager.RefreshCustomAsync();
         }
         if (!canLoad) ImGui.EndDisabled();
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         if (!canLoad)
         {

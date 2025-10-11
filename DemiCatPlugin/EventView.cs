@@ -143,7 +143,7 @@ public class EventView : IDisposable
             {
                 ImGui.TextColored(warnColor, $"⚠ {warning}");
             }
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
         }
 
         var mentionText = BuildDisplayContent();
@@ -169,7 +169,7 @@ public class EventView : IDisposable
 
         DrawButtons();
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
     }
 
     private float EstimateFooterHeight()

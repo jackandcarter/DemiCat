@@ -1895,7 +1895,9 @@ public class ChatWindow : IDisposable
         using var scope = new UiStyleScope(_config);
         flags |= ImGuiWindowFlags.NoTitleBar;
         var open = isOpen;
-        if (ImGui.Begin(title, ref open, flags))
+        ImGui.PushStyleVar(ImGuiStyleVar.WindowBorderSize, 0f);
+        var began = ImGui.Begin(title, ref open, flags);
+        if (began)
         {
             UiTheme.DrawWindowChrome(_config, title, () => open = false);
 
@@ -1907,6 +1909,7 @@ public class ChatWindow : IDisposable
             Draw();
         }
         ImGui.End();
+        ImGui.PopStyleVar();
 
         isOpen = (!open || UiTheme.RequestCloseThisFrame) ? false : open;
     }

@@ -135,7 +135,7 @@ public sealed class ProgressOverlay
         if (ImGui.Begin(windowId, flags))
         {
             ImGui.TextUnformatted("Sync Progress");
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
 
             var barWidth = 240f * scale;
 
