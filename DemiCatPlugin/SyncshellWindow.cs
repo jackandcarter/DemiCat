@@ -445,11 +445,11 @@ public class SyncshellWindow : IDisposable
             _syncSettingsHeightDirty = false;
         }
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         DrawMembershipPanels();
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         var saveSeen = false;
         if (_updatesAvailable.Count > 0)
@@ -797,7 +797,7 @@ public class SyncshellWindow : IDisposable
         var id = $"syncshell-panel-{label.Replace(' ', '-').ToLowerInvariant()}";
         ImGui.BeginChild(id, new Vector2(-1, height), true);
         ImGui.TextUnformatted(label);
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
         content();
         ImGui.EndChild();
     }
@@ -916,7 +916,7 @@ public class SyncshellWindow : IDisposable
             ImGui.TextDisabled("Matching members must link their SyncShell token before they can receive invites.");
         }
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         var invites = _syncshellState.Invites
             .OrderByDescending(static i => i.UpdatedAt)
@@ -1106,7 +1106,7 @@ public class SyncshellWindow : IDisposable
 
             if (_inviteSuggestionFiltered)
             {
-                ImGui.Separator();
+                UiTheme.DrawSectionSeparator();
                 var wrap = ImGui.GetCursorPosX() + 280f;
                 ImGui.PushTextWrapPos(wrap);
                 ImGui.TextDisabled("Some members must link their SyncShell token before they can receive invites.");

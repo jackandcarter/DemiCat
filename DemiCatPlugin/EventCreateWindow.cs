@@ -359,7 +359,7 @@ public class EventCreateWindow
             ImGui.EndPopup();
         }
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
         ImGui.TextUnformatted("RSVP Buttons");
         ImGui.Spacing();
 
@@ -461,7 +461,7 @@ public class EventCreateWindow
                     _fields.RemoveAt(i);
                     i--;
                 }
-                ImGui.Separator();
+                UiTheme.DrawSectionSeparator();
             }
             if (ImGui.Button("Add Field"))
             {
@@ -489,7 +489,7 @@ public class EventCreateWindow
 
         if (_previewView != null)
         {
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
             var previewHeight = EventViewImGuiHelpers.BeginPreviewChild("eventCreatePreview");
             _previewView.Draw(previewHeight);
             ImGui.EndChild();
@@ -501,7 +501,7 @@ public class EventCreateWindow
         }
         if (_schedulesLoaded && _schedules.Count > 0)
         {
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
             ImGui.TextUnformatted("Repeat Schedules");
             for (var i = 0; i < _schedules.Count; i++)
             {

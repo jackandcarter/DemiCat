@@ -14,7 +14,7 @@ public static class ButtonRowsImGui
         for (int r = 0; r < state.Rows.Count; r++)
         {
             ImGui.PushID(r);
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
             ImGui.Text($"Row {r + 1} ({state.Rows[r].Count}/{ButtonRows.MaxPerRow})");
 
             ImGui.SameLine();

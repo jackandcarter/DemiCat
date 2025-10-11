@@ -89,7 +89,7 @@ public class RequestBoardWindow
             {
                 ImGui.TextUnformatted("[Legacy Status: Denied]");
             }
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
             ImGui.PopID();
         }
         ImGui.EndChild();

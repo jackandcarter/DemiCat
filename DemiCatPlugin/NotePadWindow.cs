@@ -77,7 +77,7 @@ public sealed class NotePadWindow : IDisposable
         DrawConflictModal(selectedPage);
 
         DrawSectionTabs(sections);
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         var region = ImGui.GetContentRegionAvail();
         if (region.X <= 0f || region.Y <= 0f)
@@ -293,7 +293,7 @@ public sealed class NotePadWindow : IDisposable
             OpenNewPagePopup(section);
         }
 
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
 
         foreach (var page in section.Pages)
         {
@@ -473,7 +473,7 @@ public sealed class NotePadWindow : IDisposable
         if (ImGui.BeginPopupModal("NotePadConflict", ImGuiWindowFlags.AlwaysAutoResize))
         {
             ImGui.TextWrapped(_conflictMessage);
-            ImGui.Separator();
+            UiTheme.DrawSectionSeparator();
 
             if (ImGui.Button("Reload"))
             {
@@ -838,7 +838,7 @@ public sealed class NotePadWindow : IDisposable
         }
 
         ImGui.Spacing();
-        ImGui.Separator();
+        UiTheme.DrawSectionSeparator();
         ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Formatted Preview");
         ImGui.PushTextWrapPos();
         ImGui.TextUnformatted(MarkdownFormatter.Format(content));

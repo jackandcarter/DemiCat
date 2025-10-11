@@ -212,7 +212,7 @@ public class TemplatesWindow
             {
                 if (_roles.Count > 0)
                 {
-                    ImGui.Separator();
+                    UiTheme.DrawSectionSeparator();
                     ImGui.Text("Mention Roles");
                     {
                         using var emojiFont = _emojiManager.PushEmojiFont();
