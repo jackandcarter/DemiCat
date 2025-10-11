@@ -11,6 +11,7 @@ using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using ImGuiNET;
 
 namespace DemiCatPlugin;
 
@@ -330,18 +331,18 @@ public class SettingsWindow : IDisposable
         ImGui.TextUnformatted("Dock appearance");
         ImGui.Spacing();
 
-        var dockColor = _config.DockBackgroundColor;
-        var dockColorVec3 = new Vector3(dockColor.X, dockColor.Y, dockColor.Z);
-        if (ImGui.ColorEdit3("Dock base color", ref dockColorVec3))
+        var dockBorderColor = _config.DockBorderColor;
+        if (DrawAdvancedColorPicker("Dock border color", ref dockBorderColor))
         {
-            var sanitized = Config.SanitizeColor(new Vector4(dockColorVec3, 1f), Config.DefaultDockBackgroundColor);
-            var current = _config.DockBackgroundColor;
-            if (!ColorsAlmostEqual(sanitized, current))
+            var sanitized = Config.SanitizeColor(dockBorderColor, Config.DefaultDockBorderColor);
+            if (!ColorsAlmostEqual(sanitized, _config.DockBorderColor))
             {
-                _config.DockBackgroundColor = new Vector4(sanitized.X, sanitized.Y, sanitized.Z, 1f);
+                _config.DockBorderColor = sanitized;
                 SaveConfig();
             }
         }
+
+        ImGui.Spacing();
 
         var gradientEnabled = _config.DockGradientEnabled;
         if (ImGui.Checkbox("Enable gradient background", ref gradientEnabled))
@@ -350,31 +351,53 @@ public class SettingsWindow : IDisposable
             SaveConfig();
         }
 
-        ImGui.BeginDisabled(!gradientEnabled);
-        var gradientStart = _config.DockGradientStartColor;
-        var gradientStartVec3 = new Vector3(gradientStart.X, gradientStart.Y, gradientStart.Z);
-        if (ImGui.ColorEdit3("Gradient start color", ref gradientStartVec3))
+        ImGui.Spacing();
+
+        ImGui.BeginDisabled(gradientEnabled);
+        var dockColor = _config.DockBackgroundColor;
+        if (DrawAdvancedColorPicker("Dock background color", ref dockColor))
         {
-            var sanitized = Config.SanitizeColor(new Vector4(gradientStartVec3, 1f), Config.DefaultDockBackgroundColor);
-            if (!ColorsAlmostEqual(sanitized, _config.DockGradientStartColor))
+            var sanitized = Config.SanitizeColor(dockColor, Config.DefaultDockBackgroundColor);
+            if (!ColorsAlmostEqual(sanitized, _config.DockBackgroundColor))
             {
-                _config.DockGradientStartColor = new Vector4(sanitized.X, sanitized.Y, sanitized.Z, 1f);
+                _config.DockBackgroundColor = sanitized;
                 SaveConfig();
             }
         }
+        var solidHovered = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled);
+        if (gradientEnabled && solidHovered)
+        {
+            ImGui.SetTooltip("Disable gradient background to adjust the solid dock color.");
+        }
+        ImGui.Spacing();
+        ImGui.EndDisabled();
+
+        ImGui.BeginDisabled(!gradientEnabled);
+        var gradientStart = _config.DockGradientStartColor;
+        if (DrawAdvancedColorPicker("Gradient start color", ref gradientStart))
+        {
+            var sanitized = Config.SanitizeColor(gradientStart, Config.DefaultDockBackgroundColor);
+            if (!ColorsAlmostEqual(sanitized, _config.DockGradientStartColor))
+            {
+                _config.DockGradientStartColor = sanitized;
+                SaveConfig();
+            }
+        }
+        ImGui.Spacing();
 
         var gradientEnd = _config.DockGradientEndColor;
-        var gradientEndVec3 = new Vector3(gradientEnd.X, gradientEnd.Y, gradientEnd.Z);
-        if (ImGui.ColorEdit3("Gradient end color", ref gradientEndVec3))
+        if (DrawAdvancedColorPicker("Gradient end color", ref gradientEnd))
         {
-            var sanitized = Config.SanitizeColor(new Vector4(gradientEndVec3, 1f), Config.DefaultDockBackgroundColor);
+            var sanitized = Config.SanitizeColor(gradientEnd, Config.DefaultDockBackgroundColor);
             if (!ColorsAlmostEqual(sanitized, _config.DockGradientEndColor))
             {
-                _config.DockGradientEndColor = new Vector4(sanitized.X, sanitized.Y, sanitized.Z, 1f);
+                _config.DockGradientEndColor = sanitized;
                 SaveConfig();
             }
         }
         ImGui.EndDisabled();
+
+        ImGui.Spacing();
 
         var dockOpacity = _config.DockOpacity * 100f;
         if (ImGui.SliderFloat("Dock background opacity", ref dockOpacity, 0f, 100f, "%.0f%%"))
@@ -519,6 +542,28 @@ public class SettingsWindow : IDisposable
     private static bool ColorsAlmostEqual(Vector4 a, Vector4 b)
     {
         return Vector4.DistanceSquared(a, b) <= 0.0001f;
+    }
+
+    private static bool DrawAdvancedColorPicker(string label, ref Vector4 value)
+    {
+        ImGui.TextUnformatted(label);
+        ImGui.PushID(label);
+        var color = value;
+        const ImGuiColorEditFlags flags = ImGuiColorEditFlags.AlphaBar
+                                          | ImGuiColorEditFlags.AlphaPreviewHalf
+                                          | ImGuiColorEditFlags.DisplayHSV
+                                          | ImGuiColorEditFlags.InputRGB
+                                          | ImGuiColorEditFlags.PickerHueBar;
+        var changed = ImGui.ColorPicker4("##picker", ref color, flags);
+        ImGui.PopID();
+
+        if (changed && !ColorsAlmostEqual(color, value))
+        {
+            value = color;
+            return true;
+        }
+
+        return false;
     }
 
     private static void DrawFadePreview(string id, float alpha)
