@@ -664,7 +664,14 @@ public sealed class NotePadService : IDisposable
             return;
         }
 
-        await onSuccess(stream).ConfigureAwait(false);
+        try
+        {
+            await onSuccess(stream).ConfigureAwait(false);
+        }
+        catch (JsonException ex)
+        {
+            PluginServices.Instance?.Log.Error(ex, "NotePad JSON parse error");
+        }
     }
 
     private static async Task<string> ReadErrorAsync(Stream stream)

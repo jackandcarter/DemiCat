@@ -16,7 +16,8 @@ public static class EmbedPreviewRenderer
     public static void Draw(EmbedDto dto, Action<string?, Action<ISharedImmediateTexture?>> loadTexture, EmojiManager emojiManager, Action<string>? onButtonClick = null)
     {
         using var emojiFont = emojiManager.PushEmojiFont();
-        const float stripeWidth = 4f;
+        var style = ImGui.GetStyle();
+        var stripeWidth = dto.Color.HasValue ? Math.Max(4f, style.FramePadding.X * 0.75f) : 0f;
         const float contentPadding = 8f;
         const float verticalPadding = 4f;
 
@@ -24,7 +25,7 @@ public static class EmbedPreviewRenderer
         var borderEnabled = borderInfo?.Enabled == true;
         var borderColor = borderInfo?.Color ?? 0u;
 
-        var indent = contentPadding + (dto.Color.HasValue ? stripeWidth : 0f);
+        var indent = contentPadding + stripeWidth;
         var avail = ImGui.GetContentRegionAvail().X;
         if (avail <= 0)
         {
@@ -188,14 +189,31 @@ public static class EmbedPreviewRenderer
         ImGui.Dummy(new Vector2(0f, verticalPadding));
         ImGui.Unindent(indent);
 
+        if (dto.Color.HasValue)
+        {
+            var dl = ImGui.GetWindowDrawList();
+            var cardMin = ImGui.GetWindowPos();
+            var cardMax = cardMin + ImGui.GetWindowSize();
+            var cardRounding = style.ChildRounding;
+            var borderInset = Math.Max(1f, style.ChildBorderSize > 0f ? style.ChildBorderSize : style.FrameBorderSize);
+            var stripeMin = new Vector2(cardMin.X + borderInset, cardMin.Y + borderInset);
+            var stripeMax = new Vector2(cardMin.X + borderInset + stripeWidth, cardMax.Y - borderInset);
+            if (stripeMax.X > stripeMin.X && stripeMax.Y > stripeMin.Y)
+            {
+                var colorVec = ColorUtils.RgbToImGui(dto.Color.Value);
+                var color = ImGui.ColorConvertFloat4ToU32(colorVec);
+                dl.AddRectFilled(
+                    stripeMin,
+                    stripeMax,
+                    color,
+                    cardRounding,
+                    ImDrawFlags.RoundCornersTopLeft | ImDrawFlags.RoundCornersBottomLeft);
+            }
+        }
+
         ImGui.EndChild();
         var rectMin = ImGui.GetItemRectMin();
         var rectMax = ImGui.GetItemRectMax();
-        if (dto.Color.HasValue)
-        {
-            var color = ColorUtils.RgbToImGui(dto.Color.Value);
-            ImGui.GetWindowDrawList().AddRectFilled(rectMin, new Vector2(rectMin.X + stripeWidth, rectMax.Y), color);
-        }
 
         if (borderEnabled && rectMax.X > rectMin.X && rectMax.Y > rectMin.Y)
         {
