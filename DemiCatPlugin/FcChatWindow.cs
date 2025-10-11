@@ -6,7 +6,6 @@ using Dalamud.Bindings.ImGui;
 using System.Numerics;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
-using ImGuiNET;
 
 namespace DemiCatPlugin;
 

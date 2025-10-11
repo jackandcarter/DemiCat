@@ -22,7 +22,6 @@ using System.Runtime.CompilerServices;
 using Dalamud.Interface.ImGuiFileDialog;
 using DemiCatPlugin.Emoji;
 using DemiCatPlugin.Avatars;
-using ImGuiNET;
 
 namespace DemiCatPlugin;
 

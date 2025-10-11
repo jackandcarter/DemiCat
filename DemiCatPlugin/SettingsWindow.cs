@@ -11,7 +11,6 @@ using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using ImGuiNET;
 
 namespace DemiCatPlugin;
 

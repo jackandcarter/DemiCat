@@ -14,7 +14,6 @@ using System.IO;
 using System.Linq;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
-using ImGuiNET;
 
 namespace DemiCatPlugin;
 
