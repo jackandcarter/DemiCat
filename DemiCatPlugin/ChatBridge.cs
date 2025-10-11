@@ -59,6 +59,8 @@ public class ChatBridge : IDisposable
     private static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds(10);
     private const string ForbiddenMessage = "Forbidden – check API key/roles";
     private bool _permissionWarningShown;
+    private static void OnFramework(Action action)
+        => PluginServices.Instance?.Framework.RunOnTick(action);
 #if TEST
     internal bool? ForceWebSocketOpen { get; set; }
     internal Action<string>? SendRawInterceptor { get; set; }
@@ -157,7 +159,7 @@ public class ChatBridge : IDisposable
         }
 
         _permissionWarningShown = true;
-        _ = PluginServices.Instance?.Framework.RunOnTick(() =>
+        OnFramework(() =>
         {
             PluginServices.Instance?.ToastGui.ShowError(ForbiddenMessage);
         });
@@ -488,7 +490,7 @@ public class ChatBridge : IDisposable
         {
             if (!ApiHelpers.ValidateApiBaseUrl(_config))
             {
-                StatusChanged?.Invoke("Invalid API URL");
+                OnFramework(() => StatusChanged?.Invoke("Invalid API URL"));
                 await DelayWithJitter(5, token);
                 continue;
             }
@@ -506,22 +508,22 @@ public class ChatBridge : IDisposable
                 {
                     _tokenManager.Clear("Invalid API key");
                     ResetState();
-                    Unlinked?.Invoke();
+                    OnFramework(() => Unlinked?.Invoke());
                     _tokenValid = false;
-                    StatusChanged?.Invoke("Authentication failed");
+                    OnFramework(() => StatusChanged?.Invoke("Authentication failed"));
                 }
                 else if (tokenStatus == TokenValidationResult.Forbidden)
                 {
                     PluginServices.Instance?.Log.Warning("Chat bridge forbidden during token validation; check API key/roles.");
                     ShowPermissionWarning();
                     ResetState();
-                    Unlinked?.Invoke();
+                    OnFramework(() => Unlinked?.Invoke());
                     _tokenValid = false;
-                    StatusChanged?.Invoke(ForbiddenMessage);
+                    OnFramework(() => StatusChanged?.Invoke(ForbiddenMessage));
                 }
                 else
                 {
-                    StatusChanged?.Invoke("Authentication failed");
+                    OnFramework(() => StatusChanged?.Invoke("Authentication failed"));
                 }
 
                 await DelayWithJitter(5, token);
@@ -537,7 +539,7 @@ public class ChatBridge : IDisposable
             CancellationTokenSource? connectCts = null;
             try
             {
-                StatusChanged?.Invoke("Connecting...");
+                OnFramework(() => StatusChanged?.Invoke("Connecting..."));
                 Uri? uri;
                 try
                 {
@@ -546,7 +548,7 @@ public class ChatBridge : IDisposable
                 catch (Exception ex)
                 {
                     LogConnectionException(ex, "uri");
-                    StatusChanged?.Invoke("Invalid API URL");
+                    OnFramework(() => StatusChanged?.Invoke("Invalid API URL"));
                     await DelayWithJitter(5, token);
                     continue;
                 }
@@ -554,7 +556,7 @@ public class ChatBridge : IDisposable
                 if (!IsValidWebSocketUri(uri))
                 {
                     LogConnectionException(new InvalidOperationException("Missing WebSocket URL"), "uri");
-                    StatusChanged?.Invoke("Invalid API URL");
+                    OnFramework(() => StatusChanged?.Invoke("Invalid API URL"));
                     await DelayWithJitter(5, token);
                     continue;
                 }
@@ -573,8 +575,8 @@ public class ChatBridge : IDisposable
                 _tokenValid = true;
                 connected = true;
                 failureStage = "receive";
-                Linked?.Invoke();
-                StatusChanged?.Invoke(string.Empty);
+                OnFramework(() => Linked?.Invoke());
+                OnFramework(() => StatusChanged?.Invoke(string.Empty));
                 ResetPermissionWarning();
                 _connectCount++;
                 if (_connectCount > 1) _reconnectCount++;
@@ -660,7 +662,7 @@ public class ChatBridge : IDisposable
             {
                 ShowPermissionWarning();
                 ResetState();
-                Unlinked?.Invoke();
+                OnFramework(() => Unlinked?.Invoke());
                 _tokenValid = false;
             }
 
@@ -670,11 +672,12 @@ public class ChatBridge : IDisposable
             }
             _reconnectAttempt++;
             var backoff = GetReconnectDelay(_reconnectAttempt);
-            StatusChanged?.Invoke(forbidden
+            var statusMessage = forbidden
                 ? ForbiddenMessage
                 : connectTimedOut
                     ? "Connection timed out; retrying..."
-                    : $"Reconnecting in {backoff.TotalSeconds:0.#}s...");
+                    : $"Reconnecting in {backoff.TotalSeconds:0.#}s...";
+            OnFramework(() => StatusChanged?.Invoke(statusMessage));
             await DelayWithBackoff(backoff, token);
         }
     }
@@ -738,7 +741,7 @@ public class ChatBridge : IDisposable
                 var topic = topicEl.GetString();
                 if (topic == "templates.updated")
                 {
-                    TemplatesUpdated?.Invoke();
+                    OnFramework(() => TemplatesUpdated?.Invoke());
                 }
                 return;
             }
@@ -785,14 +788,16 @@ public class ChatBridge : IDisposable
                         if (mOp == "mc" || mOp == "mu")
                         {
                             var payload = msg.GetProperty("d").GetRawText();
-                            MessageReceived?.Invoke(payload);
+                            var capturedPayload = payload;
+                            OnFramework(() => MessageReceived?.Invoke(capturedPayload));
                         }
                         else if (mOp == "md")
                         {
                             var id = msg.GetProperty("d").GetProperty("id").GetString();
                             if (id != null)
                             {
-                                MessageReceived?.Invoke($"{{\"deletedId\":\"{id}\"}}");
+                                var deletedId = id;
+                                OnFramework(() => MessageReceived?.Invoke($"{{\"deletedId\":\"{deletedId}\"}}"));
                             }
                         }
                         else if (mOp == "ty")
@@ -801,7 +806,8 @@ public class ChatBridge : IDisposable
                             var author = JsonSerializer.Deserialize<DiscordUserDto>(payload, JsonOpts);
                             if (author != null)
                             {
-                                TypingReceived?.Invoke(author);
+                                var capturedAuthor = author;
+                                OnFramework(() => TypingReceived?.Invoke(capturedAuthor));
                             }
                         }
                     }
@@ -824,7 +830,9 @@ public class ChatBridge : IDisposable
                     var cur = root.GetProperty("cursor").GetInt64();
                     _resyncCount++;
                     PluginServices.Instance?.Log.Info($"chat.ws resync channel={ch} count={_resyncCount}");
-                    ResyncRequested?.Invoke(ch, cur);
+                    var channelToResync = ch;
+                    var cursorToResync = cur;
+                    OnFramework(() => ResyncRequested?.Invoke(channelToResync, cursorToResync));
                     break;
                 case "ack":
                     var ackChannel = root.TryGetProperty("channel", out var ackChannelEl) && ackChannelEl.ValueKind == JsonValueKind.String
@@ -913,9 +921,10 @@ public class ChatBridge : IDisposable
         if (string.IsNullOrEmpty(channel)) return Task.CompletedTask;
 
         long cursor;
+        string key;
         lock (_stateLock)
         {
-            var key = KeyForChannelUnsafe(channel);
+            key = KeyForChannelUnsafe(channel);
             if (string.IsNullOrEmpty(key)) return Task.CompletedTask;
             if (!_cursors.TryGetValue(key, out cursor)) return Task.CompletedTask;
             if (_acked.TryGetValue(key, out var acked) && acked == cursor) return Task.CompletedTask;
@@ -932,41 +941,48 @@ public class ChatBridge : IDisposable
         if (!IsWebSocketOpen())
             return Task.CompletedTask;
 
-        List<Dictionary<string, object?>> channels;
+        List<KeyValuePair<string, (string GuildId, string Kind)>> metaSnapshot;
+        HashSet<string> subsSnapshot;
+        Dictionary<string, long> cursorsSnapshot;
+
         lock (_stateLock)
         {
-            channels = new List<Dictionary<string, object?>>();
-            foreach (var kvp in _channelMetadata)
+            metaSnapshot = _channelMetadata.ToList();
+            subsSnapshot = new HashSet<string>(_subs, StringComparer.Ordinal);
+            cursorsSnapshot = new Dictionary<string, long>(_config.ChatCursors);
+        }
+
+        var channels = new List<Dictionary<string, object?>>(metaSnapshot.Count);
+        foreach (var kvp in metaSnapshot)
+        {
+            var channelId = kvp.Key;
+            var meta = kvp.Value;
+            var key = Key(meta.GuildId, meta.Kind, channelId);
+            if (!subsSnapshot.Contains(key)) continue;
+
+            cursorsSnapshot.TryGetValue(key, out var since);
+
+            var channel = new Dictionary<string, object?>
             {
-                var channelId = kvp.Key;
-                var meta = kvp.Value;
-                var key = Key(meta.GuildId, meta.Kind, channelId);
-                if (!_subs.Contains(key)) continue;
+                ["id"] = channelId,
+                ["since"] = since,
+            };
 
-                _config.ChatCursors.TryGetValue(key, out var since);
-
-                var channel = new Dictionary<string, object?>
-                {
-                    ["id"] = channelId,
-                    ["since"] = since,
-                };
-
-                var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(meta.GuildId);
-                var defaultGuildSentinel = ChannelKeyHelper.NormalizeGuildId(null);
-                if (!string.IsNullOrEmpty(normalizedGuild) &&
-                    !string.Equals(normalizedGuild, defaultGuildSentinel, StringComparison.Ordinal))
-                {
-                    channel["guildId"] = normalizedGuild;
-                }
-
-                var normalizedKind = ChannelKeyHelper.NormalizeKind(meta.Kind);
-                if (!string.IsNullOrEmpty(normalizedKind))
-                {
-                    channel["kind"] = normalizedKind.ToLowerInvariant();
-                }
-
-                channels.Add(channel);
+            var normalizedGuild = ChannelKeyHelper.NormalizeGuildId(meta.GuildId);
+            var defaultGuildSentinel = ChannelKeyHelper.NormalizeGuildId(null);
+            if (!string.IsNullOrEmpty(normalizedGuild) &&
+                !string.Equals(normalizedGuild, defaultGuildSentinel, StringComparison.Ordinal))
+            {
+                channel["guildId"] = normalizedGuild;
             }
+
+            var normalizedKind = ChannelKeyHelper.NormalizeKind(meta.Kind);
+            if (!string.IsNullOrEmpty(normalizedKind))
+            {
+                channel["kind"] = normalizedKind.ToLowerInvariant();
+            }
+
+            channels.Add(channel);
         }
 
         var json = JsonSerializer.Serialize(new { op = "sub", channels });
