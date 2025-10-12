@@ -238,7 +238,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         if (!ApiHelpers.ValidateApiBaseUrl(_config)) return;
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/presences");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             var response = await _httpClient.SendAsync(request);
             if (!response.IsSuccessStatusCode) return;
