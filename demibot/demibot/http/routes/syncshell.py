@@ -965,17 +965,13 @@ async def pair(
 
 @router.post("/manifest")
 async def upload_manifest(
-    manifest: dict[str, Any],
+    payload: dict[str, Any],
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ) -> dict[str, Any]:
-    """Receive a hashed file manifest from a client.
+    """Receive a publish payload from a client."""
 
-    The manifest is capped in size to prevent excessive memory usage and
-    naive clients from overwhelming the API.
-    """
-    diff, limits = await handle_manifest_upload(manifest, ctx, db)
-    return {"status": "ok", "diff": diff, "limits": limits}
+    return await handle_publish_manifest(payload, ctx, db)
 
 
 async def _clear_manifest(ctx: RequestContext, db: AsyncSession) -> None:
