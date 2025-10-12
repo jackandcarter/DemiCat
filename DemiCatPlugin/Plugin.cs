@@ -251,7 +251,8 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle?.Dispose();
 
         // Unsubscribe UI draw handlers
-        if (_services.PluginInterface is { } pluginInterface)
+        var pluginInterface = _services?.PluginInterface;
+        if (pluginInterface != null)
         {
             pluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
             pluginInterface.UiBuilder.Draw -= _settings.Draw;
