@@ -27,7 +27,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 20;
+    public const int CurrentVersion = 21;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -159,6 +159,21 @@ public class Config : IPluginConfiguration
 
     [JsonPropertyName("syncshellManualSyncAllUsers")]
     public bool SyncshellManualSyncAllUsers { get; set; }
+
+    [JsonPropertyName("enableSyncShell")]
+    public bool EnableSyncShell { get; set; } = false;
+
+    [JsonPropertyName("syncshellAutoAllUsers")]
+    public bool SyncshellAutoAllUsers { get; set; } = true;
+
+    [JsonPropertyName("syncshellManualAllUsers")]
+    public bool SyncshellManualAllUsers { get; set; } = false;
+
+    [JsonPropertyName("syncshellAllowedDiscordIds")]
+    public List<string> SyncshellAllowedDiscordIds { get; set; } = new();
+
+    [JsonPropertyName("penumbraPathOverride")]
+    public string? PenumbraPathOverride { get; set; }
 
     [JsonPropertyName("syncshellManualSyncCustom")]
     public bool SyncshellManualSyncCustom { get; set; }
@@ -548,6 +563,16 @@ public class Config : IPluginConfiguration
             DockBorderColor = SanitizeColor(DockBorderColor, DefaultDockBorderColor);
 
             Version = 20;
+            ExtensionData = null;
+        }
+        if (Version < 21)
+        {
+            EnableSyncShell = FCSyncShell;
+            SyncshellAutoAllUsers = SyncshellAutoSyncAllUsers;
+            SyncshellManualAllUsers = SyncshellManualSyncAllUsers;
+            SyncshellAllowedDiscordIds ??= new List<string>();
+
+            Version = 21;
             ExtensionData = null;
         }
     }

@@ -12,6 +12,7 @@ using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using DemiCatPlugin.SyncShell;
 
 namespace DemiCatPlugin;
 
@@ -36,6 +37,10 @@ public class SettingsWindow : IDisposable
     private bool _settingsLoaded;
     private bool _isLinked;
     private static readonly int[] FadeDurations = { 5, 10, 15, 20, 30 };
+    private string _penumbraOverride = string.Empty;
+    private string? _penumbraValidationMessage;
+    private bool _penumbraValidationSuccess;
+    private string _allowedDiscordIdsBuffer = string.Empty;
 
     public bool IsOpen;
 
@@ -60,6 +65,8 @@ public class SettingsWindow : IDisposable
         _isLinked = _tokenManager.State == LinkState.Linked;
         _tokenManager.OnLinked += OnLinked;
         _tokenManager.OnUnlinked += OnUnlinked;
+        _penumbraOverride = _config.PenumbraPathOverride ?? string.Empty;
+        _allowedDiscordIdsBuffer = string.Join("\n", _config.SyncshellAllowedDiscordIds);
     }
 
     public void Draw()
@@ -232,41 +239,204 @@ public class SettingsWindow : IDisposable
 
     private void DrawSyncshellTab()
     {
-        DrawConnectionIndicator(_isLinked);
+        var service = PluginServices.Instance?.SyncShellService;
+        var linked = _tokenManager.State == LinkState.Linked;
+
+        DrawConnectionIndicator(linked);
         ImGui.Spacing();
 
-        var linked = _isLinked;
-
-        var syncEnabled = _config.FCSyncShell;
+        var enableSyncshell = _config.EnableSyncShell;
         if (!linked)
-            ImGui.BeginDisabled();
-        if (ImGui.Checkbox("Enable Sync", ref syncEnabled))
         {
-            _config.FCSyncShell = syncEnabled;
-            SaveConfig();
-            _ = Task.Run(PushSettings);
+            ImGui.BeginDisabled();
         }
+
+        if (ImGui.Checkbox("Enable SyncShell", ref enableSyncshell))
+        {
+            _config.EnableSyncShell = enableSyncshell;
+            _config.FCSyncShell = enableSyncshell;
+            SaveConfig();
+
+            if (service != null)
+            {
+                var syncService = service;
+                if (enableSyncshell)
+                {
+                    _ = Task.Run(async () => await syncService.Start().ConfigureAwait(false));
+                }
+                else
+                {
+                    _ = Task.Run(async () => await syncService.Stop().ConfigureAwait(false));
+                }
+            }
+        }
+
         if (!linked)
         {
             ImGui.EndDisabled();
             if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Link DemiCat to enable Syncshell.");
+            {
+                ImGui.SetTooltip("Link DemiCat to enable SyncShell.");
+            }
+        }
+
+        var status = service?.Status ?? (linked ? "SyncShell disabled" : "Not linked");
+        ImGui.TextUnformatted($"Status: {status}");
+        if (service != null)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled($"Nearby users: {service.NearbyUserCount}");
         }
 
         var overlayVisible = _config.ShowSyncshellProgressOverlay;
-        var overlayDisabled = !_config.FCSyncShell;
-        if (overlayDisabled)
-            ImGui.BeginDisabled();
         if (ImGui.Checkbox("Show Sync Progress Overlay", ref overlayVisible))
         {
             _config.ShowSyncshellProgressOverlay = overlayVisible;
             SaveConfig();
         }
-        if (overlayDisabled)
+
+        ImGui.Separator();
+
+        var autoAllUsers = _config.SyncshellAutoAllUsers;
+        if (ImGui.Checkbox("Auto Sync to all Connected Users", ref autoAllUsers))
+        {
+            _config.SyncshellAutoAllUsers = autoAllUsers;
+            SaveConfig();
+        }
+
+        var manualAllUsers = _config.SyncshellManualAllUsers;
+        if (ImGui.Checkbox("Manual Sync (All Users)", ref manualAllUsers))
+        {
+            _config.SyncshellManualAllUsers = manualAllUsers;
+            SaveConfig();
+        }
+
+        ImGui.TextUnformatted("Manual Sync (Custom Discord IDs)");
+        var listHeight = ImGui.GetTextLineHeightWithSpacing() * 4f;
+        if (ImGui.InputTextMultiline("##SyncshellAllowedDiscordIds", ref _allowedDiscordIdsBuffer, 4096, new Vector2(-1, listHeight)))
+        {
+            var ids = _allowedDiscordIdsBuffer
+                .Split(new[] { '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            _config.SyncshellAllowedDiscordIds = ids;
+            SaveConfig();
+        }
+        ImGui.TextDisabled("One Discord ID per line.");
+
+        ImGui.Separator();
+
+        var cacheLimit = _config.SyncshellCacheLimitMb;
+        if (ImGui.SliderInt("Cache limit (MiB)", ref cacheLimit, 256, 16384))
+        {
+            cacheLimit = Math.Clamp(cacheLimit, 256, 16384);
+            if (cacheLimit != _config.SyncshellCacheLimitMb)
+            {
+                _config.SyncshellCacheLimitMb = cacheLimit;
+                SaveConfig();
+                if (service != null)
+                {
+                    var syncService = service;
+                    _ = Task.Run(async () => await syncService.EnforceCacheLimitAsync().ConfigureAwait(false));
+                }
+            }
+        }
+
+        ImGui.Spacing();
+
+        var running = service?.IsRunning ?? false;
+        if (!running)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Button("Sync now"))
+        {
+            if (service != null)
+            {
+                var syncService = service;
+                _ = Task.Run(async () => await syncService.TriggerPublishAsync().ConfigureAwait(false));
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Resync All"))
+        {
+            if (service != null)
+            {
+                var syncService = service;
+                _ = Task.Run(async () => await syncService.ResyncAllAsync().ConfigureAwait(false));
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Clear Cache"))
+        {
+            service?.ClearCache();
+            if (service != null)
+            {
+                var syncService = service;
+                _ = Task.Run(async () => await syncService.EnforceCacheLimitAsync().ConfigureAwait(false));
+            }
+        }
+        ImGui.SameLine();
+        var paused = service?.IsPaused ?? false;
+        if (ImGui.Button(paused ? "Resume Sync" : "Pause Sync"))
+        {
+            if (service != null)
+            {
+                if (paused)
+                {
+                    service.Resume();
+                }
+                else
+                {
+                    service.Pause();
+                }
+            }
+        }
+
+        if (!running)
         {
             ImGui.EndDisabled();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-                ImGui.SetTooltip("Enable Syncshell to display transfer progress overlay.");
+        }
+
+        ImGui.Separator();
+
+        var penumbraAvailable = service?.PenumbraAvailable ?? false;
+        var detectedPath = service?.DetectedPenumbraPath;
+        if (penumbraAvailable && !string.IsNullOrEmpty(detectedPath))
+        {
+            ImGui.TextDisabled($"Detected Penumbra path: {detectedPath}");
+        }
+        else
+        {
+            ImGui.TextDisabled("Penumbra IPC not detected. Set a path manually if needed.");
+        }
+
+        if (ImGui.InputText("Penumbra path override", ref _penumbraOverride, 512))
+        {
+            _config.PenumbraPathOverride = string.IsNullOrWhiteSpace(_penumbraOverride) ? null : _penumbraOverride.Trim();
+            SaveConfig();
+        }
+
+        if (ImGui.Button("Validate Path"))
+        {
+            var pathToCheck = string.IsNullOrWhiteSpace(_penumbraOverride) ? detectedPath : _penumbraOverride;
+            if (service != null && service.TryValidatePenumbraPath(pathToCheck, out var error))
+            {
+                _penumbraValidationSuccess = true;
+                _penumbraValidationMessage = "Penumbra path looks good.";
+            }
+            else
+            {
+                _penumbraValidationSuccess = false;
+                _penumbraValidationMessage = error ?? "Validation failed.";
+            }
+        }
+
+        if (!string.IsNullOrEmpty(_penumbraValidationMessage))
+        {
+            var color = _penumbraValidationSuccess ? new Vector4(0f, 0.8f, 0f, 1f) : new Vector4(0.9f, 0f, 0f, 1f);
+            ImGui.TextColored(color, _penumbraValidationMessage);
         }
     }
 
@@ -695,7 +865,9 @@ public class SettingsWindow : IDisposable
             using var doc = JsonDocument.Parse(body);
             if (doc.RootElement.TryGetProperty("consent_sync", out var consent))
             {
-                _config.FCSyncShell = consent.GetBoolean();
+                var enabled = consent.GetBoolean();
+                _config.FCSyncShell = enabled;
+                _config.EnableSyncShell = enabled;
             }
 
             if (doc.RootElement.TryGetProperty("settings", out var settings) && settings.ValueKind == JsonValueKind.Object)
@@ -742,7 +914,7 @@ public class SettingsWindow : IDisposable
                     categories = _categoryToggles,
                     autoApply = _config.AutoApply
                 },
-                consent_sync = _config.FCSyncShell
+                consent_sync = _config.EnableSyncShell
             };
 
             var request = new HttpRequestMessage(HttpMethod.Put, url)

@@ -4,6 +4,7 @@ using Dalamud.Game.Gui.Toast;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
+using DemiCatPlugin.SyncShell;
 
 namespace DemiCatPlugin;
 
@@ -42,6 +43,8 @@ internal class PluginServices
     internal ICommandManager CommandManager { get; private set; } = null!;
 
     internal ProgressOverlay? ProgressOverlay { get; set; }
+
+    internal ISyncShellService? SyncShellService { get; set; }
 
     public PluginServices()
     {
