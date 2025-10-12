@@ -294,7 +294,7 @@ public sealed class NotePadService : IDisposable
                 success = true;
                 var data = await JsonSerializer.DeserializeAsync<NotePadListResponse>(stream, _serializerOptions, cancellationToken)
                     .ConfigureAwait(false) ?? new NotePadListResponse();
-                await UpdateSectionsAsync(data.Sections ?? Array.Empty<NotePadSection>()).ConfigureAwait(false);
+                await UpdateSectionsAsync(data.Sections ?? new List<NotePadSection>()).ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
         catch (NotePadConflictException ex)
@@ -499,7 +499,7 @@ public sealed class NotePadService : IDisposable
                 success = true;
                 var data = await JsonSerializer.DeserializeAsync<NotePadListResponse>(stream, _serializerOptions, cancellationToken)
                     .ConfigureAwait(false) ?? new NotePadListResponse();
-                await UpdateSectionsAsync(data.Sections ?? Array.Empty<NotePadSection>()).ConfigureAwait(false);
+                await UpdateSectionsAsync(data.Sections ?? new List<NotePadSection>()).ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
         catch (NotePadConflictException ex)
