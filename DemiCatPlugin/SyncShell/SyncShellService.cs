@@ -29,9 +29,6 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private readonly object _memberLock = new();
     private List<SyncshellMemberStatus> _members = new();
     private List<SyncshellMemberStatus> _activeMembers = new();
-    private readonly object _appearanceLock = new();
-    private readonly Dictionary<string, LocalBlobInfo> _localBlobs = new(StringComparer.OrdinalIgnoreCase);
-    private string? _glamourerJson;
 
     private CancellationTokenSource? _runCts;
     private Task? _presenceTask;
@@ -768,8 +765,6 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         return null;
     }
-
-    internal sealed record LocalBlobInfo(string Name, string Sha256, long Size, string FullPath);
 
     public void Dispose()
     {

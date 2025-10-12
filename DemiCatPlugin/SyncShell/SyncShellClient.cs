@@ -95,22 +95,6 @@ public sealed class SyncShellClient
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task<bool> BlobExistsAsync(string sha256, CancellationToken cancellationToken)
-    {
-        var uri = BuildUri($"{BlobDownloadPath}?sha256={Uri.EscapeDataString(sha256)}");
-        using var request = new HttpRequestMessage(HttpMethod.Head, uri);
-        ApiHelpers.AddAuthHeader(request, _tokenManager);
-
-        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (response.StatusCode == HttpStatusCode.NotFound)
-        {
-            return false;
-        }
-
-        response.EnsureSuccessStatusCode();
-        return true;
-    }
-
     private sealed class ResponseStream : Stream
     {
         private readonly HttpResponseMessage _response;
@@ -165,36 +149,6 @@ public sealed class SyncShellClient
 
         var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        return new ResponseStream(response, stream);
-    }
-
-    public async Task<Stream> DownloadBlobRangeAsync(string sha256, long start, long end, CancellationToken cancellationToken)
-    {
-        if (start < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(start));
-        }
-
-        if (end < start)
-        {
-            throw new ArgumentOutOfRangeException(nameof(end));
-        }
-
-        var uri = BuildUri($"{BlobDownloadPath}?sha256={Uri.EscapeDataString(sha256)}");
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        ApiHelpers.AddAuthHeader(request, _tokenManager);
-        request.Headers.Range = new RangeHeaderValue(start, end);
-
-        var response = await _httpClient
-            .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (response.StatusCode != HttpStatusCode.PartialContent && response.StatusCode != HttpStatusCode.OK)
-        {
-            response.EnsureSuccessStatusCode();
-        }
-
         var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         return new ResponseStream(response, stream);
     }
