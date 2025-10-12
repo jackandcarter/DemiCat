@@ -190,7 +190,7 @@ public class EventView : IDisposable
                 reserve += rowCount * ImGui.GetFrameHeightWithSpacing();
             }
         }
-        else if (IsApolloEvent(_dto))
+        else if (EventEmbedHelpers.IsApolloEvent(_dto))
         {
             reserve += 3 * ImGui.GetFrameHeightWithSpacing();
         }
