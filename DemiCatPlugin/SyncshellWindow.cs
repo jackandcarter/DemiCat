@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -19,6 +21,7 @@ public sealed class SyncshellWindow : IDisposable
     private readonly List<string> _statusHistory = new();
     private bool _disposed;
     private string _latestStatus = string.Empty;
+    private static readonly Vector4 ActiveMemberColor = new(0.45f, 0.86f, 0.55f, 1f);
 
     public SyncshellWindow(Config config, ISyncShellService? service = null)
     {
@@ -69,6 +72,12 @@ public sealed class SyncshellWindow : IDisposable
         ImGui.Unindent();
 
         ImGui.Separator();
+        DrawActiveMembers(service.ActiveMembers);
+
+        ImGui.Separator();
+        DrawMemberRoster(service.Members);
+
+        ImGui.Separator();
         ImGui.TextUnformatted("Allowed Discord IDs");
         ImGui.Indent();
         if (_config.SyncshellAllowedDiscordIds.Count == 0)
@@ -116,6 +125,85 @@ public sealed class SyncshellWindow : IDisposable
                 _log?.Warning(ex, "Failed to clear SyncShell cache");
             }
         }
+    }
+
+    private static void DrawActiveMembers(IReadOnlyList<SyncshellMemberStatus> activeMembers)
+    {
+        ImGui.TextUnformatted("Currently syncing");
+        ImGui.Indent();
+        if (activeMembers.Count == 0)
+        {
+            ImGui.TextDisabled("No active members detected.");
+        }
+        else
+        {
+            foreach (var member in activeMembers)
+            {
+                DrawMemberLine(member, highlight: true);
+                if (member.SyncedAt != null)
+                {
+                    ImGui.Indent();
+                    ImGui.TextDisabled($"Synced at {FormatTimestamp(member.SyncedAt)}");
+                    ImGui.Unindent();
+                }
+            }
+        }
+        ImGui.Unindent();
+    }
+
+    private static void DrawMemberRoster(IReadOnlyList<SyncshellMemberStatus> members)
+    {
+        ImGui.TextUnformatted("Member roster");
+        ImGui.Indent();
+        if (members.Count == 0)
+        {
+            ImGui.TextDisabled("No linked members yet.");
+        }
+        else
+        {
+            foreach (var member in members.OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase))
+            {
+                DrawMemberLine(member, highlight: member.IsActive);
+                if (member.LastSeen != null)
+                {
+                    ImGui.Indent();
+                    ImGui.TextDisabled($"Last seen {FormatTimestamp(member.LastSeen)}");
+                    ImGui.Unindent();
+                }
+            }
+        }
+        ImGui.Unindent();
+    }
+
+    private static void DrawMemberLine(SyncshellMemberStatus member, bool highlight)
+    {
+        var presenceLabel = string.IsNullOrEmpty(member.SyncStatus)
+            ? member.Presence
+            : $"{member.Presence}, {member.SyncStatus}";
+        var linkedSuffix = member.TokenLinked ? " • linked" : string.Empty;
+        var label = $"{member.DisplayName} [{presenceLabel}]{linkedSuffix}";
+
+        if (highlight)
+        {
+            ImGui.PushStyleColor(ImGuiCol.Text, ActiveMemberColor);
+            ImGui.BulletText(label);
+            ImGui.PopStyleColor();
+        }
+        else
+        {
+            ImGui.BulletText(label);
+        }
+    }
+
+    private static string FormatTimestamp(DateTimeOffset? timestamp)
+    {
+        if (timestamp == null)
+        {
+            return string.Empty;
+        }
+
+        var local = timestamp.Value.ToLocalTime();
+        return local.ToString("g", CultureInfo.CurrentCulture);
     }
 
     public void ClearCaches()
