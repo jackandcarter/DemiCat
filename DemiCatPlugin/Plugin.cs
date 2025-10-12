@@ -230,13 +230,16 @@ public class Plugin : IDalamudPlugin
         _disposed = true;
         _queueMetricsTimer.Dispose();
         WebTextureCache.FetchOverride = null;
-        if (_services != null)
+
+        var services = PluginServices.Instance ?? _services;
+        if (services != null)
         {
-            _services.SyncShellService = null;
+            services.SyncShellService = null;
         }
+
         _syncShellService.Dispose();
         _blobStore.Dispose();
-        var log = _services?.Log;
+        var log = services?.Log;
         try
         {
             RunOnFrameworkAsync(WebTextureCache.Clear).GetAwaiter().GetResult();
@@ -251,7 +254,7 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle?.Dispose();
 
         // Unsubscribe UI draw handlers
-        var pluginInterface = _services?.PluginInterface;
+        var pluginInterface = services?.PluginInterface;
         if (pluginInterface != null)
         {
             pluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
@@ -264,14 +267,14 @@ public class Plugin : IDalamudPlugin
         }
 
         // Command handler teardown (nullable-safe)
-        var commandManager = _services.CommandManager;
+        var commandManager = services?.CommandManager;
         commandManager?.RemoveHandler(MewCommand);
 
         _tokenManager.OnLinked -= HandleTokenLinked;
         _tokenManager.OnUnlinked -= HandleTokenUnlinked;
 
         // Chat link handler teardown (nullable-safe)
-        var chatGui = _services.ChatGui;
+        var chatGui = services?.ChatGui;
         try { if (chatGui != null) chatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
 
         _channelSelection.ChannelChanged -= HandleChannelSelectionValidation;
@@ -290,9 +293,9 @@ public class Plugin : IDalamudPlugin
         _avatarCache.Dispose();
         _emojiManager.Dispose();
         _httpClient.Dispose();
-        if (PluginServices.Instance != null)
+        if (services != null)
         {
-            PluginServices.Instance.ProgressOverlay = null;
+            services.ProgressOverlay = null;
         }
     }
 
