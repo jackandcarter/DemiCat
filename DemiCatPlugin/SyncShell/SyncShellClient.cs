@@ -187,22 +187,6 @@ public sealed class SyncShellClient
         response.EnsureSuccessStatusCode();
     }
 
-    public async Task<MembershipsResponseDto?> GetMembershipsAsync(CancellationToken cancellationToken)
-    {
-        var uri = BuildUri(MembershipsPath);
-        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
-        ApiHelpers.AddAuthHeader(request, _tokenManager);
-
-        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            return null;
-        }
-
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
-        return await JsonSerializer.DeserializeAsync<MembershipsResponseDto>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false);
-    }
-
     public async Task UpdatePresenceAsync(IEnumerable<long> activeMemberIds, CancellationToken cancellationToken)
     {
         var payload = new PresenceUpdateDto
