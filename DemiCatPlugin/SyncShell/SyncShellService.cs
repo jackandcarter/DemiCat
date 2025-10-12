@@ -12,7 +12,6 @@ using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
-using Lumina.Excel.GeneratedSheets;
 
 namespace DemiCatPlugin.SyncShell;
 
@@ -622,38 +621,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         if (player != null)
         {
             actorHash = player.Name.TextValue ?? string.Empty;
-            string? worldName = null;
-            try
-            {
-                var world = player.HomeWorld.ValueNullable;
-                if (world != null)
-                {
-                    worldName = world.Name?.ToString();
-                }
-            }
-            catch
-            {
-                // ignore lookup failures
-            }
-
-            if (string.IsNullOrEmpty(worldName))
-            {
-                try
-                {
-                    worldName = player.HomeWorld.Value.Name.ToString();
-                }
-                catch
-                {
-                    // ignore lookup failures
-                }
-            }
-
-            if (!string.IsNullOrEmpty(worldName))
-            {
-                actorHash = string.IsNullOrEmpty(actorHash)
-                    ? worldName!
-                    : $"{actorHash}@{worldName}";
-            }
+            // Omit world label to avoid GeneratedSheets dependency; actorHash is just the name.
         }
 
         var appearance = new AppearanceMeta
@@ -1089,33 +1057,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                 }
 
                 var name = player.Name?.TextValue ?? string.Empty;
-                string? worldName = null;
-                try
-                {
-                    var world = player.HomeWorld.ValueNullable;
-                    if (world != null)
-                    {
-                        worldName = world.Name?.ToString();
-                    }
-                }
-                catch
-                {
-                }
-
-                if (string.IsNullOrWhiteSpace(worldName))
-                {
-                    try
-                    {
-                        worldName = player.HomeWorld.Value.Name.ToString();
-                    }
-                    catch
-                    {
-                    }
-                }
-
                 if (!string.IsNullOrWhiteSpace(name))
                 {
-                    set.Add(NormalizeHandle(name, worldName));
+                    // No world decoration to avoid GeneratedSheets dependency
+                    set.Add(NormalizeHandle(name, null));
                 }
             }
         }
