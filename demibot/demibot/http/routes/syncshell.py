@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -369,8 +369,12 @@ class InviteCreateRequest(BaseModel):
 
 
 class PresenceUpdateRequest(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
     active_member_ids: list[str] = Field(
-        default_factory=list, description="Members currently nearby or active"
+        default_factory=list,
+        alias="activeMemberIds",
+        description="Members currently nearby or active",
     )
 
     @field_validator("active_member_ids", mode="before")
@@ -385,10 +389,10 @@ class PresenceUpdateRequest(BaseModel):
                     continue
                 if isinstance(entry, str):
                     entry = entry.strip()
-                    if entry:
-                        normalised.append(entry)
                 else:
-                    normalised.append(str(entry))
+                    entry = str(entry).strip()
+                if entry:
+                    normalised.append(entry)
             return normalised
         raise TypeError("activeMemberIds must be an array")
 
