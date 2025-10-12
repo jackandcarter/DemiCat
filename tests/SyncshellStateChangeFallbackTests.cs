@@ -52,6 +52,8 @@ public class SyncshellStateChangeFallbackTests
         public bool IsPaused => _paused;
         public string Status { get; private set; } = "Idle";
         public int NearbyUserCount { get; set; }
+        public IReadOnlyList<SyncshellMemberStatus> Members { get; private set; } = Array.Empty<SyncshellMemberStatus>();
+        public IReadOnlyList<SyncshellMemberStatus> ActiveMembers { get; private set; } = Array.Empty<SyncshellMemberStatus>();
         public bool PenumbraAvailable => false;
         public string? DetectedPenumbraPath => null;
 
