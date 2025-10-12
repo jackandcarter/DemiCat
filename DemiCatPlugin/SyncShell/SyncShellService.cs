@@ -788,4 +788,23 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         _lifecycleLock.Dispose();
     }
+
+    internal readonly record struct LocalBlobInfo
+    {
+        public LocalBlobInfo(string name, string sha256, long size, string fullPath)
+        {
+            Name = name ?? string.Empty;
+            Sha256 = sha256 ?? string.Empty;
+            Size = size;
+            FullPath = fullPath ?? string.Empty;
+        }
+
+        public string Name { get; }
+
+        public string Sha256 { get; }
+
+        public long Size { get; }
+
+        public string FullPath { get; }
+    }
 }
