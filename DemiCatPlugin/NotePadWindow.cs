@@ -36,6 +36,7 @@ public sealed class NotePadWindow : IDisposable
     private NotePadPage? _conflictServerPage;
     private string? _conflictSectionId;
     private string? _conflictPageId;
+    private int? _conflictServerVersion;
     private bool _pendingReload;
     private bool _sectionOrderDirty;
     private bool _pageOrderDirty;
@@ -728,6 +729,7 @@ public sealed class NotePadWindow : IDisposable
                 if (_conflictServerPage != null)
                 {
                     LoadPageContent(_conflictServerPage);
+                    _conflictServerVersion = null;
                 }
                 ImGui.CloseCurrentPopup();
             }
@@ -933,7 +935,21 @@ public sealed class NotePadWindow : IDisposable
             }
 
             var content = _editorContent;
-            var version = overwrite ? 0 : _editorVersion;
+            var version = _editorVersion;
+            if (overwrite)
+            {
+                version = _conflictServerVersion ?? _editorVersion;
+                if (_conflictServerVersion == null)
+                {
+                    var latest = _service.Sections
+                        .SelectMany(s => s.Pages)
+                        .FirstOrDefault(p => string.Equals(p.Id, pageId, StringComparison.Ordinal));
+                    if (latest != null)
+                    {
+                        version = latest.Version;
+                    }
+                }
+            }
             NotePadPage? result = null;
             try
             {
@@ -953,6 +969,7 @@ public sealed class NotePadWindow : IDisposable
                 _conflictServerPage = _service.Sections
                     .SelectMany(s => s.Pages)
                     .FirstOrDefault(p => string.Equals(p.Id, pageId, StringComparison.Ordinal));
+                _conflictServerVersion = _conflictServerPage?.Version;
                 _showConflictModal = true;
                 return;
             }
@@ -961,6 +978,7 @@ public sealed class NotePadWindow : IDisposable
             {
                 _editorVersion = result.Version;
                 _dirty = false;
+                _conflictServerVersion = null;
             }
         }
         finally
