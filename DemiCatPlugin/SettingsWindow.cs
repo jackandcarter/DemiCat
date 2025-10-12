@@ -420,8 +420,9 @@ public class SettingsWindow : IDisposable
 
         if (ImGui.Button("Validate Path"))
         {
+            string? error = null;
             var pathToCheck = string.IsNullOrWhiteSpace(_penumbraOverride) ? detectedPath : _penumbraOverride;
-            if (service != null && service.TryValidatePenumbraPath(pathToCheck, out var error))
+            if (service != null && service.TryValidatePenumbraPath(pathToCheck, out error))
             {
                 _penumbraValidationSuccess = true;
                 _penumbraValidationMessage = "Penumbra path looks good.";

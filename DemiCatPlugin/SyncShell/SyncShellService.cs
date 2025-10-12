@@ -406,7 +406,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void HandleTerritoryChanged(object? sender, ushort e)
+    private void HandleTerritoryChanged(ushort _)
     {
         if (!IsRunning)
         {
