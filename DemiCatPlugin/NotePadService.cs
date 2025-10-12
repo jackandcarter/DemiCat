@@ -169,7 +169,20 @@ public sealed class NotePadService : IDisposable
 
     public async Task<bool> RenameSectionAsync(string sectionId, string name, CancellationToken cancellationToken)
     {
-        var payload = new { name };
+        var existing = await GetSectionSnapshotAsync(sectionId, cancellationToken).ConfigureAwait(false);
+        if (existing == null)
+        {
+            PluginServices.Instance?.Log.Warning(
+                "Unable to rename section {SectionId}: not found",
+                sectionId);
+            return false;
+        }
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["name"] = name,
+            ["version"] = existing.Version
+        };
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections/{sectionId}";
         var request = new HttpRequestMessage(HttpMethod.Patch, url)
         {
@@ -253,7 +266,7 @@ public sealed class NotePadService : IDisposable
 
     public async Task<bool> ReorderSectionsAsync(IReadOnlyList<string> sectionIds, CancellationToken cancellationToken)
     {
-        var payload = new { ids = sectionIds };
+        var payload = new { sectionIds = sectionIds.ToArray() };
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections/reorder";
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
@@ -276,49 +289,17 @@ public sealed class NotePadService : IDisposable
         var success = false;
         try
         {
-            await HandleResponseAsync(response, _ =>
+            await HandleResponseAsync(response, async stream =>
             {
                 success = true;
-                return Task.CompletedTask;
+                var data = await JsonSerializer.DeserializeAsync<NotePadListResponse>(stream, _serializerOptions, cancellationToken)
+                    .ConfigureAwait(false) ?? new NotePadListResponse();
+                await UpdateSectionsAsync(data.Sections ?? Array.Empty<NotePadSection>()).ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
         catch (NotePadConflictException ex)
         {
             ShowThrottledToast("Unable to reorder sections", ex.Message);
-        }
-
-        if (success)
-        {
-            await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var ordered = new List<NotePadSection>();
-                foreach (var id in sectionIds)
-                {
-                    var match = _sections.FirstOrDefault(s => string.Equals(s.Id, id, StringComparison.Ordinal));
-                    if (match != null)
-                    {
-                        ordered.Add(match);
-                    }
-                }
-
-                foreach (var section in _sections)
-                {
-                    if (!ordered.Contains(section))
-                    {
-                        ordered.Add(section);
-                    }
-                }
-
-                _sections.Clear();
-                _sections.AddRange(ordered.Select(CloneSection));
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
-
-            RaiseChanged();
         }
 
         return success;
@@ -513,52 +494,17 @@ public sealed class NotePadService : IDisposable
         var success = false;
         try
         {
-            await HandleResponseAsync(response, _ =>
+            await HandleResponseAsync(response, async stream =>
             {
                 success = true;
-                return Task.CompletedTask;
+                var data = await JsonSerializer.DeserializeAsync<NotePadListResponse>(stream, _serializerOptions, cancellationToken)
+                    .ConfigureAwait(false) ?? new NotePadListResponse();
+                await UpdateSectionsAsync(data.Sections ?? Array.Empty<NotePadSection>()).ConfigureAwait(false);
             }).ConfigureAwait(false);
         }
         catch (NotePadConflictException ex)
         {
             ShowThrottledToast("Unable to reorder pages", ex.Message);
-        }
-
-        if (success)
-        {
-            await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                var section = _sections.FirstOrDefault(s => string.Equals(s.Id, sectionId, StringComparison.Ordinal));
-                if (section != null)
-                {
-                    var ordered = new List<NotePadPage>();
-                    foreach (var id in pageIds)
-                    {
-                        var page = section.Pages.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
-                        if (page != null)
-                        {
-                            ordered.Add(page);
-                        }
-                    }
-
-                    foreach (var page in section.Pages)
-                    {
-                        if (!ordered.Contains(page))
-                        {
-                            ordered.Add(page);
-                        }
-                    }
-
-                    section.Pages = ordered.Select(ClonePage).ToList();
-                }
-            }
-            finally
-            {
-                _stateLock.Release();
-            }
-
-            RaiseChanged();
         }
 
         return success;
@@ -625,17 +571,24 @@ public sealed class NotePadService : IDisposable
         }
     }
 
-    private async Task<string?> GetSectionColorAsync(string sectionId, CancellationToken cancellationToken)
+    private async Task<NotePadSection?> GetSectionSnapshotAsync(string sectionId, CancellationToken cancellationToken)
     {
         await _stateLock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            return _sections.FirstOrDefault(s => string.Equals(s.Id, sectionId, StringComparison.Ordinal))?.Color;
+            var section = _sections.FirstOrDefault(s => string.Equals(s.Id, sectionId, StringComparison.Ordinal));
+            return section != null ? CloneSection(section) : null;
         }
         finally
         {
             _stateLock.Release();
         }
+    }
+
+    private async Task<string?> GetSectionColorAsync(string sectionId, CancellationToken cancellationToken)
+    {
+        var section = await GetSectionSnapshotAsync(sectionId, cancellationToken).ConfigureAwait(false);
+        return section?.Color;
     }
 
     private async Task HandleResponseAsync(HttpResponseMessage response, Func<Stream, Task> onSuccess)
@@ -975,6 +928,7 @@ public sealed class NotePadService : IDisposable
             UpdatedByDisplayName = source.UpdatedByDisplayName,
             CreatedAt = source.CreatedAt,
             UpdatedAt = source.UpdatedAt,
+            Version = source.Version,
             Pages = source.Pages.Select(ClonePage).ToList()
         };
     }
@@ -1014,6 +968,7 @@ public sealed class NotePadSection
     public string? UpdatedByDisplayName { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+    public int Version { get; set; } = 1;
 
     [JsonConverter(typeof(NotePadColorJsonConverter))]
     public string Color
