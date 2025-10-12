@@ -406,7 +406,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void HandleTerritoryChanged(ushort _)
+    private void HandleTerritoryChanged(ushort territoryId)
     {
         if (!IsRunning)
         {
@@ -438,7 +438,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void HandleTokenUnlinked(string? _)
+    private void HandleTokenUnlinked(string? reason)
     {
         _ = Stop();
     }
