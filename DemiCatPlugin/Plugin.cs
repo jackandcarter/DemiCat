@@ -236,13 +236,14 @@ public class Plugin : IDalamudPlugin
         }
         _syncShellService.Dispose();
         _blobStore.Dispose();
+        var log = _services.Log;
         try
         {
             RunOnFrameworkAsync(WebTextureCache.Clear).GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
-            _services.Log.Warning(ex, "Failed to clear web texture cache on framework thread.");
+            log?.Warning(ex, "Failed to clear web texture cache on framework thread.");
             WebTextureCache.Clear();
         }
 
@@ -250,13 +251,16 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle?.Dispose();
 
         // Unsubscribe UI draw handlers
-        _services.PluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
-        _services.PluginInterface.UiBuilder.Draw -= _settings.Draw;
-        _services.PluginInterface.UiBuilder.Draw -= DrawOverlay;
+        if (_services.PluginInterface is { } pluginInterface)
+        {
+            pluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
+            pluginInterface.UiBuilder.Draw -= _settings.Draw;
+            pluginInterface.UiBuilder.Draw -= DrawOverlay;
 
-        // Unsubscribe UI open handlers
-        _services.PluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
-        _services.PluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
+            // Unsubscribe UI open handlers
+            pluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
+            pluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
+        }
 
         _services.CommandManager.RemoveHandler(MewCommand);
 
