@@ -43,7 +43,7 @@ internal sealed class DateTimePicker
     {
         var local = _value.ToLocalTime();
         var preview = local.ToString("MMM d, yyyy h:mm tt", CultureInfo.CurrentCulture);
-        var popupId = $"TimePickerPopup##{idSuffix}";
+        var popupId = $"Calendar##{idSuffix}";
         newValue = _value;
         var changed = false;
 
@@ -55,7 +55,13 @@ internal sealed class DateTimePicker
             ImGui.OpenPopup(popupId);
         }
 
-        if (ImGui.BeginPopupModal(popupId, ImGuiWindowFlags.AlwaysAutoResize))
+        if (ImGui.IsPopupOpen(popupId))
+        {
+            ImGui.SetNextWindowSize(new Vector2(420f, 360f), ImGuiCond.Appearing);
+            ImGui.SetNextWindowSizeConstraints(new Vector2(320f, 300f), new Vector2(820f, 720f));
+        }
+
+        if (ImGui.BeginPopupModal(popupId, ImGuiWindowFlags.None))
         {
             DrawMonthHeader(idSuffix);
             DrawCalendar(idSuffix);
