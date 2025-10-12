@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin.Services;
@@ -25,6 +25,9 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private readonly object _statusLock = new();
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
     private readonly HashSet<string> _nearbyUsers = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _memberLock = new();
+    private List<SyncshellMemberStatus> _members = new();
+    private List<SyncshellMemberStatus> _activeMembers = new();
 
     private CancellationTokenSource? _runCts;
     private Task? _presenceTask;
@@ -134,6 +137,28 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             lock (_nearbyUsers)
             {
                 return _nearbyUsers.Count;
+            }
+        }
+    }
+
+    public IReadOnlyList<SyncshellMemberStatus> Members
+    {
+        get
+        {
+            lock (_memberLock)
+            {
+                return _members.ToArray();
+            }
+        }
+    }
+
+    public IReadOnlyList<SyncshellMemberStatus> ActiveMembers
+    {
+        get
+        {
+            lock (_memberLock)
+            {
+                return _activeMembers.ToArray();
             }
         }
     }
@@ -316,23 +341,30 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     private async Task PresenceLoopAsync(CancellationToken token)
     {
+        var initial = true;
         while (!token.IsCancellationRequested)
         {
             try
             {
-                await Task.Delay(PresencePollInterval, token).ConfigureAwait(false);
+                if (!initial)
+                {
+                    await Task.Delay(PresencePollInterval, token).ConfigureAwait(false);
+                }
+                else
+                {
+                    initial = false;
+                }
+
                 if (_paused)
                 {
                     continue;
                 }
 
-                lock (_nearbyUsers)
+                var memberships = await _client.GetMembershipsAsync(token).ConfigureAwait(false);
+                if (memberships != null)
                 {
-                    _nearbyUsers.Clear();
-                    // Placeholder – future implementation will resolve Discord IDs of nearby actors.
+                    UpdateMemberSnapshot(memberships);
                 }
-
-                OnStatusChanged();
             }
             catch (OperationCanceledException)
             {
@@ -445,6 +477,116 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     private void OnStatusChanged()
         => StatusChanged?.Invoke(this, EventArgs.Empty);
+
+    private void UpdateMemberSnapshot(MembershipsResponseDto snapshot)
+    {
+        var members = new List<SyncshellMemberStatus>();
+        var activeMembers = new List<SyncshellMemberStatus>();
+
+        if (snapshot.Members != null)
+        {
+            foreach (var entry in snapshot.Members)
+            {
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                var status = MapMember(entry);
+                members.Add(status);
+            }
+        }
+
+        if (snapshot.CurrentlySynced != null)
+        {
+            foreach (var entry in snapshot.CurrentlySynced)
+            {
+                if (entry == null)
+                {
+                    continue;
+                }
+
+                var status = MapMember(entry);
+                activeMembers.Add(status);
+            }
+        }
+
+        lock (_memberLock)
+        {
+            _members = members;
+            _activeMembers = activeMembers;
+        }
+
+        lock (_nearbyUsers)
+        {
+            _nearbyUsers.Clear();
+            foreach (var entry in activeMembers)
+            {
+                if (!string.IsNullOrEmpty(entry.Id))
+                {
+                    _nearbyUsers.Add(entry.Id);
+                }
+            }
+        }
+
+        var statusChanged = false;
+        if (!_paused)
+        {
+            statusChanged = UpdateStatusForMembers(activeMembers.Count);
+        }
+
+        if (!statusChanged)
+        {
+            OnStatusChanged();
+        }
+    }
+
+    private bool UpdateStatusForMembers(int activeCount)
+    {
+        var status = activeCount > 0
+            ? $"Syncing {activeCount} member{(activeCount == 1 ? string.Empty : "s")}";
+            : "Active";
+        if (!string.Equals(Status, status, StringComparison.Ordinal))
+        {
+            Status = status;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static SyncshellMemberStatus MapMember(MembershipEntryDto entry)
+    {
+        var displayName = string.IsNullOrWhiteSpace(entry.DisplayName)
+            ? entry.Id ?? string.Empty
+            : entry.DisplayName;
+
+        return new SyncshellMemberStatus
+        {
+            Id = entry.Id ?? string.Empty,
+            DisplayName = displayName,
+            Presence = entry.Presence ?? "offline",
+            SyncStatus = entry.SyncStatus,
+            LastSeen = ParseTimestamp(entry.LastSeen),
+            SyncedAt = ParseTimestamp(entry.SyncedAt),
+            TokenLinked = entry.TokenLinked,
+        };
+    }
+
+    private static DateTimeOffset? ParseTimestamp(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        if (DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var parsed))
+        {
+            return parsed;
+        }
+
+        return null;
+    }
 
     public void Dispose()
     {

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,6 +13,8 @@ public interface ISyncShellService
     bool IsPaused { get; }
     string Status { get; }
     int NearbyUserCount { get; }
+    IReadOnlyList<SyncshellMemberStatus> Members { get; }
+    IReadOnlyList<SyncshellMemberStatus> ActiveMembers { get; }
     bool PenumbraAvailable { get; }
     string? DetectedPenumbraPath { get; }
 

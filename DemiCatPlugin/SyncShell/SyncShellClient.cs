@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -16,10 +17,12 @@ public sealed class SyncShellClient
     private readonly Config _config;
     private readonly TokenManager _tokenManager;
 
-    private const string GetMetaPath = "/syncshell/meta";               // TODO(backend): confirm route
-    private const string PublishPath = "/syncshell/publish";            // TODO(backend): confirm route
-    private const string BlobUploadPath = "/syncshell/blobs";           // TODO(backend): confirm route
-    private const string BlobDownloadPath = "/syncshell/blobs";         // TODO(backend): confirm route
+    private const string GetMetaPath = "/api/syncshell/meta";               // TODO: backend to confirm availability
+    private const string PublishPath = "/api/syncshell/manifest";
+    private const string BlobUploadPath = "/api/syncshell/blobs";           // TODO: backend implementation
+    private const string BlobDownloadPath = "/api/syncshell/blobs";         // TODO: backend implementation
+    private const string MembershipsPath = "/api/syncshell/memberships";
+    private const string PresencePath = "/api/syncshell/presence";
 
     public SyncShellClient(HttpClient httpClient, Config config, TokenManager tokenManager)
     {
@@ -100,6 +103,41 @@ public sealed class SyncShellClient
         var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<MembershipsResponseDto?> GetMembershipsAsync(CancellationToken cancellationToken)
+    {
+        var uri = BuildUri(MembershipsPath);
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        return await JsonSerializer.DeserializeAsync<MembershipsResponseDto>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task UpdatePresenceAsync(IEnumerable<long> activeMemberIds, CancellationToken cancellationToken)
+    {
+        var payload = new PresenceUpdateDto
+        {
+            ActiveMemberIds = new List<long>(activeMemberIds ?? Array.Empty<long>())
+        };
+
+        var uri = BuildUri(PresencePath);
+        using var request = new HttpRequestMessage(HttpMethod.Post, uri)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions))
+        };
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task<bool> ValidateAsync(CancellationToken cancellationToken)
