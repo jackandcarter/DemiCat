@@ -30,6 +30,17 @@ public static class Hasher
         return ConvertToHex(hash);
     }
 
+    public static string Sha256String(string value)
+    {
+        if (value == null)
+        {
+            throw new ArgumentNullException(nameof(value));
+        }
+
+        var bytes = Encoding.UTF8.GetBytes(value);
+        return Sha256Bytes(bytes);
+    }
+
     private static string Sha256Stream(Stream stream)
     {
         using var sha = SHA256.Create();

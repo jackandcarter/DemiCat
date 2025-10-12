@@ -10,6 +10,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Game.ClientState;
+using Dalamud.Game.ClientState.Objects;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin;
@@ -53,13 +54,15 @@ public class SyncshellPublishFlowTests : IDisposable
         var config = new Config
         {
             EnableSyncShell = true,
-            ApiBaseUrl = "http://localhost"
+            ApiBaseUrl = "http://localhost",
+            PenumbraPathOverride = _tempRoot,
         };
 
         using var blobStore = new BlobStore(pluginInterfaceMock.Object);
         var penumbra = new PenumbraIpc(pluginInterfaceMock.Object, logMock.Object);
         var clientStateMock = new Mock<IClientState>();
         var frameworkMock = new Mock<IFramework>();
+        var objectTableMock = new Mock<IObjectTable>();
         var glamourer = new GlamourerIpc(pluginInterfaceMock.Object, clientStateMock.Object, logMock.Object);
         var service = new SyncShellService(
             config,
@@ -70,7 +73,8 @@ public class SyncshellPublishFlowTests : IDisposable
             glamourer,
             logMock.Object,
             clientStateMock.Object,
-            frameworkMock.Object);
+            frameworkMock.Object,
+            objectTableMock.Object);
 
         try
         {
@@ -80,13 +84,9 @@ public class SyncshellPublishFlowTests : IDisposable
             service.StatusChanged += (_, _) => statuses.Add(service.Status);
 
             var payload = Encoding.UTF8.GetBytes("syncshell-test");
-            var localPath = Path.Combine(_tempRoot, "blob.bin");
+            var localPath = Path.Combine(_tempRoot, "blob.tex");
             await File.WriteAllBytesAsync(localPath, payload);
             var sha = Hasher.Sha256Bytes(payload);
-
-            service.UpdateLocalAppearance(
-                new[] { new SyncShellService.LocalBlobInfo("blob.bin", sha, payload.Length, localPath) },
-                glamourerJson: null);
 
             await service.TriggerPublishAsync();
             await Task.Delay(50);
@@ -133,13 +133,15 @@ public class SyncshellPublishFlowTests : IDisposable
         var config = new Config
         {
             EnableSyncShell = true,
-            ApiBaseUrl = "http://localhost"
+            ApiBaseUrl = "http://localhost",
+            PenumbraPathOverride = _tempRoot,
         };
 
         using var blobStore = new BlobStore(pluginInterfaceMock.Object);
         var penumbra = new PenumbraIpc(pluginInterfaceMock.Object, logMock.Object);
         var clientStateMock = new Mock<IClientState>();
         var frameworkMock = new Mock<IFramework>();
+        var objectTableMock = new Mock<IObjectTable>();
         var glamourer = new GlamourerIpc(pluginInterfaceMock.Object, clientStateMock.Object, logMock.Object);
         var service = new SyncShellService(
             config,
@@ -150,18 +152,15 @@ public class SyncshellPublishFlowTests : IDisposable
             glamourer,
             logMock.Object,
             clientStateMock.Object,
-            frameworkMock.Object);
+            frameworkMock.Object,
+            objectTableMock.Object);
 
         try
         {
             await service.Start();
 
-            var localPath = Path.Combine(_tempRoot, "existing.bin");
+            var localPath = Path.Combine(_tempRoot, "existing.tex");
             await File.WriteAllBytesAsync(localPath, existingPayload);
-
-            service.UpdateLocalAppearance(
-                new[] { new SyncShellService.LocalBlobInfo("existing.bin", sha, existingPayload.Length, localPath) },
-                glamourerJson: null);
 
             await service.TriggerPublishAsync();
             await Task.Delay(50);

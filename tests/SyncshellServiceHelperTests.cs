@@ -6,6 +6,7 @@ using System.Net.Http;
 using System.Reflection;
 using System.Text.Json;
 using Dalamud.Game.ClientState;
+using Dalamud.Game.ClientState.Objects;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin;
@@ -75,6 +76,7 @@ public class SyncshellServiceHelperTests
             var logMock = new Mock<IPluginLog>();
             var clientStateMock = new Mock<IClientState>();
             var frameworkMock = new Mock<IFramework>();
+            var objectTableMock = new Mock<IObjectTable>();
 
             using var blobStore = new BlobStore(pluginInterfaceMock.Object);
             var penumbra = new PenumbraIpc(pluginInterfaceMock.Object, logMock.Object);
@@ -84,10 +86,11 @@ public class SyncshellServiceHelperTests
             {
                 EnableSyncShell = true,
                 ApiBaseUrl = "http://localhost",
-                SyncshellAutoMode = false,
+                SyncAutoMode = false,
+                OnlySyncVisible = false,
             };
 
-            config.SyncshellManualAllowList.Add(123UL);
+            config.ManualAutoList.Add(123UL);
 
             var tokenManager = new TokenManager();
             tokenField.SetValue(null, tokenManager);
@@ -102,7 +105,8 @@ public class SyncshellServiceHelperTests
                 glamourer,
                 logMock.Object,
                 clientStateMock.Object,
-                frameworkMock.Object);
+                frameworkMock.Object,
+                objectTableMock.Object);
 
             var members = new List<SyncshellMemberStatus>
             {
@@ -113,12 +117,14 @@ public class SyncshellServiceHelperTests
             typeof(SyncShellService).GetField("_members", BindingFlags.NonPublic | BindingFlags.Instance)!
                 .SetValue(service, members);
 
-            var manualTargets = service.GetApplyTargetsForTesting();
+            var buildMethod = typeof(SyncShellService).GetMethod("BuildActiveMemberList", BindingFlags.NonPublic | BindingFlags.Instance)!;
+
+            var manualTargets = (string[])buildMethod.Invoke(service, Array.Empty<object?>())!;
             Assert.Single(manualTargets);
             Assert.Equal("123", manualTargets[0]);
 
-            config.SyncshellAutoMode = true;
-            var autoTargets = service.GetApplyTargetsForTesting();
+            config.SyncAutoMode = true;
+            var autoTargets = (string[])buildMethod.Invoke(service, Array.Empty<object?>())!;
             Assert.Contains("123", autoTargets);
             Assert.Contains("456", autoTargets);
         }

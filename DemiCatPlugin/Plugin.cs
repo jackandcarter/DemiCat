@@ -83,6 +83,7 @@ public class Plugin : IDalamudPlugin
 
         var oldVersion = _config.Version;
         _config.Migrate();
+        _config.PostLoadMigrations();
         var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
         if (rolesRemoved || _config.Version != oldVersion)
             _services.PluginInterface.SavePluginConfig(_config);
@@ -119,7 +120,8 @@ public class Plugin : IDalamudPlugin
             _glamourerIpc,
             _services.Log,
             _services.ClientState,
-            _services.Framework);
+            _services.Framework,
+            _services.ObjectTable);
         _services.GlamourerIpc = _glamourerIpc;
         _services.SyncShellService = _syncShellService;
         var baseChatBridge = new ChatBridge(

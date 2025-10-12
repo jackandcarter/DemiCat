@@ -110,7 +110,7 @@ public sealed class BlobStore : IDisposable
     /// <summary>
     /// Ensures that the blob with the supplied hash exists locally.
     /// </summary>
-    public async Task<string?> EnsureLocalAsync(string sha256, Func<Task<Stream>> download, CancellationToken cancellationToken = default)
+    public async Task<string?> EnsureLocalAsync(string sha256, Func<CancellationToken, Task<Stream>> download, CancellationToken cancellationToken = default)
     {
         ThrowIfDisposed();
         if (string.IsNullOrWhiteSpace(sha256))
@@ -137,29 +137,61 @@ public sealed class BlobStore : IDisposable
                 return existing;
             }
 
-            await using var stream = await download().ConfigureAwait(false);
+            await using var stream = await download(cancellationToken).ConfigureAwait(false);
             if (stream == null)
             {
                 return null;
             }
 
-            using var buffered = new MemoryStream();
-            await stream.CopyToAsync(buffered, DefaultBufferSize, cancellationToken).ConfigureAwait(false);
-            buffered.Position = 0;
+            var targetDirectory = Path.Combine(_blobPath, GetShard(sha256));
+            Directory.CreateDirectory(targetDirectory);
+            var tempPath = Path.Combine(_tempPath, Guid.NewGuid().ToString("N"));
 
-            var computed = Hasher.Sha256Bytes(buffered.ToArray());
+            await using (var file = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, DefaultBufferSize, useAsync: true))
+            {
+                await stream.CopyToAsync(file, DefaultBufferSize, cancellationToken).ConfigureAwait(false);
+                await file.FlushAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var computed = Hasher.Sha256File(tempPath);
             if (!string.Equals(computed, sha256, StringComparison.OrdinalIgnoreCase))
             {
+                File.Delete(tempPath);
                 throw new InvalidDataException($"Blob hash mismatch: expected {sha256}, received {computed}");
             }
 
-            buffered.Position = 0;
-            return await PutAsync(buffered, sha256, cancellationToken).ConfigureAwait(false);
+            var finalPath = Path.Combine(targetDirectory, sha256);
+            File.Move(tempPath, finalPath, overwrite: true);
+            TryTouch(finalPath);
+            return finalPath;
         }
         finally
         {
             lockHandle.Release();
         }
+    }
+
+    public string GetLocalPath(string sha256)
+    {
+        ThrowIfDisposed();
+        if (string.IsNullOrWhiteSpace(sha256))
+        {
+            throw new ArgumentException("SHA-256 must be provided", nameof(sha256));
+        }
+
+        if (TryGet(sha256, out var existing))
+        {
+            return existing;
+        }
+
+        var candidate = Path.Combine(_blobPath, GetShard(sha256), sha256);
+        if (!File.Exists(candidate))
+        {
+            throw new FileNotFoundException("Blob not found", candidate);
+        }
+
+        TryTouch(candidate);
+        return candidate;
     }
 
     /// <summary>

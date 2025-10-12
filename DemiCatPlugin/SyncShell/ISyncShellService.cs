@@ -18,6 +18,8 @@ public interface ISyncShellService
     bool PenumbraAvailable { get; }
     string? DetectedPenumbraPath { get; }
 
+    SyncshellTargetStage GetStage(string memberId);
+
     Task Start(CancellationToken cancellationToken = default);
     Task Stop(CancellationToken cancellationToken = default);
     Task TriggerPublishAsync(CancellationToken cancellationToken = default);
