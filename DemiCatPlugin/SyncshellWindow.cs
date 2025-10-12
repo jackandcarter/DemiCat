@@ -116,21 +116,21 @@ public sealed class SyncshellWindow : IDisposable
 
     private void DrawModeControls(IReadOnlyList<SyncshellMemberStatus> members)
     {
-        var autoMode = _config.SyncshellAutoMode;
+        var autoMode = _config.SyncAutoMode;
         if (ImGui.RadioButton("Auto mode (sync all linked members)", autoMode))
         {
-            if (!_config.SyncshellAutoMode)
+            if (!_config.SyncAutoMode)
             {
-                _config.SyncshellAutoMode = true;
+                _config.SyncAutoMode = true;
                 SaveConfig();
             }
         }
         ImGui.SameLine();
         if (ImGui.RadioButton("Manual mode (use allow list)", !autoMode))
         {
-            if (_config.SyncshellAutoMode)
+            if (_config.SyncAutoMode)
             {
-                _config.SyncshellAutoMode = false;
+                _config.SyncAutoMode = false;
                 SaveConfig();
             }
         }
@@ -147,13 +147,13 @@ public sealed class SyncshellWindow : IDisposable
         ImGui.Spacing();
         ImGui.TextUnformatted("Manual allow list");
         ImGui.Indent();
-        if (_config.SyncshellManualAllowList.Count == 0)
+        if (_config.ManualAutoList.Count == 0)
         {
             ImGui.TextDisabled("No Discord IDs selected.");
         }
         else
         {
-            foreach (var id in _config.SyncshellManualAllowList.OrderBy(id => id))
+            foreach (var id in _config.ManualAutoList.OrderBy(id => id))
             {
                 var idString = id.ToString(CultureInfo.InvariantCulture);
                 var name = ResolveDisplayName(members, idString);
@@ -162,6 +162,22 @@ public sealed class SyncshellWindow : IDisposable
             }
         }
         ImGui.Unindent();
+
+        ImGui.Spacing();
+        var onlyVisible = _config.OnlySyncVisible;
+        if (ImGui.Checkbox("Only apply to visible players##syncshell-only-visible", ref onlyVisible))
+        {
+            _config.OnlySyncVisible = onlyVisible;
+            SaveConfig();
+        }
+
+        var backgroundPrefetch = _config.BackgroundPrefetch;
+        if (ImGui.Checkbox("Background prefetch (download in advance)##syncshell-bg-prefetch", ref backgroundPrefetch))
+        {
+            _config.BackgroundPrefetch = backgroundPrefetch;
+            SaveConfig();
+        }
+        ImGui.TextDisabled("Prefetch downloads assets even when players are not currently visible.");
     }
 
     private static void DrawActiveMembers(IReadOnlyList<SyncshellMemberStatus> activeMembers)
@@ -198,7 +214,7 @@ public sealed class SyncshellWindow : IDisposable
         }
         else
         {
-            var manualMode = !_config.SyncshellAutoMode;
+            var manualMode = !_config.SyncAutoMode;
             foreach (var member in members.OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase))
             {
                 DrawMemberLine(member, highlight: member.IsActive, manualMode);
@@ -250,6 +266,8 @@ public sealed class SyncshellWindow : IDisposable
         {
             ImGui.PopStyleColor();
         }
+
+        DrawStageBadge(member.Id);
     }
 
     private static string FormatTimestamp(DateTimeOffset? timestamp)
@@ -275,7 +293,7 @@ public sealed class SyncshellWindow : IDisposable
             return false;
         }
 
-        return _config.SyncshellManualAllowList.Contains(parsed);
+        return _config.ManualAutoList.Contains(parsed);
     }
 
     private void ToggleAllowList(string id, bool allow)
@@ -286,14 +304,64 @@ public sealed class SyncshellWindow : IDisposable
         }
 
         var changed = allow
-            ? _config.SyncshellManualAllowList.Add(parsed)
-            : _config.SyncshellManualAllowList.Remove(parsed);
+            ? _config.ManualAutoList.Add(parsed)
+            : _config.ManualAutoList.Remove(parsed);
 
         if (changed)
         {
             SaveConfig();
         }
     }
+
+    private void DrawStageBadge(string memberId)
+    {
+        if (_service == null)
+        {
+            return;
+        }
+
+        var stage = _service.GetStage(memberId);
+        if (stage == SyncshellTargetStage.Unknown)
+        {
+            return;
+        }
+
+        var label = GetStageLabel(stage);
+        if (string.IsNullOrEmpty(label))
+        {
+            return;
+        }
+
+        var color = GetStageColor(stage);
+        ImGui.SameLine();
+        ImGui.PushStyleColor(ImGuiCol.Text, color);
+        ImGui.TextUnformatted($"[{label}]");
+        ImGui.PopStyleColor();
+    }
+
+    private static string GetStageLabel(SyncshellTargetStage stage)
+        => stage switch
+        {
+            SyncshellTargetStage.Queued => "queued",
+            SyncshellTargetStage.Prefetching => "prefetching",
+            SyncshellTargetStage.Prefetched => "prefetched",
+            SyncshellTargetStage.Applying => "applying",
+            SyncshellTargetStage.Applied => "applied",
+            SyncshellTargetStage.Failed => "failed",
+            _ => string.Empty,
+        };
+
+    private static Vector4 GetStageColor(SyncshellTargetStage stage)
+        => stage switch
+        {
+            SyncshellTargetStage.Queued => new Vector4(0.65f, 0.65f, 0.68f, 1f),
+            SyncshellTargetStage.Prefetching => new Vector4(0.9f, 0.78f, 0.32f, 1f),
+            SyncshellTargetStage.Prefetched => new Vector4(0.45f, 0.73f, 1f, 1f),
+            SyncshellTargetStage.Applying => new Vector4(0.95f, 0.65f, 0.35f, 1f),
+            SyncshellTargetStage.Applied => ActiveMemberColor,
+            SyncshellTargetStage.Failed => new Vector4(0.9f, 0.35f, 0.3f, 1f),
+            _ => new Vector4(0.7f, 0.7f, 0.7f, 1f),
+        };
 
     private static string ResolveDisplayName(IReadOnlyList<SyncshellMemberStatus> members, string id)
     {

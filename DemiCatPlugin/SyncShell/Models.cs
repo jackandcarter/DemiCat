@@ -180,3 +180,14 @@ public sealed class SyncshellMemberStatus
     [JsonIgnore]
     public bool IsActive => string.Equals(SyncStatus, "syncing", StringComparison.OrdinalIgnoreCase);
 }
+
+public enum SyncshellTargetStage
+{
+    Unknown,
+    Queued,
+    Prefetching,
+    Prefetched,
+    Applying,
+    Applied,
+    Failed,
+}

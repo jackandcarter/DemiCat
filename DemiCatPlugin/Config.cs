@@ -159,10 +159,25 @@ public class Config : IPluginConfiguration
     public bool EnableSyncShell { get; set; } = false;
 
     [JsonPropertyName("syncshellAutoMode")]
-    public bool SyncshellAutoMode { get; set; } = true;
+    public bool SyncAutoMode { get; set; } = true;
 
     [JsonPropertyName("syncshellManualAllowList")]
-    public HashSet<ulong> SyncshellManualAllowList { get; set; } = new();
+    public HashSet<ulong> ManualAutoList { get; set; } = new();
+
+    [JsonPropertyName("syncshellOnlySyncVisible")]
+    public bool OnlySyncVisible { get; set; } = true;
+
+    [JsonPropertyName("syncshellBackgroundPrefetch")]
+    public bool BackgroundPrefetch { get; set; } = true;
+
+    [JsonPropertyName("syncshellMaxConcurrentPrefetch")]
+    public int MaxConcurrentPrefetch { get; set; } = 2;
+
+    [JsonPropertyName("syncshellRedrawDebounceMs")]
+    public int RedrawDebounceMs { get; set; } = 350;
+
+    [JsonPropertyName("syncshellApplyCooldownSeconds")]
+    public int ApplyCooldownSeconds { get; set; } = 8;
 
     [JsonPropertyName("syncshellAutoSyncAllUsers")]
     [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
@@ -372,9 +387,32 @@ public class Config : IPluginConfiguration
                         if (!migrated.ContainsKey(key))
                         {
                             migrated[key] = cursor;
-                        }
-                    }
-                }
+        }
+    }
+
+    public void PostLoadMigrations()
+    {
+        if (LegacySyncshellAllowedDiscordIds == null)
+        {
+            return;
+        }
+
+        foreach (var entry in LegacySyncshellAllowedDiscordIds)
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+            {
+                continue;
+            }
+
+            if (ulong.TryParse(entry.Trim(), out var id))
+            {
+                ManualAutoList.Add(id);
+            }
+        }
+
+        LegacySyncshellAllowedDiscordIds.Clear();
+    }
+}
                 ChatCursors = migrated;
             }
 
@@ -586,7 +624,7 @@ public class Config : IPluginConfiguration
         }
         if (Version < 22)
         {
-            SyncshellManualAllowList ??= new HashSet<ulong>();
+            ManualAutoList ??= new HashSet<ulong>();
 
             if (LegacySyncshellAllowedDiscordIds is { Count: > 0 })
             {
@@ -599,7 +637,7 @@ public class Config : IPluginConfiguration
 
                     if (ulong.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
                     {
-                        SyncshellManualAllowList.Add(parsed);
+                        ManualAutoList.Add(parsed);
                     }
                 }
 
@@ -608,11 +646,11 @@ public class Config : IPluginConfiguration
 
             if (!LegacySyncshellAutoAllUsers && LegacySyncshellManualAllUsers)
             {
-                SyncshellAutoMode = false;
+                SyncAutoMode = false;
             }
             else if (LegacySyncshellAutoAllUsers)
             {
-                SyncshellAutoMode = true;
+                SyncAutoMode = true;
             }
 
             LegacySyncshellAutoAllUsers = false;

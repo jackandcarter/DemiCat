@@ -69,7 +69,7 @@ public class SettingsWindow : IDisposable
         _penumbraOverride = _config.PenumbraPathOverride ?? string.Empty;
         _allowedDiscordIdsBuffer = string.Join(
             "\n",
-            _config.SyncshellManualAllowList
+            _config.ManualAutoList
                 .OrderBy(id => id)
                 .Select(id => id.ToString(CultureInfo.InvariantCulture)));
     }
@@ -302,21 +302,21 @@ public class SettingsWindow : IDisposable
 
         ImGui.Separator();
 
-        var autoMode = _config.SyncshellAutoMode;
+        var autoMode = _config.SyncAutoMode;
         if (ImGui.RadioButton("Auto mode (sync all linked members)", autoMode))
         {
-            if (!_config.SyncshellAutoMode)
+            if (!_config.SyncAutoMode)
             {
-                _config.SyncshellAutoMode = true;
+                _config.SyncAutoMode = true;
                 SaveConfig();
             }
         }
         ImGui.SameLine();
         if (ImGui.RadioButton("Manual mode", !autoMode))
         {
-            if (_config.SyncshellAutoMode)
+            if (_config.SyncAutoMode)
             {
-                _config.SyncshellAutoMode = false;
+                _config.SyncAutoMode = false;
                 SaveConfig();
             }
         }
@@ -336,7 +336,7 @@ public class SettingsWindow : IDisposable
                 }
             }
 
-            _config.SyncshellManualAllowList = parsed;
+            _config.ManualAutoList = parsed;
             _allowedDiscordIdsBuffer = string.Join(
                 "\n",
                 parsed.OrderBy(id => id).Select(id => id.ToString(CultureInfo.InvariantCulture)));

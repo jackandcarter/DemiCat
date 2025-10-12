@@ -1,4 +1,5 @@
 using Dalamud.Game.ClientState;
+using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.Command;
 using Dalamud.Game.Gui.Toast;
 using Dalamud.IoC;
@@ -17,6 +18,9 @@ internal class PluginServices
 
     [PluginService]
     internal IClientState ClientState { get; private set; } = null!;
+
+    [PluginService]
+    internal IObjectTable ObjectTable { get; private set; } = null!;
 
     [PluginService]
     internal ITextureProvider TextureProvider { get; private set; } = null!;
