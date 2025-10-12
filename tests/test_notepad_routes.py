@@ -72,6 +72,10 @@ async def test_notepad_crud_flow(tmp_path, monkeypatch):
         )
     assert section.name == "Raid"
     assert section.color == 123456
+    assert section.created_by_id == str(ctx_member.user.id)
+    assert section.created_by_discord_id == str(member.discord_user_id)
+    assert section.created_by_display_name == "Member"
+    assert section.updated_by_display_name == "Member"
 
     async with get_session() as db:
         renamed = await notepad.update_section(
@@ -82,6 +86,7 @@ async def test_notepad_crud_flow(tmp_path, monkeypatch):
         )
     assert renamed.name == "Raid Alpha"
     assert renamed.version == section.version + 1
+    assert renamed.updated_by_display_name == "Member"
 
     async with get_session() as db:
         with pytest.raises(HTTPException) as excinfo:
@@ -105,6 +110,9 @@ async def test_notepad_crud_flow(tmp_path, monkeypatch):
             db=db,
         )
     assert page.content == "A"
+    assert page.created_by_id == str(ctx_member.user.id)
+    assert page.created_by_discord_id == str(member.discord_user_id)
+    assert page.created_by_display_name == "Member"
 
     async with get_session() as db:
         updated_page = await notepad.update_page_content(
@@ -114,6 +122,7 @@ async def test_notepad_crud_flow(tmp_path, monkeypatch):
             db=db,
         )
     assert updated_page.version == page.version + 1
+    assert updated_page.updated_by_display_name == "Member"
 
     async with get_session() as db:
         with pytest.raises(HTTPException) as excinfo:
@@ -134,6 +143,7 @@ async def test_notepad_crud_flow(tmp_path, monkeypatch):
         )
     assert updated_meta.title == "New Title"
     assert updated_meta.version == updated_page.version + 1
+    assert updated_meta.updated_by_display_name == "Officer"
 
     async with get_session() as db:
         section2 = await notepad.create_section(

@@ -81,6 +81,8 @@ public sealed class NotePadService : IDisposable
             return;
         }
 
+        await MembershipCache.EnsureLoaded(_httpClient, _config).ConfigureAwait(false);
+
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad";
         var request = new HttpRequestMessage(HttpMethod.Get, url);
         ApiHelpers.AddAuthHeader(request, _tokenManager);
@@ -965,6 +967,14 @@ public sealed class NotePadService : IDisposable
             Id = source.Id,
             Name = source.Name,
             Color = source.Color,
+            CreatedById = source.CreatedById,
+            CreatedByDiscordId = source.CreatedByDiscordId,
+            CreatedByDisplayName = source.CreatedByDisplayName,
+            UpdatedById = source.UpdatedById,
+            UpdatedByDiscordId = source.UpdatedByDiscordId,
+            UpdatedByDisplayName = source.UpdatedByDisplayName,
+            CreatedAt = source.CreatedAt,
+            UpdatedAt = source.UpdatedAt,
             Pages = source.Pages.Select(ClonePage).ToList()
         };
     }
@@ -978,7 +988,14 @@ public sealed class NotePadService : IDisposable
             Content = source.Content,
             Version = source.Version,
             UpdatedAt = source.UpdatedAt,
-            Color = source.Color
+            CreatedAt = source.CreatedAt,
+            Color = source.Color,
+            CreatedById = source.CreatedById,
+            CreatedByDiscordId = source.CreatedByDiscordId,
+            CreatedByDisplayName = source.CreatedByDisplayName,
+            UpdatedById = source.UpdatedById,
+            UpdatedByDiscordId = source.UpdatedByDiscordId,
+            UpdatedByDisplayName = source.UpdatedByDisplayName
         };
     }
 }
@@ -989,6 +1006,14 @@ public sealed class NotePadSection
 
     public string Id { get; set; } = string.Empty;
     public string Name { get; set; } = string.Empty;
+    public string? CreatedById { get; set; }
+    public string? CreatedByDiscordId { get; set; }
+    public string? CreatedByDisplayName { get; set; }
+    public string? UpdatedById { get; set; }
+    public string? UpdatedByDiscordId { get; set; }
+    public string? UpdatedByDisplayName { get; set; }
+    public DateTime CreatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
 
     [JsonConverter(typeof(NotePadColorJsonConverter))]
     public string Color
@@ -1006,8 +1031,15 @@ public sealed class NotePadPage
     public string Title { get; set; } = string.Empty;
     public string Content { get; set; } = string.Empty;
     public int Version { get; set; }
-    public DateTimeOffset UpdatedAt { get; set; }
+    public DateTime UpdatedAt { get; set; }
+    public DateTime CreatedAt { get; set; }
     public string? Color { get; set; }
+    public string? CreatedById { get; set; }
+    public string? CreatedByDiscordId { get; set; }
+    public string? CreatedByDisplayName { get; set; }
+    public string? UpdatedById { get; set; }
+    public string? UpdatedByDiscordId { get; set; }
+    public string? UpdatedByDisplayName { get; set; }
 }
 
 public sealed class NotePadListResponse
