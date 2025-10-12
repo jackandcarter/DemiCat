@@ -2,10 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Threading.Tasks;
+using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin.Services;
 using DemiCatPlugin.SyncShell;
-using ImGuiNET;
 
 namespace DemiCatPlugin;
 

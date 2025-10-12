@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin.SyncShell;
