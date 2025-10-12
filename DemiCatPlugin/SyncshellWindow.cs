@@ -72,26 +72,13 @@ public sealed class SyncshellWindow : IDisposable
         ImGui.Unindent();
 
         ImGui.Separator();
+        DrawModeControls(service.Members);
+
+        ImGui.Separator();
         DrawActiveMembers(service.ActiveMembers);
 
         ImGui.Separator();
         DrawMemberRoster(service.Members);
-
-        ImGui.Separator();
-        ImGui.TextUnformatted("Allowed Discord IDs");
-        ImGui.Indent();
-        if (_config.SyncshellAllowedDiscordIds.Count == 0)
-        {
-            ImGui.TextDisabled("No custom IDs configured.");
-        }
-        else
-        {
-            foreach (var id in _config.SyncshellAllowedDiscordIds)
-            {
-                ImGui.BulletText(id);
-            }
-        }
-        ImGui.Unindent();
 
         ImGui.Separator();
         var buttonWidth = 150f * ImGuiHelpers.GlobalScale;
@@ -127,6 +114,56 @@ public sealed class SyncshellWindow : IDisposable
         }
     }
 
+    private void DrawModeControls(IReadOnlyList<SyncshellMemberStatus> members)
+    {
+        var autoMode = _config.SyncshellAutoMode;
+        if (ImGui.RadioButton("Auto mode (sync all linked members)", autoMode))
+        {
+            if (!_config.SyncshellAutoMode)
+            {
+                _config.SyncshellAutoMode = true;
+                SaveConfig();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Manual mode (use allow list)", !autoMode))
+        {
+            if (_config.SyncshellAutoMode)
+            {
+                _config.SyncshellAutoMode = false;
+                SaveConfig();
+            }
+        }
+
+        if (autoMode)
+        {
+            ImGui.TextDisabled("Allow list is ignored while auto mode is enabled.");
+        }
+        else
+        {
+            ImGui.TextDisabled("Only allow-listed Discord IDs will be synced.");
+        }
+
+        ImGui.Spacing();
+        ImGui.TextUnformatted("Manual allow list");
+        ImGui.Indent();
+        if (_config.SyncshellManualAllowList.Count == 0)
+        {
+            ImGui.TextDisabled("No Discord IDs selected.");
+        }
+        else
+        {
+            foreach (var id in _config.SyncshellManualAllowList.OrderBy(id => id))
+            {
+                var idString = id.ToString(CultureInfo.InvariantCulture);
+                var name = ResolveDisplayName(members, idString);
+                var label = string.IsNullOrEmpty(name) ? idString : $"{name} ({idString})";
+                ImGui.BulletText(label);
+            }
+        }
+        ImGui.Unindent();
+    }
+
     private static void DrawActiveMembers(IReadOnlyList<SyncshellMemberStatus> activeMembers)
     {
         ImGui.TextUnformatted("Currently syncing");
@@ -139,7 +176,7 @@ public sealed class SyncshellWindow : IDisposable
         {
             foreach (var member in activeMembers)
             {
-                DrawMemberLine(member, highlight: true);
+                DrawMemberLine(member, highlight: true, manualMode: false);
                 if (member.SyncedAt != null)
                 {
                     ImGui.Indent();
@@ -151,7 +188,7 @@ public sealed class SyncshellWindow : IDisposable
         ImGui.Unindent();
     }
 
-    private static void DrawMemberRoster(IReadOnlyList<SyncshellMemberStatus> members)
+    private void DrawMemberRoster(IReadOnlyList<SyncshellMemberStatus> members)
     {
         ImGui.TextUnformatted("Member roster");
         ImGui.Indent();
@@ -161,9 +198,10 @@ public sealed class SyncshellWindow : IDisposable
         }
         else
         {
+            var manualMode = !_config.SyncshellAutoMode;
             foreach (var member in members.OrderBy(m => m.DisplayName, StringComparer.OrdinalIgnoreCase))
             {
-                DrawMemberLine(member, highlight: member.IsActive);
+                DrawMemberLine(member, highlight: member.IsActive, manualMode);
                 if (member.LastSeen != null)
                 {
                     ImGui.Indent();
@@ -175,7 +213,7 @@ public sealed class SyncshellWindow : IDisposable
         ImGui.Unindent();
     }
 
-    private static void DrawMemberLine(SyncshellMemberStatus member, bool highlight)
+    private void DrawMemberLine(SyncshellMemberStatus member, bool highlight, bool manualMode)
     {
         var presenceLabel = string.IsNullOrEmpty(member.SyncStatus)
             ? member.Presence
@@ -183,15 +221,34 @@ public sealed class SyncshellWindow : IDisposable
         var linkedSuffix = member.TokenLinked ? " • linked" : string.Empty;
         var label = $"{member.DisplayName} [{presenceLabel}]{linkedSuffix}";
 
+        ImGui.Bullet();
+        ImGui.SameLine();
+
+        if (manualMode)
+        {
+            var allowListed = IsAllowListed(member.Id);
+            var buttonLabel = allowListed ? "-" : "+";
+            if (ImGui.SmallButton($"{buttonLabel}##allow-{member.Id}"))
+            {
+                ToggleAllowList(member.Id, !allowListed);
+            }
+            if (ImGui.IsItemHovered())
+            {
+                ImGui.SetTooltip(allowListed ? "Remove from allow list" : "Add to allow list");
+            }
+            ImGui.SameLine();
+        }
+
         if (highlight)
         {
             ImGui.PushStyleColor(ImGuiCol.Text, ActiveMemberColor);
-            ImGui.BulletText(label);
-            ImGui.PopStyleColor();
         }
-        else
+
+        ImGui.TextUnformatted(label);
+
+        if (highlight)
         {
-            ImGui.BulletText(label);
+            ImGui.PopStyleColor();
         }
     }
 
@@ -209,6 +266,57 @@ public sealed class SyncshellWindow : IDisposable
     public void ClearCaches()
     {
         _service?.ClearCache();
+    }
+
+    private bool IsAllowListed(string id)
+    {
+        if (!ulong.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return false;
+        }
+
+        return _config.SyncshellManualAllowList.Contains(parsed);
+    }
+
+    private void ToggleAllowList(string id, bool allow)
+    {
+        if (!ulong.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+        {
+            return;
+        }
+
+        var changed = allow
+            ? _config.SyncshellManualAllowList.Add(parsed)
+            : _config.SyncshellManualAllowList.Remove(parsed);
+
+        if (changed)
+        {
+            SaveConfig();
+        }
+    }
+
+    private static string ResolveDisplayName(IReadOnlyList<SyncshellMemberStatus> members, string id)
+    {
+        if (members == null)
+        {
+            return string.Empty;
+        }
+
+        foreach (var member in members)
+        {
+            if (string.Equals(member.Id, id, StringComparison.OrdinalIgnoreCase))
+            {
+                return member.DisplayName;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private void SaveConfig()
+    {
+        var pluginInterface = PluginServices.Instance?.PluginInterface;
+        pluginInterface?.SavePluginConfig(_config);
     }
 
     private void HandleStatusChanged(object? sender, EventArgs e)

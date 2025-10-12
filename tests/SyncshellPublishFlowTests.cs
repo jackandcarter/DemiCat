@@ -60,12 +60,14 @@ public class SyncshellPublishFlowTests : IDisposable
         var penumbra = new PenumbraIpc(pluginInterfaceMock.Object, logMock.Object);
         var clientStateMock = new Mock<IClientState>();
         var frameworkMock = new Mock<IFramework>();
+        var glamourer = new GlamourerIpc(pluginInterfaceMock.Object, clientStateMock.Object, logMock.Object);
         var service = new SyncShellService(
             config,
             TokenManager.Instance!,
             new SyncShellClient(httpClient, config, TokenManager.Instance!),
             blobStore,
             penumbra,
+            glamourer,
             logMock.Object,
             clientStateMock.Object,
             frameworkMock.Object);
@@ -138,12 +140,14 @@ public class SyncshellPublishFlowTests : IDisposable
         var penumbra = new PenumbraIpc(pluginInterfaceMock.Object, logMock.Object);
         var clientStateMock = new Mock<IClientState>();
         var frameworkMock = new Mock<IFramework>();
+        var glamourer = new GlamourerIpc(pluginInterfaceMock.Object, clientStateMock.Object, logMock.Object);
         var service = new SyncShellService(
             config,
             TokenManager.Instance!,
             new SyncShellClient(httpClient, config, TokenManager.Instance!),
             blobStore,
             penumbra,
+            glamourer,
             logMock.Object,
             clientStateMock.Object,
             frameworkMock.Object);

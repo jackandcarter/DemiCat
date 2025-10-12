@@ -2,6 +2,7 @@ using Dalamud.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -27,7 +28,7 @@ public class Config : IPluginConfiguration
     public const uint DefaultFcEmbedColor = 0x5865F2;
     public const uint DefaultOfficerEmbedColor = 0xED4245;
     public const string DefaultEmbedBorderGlyph = "⬛";
-    public const int CurrentVersion = 21;
+    public const int CurrentVersion = 22;
 
     public int Version { get; set; } = CurrentVersion;
 
@@ -154,29 +155,37 @@ public class Config : IPluginConfiguration
     [JsonPropertyName("syncshellCacheLimitMb")]
     public int SyncshellCacheLimitMb { get; set; } = 4096;
 
-    [JsonPropertyName("syncshellAutoSyncAllUsers")]
-    public bool SyncshellAutoSyncAllUsers { get; set; } = true;
-
-    [JsonPropertyName("syncshellManualSyncAllUsers")]
-    public bool SyncshellManualSyncAllUsers { get; set; }
-
     [JsonPropertyName("enableSyncShell")]
     public bool EnableSyncShell { get; set; } = false;
 
+    [JsonPropertyName("syncshellAutoMode")]
+    public bool SyncshellAutoMode { get; set; } = true;
+
+    [JsonPropertyName("syncshellManualAllowList")]
+    public HashSet<ulong> SyncshellManualAllowList { get; set; } = new();
+
+    [JsonPropertyName("syncshellAutoSyncAllUsers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacySyncshellAutoSyncAllUsers { get; set; } = true;
+
+    [JsonPropertyName("syncshellManualSyncAllUsers")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacySyncshellManualSyncAllUsers { get; set; }
+
     [JsonPropertyName("syncshellAutoAllUsers")]
-    public bool SyncshellAutoAllUsers { get; set; } = true;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacySyncshellAutoAllUsers { get; set; }
 
     [JsonPropertyName("syncshellManualAllUsers")]
-    public bool SyncshellManualAllUsers { get; set; } = false;
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool LegacySyncshellManualAllUsers { get; set; }
 
     [JsonPropertyName("syncshellAllowedDiscordIds")]
-    public List<string> SyncshellAllowedDiscordIds { get; set; } = new();
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<string>? LegacySyncshellAllowedDiscordIds { get; set; }
 
     [JsonPropertyName("penumbraPathOverride")]
     public string? PenumbraPathOverride { get; set; }
-
-    [JsonPropertyName("syncshellManualSyncCustom")]
-    public bool SyncshellManualSyncCustom { get; set; }
     [JsonPropertyName("fcEmbedBorder")]
     public EmbedBorderSettings FcEmbedBorder { get; set; } = EmbedBorderSettings.CreateDefault(ChannelKind.FcChat);
 
@@ -568,11 +577,50 @@ public class Config : IPluginConfiguration
         if (Version < 21)
         {
             EnableSyncShell = FCSyncShell;
-            SyncshellAutoAllUsers = SyncshellAutoSyncAllUsers;
-            SyncshellManualAllUsers = SyncshellManualSyncAllUsers;
-            SyncshellAllowedDiscordIds ??= new List<string>();
+            LegacySyncshellAutoAllUsers = LegacySyncshellAutoSyncAllUsers;
+            LegacySyncshellManualAllUsers = LegacySyncshellManualSyncAllUsers;
+            LegacySyncshellAllowedDiscordIds ??= new List<string>();
 
             Version = 21;
+            ExtensionData = null;
+        }
+        if (Version < 22)
+        {
+            SyncshellManualAllowList ??= new HashSet<ulong>();
+
+            if (LegacySyncshellAllowedDiscordIds is { Count: > 0 })
+            {
+                foreach (var id in LegacySyncshellAllowedDiscordIds)
+                {
+                    if (string.IsNullOrWhiteSpace(id))
+                    {
+                        continue;
+                    }
+
+                    if (ulong.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
+                    {
+                        SyncshellManualAllowList.Add(parsed);
+                    }
+                }
+
+                LegacySyncshellAllowedDiscordIds = null;
+            }
+
+            if (!LegacySyncshellAutoAllUsers && LegacySyncshellManualAllUsers)
+            {
+                SyncshellAutoMode = false;
+            }
+            else if (LegacySyncshellAutoAllUsers)
+            {
+                SyncshellAutoMode = true;
+            }
+
+            LegacySyncshellAutoAllUsers = false;
+            LegacySyncshellManualAllUsers = false;
+            LegacySyncshellAutoSyncAllUsers = false;
+            LegacySyncshellManualSyncAllUsers = false;
+
+            Version = 22;
             ExtensionData = null;
         }
     }

@@ -46,6 +46,8 @@ internal class PluginServices
 
     internal ISyncShellService? SyncShellService { get; set; }
 
+    internal GlamourerIpc? GlamourerIpc { get; set; }
+
     public PluginServices()
     {
         Instance = this;

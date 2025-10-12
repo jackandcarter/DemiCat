@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Globalization;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Utility;
@@ -66,7 +67,11 @@ public class SettingsWindow : IDisposable
         _tokenManager.OnLinked += OnLinked;
         _tokenManager.OnUnlinked += OnUnlinked;
         _penumbraOverride = _config.PenumbraPathOverride ?? string.Empty;
-        _allowedDiscordIdsBuffer = string.Join("\n", _config.SyncshellAllowedDiscordIds);
+        _allowedDiscordIdsBuffer = string.Join(
+            "\n",
+            _config.SyncshellManualAllowList
+                .OrderBy(id => id)
+                .Select(id => id.ToString(CultureInfo.InvariantCulture)));
     }
 
     public void Draw()
@@ -297,32 +302,47 @@ public class SettingsWindow : IDisposable
 
         ImGui.Separator();
 
-        var autoAllUsers = _config.SyncshellAutoAllUsers;
-        if (ImGui.Checkbox("Auto Sync to all Connected Users", ref autoAllUsers))
+        var autoMode = _config.SyncshellAutoMode;
+        if (ImGui.RadioButton("Auto mode (sync all linked members)", autoMode))
         {
-            _config.SyncshellAutoAllUsers = autoAllUsers;
-            SaveConfig();
+            if (!_config.SyncshellAutoMode)
+            {
+                _config.SyncshellAutoMode = true;
+                SaveConfig();
+            }
+        }
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Manual mode", !autoMode))
+        {
+            if (_config.SyncshellAutoMode)
+            {
+                _config.SyncshellAutoMode = false;
+                SaveConfig();
+            }
         }
 
-        var manualAllUsers = _config.SyncshellManualAllUsers;
-        if (ImGui.Checkbox("Manual Sync (All Users)", ref manualAllUsers))
-        {
-            _config.SyncshellManualAllUsers = manualAllUsers;
-            SaveConfig();
-        }
-
-        ImGui.TextUnformatted("Manual Sync (Custom Discord IDs)");
+        ImGui.TextUnformatted("Manual Sync Allow List (Discord IDs)");
         var listHeight = ImGui.GetTextLineHeightWithSpacing() * 4f;
         if (ImGui.InputTextMultiline("##SyncshellAllowedDiscordIds", ref _allowedDiscordIdsBuffer, 4096, new Vector2(-1, listHeight)))
         {
-            var ids = _allowedDiscordIdsBuffer
-                .Split(new[] { '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            _config.SyncshellAllowedDiscordIds = ids;
+            var entries = _allowedDiscordIdsBuffer
+                .Split(new[] { '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            var parsed = new HashSet<ulong>();
+            foreach (var entry in entries)
+            {
+                if (ulong.TryParse(entry, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
+                {
+                    parsed.Add(id);
+                }
+            }
+
+            _config.SyncshellManualAllowList = parsed;
+            _allowedDiscordIdsBuffer = string.Join(
+                "\n",
+                parsed.OrderBy(id => id).Select(id => id.ToString(CultureInfo.InvariantCulture)));
             SaveConfig();
         }
-        ImGui.TextDisabled("One Discord ID per line.");
+        ImGui.TextDisabled("One Discord ID per line. Invalid entries are ignored.");
 
         ImGui.Separator();
 
