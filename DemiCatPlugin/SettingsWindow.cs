@@ -422,7 +422,12 @@ public class SettingsWindow : IDisposable
         {
             string? error = null;
             var pathToCheck = string.IsNullOrWhiteSpace(_penumbraOverride) ? detectedPath : _penumbraOverride;
-            if (service != null && service.TryValidatePenumbraPath(pathToCheck, out error))
+            if (string.IsNullOrWhiteSpace(pathToCheck))
+            {
+                _penumbraValidationSuccess = false;
+                _penumbraValidationMessage = "No path to validate. Set an override or ensure Penumbra is running.";
+            }
+            else if (service != null && service.TryValidatePenumbraPath(pathToCheck, out error))
             {
                 _penumbraValidationSuccess = true;
                 _penumbraValidationMessage = "Penumbra path looks good.";
