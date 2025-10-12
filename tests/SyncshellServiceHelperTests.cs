@@ -6,7 +6,7 @@ using Xunit;
 public class SyncshellServiceHelperTests
 {
     [Theory]
-    [InlineData(0, "Active")]
+    [InlineData(0, "Idle")]
     [InlineData(1, "Syncing 1 member")]
     [InlineData(2, "Syncing 2 members")]
     public void FormatStatusForMembersMatchesExpected(int count, string expected)
