@@ -177,6 +177,11 @@ public class EventView : IDisposable
         var style = ImGui.GetStyle();
         var reserve = style.ItemSpacing.Y;
 
+        if (EventEmbedHelpers.ShouldDisplayStartTime(_dto))
+        {
+            reserve += ImGui.GetTextLineHeight() + style.ItemSpacing.Y;
+        }
+
         if (Buttons != null && Buttons.Count > 0)
         {
             var rowCount = Buttons
