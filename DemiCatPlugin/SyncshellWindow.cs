@@ -180,7 +180,7 @@ public sealed class SyncshellWindow : IDisposable
         ImGui.TextDisabled("Prefetch downloads assets even when players are not currently visible.");
     }
 
-    private static void DrawActiveMembers(IReadOnlyList<SyncshellMemberStatus> activeMembers)
+    private void DrawActiveMembers(IReadOnlyList<SyncshellMemberStatus> activeMembers)
     {
         ImGui.TextUnformatted("Currently syncing");
         ImGui.Indent();
