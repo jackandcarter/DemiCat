@@ -10,7 +10,7 @@ from demibot.db.models import User, SyncshellPairing, SyncshellManifest
 from demibot.http.deps import RequestContext
 
 from .syncshell_import import syncshell
-from .syncshell_test_utils import build_publish_payload
+from .syncshell_test_utils import build_manifest_payload, build_publish_payload
 
 
 async def _prepare_db():
@@ -142,5 +142,37 @@ def test_publish_overwrites_corrupted_manifest(tmp_path):
             assert updated is not None
             stored = json.loads(updated.manifest_json)
             assert stored["appearance"]["blobs"][0]["sha256"] == sha
+
+    asyncio.run(_run())
+
+
+def test_publish_accepts_legacy_manifest(tmp_path):
+    async def _run():
+        session_factory = await _prepare_db()
+        async with session_factory as db:
+            user = User(id=1, discord_user_id=1, global_name="Test")
+            db.add(user)
+            await db.commit()
+
+            ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
+
+            await syncshell.pair(ctx=ctx, db=db)
+
+            manifest, file_hash = build_manifest_payload(tmp_path)
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
+
+            result = await syncshell.handle_publish_manifest(manifest, ctx=ctx, db=db)
+
+            assert result["status"] == "ok"
+            record = await db.get(SyncshellManifest, user.id)
+            assert record is not None
+            stored = json.loads(record.manifest_json)
+            stored_hash = (
+                stored.get("collections", [{}])[0]
+                .get("mods", [{}])[0]
+                .get("files", [{}])[0]
+                .get("hash")
+            )
+            assert stored_hash == file_hash
 
     asyncio.run(_run())
