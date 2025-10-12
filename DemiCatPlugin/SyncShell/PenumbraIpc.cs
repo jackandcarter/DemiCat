@@ -27,7 +27,9 @@ public sealed class PenumbraIpc
             _modDirectory = _pluginInterface.GetIpcSubscriber<string>("Penumbra.ModDirectory");
             _setTemporaryMod = _pluginInterface.GetIpcSubscriber<string, object?>("Penumbra.Api/SetTemporaryMod");
             _redrawObject = _pluginInterface.GetIpcSubscriber<(int, int), object?>("Penumbra.Api/RedrawObject");
-            Available = _apiAvailable.InvokeFunc();
+            Available = _apiAvailable.InvokeFunc()
+                && _setTemporaryMod != null
+                && _redrawObject != null;
         }
         catch (Exception ex)
         {
@@ -58,7 +60,7 @@ public sealed class PenumbraIpc
 
     public void SetTemporaryMod(string modPath)
     {
-        if (!Available || _setTemporaryMod == null)
+        if (!Available || _setTemporaryMod == null || string.IsNullOrWhiteSpace(modPath))
         {
             return;
         }
@@ -73,7 +75,7 @@ public sealed class PenumbraIpc
         }
     }
 
-    public void Redraw(int objectIndex)
+    public void RedrawObject(int objectIndex)
     {
         if (!Available || _redrawObject == null)
         {

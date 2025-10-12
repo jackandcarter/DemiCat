@@ -204,6 +204,20 @@ public sealed class BlobStore : IDisposable
         await Task.CompletedTask.ConfigureAwait(false);
     }
 
+    public string GetWorkspacePath(string name)
+    {
+        ThrowIfDisposed();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("Name must be provided", nameof(name));
+        }
+
+        var sanitized = SanitizeWorkspaceName(name);
+        var path = Path.Combine(_tempPath, sanitized);
+        Directory.CreateDirectory(path);
+        return path;
+    }
+
     /// <summary>
     /// Removes all cached blobs.
     /// </summary>
@@ -253,6 +267,21 @@ public sealed class BlobStore : IDisposable
         {
             throw new ObjectDisposedException(nameof(BlobStore));
         }
+    }
+
+    private static string SanitizeWorkspaceName(string value)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        var buffer = new char[value.Length];
+        for (var i = 0; i < value.Length; i++)
+        {
+            var c = value[i];
+            buffer[i] = c == Path.DirectorySeparatorChar || c == Path.AltDirectorySeparatorChar || invalid.Contains(c)
+                ? '_'
+                : c;
+        }
+
+        return new string(buffer);
     }
 
     private static string GetShard(string sha256)

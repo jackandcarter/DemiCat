@@ -23,6 +23,7 @@
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
     <PackageReference Include="Penumbra.Api" Version="5.12.0" />
     <PackageReference Include="Glamourer.Api" Version="2.6.0" />
+    <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
   <ItemGroup>

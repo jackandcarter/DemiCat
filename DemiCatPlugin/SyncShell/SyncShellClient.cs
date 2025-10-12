@@ -18,10 +18,10 @@ public sealed class SyncShellClient
     private readonly Config _config;
     private readonly TokenManager _tokenManager;
 
-    private const string GetMetaPath = "/api/syncshell/meta";               // TODO: backend to confirm availability
+    private const string GetMetaPath = "/api/syncshell/meta";
     private const string PublishPath = "/api/syncshell/manifest";
-    private const string BlobUploadPath = "/api/syncshell/blobs";           // TODO: backend implementation
-    private const string BlobDownloadPath = "/api/syncshell/blobs";         // TODO: backend implementation
+    private const string BlobUploadPath = "/api/syncshell/blobs";
+    private const string BlobDownloadPath = "/api/syncshell/blobs";
     private const string MembershipsPath = "/api/syncshell/memberships";
     private const string PresencePath = "/api/syncshell/presence";
 
