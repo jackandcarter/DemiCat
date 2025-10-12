@@ -35,6 +35,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/syncshell", tags=["syncshell"])
 
+ACTIVE_WINDOW_SECONDS = int(os.getenv("SYNC_SHELL_ACTIVE_WINDOW_SECONDS", "120"))
+
 BLOB_ROOT = Path(os.getenv("SYNC_SHELL_BLOB_ROOT", "data/blobs")).resolve()
 MAX_BLOB_SIZE_MIB = int(os.getenv("SYNC_SHELL_MAX_BLOB_SIZE_MIB", "0"))
 MAX_BLOB_SIZE_BYTES = MAX_BLOB_SIZE_MIB * 1024 * 1024 if MAX_BLOB_SIZE_MIB > 0 else 0
@@ -68,6 +70,10 @@ _transfer_budgets: dict[int, _TransferBudget] = {}
 
 
 def _now_utc() -> datetime:
+    return datetime.utcnow()
+
+
+def _now() -> datetime:
     return datetime.utcnow()
 
 
@@ -363,9 +369,28 @@ class InviteCreateRequest(BaseModel):
 
 
 class PresenceUpdateRequest(BaseModel):
-    active_member_ids: list[int] = Field(
+    active_member_ids: list[str] = Field(
         default_factory=list, description="Members currently nearby or active"
     )
+
+    @field_validator("active_member_ids", mode="before")
+    @classmethod
+    def _normalise_ids(cls, value: Any) -> list[str]:  # noqa: D401
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple)):
+            normalised: list[str] = []
+            for entry in value:
+                if entry is None:
+                    continue
+                if isinstance(entry, str):
+                    entry = entry.strip()
+                    if entry:
+                        normalised.append(entry)
+                else:
+                    normalised.append(str(entry))
+            return normalised
+        raise TypeError("activeMemberIds must be an array")
 
 
 async def _require_pairing(ctx: RequestContext, db: AsyncSession) -> None:
@@ -735,6 +760,9 @@ async def list_memberships(
     )
     member_ids = list(member_result.scalars().all())
 
+    now = _now()
+    cutoff = now - timedelta(seconds=max(1, ACTIVE_WINDOW_SECONDS))
+
     presence_map: dict[int, SyncshellPresence] = {}
     if member_ids:
         presence_result = await db.execute(
@@ -747,6 +775,17 @@ async def list_memberships(
             record.member_user_id: record for record in presence_result.scalars().all()
         }
 
+    pairing_map: dict[int, SyncshellPairing] = {}
+    if member_ids:
+        pairing_result = await db.execute(
+            select(SyncshellPairing).where(SyncshellPairing.user_id.in_(member_ids))
+        )
+        pairing_map = {
+            record.user_id: record
+            for record in pairing_result.scalars().all()
+            if record.expires_at and record.expires_at > now
+        }
+
     users: dict[int, User] = {}
     if member_ids:
         user_result = await db.execute(select(User).where(User.id.in_(member_ids)))
@@ -756,35 +795,34 @@ async def list_memberships(
     currently_synced: list[dict[str, Any]] = []
     for member_id in member_ids:
         user = users.get(member_id)
-        presence = presence_map.get(member_id)
-        presence_value, sync_status, last_seen, synced_at = _presence_payload(presence)
+        presence_record = presence_map.get(member_id)
+        last_seen = presence_record.last_seen if presence_record else None
+        presence_label = "offline"
+        if (
+            presence_record
+            and presence_record.active
+            and presence_record.last_seen
+            and presence_record.last_seen >= cutoff
+        ):
+            presence_label = "online"
+
         entry: dict[str, Any] = {
             "id": str(member_id),
             "displayName": _display_name(user),
-            "presence": presence_value,
-            "syncStatus": sync_status,
-            "lastSeen": last_seen,
-            "tokenLinked": presence is not None,
+            "presence": presence_label,
+            "syncStatus": None,
+            "lastSeen": _to_iso(last_seen),
+            "tokenLinked": member_id in pairing_map,
         }
-        if synced_at:
-            entry["syncedAt"] = synced_at
+        if presence_record and presence_record.active and last_seen:
+            entry["syncedAt"] = _to_iso(last_seen)
         members.append(entry)
 
-        if presence and presence.active:
-            active_entry = {
-                "id": entry["id"],
-                "displayName": entry["displayName"],
-                "presence": presence_value,
-                "syncStatus": sync_status,
-                "lastSeen": last_seen,
-                "tokenLinked": True,
-            }
-            if synced_at:
-                active_entry["syncedAt"] = synced_at
-            currently_synced.append(active_entry)
+        if presence_label == "online" and entry["tokenLinked"]:
+            currently_synced.append(entry.copy())
 
-    members.sort(key=lambda entry: entry["displayName"].lower())
-    currently_synced.sort(key=lambda entry: entry["displayName"].lower())
+    members.sort(key=lambda entry: entry["displayName"].casefold())
+    currently_synced.sort(key=lambda entry: entry["displayName"].casefold())
 
     invites_result = await db.execute(
         select(SyncshellInvite)
@@ -829,7 +867,7 @@ async def list_memberships(
         pending_approvals.append(
             {
                 "id": invite.id,
-                "requesterId": invite.inviter_id,
+                "requesterId": str(invite.inviter_id),
                 "displayName": _display_name(inviter),
                 "requestedAt": _to_iso(invite.created_at),
                 "direction": "incoming",
@@ -858,7 +896,13 @@ async def update_presence(
         )
     )
     valid_members = set(result.scalars().all())
-    active_members = {mid for mid in payload.active_member_ids if mid in valid_members}
+    requested_members: set[int] = set()
+    for value in payload.active_member_ids:
+        try:
+            requested_members.add(int(value))
+        except (TypeError, ValueError):
+            continue
+    active_members = {mid for mid in requested_members if mid in valid_members}
 
     presence_result = await db.execute(
         select(SyncshellPresence).where(SyncshellPresence.user_id == ctx.user.id)

@@ -731,7 +731,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     internal static string FormatStatusForMembers(int activeCount)
         => activeCount > 0
-            ? $"Syncing {activeCount} member{(activeCount == 1 ? string.Empty : "s")}" : "Active";
+            ? $"Syncing {activeCount} member{(activeCount == 1 ? string.Empty : "s")}" : "Idle";
 
     private static SyncshellMemberStatus MapMember(MembershipEntryDto entry)
     {
