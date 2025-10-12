@@ -1200,6 +1200,15 @@ class UserMetaModel(BaseModel):
         return value
 
 
+@router.post("/manifest")
+async def publish_manifest(
+    payload: dict[str, Any],
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    return await handle_publish_manifest(payload, ctx, db)
+
+
 class PublishPayload(BaseModel):
     discordId: str
     appearance: AppearanceMetaModel
