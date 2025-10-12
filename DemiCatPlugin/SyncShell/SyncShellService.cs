@@ -12,6 +12,7 @@ using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
 using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
+using Lumina.Excel.GeneratedSheets;
 
 namespace DemiCatPlugin.SyncShell;
 
@@ -409,7 +410,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void HandleTokenUnlinked()
+    private void HandleTokenUnlinked(string? _)
     {
         _ = Stop();
         lock (_statusLock)
@@ -814,7 +815,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
             try
             {
-                foreach (var blob in meta.Appearance.Blobs ?? Array.Empty<BlobRef>())
+                foreach (var blob in meta.Appearance.Blobs ?? new List<BlobRef>())
                 {
                     await _blobStore.EnsureLocalAsync(
                         blob.Sha256,
@@ -876,7 +877,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                         continue;
                     }
 
-                    foreach (var blob in meta.Appearance.Blobs ?? Array.Empty<BlobRef>())
+                    foreach (var blob in meta.Appearance.Blobs ?? new List<BlobRef>())
                     {
                         await _blobStore.EnsureLocalAsync(
                             blob.Sha256,
@@ -1384,20 +1385,24 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     private static bool TryCreateHardLink(string destination, string source)
     {
+        if (!File.Exists(source))
+        {
+            return false;
+        }
+
+#if NET8_0_OR_GREATER
         try
         {
-            if (!File.Exists(source))
-            {
-                return false;
-            }
-
-            File.CreateHardLink(destination, source);
+            System.IO.File.CreateHardLink(destination, source);
             return true;
         }
         catch
         {
             return false;
         }
+#else
+        return false;
+#endif
     }
 
     public static string FormatStatusForMembers(int activeCount)
