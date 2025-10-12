@@ -251,7 +251,7 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle?.Dispose();
 
         // Unsubscribe UI draw handlers
-        var pluginInterface = _services?.PluginInterface;
+        var pluginInterface = _services.PluginInterface;
         if (pluginInterface != null)
         {
             pluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
@@ -263,12 +263,16 @@ public class Plugin : IDalamudPlugin
             pluginInterface.UiBuilder.OpenConfigUi -= _openConfigUi;
         }
 
-        _services.CommandManager.RemoveHandler(MewCommand);
+        // Command handler teardown (nullable-safe)
+        var commandManager = _services.CommandManager;
+        commandManager?.RemoveHandler(MewCommand);
 
         _tokenManager.OnLinked -= HandleTokenLinked;
         _tokenManager.OnUnlinked -= HandleTokenUnlinked;
 
-        try { _services.ChatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
+        // Chat link handler teardown (nullable-safe)
+        var chatGui = _services.ChatGui;
+        try { if (chatGui != null) chatGui.RemoveChatLinkHandler(InvalidTokenLinkCommandId); } catch { }
 
         _channelSelection.ChannelChanged -= HandleChannelSelectionValidation;
 
