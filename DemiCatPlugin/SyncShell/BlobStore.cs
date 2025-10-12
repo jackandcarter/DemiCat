@@ -1,373 +1,274 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text.Json;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin.SyncShell;
 
 /// <summary>
-/// Abstraction over the blob cache used for SyncShell transfers.
+/// Provides access to a local disk-backed blob cache used by SyncShell transfers.
 /// </summary>
-public interface IBlobStore
+public sealed class BlobStore : IDisposable
 {
-    /// <summary>
-    /// Determines whether a blob already exists in the cache.
-    /// </summary>
-    /// <param name="hash">The content hash identifying the blob.</param>
-    /// <returns><c>true</c> when the blob exists, otherwise <c>false</c>.</returns>
-    bool Has(string hash);
+    private const string RootFolderName = "syncshell";
+    private const string BlobFolderName = "blobs";
+    private const string TempFolderName = "tmp";
+    private const int DefaultBufferSize = 64 * 1024;
 
-    /// <summary>
-    /// Stores the supplied blob into the cache.
-    /// </summary>
-    /// <param name="hash">The content hash identifying the blob.</param>
-    /// <param name="source">A stream containing the blob data.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    Task StoreAsync(string hash, Stream source, CancellationToken cancellationToken = default);
+    private readonly IDalamudPluginInterface _pluginInterface;
+    private readonly string _rootPath;
+    private readonly string _blobPath;
+    private readonly string _tempPath;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.OrdinalIgnoreCase);
+    private bool _disposed;
 
-    /// <summary>
-    /// Opens a readable stream to the blob.
-    /// </summary>
-    /// <param name="hash">The content hash identifying the blob.</param>
-    /// <returns>An open stream positioned at the beginning of the blob.</returns>
-    Stream OpenRead(string hash);
-
-    /// <summary>
-    /// Calculates the total size of all cached blobs.
-    /// </summary>
-    /// <returns>The total number of bytes in the cache.</returns>
-    long TotalSizeBytes();
-
-    /// <summary>
-    /// Trims the cache until the size is less than or equal to the provided limit.
-    /// </summary>
-    /// <param name="maximumBytes">The maximum number of bytes the cache should occupy.</param>
-    /// <param name="cancellationToken">Cancellation token.</param>
-    Task TrimTo(long maximumBytes, CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// File system based implementation of <see cref="IBlobStore"/>.
-/// </summary>
-public sealed class FileBlobStore : IBlobStore
-{
-    private const string MetadataExtension = ".meta.json";
-    private const int MaxIoAttempts = 5;
-    private static readonly TimeSpan RetryDelay = TimeSpan.FromMilliseconds(75);
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-
-    private readonly string _cacheRoot;
-    private readonly string _tempRoot;
-
-    /// <summary>
-    /// Initialises a new <see cref="FileBlobStore"/> rooted in the plugin configuration directory.
-    /// </summary>
-    public FileBlobStore()
-        : this(GetDefaultCacheRoot())
+    public BlobStore(IDalamudPluginInterface pluginInterface)
     {
+        _pluginInterface = pluginInterface ?? throw new ArgumentNullException(nameof(pluginInterface));
+
+        _rootPath = Path.Combine(_pluginInterface.GetPluginConfigDirectory(), RootFolderName);
+        _blobPath = Path.Combine(_rootPath, BlobFolderName);
+        _tempPath = Path.Combine(_rootPath, TempFolderName);
+
+        Directory.CreateDirectory(_blobPath);
+        Directory.CreateDirectory(_tempPath);
     }
 
     /// <summary>
-    /// Initialises a new <see cref="FileBlobStore"/> rooted at the supplied path.
+    /// Attempts to get the path to an existing blob.
     /// </summary>
-    /// <param name="cacheRoot">The root directory where blobs will be stored.</param>
-    internal FileBlobStore(string cacheRoot)
+    public bool TryGet(string sha256, out string fullPath)
     {
-        if (string.IsNullOrWhiteSpace(cacheRoot))
+        ThrowIfDisposed();
+        if (string.IsNullOrWhiteSpace(sha256))
         {
-            throw new ArgumentException("Cache root must be provided", nameof(cacheRoot));
-        }
-
-        _cacheRoot = cacheRoot;
-        _tempRoot = Path.Combine(_cacheRoot, "tmp");
-
-        Directory.CreateDirectory(_cacheRoot);
-        Directory.CreateDirectory(_tempRoot);
-    }
-
-    /// <inheritdoc />
-    public bool Has(string hash)
-    {
-        var (blobPath, metaPath) = GetBlobPaths(hash);
-        if (!File.Exists(blobPath))
-        {
+            fullPath = string.Empty;
             return false;
         }
 
-        UpdateLastAccess(metaPath, blobPath, ensureExists: true);
-        return true;
+        var shard = GetShard(sha256);
+        var candidate = Path.Combine(_blobPath, shard, sha256);
+        if (File.Exists(candidate))
+        {
+            fullPath = candidate;
+            TryTouch(candidate);
+            return true;
+        }
+
+        fullPath = string.Empty;
+        return false;
     }
 
-    /// <inheritdoc />
-    public Stream OpenRead(string hash)
+    /// <summary>
+    /// Writes the supplied content stream to the cache and returns its final path.
+    /// </summary>
+    public async Task<string> PutAsync(Stream content, string sha256, CancellationToken cancellationToken = default)
     {
-        var (blobPath, metaPath) = GetBlobPaths(hash);
-        if (!File.Exists(blobPath))
+        ThrowIfDisposed();
+        if (content is null)
         {
-            throw new FileNotFoundException("Blob not found", blobPath);
+            throw new ArgumentNullException(nameof(content));
         }
 
-        UpdateLastAccess(metaPath, blobPath, ensureExists: true);
-
-        return OpenFileStreamWithRetry(blobPath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete, FileOptions.Asynchronous | FileOptions.SequentialScan);
-    }
-
-    /// <inheritdoc />
-    public async Task StoreAsync(string hash, Stream source, CancellationToken cancellationToken = default)
-    {
-        if (source is null)
+        if (string.IsNullOrWhiteSpace(sha256))
         {
-            throw new ArgumentNullException(nameof(source));
+            throw new ArgumentException("SHA-256 must be provided", nameof(sha256));
         }
 
-        var (blobPath, metaPath) = GetBlobPaths(hash);
-        var directory = Path.GetDirectoryName(blobPath)!;
-        Directory.CreateDirectory(directory);
-
-        var tempFile = Path.Combine(_tempRoot, Guid.NewGuid().ToString("N") + ".tmp");
-        Directory.CreateDirectory(_tempRoot);
-
-        await using (var tempStream = OpenFileStreamWithRetry(tempFile, FileMode.Create, FileAccess.Write, FileShare.None, FileOptions.Asynchronous | FileOptions.SequentialScan))
-        {
-            await source.CopyToAsync(tempStream, cancellationToken).ConfigureAwait(false);
-            await tempStream.FlushAsync(cancellationToken).ConfigureAwait(false);
-        }
-
+        var lockHandle = GetLock(sha256);
+        await lockHandle.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            RetryIo(() => File.Move(tempFile, blobPath, true));
-        }
-        catch
-        {
-            TryDelete(tempFile);
-            throw;
-        }
+            var targetDirectory = Path.Combine(_blobPath, GetShard(sha256));
+            Directory.CreateDirectory(targetDirectory);
 
-        var size = RetryIo(() => new FileInfo(blobPath).Length);
-        WriteMetadata(metaPath, new BlobMetadata(size, DateTimeOffset.UtcNow));
-    }
+            var finalPath = Path.Combine(targetDirectory, sha256);
+            var tempPath = Path.Combine(_tempPath, Guid.NewGuid().ToString("N"));
 
-    /// <inheritdoc />
-    public long TotalSizeBytes()
-        => EnumerateMetadata().Sum(static entry => entry.Size);
-
-    /// <inheritdoc />
-    public Task TrimTo(long maximumBytes, CancellationToken cancellationToken = default)
-    {
-        if (maximumBytes < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(maximumBytes));
-        }
-
-        var entries = EnumerateMetadata()
-            .OrderBy(static entry => entry.LastAccessUtc)
-            .ToList();
-
-        long total = entries.Sum(static entry => entry.Size);
-        foreach (var entry in entries)
-        {
-            if (total <= maximumBytes)
+            await using (var file = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, DefaultBufferSize, useAsync: true))
             {
-                break;
+                await content.CopyToAsync(file, DefaultBufferSize, cancellationToken).ConfigureAwait(false);
+                await file.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(tempPath, finalPath, overwrite: true);
+            TryTouch(finalPath);
+            return finalPath;
+        }
+        finally
+        {
+            lockHandle.Release();
+        }
+    }
 
-            if (DeleteBlob(entry))
+    /// <summary>
+    /// Ensures that the blob with the supplied hash exists locally.
+    /// </summary>
+    public async Task<string?> EnsureLocalAsync(string sha256, Func<Task<Stream>> download, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (string.IsNullOrWhiteSpace(sha256))
+        {
+            throw new ArgumentException("SHA-256 must be provided", nameof(sha256));
+        }
+
+        if (TryGet(sha256, out var existing))
+        {
+            return existing;
+        }
+
+        if (download == null)
+        {
+            throw new ArgumentNullException(nameof(download));
+        }
+
+        var lockHandle = GetLock(sha256);
+        await lockHandle.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            if (TryGet(sha256, out existing))
             {
-                total -= entry.Size;
+                return existing;
             }
-        }
 
-        return Task.CompletedTask;
-    }
-
-    private static string GetDefaultCacheRoot()
-    {
-        var configDirectory = PluginServices.Instance?.PluginInterface.GetPluginConfigDirectory();
-        if (string.IsNullOrEmpty(configDirectory))
-        {
-            throw new InvalidOperationException("Plugin configuration directory is unavailable.");
-        }
-
-        var cacheRoot = Path.Combine(configDirectory, ".syncshell", "cache");
-        Directory.CreateDirectory(cacheRoot);
-        return cacheRoot;
-    }
-
-    private (string BlobPath, string MetadataPath) GetBlobPaths(string hash)
-    {
-        if (string.IsNullOrWhiteSpace(hash))
-        {
-            throw new ArgumentException("Hash must be provided", nameof(hash));
-        }
-
-        var safeHash = hash.Trim();
-        var shard = safeHash.Length >= 2 ? safeHash[..2] : "00";
-        var directory = Path.Combine(_cacheRoot, shard);
-        var blobPath = Path.Combine(directory, safeHash);
-        var metaPath = blobPath + MetadataExtension;
-        return (blobPath, metaPath);
-    }
-
-    private static void RetryIo(Action action)
-    {
-        _ = RetryIo(() =>
-        {
-            action();
-            return true;
-        });
-    }
-
-    private static T RetryIo<T>(Func<T> action)
-    {
-        var attempt = 0;
-        while (true)
-        {
-            try
+            await using var stream = await download().ConfigureAwait(false);
+            if (stream == null)
             {
-                return action();
+                return null;
             }
-            catch (IOException) when (++attempt < MaxIoAttempts)
+
+            using var buffered = new MemoryStream();
+            await stream.CopyToAsync(buffered, DefaultBufferSize, cancellationToken).ConfigureAwait(false);
+            buffered.Position = 0;
+
+            var computed = Hasher.Sha256Bytes(buffered.ToArray());
+            if (!string.Equals(computed, sha256, StringComparison.OrdinalIgnoreCase))
             {
-                Thread.Sleep(RetryDelay);
+                throw new InvalidDataException($"Blob hash mismatch: expected {sha256}, received {computed}");
             }
-            catch (UnauthorizedAccessException) when (++attempt < MaxIoAttempts)
-            {
-                Thread.Sleep(RetryDelay);
-            }
+
+            buffered.Position = 0;
+            return await PutAsync(buffered, sha256, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            lockHandle.Release();
         }
     }
 
-    private static FileStream OpenFileStreamWithRetry(string path, FileMode mode, FileAccess access, FileShare share, FileOptions options)
+    /// <summary>
+    /// Clears the cache respecting the configured size limit.
+    /// </summary>
+    public async Task EnforceLimitAsync(long limitBytes, CancellationToken cancellationToken = default)
     {
-        return RetryIo(() => new FileStream(path, mode, access, share, 4096, options));
-    }
-
-    private void UpdateLastAccess(string metadataPath, string blobPath, bool ensureExists)
-    {
-        BlobMetadata metadata;
-        if (File.Exists(metadataPath))
-        {
-            metadata = ReadMetadata(metadataPath);
-            metadata = metadata with { LastAccessUtc = DateTimeOffset.UtcNow };
-        }
-        else if (ensureExists)
-        {
-            var size = RetryIo(() => new FileInfo(blobPath).Length);
-            metadata = new BlobMetadata(size, DateTimeOffset.UtcNow);
-        }
-        else
+        ThrowIfDisposed();
+        if (limitBytes <= 0)
         {
             return;
         }
 
-        WriteMetadata(metadataPath, metadata);
-    }
+        var files = Directory.Exists(_blobPath)
+            ? Directory.EnumerateFiles(_blobPath, "*", SearchOption.AllDirectories)
+                .Select(path => new FileInfo(path))
+                .Where(info => info.Exists)
+                .OrderBy(info => info.LastWriteTimeUtc)
+                .ToList()
+            : new List<FileInfo>();
 
-    private void WriteMetadata(string metadataPath, BlobMetadata metadata)
-    {
-        var directory = Path.GetDirectoryName(metadataPath);
-        if (!string.IsNullOrEmpty(directory))
+        long total = files.Sum(f => f.Length);
+        foreach (var info in files)
         {
-            Directory.CreateDirectory(directory);
-        }
-
-        var json = JsonSerializer.Serialize(metadata, JsonOptions);
-        RetryIo(() => File.WriteAllText(metadataPath, json));
-    }
-
-    private BlobMetadata ReadMetadata(string metadataPath)
-    {
-        try
-        {
-            var json = RetryIo(() => File.ReadAllText(metadataPath));
-            var metadata = JsonSerializer.Deserialize<BlobMetadata>(json, JsonOptions);
-            if (metadata != null)
+            cancellationToken.ThrowIfCancellationRequested();
+            if (total <= limitBytes)
             {
-                return metadata;
+                break;
             }
-        }
-        catch (Exception) when (File.Exists(metadataPath))
-        {
-            // Fall back to file info below.
-        }
 
-        var blobPath = metadataPath[..^MetadataExtension.Length];
-        var size = File.Exists(blobPath) ? RetryIo(() => new FileInfo(blobPath).Length) : 0;
-        return new BlobMetadata(size, DateTimeOffset.MinValue);
-    }
-
-    private IEnumerable<BlobEntry> EnumerateMetadata()
-    {
-        if (!Directory.Exists(_cacheRoot))
-        {
-            yield break;
-        }
-
-        foreach (var metadataPath in Directory.EnumerateFiles(_cacheRoot, "*" + MetadataExtension, SearchOption.AllDirectories))
-        {
-            BlobMetadata metadata;
             try
             {
-                metadata = ReadMetadata(metadataPath);
+                total -= info.Length;
+                info.Delete();
             }
             catch
             {
-                continue;
+                // Ignore failures – we'll try again next maintenance cycle.
             }
+        }
 
-            var blobPath = metadataPath[..^MetadataExtension.Length];
-            if (!File.Exists(blobPath))
+        await Task.CompletedTask.ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Removes all cached blobs.
+    /// </summary>
+    public void Clear()
+    {
+        ThrowIfDisposed();
+        if (!Directory.Exists(_blobPath))
+        {
+            return;
+        }
+
+        foreach (var directory in Directory.EnumerateDirectories(_blobPath))
+        {
+            try
             {
-                continue;
+                Directory.Delete(directory, recursive: true);
             }
-
-            yield return new BlobEntry(blobPath, metadataPath, metadata.Size, metadata.LastAccessUtc);
+            catch
+            {
+                // ignored
+            }
         }
     }
 
-    private bool DeleteBlob(BlobEntry entry)
+    public void Dispose()
     {
-        try
+        if (_disposed)
         {
-            RetryIo(() => File.Delete(entry.BlobPath));
-        }
-        catch (FileNotFoundException)
-        {
-        }
-        catch (DirectoryNotFoundException)
-        {
-        }
-        catch (IOException)
-        {
-            return false;
-        }
-        catch (UnauthorizedAccessException)
-        {
-            return false;
+            return;
         }
 
-        try
+        _disposed = true;
+        foreach (var handle in _locks.Values)
         {
-            RetryIo(() => File.Delete(entry.MetadataPath));
-        }
-        catch
-        {
-            // Metadata delete failure is non-fatal.
+            handle.Dispose();
         }
 
-        return true;
+        _locks.Clear();
     }
 
-    private static void TryDelete(string path)
+    private SemaphoreSlim GetLock(string sha256)
+        => _locks.GetOrAdd(sha256, _ => new SemaphoreSlim(1, 1));
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(BlobStore));
+        }
+    }
+
+    private static string GetShard(string sha256)
+    {
+        if (sha256.Length < 4)
+        {
+            return "0000";
+        }
+
+        return Path.Combine(sha256[..2], sha256.Substring(2, 2));
+    }
+
+    private static void TryTouch(string path)
     {
         try
         {
-            File.Delete(path);
+            File.SetLastWriteTimeUtc(path, DateTime.UtcNow);
         }
         catch
         {
@@ -375,7 +276,27 @@ public sealed class FileBlobStore : IBlobStore
         }
     }
 
-    private sealed record BlobMetadata(long Size, DateTimeOffset LastAccessUtc);
+    public static string GuessDefaultPenumbraRoot()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+            var xivLauncher = Path.Combine(appData, "XIVLauncher", "pluginConfigs", "Penumbra");
+            if (Directory.Exists(xivLauncher))
+            {
+                return xivLauncher;
+            }
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            var home = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+            var macPath = Path.Combine(home, "Library", "Application Support", "XIV on Mac", "xivlauncher", "pluginConfigs", "Penumbra");
+            if (Directory.Exists(macPath))
+            {
+                return macPath;
+            }
+        }
 
-    private sealed record BlobEntry(string BlobPath, string MetadataPath, long Size, DateTimeOffset LastAccessUtc);
+        return string.Empty;
+    }
 }

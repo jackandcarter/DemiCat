@@ -1,154 +1,86 @@
 using System;
-using System.IO;
-using System.Net.Http;
+using System.Collections.Generic;
 using System.Reflection;
-using Dalamud.Plugin;
-using Dalamud.Plugin.Ipc;
+using System.Threading;
+using System.Threading.Tasks;
 using DemiCatPlugin;
-using Moq;
-using Penumbra.Api.Enums;
+using DemiCatPlugin.SyncShell;
 using Xunit;
 
 public class SyncshellStateChangeFallbackTests
 {
     [Fact]
-    public void LegacyGateFallbackStillRaisesStateChange()
+    public void StatusHistoryUpdatesWhenServiceRaisesEvent()
     {
-        var previousServices = PluginServices.Instance;
-        var previousTokenManager = TokenManager.Instance;
-        SyncshellWindow? window = null;
-        var tempDir = Path.Combine(Path.GetTempPath(), "DemiCat", "SyncshellFallbackTests", Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(tempDir);
+        SyncshellWindow.Instance?.Dispose();
+        var fakeService = new FakeSyncShellService();
+        var config = new Config { EnableSyncShell = true };
 
-        using var httpClient = new HttpClient();
+        using var window = new SyncshellWindow(config, fakeService);
+        fakeService.EmitStatus("Active");
+        fakeService.EmitStatus("Paused");
 
-        try
+        var historyField = typeof(SyncshellWindow)
+            .GetField("_statusHistory", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var history = (List<string>)historyField.GetValue(window)!;
+
+        Assert.Contains("Paused", history);
+        Assert.Contains("Active", history);
+    }
+
+    [Fact]
+    public void ClearCachesInvokesService()
+    {
+        SyncshellWindow.Instance?.Dispose();
+        var fakeService = new FakeSyncShellService();
+        var config = new Config { EnableSyncShell = true };
+
+        using var window = new SyncshellWindow(config, fakeService);
+        Assert.Equal(0, fakeService.ClearCount);
+        window.ClearCaches();
+        Assert.Equal(1, fakeService.ClearCount);
+    }
+
+    private sealed class FakeSyncShellService : ISyncShellService
+    {
+        private bool _paused;
+        public int ClearCount { get; private set; }
+
+        public event EventHandler? StatusChanged;
+
+        public bool IsRunning => true;
+        public bool IsPaused => _paused;
+        public string Status { get; private set; } = "Idle";
+        public int NearbyUserCount { get; set; }
+        public bool PenumbraAvailable => false;
+        public string? DetectedPenumbraPath => null;
+
+        public Task Start(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task Stop(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task TriggerPublishAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public Task ResyncAllAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public void Pause() => _paused = true;
+
+        public void Resume() => _paused = false;
+
+        public void ClearCache() => ClearCount++;
+
+        public Task EnforceCacheLimitAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public bool TryValidatePenumbraPath(string? path, out string? error)
         {
-            var services = new PluginServices();
-            var pluginInterface = new Mock<IDalamudPluginInterface>();
-            pluginInterface.Setup(pi => pi.GetPluginConfigDirectory()).Returns(tempDir);
-            pluginInterface.Setup(pi => pi.SavePluginConfig(It.IsAny<Config>()));
-
-            var modSettingLegacy = new Mock<ICallGateSubscriber<Guid, string, bool, object?>>();
-            modSettingLegacy
-                .Setup(sub => sub.Subscribe(It.IsAny<Action<Guid, string, bool>>()))
-                .Verifiable();
-            modSettingLegacy
-                .Setup(sub => sub.Unsubscribe(It.IsAny<Action<Guid, string, bool>>()))
-                .Verifiable();
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(It.Is<string>(c => c == Penumbra.Api.IpcSubscribers.ModSettingChanged.Label)))
-                .Throws(new InvalidOperationException("typed gate unavailable"));
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<ModSettingChange, Guid, string, bool, object?>(It.Is<string>(c => c == "Penumbra.ModSettingChanged")))
-                .Throws(new InvalidOperationException("legacy gate used wrong signature"));
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<Guid, string, bool, object?>(It.Is<string>(c => c == "Penumbra.ModSettingChanged")))
-                .Returns(modSettingLegacy.Object);
-
-            var enabledLegacy = new Mock<ICallGateSubscriber<bool, object?>>();
-            enabledLegacy.Setup(sub => sub.Subscribe(It.IsAny<Action<bool>>()));
-            enabledLegacy.Setup(sub => sub.Unsubscribe(It.IsAny<Action<bool>>()));
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<bool, object?>(It.Is<string>(c => c == Penumbra.Api.IpcSubscribers.EnabledChange.Label)))
-                .Throws(new InvalidOperationException("typed gate unavailable"));
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<bool, object?>(It.Is<string>(c => c == "Penumbra.EnabledChange")))
-                .Returns(enabledLegacy.Object);
-
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<nint, object?>(It.Is<string>(c => c == Glamourer.Api.IpcSubscribers.StateChanged.Label)))
-                .Throws(new InvalidOperationException("typed gate unavailable"));
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<int, object?>(It.Is<string>(c => c == Glamourer.Api.IpcSubscribers.StateChanged.Label)))
-                .Throws(new InvalidOperationException("typed gate unavailable"));
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<nint, object?>(It.Is<string>(c => c == "Glamourer.StateChanged")))
-                .Throws(new InvalidOperationException("legacy gate unavailable"));
-
-            var glamourerLegacyInt = new Mock<ICallGateSubscriber<int, object?>>();
-            Action<int>? glamourerHandler = null;
-            glamourerLegacyInt
-                .Setup(sub => sub.Subscribe(It.IsAny<Action<int>>()))
-                .Callback<Action<int>>(handler => glamourerHandler = handler);
-            glamourerLegacyInt
-                .Setup(sub => sub.Unsubscribe(It.IsAny<Action<int>>()))
-                .Verifiable();
-            pluginInterface
-                .Setup(pi => pi.GetIpcSubscriber<int, object?>(It.Is<string>(c => c == "Glamourer.StateChanged")))
-                .Returns(glamourerLegacyInt.Object);
-
-            SetPluginService(services, "PluginInterface", pluginInterface.Object);
-
-            _ = new TokenManager();
-
-            var config = new Config
-            {
-                FCSyncShell = true,
-                SyncshellAutoSyncAllUsers = false,
-                SyncshellManualSyncAllUsers = true,
-            };
-
-            window = new SyncshellWindow(config, httpClient);
-
-            Assert.NotNull(glamourerHandler);
-
-            var pendingField = typeof(SyncshellWindow)
-                .GetField("_manualSyncPendingFlag", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            Assert.Equal(0, (int)pendingField.GetValue(window)!);
-
-            glamourerHandler!(123);
-
-            Assert.Equal(1, (int)pendingField.GetValue(window)!);
-
-            window.Dispose();
-            modSettingLegacy.Verify(sub => sub.Subscribe(It.IsAny<Action<Guid, string, bool>>()), Times.Once());
-            modSettingLegacy.Verify(sub => sub.Unsubscribe(It.IsAny<Action<Guid, string, bool>>()), Times.Once());
-            glamourerLegacyInt.Verify(sub => sub.Unsubscribe(It.IsAny<Action<int>>()), Times.Once());
-            window = null;
+            error = null;
+            return true;
         }
-        finally
+
+        public void EmitStatus(string status)
         {
-            window?.Dispose();
-            SetPluginServicesInstance(previousServices);
-            SetTokenManagerInstance(previousTokenManager);
-            TryDeleteDirectory(tempDir);
-        }
-    }
-
-    private static void SetPluginService(PluginServices services, string propertyName, object value)
-    {
-        typeof(PluginServices)
-            .GetProperty(propertyName, BindingFlags.Instance | BindingFlags.NonPublic)!
-            .SetValue(services, value);
-    }
-
-    private static void SetPluginServicesInstance(PluginServices? value)
-    {
-        typeof(PluginServices)
-            .GetProperty("Instance", BindingFlags.Static | BindingFlags.NonPublic | BindingFlags.Public)!
-            .SetValue(null, value);
-    }
-
-    private static void SetTokenManagerInstance(TokenManager? value)
-    {
-        typeof(TokenManager)
-            .GetProperty("Instance", BindingFlags.Static | BindingFlags.Public)!
-            .SetValue(null, value);
-    }
-
-    private static void TryDeleteDirectory(string path)
-    {
-        try
-        {
-            if (Directory.Exists(path))
-            {
-                Directory.Delete(path, recursive: true);
-            }
-        }
-        catch
-        {
-            // best effort cleanup
+            Status = status;
+            StatusChanged?.Invoke(this, EventArgs.Empty);
         }
     }
 }

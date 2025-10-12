@@ -20,6 +20,7 @@ using Dalamud.Plugin.Services;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
 using StbImageSharp;
+using DemiCatPlugin.SyncShell;
 
 namespace DemiCatPlugin;
 
@@ -65,6 +66,10 @@ public class Plugin : IDalamudPlugin
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
     private readonly IFontHandle? _emojiFontHandle;
     private readonly CommandInfo _mewCommandInfo;
+    private readonly BlobStore _blobStore;
+    private readonly SyncShellClient _syncShellClient;
+    private readonly PenumbraIpc _penumbraIpc;
+    private readonly SyncShellService _syncShellService;
 
     public Plugin()
     {
@@ -100,6 +105,19 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle = InitializeEmojiFont();
         _emojiManager.EmojiFontHandle = _emojiFontHandle;
         _messageCache = new MessageCache();
+        _blobStore = new BlobStore(_services.PluginInterface);
+        _syncShellClient = new SyncShellClient(_httpClient, _config, _tokenManager);
+        _penumbraIpc = new PenumbraIpc(_services.PluginInterface, _services.Log);
+        _syncShellService = new SyncShellService(
+            _config,
+            _tokenManager,
+            _syncShellClient,
+            _blobStore,
+            _penumbraIpc,
+            _services.Log,
+            _services.ClientState,
+            _services.Framework);
+        _services.SyncShellService = _syncShellService;
         var baseChatBridge = new ChatBridge(
             _config,
             _httpClient,
@@ -188,6 +206,11 @@ public class Plugin : IDalamudPlugin
         _tokenManager.OnLinked += HandleTokenLinked;
         _tokenManager.OnUnlinked += HandleTokenUnlinked;
 
+        if (_config.EnableSyncShell && _tokenManager.State == LinkState.Linked)
+        {
+            _ = _syncShellService.Start();
+        }
+
         if (_tokenManager.IsReady())
         {
             HandleTokenLinked();
@@ -207,6 +230,12 @@ public class Plugin : IDalamudPlugin
         _disposed = true;
         _queueMetricsTimer.Dispose();
         WebTextureCache.FetchOverride = null;
+        if (_services != null)
+        {
+            _services.SyncShellService = null;
+        }
+        _syncShellService.Dispose();
+        _blobStore.Dispose();
         try
         {
             RunOnFrameworkAsync(WebTextureCache.Clear).GetAwaiter().GetResult();
@@ -284,12 +313,11 @@ public class Plugin : IDalamudPlugin
 
     private void DrawOverlay()
     {
-        SyncshellWindow.Instance?.PumpClientEvents();
         var overlay = PluginServices.Instance?.ProgressOverlay;
         if (overlay == null)
             return;
 
-        overlay.IsVisible = _config.FCSyncShell && _config.ShowSyncshellProgressOverlay;
+        overlay.IsVisible = _config.EnableSyncShell && _config.ShowSyncshellProgressOverlay;
         overlay.Draw();
     }
 

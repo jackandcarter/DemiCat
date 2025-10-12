@@ -121,14 +121,14 @@ public class MainWindow : IDisposable
 
     internal void UpdateSyncshell()
     {
-        var shouldEnable = _config.FCSyncShell && IsLinked();
+        var shouldEnable = _config.EnableSyncShell && IsLinked();
         if (_syncshellEnabled == shouldEnable)
             return;
 
         _syncshellEnabled = shouldEnable;
         if (_syncshellEnabled)
         {
-            _syncshell = new SyncshellWindow(_config, _httpClient);
+            _syncshell = new SyncshellWindow(_config);
             PluginServices.Instance?.Framework.RunOnTick(() => { });
         }
         else
@@ -263,8 +263,8 @@ public class MainWindow : IDisposable
             DockIds.Syncshell,
             "Syncshell",
             "SyncShell.png",
-            () => _config.FCSyncShell && _syncshell != null && IsLinked(),
-            () => _config.FCSyncShell && _syncshell != null && IsLinked(),
+            () => _config.EnableSyncShell && _syncshell != null && IsLinked(),
+            () => _config.EnableSyncShell && _syncshell != null && IsLinked(),
             () => GetWindowOpen(DockIds.Syncshell),
             () => ToggleWindow(DockIds.Syncshell)));
 
@@ -360,7 +360,7 @@ public class MainWindow : IDisposable
             ForceWindowClosed(DockIds.Requests);
         }
 
-        if (!linked || !_config.FCSyncShell || _syncshell == null)
+        if (!linked || !_config.EnableSyncShell || _syncshell == null)
         {
             ForceWindowClosed(DockIds.Syncshell);
         }
