@@ -387,51 +387,38 @@ public class Config : IPluginConfiguration
                         if (!migrated.ContainsKey(key))
                         {
                             migrated[key] = cursor;
-        }
-    }
+                        }
+                    }
+                }
 
-    public void PostLoadMigrations()
-    {
-        if (LegacySyncshellAllowedDiscordIds == null)
-        {
-            return;
-        }
-
-        foreach (var entry in LegacySyncshellAllowedDiscordIds)
-        {
-            if (string.IsNullOrWhiteSpace(entry))
-            {
-                continue;
-            }
-
-            if (ulong.TryParse(entry.Trim(), out var id))
-            {
-                ManualAutoList.Add(id);
-            }
-        }
-
-        LegacySyncshellAllowedDiscordIds.Clear();
-    }
-}
                 ChatCursors = migrated;
             }
 
             Version = 5;
             ExtensionData = null;
         }
+
         if (Version < 6)
         {
             if (ExtensionData != null)
             {
-                if (ExtensionData.TryGetValue("FcChatTransparency", out var fcOpacityElement) && fcOpacityElement.ValueKind == JsonValueKind.Number && fcOpacityElement.TryGetDouble(out var fcOpacity))
+                if (ExtensionData.TryGetValue("FcChatOpacity", out var fcOpacityElement)
+                    && fcOpacityElement.ValueKind == System.Text.Json.JsonValueKind.Number
+                    && fcOpacityElement.TryGetDouble(out var fcOpacity))
                 {
                     FcChatOpacity = (float)Math.Clamp(fcOpacity, 0d, 1d);
                 }
-                if (ExtensionData.TryGetValue("OfficerChatTransparency", out var officerOpacityElement) && officerOpacityElement.ValueKind == JsonValueKind.Number && officerOpacityElement.TryGetDouble(out var officerOpacity))
+
+                if (ExtensionData.TryGetValue("OfficerChatOpacity", out var officerOpacityElement)
+                    && officerOpacityElement.ValueKind == System.Text.Json.JsonValueKind.Number
+                    && officerOpacityElement.TryGetDouble(out var officerOpacity))
                 {
                     OfficerChatOpacity = (float)Math.Clamp(officerOpacity, 0d, 1d);
                 }
-                if (ExtensionData.TryGetValue("ChatFadeOutAlpha", out var fadeAlphaElement) && fadeAlphaElement.ValueKind == JsonValueKind.Number && fadeAlphaElement.TryGetDouble(out var fadeAlpha))
+
+                if (ExtensionData.TryGetValue("ChatFadeOutMinimumAlpha", out var fadeAlphaElement)
+                    && fadeAlphaElement.ValueKind == System.Text.Json.JsonValueKind.Number
+                    && fadeAlphaElement.TryGetDouble(out var fadeAlpha))
                 {
                     ChatFadeOutMinimumAlpha = (float)Math.Clamp(fadeAlpha, 0d, 1d);
                 }
@@ -661,6 +648,29 @@ public class Config : IPluginConfiguration
             Version = 22;
             ExtensionData = null;
         }
+    }
+
+    public void PostLoadMigrations()
+    {
+        if (LegacySyncshellAllowedDiscordIds == null)
+        {
+            return;
+        }
+
+        foreach (var entry in LegacySyncshellAllowedDiscordIds)
+        {
+            if (string.IsNullOrWhiteSpace(entry))
+            {
+                continue;
+            }
+
+            if (ulong.TryParse(entry.Trim(), out var id))
+            {
+                ManualAutoList.Add(id);
+            }
+        }
+
+        LegacySyncshellAllowedDiscordIds.Clear();
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)

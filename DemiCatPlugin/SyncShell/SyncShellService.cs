@@ -621,7 +621,32 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         if (player != null)
         {
             actorHash = player.Name.TextValue ?? string.Empty;
-            var worldName = player.HomeWorld?.GameData?.Name;
+            string? worldName = null;
+            try
+            {
+                var world = player.HomeWorld.ValueNullable;
+                if (world != null)
+                {
+                    worldName = world.Name?.ToString();
+                }
+            }
+            catch
+            {
+                // ignore lookup failures
+            }
+
+            if (string.IsNullOrEmpty(worldName))
+            {
+                try
+                {
+                    worldName = player.HomeWorld.Value.Name.ToString();
+                }
+                catch
+                {
+                    // ignore lookup failures
+                }
+            }
+
             if (!string.IsNullOrEmpty(worldName))
             {
                 actorHash = string.IsNullOrEmpty(actorHash)
@@ -679,7 +704,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             Status = $"Uploading {remaining} blob{(remaining == 1 ? string.Empty : "s")}…";
             remaining--;
 
-            if (!localBlobs.TryGetValue(hash, out var blobInfo) || blobInfo is not LocalBlobInfo blob)
+            if (!localBlobs.TryGetValue(hash, out LocalBlobInfo? blob) || blob is null)
             {
                 _log.Warning("Missing local blob for hash {Hash}", hash);
                 continue;
