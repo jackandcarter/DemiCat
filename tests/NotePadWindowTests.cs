@@ -73,7 +73,8 @@ public class NotePadWindowTests
                 Title = "Notes",
                 Content = "Updated",
                 Version = 2,
-                UpdatedAt = DateTimeOffset.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
             });
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -132,7 +133,8 @@ public class NotePadWindowTests
                 Title = "New Page",
                 Content = string.Empty,
                 Version = 0,
-                UpdatedAt = DateTimeOffset.UtcNow,
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
                 Color = "#123456"
             });
 
@@ -218,7 +220,8 @@ public class NotePadWindowTests
                             Title = "Notes",
                             Content = "Initial",
                             Version = 1,
-                            UpdatedAt = DateTimeOffset.UtcNow
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
                         },
                         new()
                         {
@@ -226,7 +229,8 @@ public class NotePadWindowTests
                             Title = "Todo",
                             Content = "Items",
                             Version = 1,
-                            UpdatedAt = DateTimeOffset.UtcNow
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
                         },
                         new()
                         {
@@ -234,7 +238,8 @@ public class NotePadWindowTests
                             Title = "Archive",
                             Content = "Old",
                             Version = 1,
-                            UpdatedAt = DateTimeOffset.UtcNow
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
                         }
                     }
                 },
@@ -251,7 +256,8 @@ public class NotePadWindowTests
                             Title = "Log",
                             Content = "",
                             Version = 0,
-                            UpdatedAt = DateTimeOffset.UtcNow
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow
                         }
                     }
                 },

@@ -24,7 +24,7 @@ from ..schemas import (
     NoteSectionUpdateBody,
 )
 from ..ws import manager
-from ...db.models import NotePage, NoteSection
+from ...db.models import NotePage, NoteSection, User
 
 
 router = APIRouter(prefix="/api")
@@ -43,11 +43,44 @@ async def _load_sections(
 ) -> Sequence[NoteSection]:
     result = await db.execute(
         select(NoteSection)
-        .options(selectinload(NoteSection.pages))
+        .options(
+            selectinload(NoteSection.created_by),
+            selectinload(NoteSection.updated_by),
+            selectinload(NoteSection.pages).selectinload(NotePage.created_by),
+            selectinload(NoteSection.pages).selectinload(NotePage.updated_by),
+        )
         .where(NoteSection.guild_id == guild_id)
         .order_by(NoteSection.sort_order, NoteSection.id)
     )
     return result.scalars().unique().all()
+
+
+def _format_display_name(user: User | None) -> str | None:
+    if user is None:
+        return None
+
+    for candidate in (getattr(user, "global_name", None), getattr(user, "character_name", None)):
+        if candidate:
+            name = candidate.strip()
+            if name:
+                return name
+
+    discord_id = getattr(user, "discord_user_id", None)
+    if discord_id is not None:
+        return str(discord_id)
+
+    user_id = getattr(user, "id", None)
+    return str(user_id) if user_id is not None else None
+
+
+def _discord_id(user: User | None) -> str | None:
+    if user is None:
+        return None
+
+    discord_id = getattr(user, "discord_user_id", None)
+    if discord_id is None:
+        return None
+    return str(discord_id)
 
 
 def _serialize_note_page(page: NotePage) -> NotePageDto:
@@ -60,6 +93,10 @@ def _serialize_note_page(page: NotePage) -> NotePageDto:
         color=page.color,
         created_by_id=str(page.created_by_id) if page.created_by_id is not None else None,
         updated_by_id=str(page.updated_by_id) if page.updated_by_id is not None else None,
+        created_by_discord_id=_discord_id(page.created_by),
+        updated_by_discord_id=_discord_id(page.updated_by),
+        created_by_display_name=_format_display_name(page.created_by),
+        updated_by_display_name=_format_display_name(page.updated_by),
         created_at=page.created_at,
         updated_at=page.updated_at,
         version=page.version,
@@ -86,6 +123,10 @@ def _serialize_note_section(section: NoteSection) -> NoteSectionDto:
         str(section.created_by_id) if section.created_by_id is not None else None,
         updated_by_id=
         str(section.updated_by_id) if section.updated_by_id is not None else None,
+        created_by_discord_id=_discord_id(section.created_by),
+        updated_by_discord_id=_discord_id(section.updated_by),
+        created_by_display_name=_format_display_name(section.created_by),
+        updated_by_display_name=_format_display_name(section.updated_by),
         created_at=section.created_at,
         updated_at=section.updated_at,
         version=section.version,
@@ -117,7 +158,12 @@ async def _get_section(
 ) -> NoteSection:
     result = await db.execute(
         select(NoteSection)
-        .options(selectinload(NoteSection.pages))
+        .options(
+            selectinload(NoteSection.created_by),
+            selectinload(NoteSection.updated_by),
+            selectinload(NoteSection.pages).selectinload(NotePage.created_by),
+            selectinload(NoteSection.pages).selectinload(NotePage.updated_by),
+        )
         .where(NoteSection.id == section_id)
     )
     section = result.scalar_one_or_none()
@@ -134,6 +180,8 @@ async def _get_page(
     db: AsyncSession, guild_id: int, page_id: int, include_deleted: bool = False
 ) -> NotePage:
     page = await db.get(NotePage, page_id)
+    if page is not None:
+        await db.refresh(page, attribute_names=["created_by", "updated_by"])
     if (
         page is None
         or page.guild_id != guild_id
@@ -175,6 +223,7 @@ async def create_section(
     db.add(section)
     await db.commit()
     await db.refresh(section)
+    await db.refresh(section, attribute_names=["created_by", "updated_by"])
     dto = _serialize_note_section(section)
     await _broadcast_notepad_event(
         ctx,
@@ -203,6 +252,7 @@ async def update_section(
     section.updated_by_id = ctx.user.id
     await db.commit()
     await db.refresh(section)
+    await db.refresh(section, attribute_names=["created_by", "updated_by"])
     dto = _serialize_note_section(section)
     await _broadcast_notepad_event(
         ctx,
@@ -324,6 +374,7 @@ async def create_page(
     db.add(page)
     await db.commit()
     await db.refresh(page)
+    await db.refresh(page, attribute_names=["created_by", "updated_by"])
     dto = _serialize_note_page(page)
     await _broadcast_notepad_event(
         ctx,
@@ -352,6 +403,7 @@ async def update_page(
     page.updated_by_id = ctx.user.id
     await db.commit()
     await db.refresh(page)
+    await db.refresh(page, attribute_names=["created_by", "updated_by"])
     dto = _serialize_note_page(page)
     await _broadcast_notepad_event(
         ctx,
@@ -377,6 +429,7 @@ async def update_page_content(
     page.updated_by_id = ctx.user.id
     await db.commit()
     await db.refresh(page)
+    await db.refresh(page, attribute_names=["created_by", "updated_by"])
     dto = _serialize_note_page(page)
     await _broadcast_notepad_event(
         ctx,

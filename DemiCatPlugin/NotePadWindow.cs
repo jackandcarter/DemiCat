@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using System.Threading;
@@ -40,9 +41,7 @@ public sealed class NotePadWindow : IDisposable
     private bool _pageOrderDirty;
     private bool _focusEditorNextFrame;
     private string _newSectionName = string.Empty;
-    private string _newPageTitle = string.Empty;
     private bool _showNewSectionPopup;
-    private bool _showNewPagePopup;
     private string? _draggingSectionId;
     private string? _draggingPageId;
 
@@ -286,52 +285,57 @@ public sealed class NotePadWindow : IDisposable
             return;
         }
 
-        DrawNewPagePopup(section);
+        var style = ImGui.GetStyle();
+        var drawList = ImGui.GetWindowDrawList();
+        var headerPos = ImGui.GetCursorScreenPos();
+        var headerWidth = ImGui.GetContentRegionAvail().X;
+        var headerHeight = ImGui.GetTextLineHeightWithSpacing() + style.FramePadding.Y * 2f;
+        var headerRectMax = headerPos + new Vector2(headerWidth, headerHeight);
 
-        if (!IsReadOnly && ImGui.Button("New Page"))
+        var headerColor = style.Colors[(int)ImGuiCol.FrameBg];
+        headerColor.W = MathF.Min(headerColor.W + 0.15f, 1f);
+        drawList.AddRectFilled(headerPos, headerRectMax, ImGui.ColorConvertFloat4ToU32(headerColor), style.FrameRounding);
+        drawList.AddRect(headerPos, headerRectMax, ImGui.ColorConvertFloat4ToU32(style.Colors[(int)ImGuiCol.Border]), style.FrameRounding);
+
+        var title = string.IsNullOrWhiteSpace(section.Name) ? "Notes" : section.Name;
+        var titlePos = headerPos + new Vector2(style.FramePadding.X, style.FramePadding.Y);
+        ImGui.SetCursorScreenPos(titlePos);
+        ImGui.TextUnformatted(title);
+
+        var buttonText = "+";
+        var buttonTextSize = ImGui.CalcTextSize(buttonText);
+        var buttonPadding = style.FramePadding;
+        var buttonSize = new Vector2(buttonTextSize.X + buttonPadding.X * 2f, buttonTextSize.Y + buttonPadding.Y * 2f);
+        var buttonPos = new Vector2(
+            headerRectMax.X - buttonSize.X - style.FramePadding.X,
+            headerPos.Y + (headerHeight - buttonSize.Y) * 0.5f);
+        ImGui.SetCursorScreenPos(buttonPos);
+        ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, style.FrameRounding);
+        if (IsReadOnly)
         {
-            OpenNewPagePopup(section);
+            ImGui.BeginDisabled();
+            ImGui.Button(buttonText, buttonSize);
+            ImGui.EndDisabled();
         }
+        else if (ImGui.Button(buttonText, buttonSize))
+        {
+            CreateNewPage(section);
+        }
+        ImGui.PopStyleVar();
 
+        ImGui.SetCursorScreenPos(new Vector2(headerPos.X, headerRectMax.Y + style.ItemSpacing.Y));
         UiTheme.DrawSectionSeparator();
 
-        foreach (var page in section.Pages)
+        if (section.Pages.Count == 0)
         {
-            ImGui.PushID(page.Id);
-            var label = string.IsNullOrWhiteSpace(page.Title) ? "Untitled Page" : page.Title;
-            var isSelected = string.Equals(page.Id, _selectedPageId, StringComparison.Ordinal);
-            if (ImGui.Selectable(label, isSelected))
+            ImGui.TextDisabled("No notes yet.");
+        }
+        else
+        {
+            foreach (var page in section.Pages)
             {
-                SelectPage(section.Id, page.Id);
+                DrawNoteListEntry(section, page, selectedPage);
             }
-
-            if (ImGui.BeginDragDropSource())
-            {
-                _draggingPageId = page.Id;
-                ImGui.SetDragDropPayload("NotePadPage", ReadOnlySpan<byte>.Empty);
-                ImGui.TextUnformatted(label);
-                ImGui.EndDragDropSource();
-            }
-
-            if (ImGui.BeginDragDropTarget())
-            {
-                var payload = ImGui.AcceptDragDropPayload("NotePadPage");
-                if (!payload.Equals(default(ImGuiPayloadPtr)) && !string.IsNullOrEmpty(_draggingPageId) &&
-                    !string.Equals(_draggingPageId, page.Id, StringComparison.Ordinal))
-                {
-                    ReorderPages(section, _draggingPageId, page.Id);
-                    _draggingPageId = null;
-                }
-                ImGui.EndDragDropTarget();
-            }
-
-            if (ImGui.BeginPopupContextItem("PageContext"))
-            {
-                DrawPageContext(section, page);
-                ImGui.EndPopup();
-            }
-
-            ImGui.PopID();
         }
 
         if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
@@ -340,8 +344,252 @@ public sealed class NotePadWindow : IDisposable
         }
     }
 
+    private void DrawNoteListEntry(NotePadSection section, NotePadPage page, NotePadPage? selectedPage)
+    {
+        var style = ImGui.GetStyle();
+        var available = ImGui.GetContentRegionAvail();
+        var lineHeight = ImGui.GetTextLineHeight();
+        var entryHeight = lineHeight * 2f + style.FramePadding.Y * 3f;
+        var itemSize = new Vector2(available.X, entryHeight);
+
+        ImGui.PushID(page.Id);
+        var flags = ImGuiButtonFlags.MouseButtonLeft | ImGuiButtonFlags.MouseButtonRight;
+        ImGui.InvisibleButton("##NoteRow", itemSize, flags);
+
+        var hovered = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
+        var clickedLeft = ImGui.IsItemClicked(ImGuiMouseButton.Left);
+        var itemMin = ImGui.GetItemRectMin();
+        var itemMax = ImGui.GetItemRectMax();
+        var drawList = ImGui.GetWindowDrawList();
+        var isSelected = selectedPage != null && string.Equals(page.Id, selectedPage.Id, StringComparison.Ordinal);
+        var background = GetNoteRowColor(isSelected, hovered);
+        drawList.AddRectFilled(itemMin, itemMax, background, 8f);
+        if (isSelected)
+        {
+            var borderColor = ImGui.ColorConvertFloat4ToU32(style.Colors[(int)ImGuiCol.Border]);
+            drawList.AddRect(itemMin, itemMax, borderColor, 8f, ImDrawFlags.RoundCornersAll, 1.5f);
+        }
+
+        var padding = new Vector2(style.FramePadding.X + 6f, style.FramePadding.Y + 3f);
+        var titlePos = itemMin + padding;
+        var title = string.IsNullOrWhiteSpace(page.Title) ? "Untitled" : page.Title;
+        drawList.AddText(titlePos, ImGui.GetColorU32(ImGuiCol.Text), title);
+
+        var timestamp = FormatTimestamp(page.UpdatedAt);
+        if (!string.IsNullOrEmpty(timestamp))
+        {
+            var timeSize = ImGui.CalcTextSize(timestamp);
+            var timePos = new Vector2(itemMax.X - padding.X - timeSize.X, titlePos.Y);
+            drawList.AddText(timePos, ImGui.GetColorU32(ImGuiCol.TextDisabled), timestamp);
+        }
+
+        var preview = BuildPreviewText(page);
+        if (!string.IsNullOrEmpty(preview))
+        {
+            var previewPos = titlePos + new Vector2(0f, lineHeight + style.ItemSpacing.Y * 0.5f);
+            drawList.AddText(previewPos, ImGui.GetColorU32(ImGuiCol.TextDisabled), preview);
+        }
+
+        ImGui.SetCursorScreenPos(new Vector2(itemMin.X, itemMax.Y + style.ItemSpacing.Y));
+
+        if (clickedLeft)
+        {
+            SelectPage(section.Id, page.Id);
+        }
+
+        if (ImGui.BeginDragDropSource())
+        {
+            _draggingPageId = page.Id;
+            ImGui.SetDragDropPayload("NotePadPage", ReadOnlySpan<byte>.Empty);
+            ImGui.TextUnformatted(title);
+            ImGui.EndDragDropSource();
+        }
+
+        if (ImGui.BeginDragDropTarget())
+        {
+            var payload = ImGui.AcceptDragDropPayload("NotePadPage");
+            if (!payload.Equals(default(ImGuiPayloadPtr)) && !string.IsNullOrEmpty(_draggingPageId) &&
+                !string.Equals(_draggingPageId, page.Id, StringComparison.Ordinal))
+            {
+                ReorderPages(section, _draggingPageId, page.Id);
+                _draggingPageId = null;
+            }
+            ImGui.EndDragDropTarget();
+        }
+
+        if (ImGui.BeginPopupContextItem($"PageContext##{page.Id}"))
+        {
+            DrawPageContext(section, page);
+            ImGui.EndPopup();
+        }
+
+        ImGui.PopID();
+    }
+
+    private static uint GetNoteRowColor(bool isSelected, bool hovered)
+    {
+        var style = ImGui.GetStyle();
+        Vector4 color;
+        if (isSelected)
+        {
+            color = style.Colors[(int)ImGuiCol.HeaderActive];
+        }
+        else if (hovered)
+        {
+            color = style.Colors[(int)ImGuiCol.HeaderHovered];
+        }
+        else
+        {
+            color = style.Colors[(int)ImGuiCol.FrameBg];
+            color.W = MathF.Min(color.W + 0.08f, 1f);
+        }
+
+        return ImGui.ColorConvertFloat4ToU32(color);
+    }
+
+    private static string BuildPreviewText(NotePadPage page)
+    {
+        var content = page.Content ?? string.Empty;
+        var normalized = content.ReplaceLineEndings(" ").Trim();
+        if (string.IsNullOrEmpty(normalized))
+        {
+            return "No additional text";
+        }
+
+        const int maxLength = 160;
+        if (normalized.Length <= maxLength)
+        {
+            return normalized;
+        }
+
+        var truncated = normalized[..maxLength].TrimEnd();
+        return truncated + "…";
+    }
+
+    private static DateTime ToLocalTimeSafe(DateTime value)
+    {
+        if (value == default)
+        {
+            return value;
+        }
+
+        if (value.Kind == DateTimeKind.Unspecified)
+        {
+            value = DateTime.SpecifyKind(value, DateTimeKind.Utc);
+        }
+
+        return value.Kind == DateTimeKind.Utc ? value.ToLocalTime() : value;
+    }
+
+    private static string FormatTimestamp(DateTime value)
+    {
+        if (value == default)
+        {
+            return string.Empty;
+        }
+
+        var local = ToLocalTimeSafe(value);
+        var now = DateTime.Now;
+        if (local.Date == now.Date)
+        {
+            return local.ToString("h:mm tt", CultureInfo.CurrentCulture);
+        }
+
+        if (local.Year == now.Year)
+        {
+            return local.ToString("MMM d", CultureInfo.CurrentCulture);
+        }
+
+        return local.ToString("MMM d, yyyy", CultureInfo.CurrentCulture);
+    }
+
+    private static string FormatFullTimestamp(DateTime value)
+    {
+        if (value == default)
+        {
+            return string.Empty;
+        }
+
+        var local = ToLocalTimeSafe(value);
+        return local.ToString("MMMM d, yyyy h:mm tt", CultureInfo.CurrentCulture);
+    }
+
+    private static string GenerateNewNoteTitle(NotePadSection section)
+    {
+        const string baseTitle = "New Note";
+        if (!section.Pages.Any(p => string.Equals(p.Title, baseTitle, StringComparison.OrdinalIgnoreCase)))
+        {
+            return baseTitle;
+        }
+
+        for (var i = 2; i < 1000; i++)
+        {
+            var candidate = $"{baseTitle} {i}";
+            if (!section.Pages.Any(p => string.Equals(p.Title, candidate, StringComparison.OrdinalIgnoreCase)))
+            {
+                return candidate;
+            }
+        }
+
+        return $"{baseTitle} {DateTime.UtcNow.Ticks}";
+    }
+
+    private void CreateNewPage(NotePadSection section)
+    {
+        if (IsReadOnly)
+        {
+            PluginServices.Instance?.ToastGui.ShowError("You do not have permission to create notes.");
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            var title = GenerateNewNoteTitle(section);
+            var page = await _service.CreatePageAsync(section.Id, title, CancellationToken.None).ConfigureAwait(false);
+            if (page != null)
+            {
+                SelectPage(section.Id, page.Id);
+            }
+        });
+    }
+
+    private static bool CanDeletePage(NotePadPage page)
+    {
+        var current = MembershipCache.DiscordUserId;
+        if (string.IsNullOrEmpty(current))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(page.CreatedByDiscordId))
+        {
+            return string.Equals(page.CreatedByDiscordId, current, StringComparison.Ordinal);
+        }
+
+        return false;
+    }
+
     private void DrawPageContext(NotePadSection section, NotePadPage page)
     {
+        var creator = string.IsNullOrWhiteSpace(page.CreatedByDisplayName)
+            ? (!string.IsNullOrEmpty(page.CreatedByDiscordId) ? page.CreatedByDiscordId : "Unknown")
+            : page.CreatedByDisplayName;
+        ImGui.MenuItem($"Created by {creator}", string.Empty, false, false);
+
+        var createdAt = FormatFullTimestamp(page.CreatedAt);
+        if (!string.IsNullOrEmpty(createdAt))
+        {
+            ImGui.MenuItem($"Created {createdAt}", string.Empty, false, false);
+        }
+
+        var updatedAt = FormatFullTimestamp(page.UpdatedAt);
+        if (!string.IsNullOrEmpty(updatedAt))
+        {
+            ImGui.MenuItem($"Updated {updatedAt}", string.Empty, false, false);
+        }
+
+        ImGui.Separator();
+
         if (!IsReadOnly && ImGui.MenuItem("Rename"))
         {
             _pageRenameBuffers[page.Id] = page.Title;
@@ -373,7 +621,7 @@ public sealed class NotePadWindow : IDisposable
             ImGui.EndPopup();
         }
 
-        if (!IsReadOnly && ImGui.MenuItem("Delete"))
+        if (!IsReadOnly && CanDeletePage(page) && ImGui.MenuItem("Delete Note"))
         {
             _ = Task.Run(() => _service.DeletePageAsync(section.Id, page.Id, CancellationToken.None));
         }
@@ -545,45 +793,6 @@ public sealed class NotePadWindow : IDisposable
         }
     }
 
-    private void DrawNewPagePopup(NotePadSection section)
-    {
-        if (_showNewPagePopup)
-        {
-            ImGui.OpenPopup("CreatePage");
-            _showNewPagePopup = false;
-        }
-
-        if (ImGui.BeginPopup("CreatePage"))
-        {
-            ImGui.InputText("Title", ref _newPageTitle, 128);
-            _newPageTitle = ClampTitleLength(_newPageTitle);
-            if (ImGui.Button("Create"))
-            {
-                var title = _newPageTitle.Trim();
-                if (!string.IsNullOrEmpty(title))
-                {
-                    _ = Task.Run(async () =>
-                    {
-                        var page = await _service.CreatePageAsync(section.Id, title, CancellationToken.None);
-                        if (page != null)
-                        {
-                            SelectPage(section.Id, page.Id);
-                        }
-                    });
-                }
-                _newPageTitle = string.Empty;
-                ImGui.CloseCurrentPopup();
-            }
-            ImGui.SameLine();
-            if (ImGui.Button("Cancel"))
-            {
-                _newPageTitle = string.Empty;
-                ImGui.CloseCurrentPopup();
-            }
-            ImGui.EndPopup();
-        }
-    }
-
     private void HandleAutosave()
     {
         if (IsReadOnly || !_dirty)
@@ -620,7 +829,7 @@ public sealed class NotePadWindow : IDisposable
                 var actualSection = _service.Sections.FirstOrDefault(s => string.Equals(s.Id, section, StringComparison.Ordinal));
                 if (actualSection != null)
                 {
-                    OpenNewPagePopup(actualSection);
+                    CreateNewPage(actualSection);
                 }
             }
             else
@@ -915,18 +1124,6 @@ public sealed class NotePadWindow : IDisposable
 
         _showNewSectionPopup = true;
         _newSectionName = string.Empty;
-    }
-
-    private void OpenNewPagePopup(NotePadSection section)
-    {
-        if (IsReadOnly)
-        {
-            PluginServices.Instance?.ToastGui.ShowError("You do not have permission to create pages.");
-            return;
-        }
-
-        _showNewPagePopup = true;
-        _newPageTitle = string.Empty;
     }
 
     private void HandleServiceChanged()

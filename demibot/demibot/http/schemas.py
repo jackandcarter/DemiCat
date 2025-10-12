@@ -205,6 +205,18 @@ class NotePageDto(CamelModel):
     color: int | None = None
     created_by_id: str | None = Field(default=None, alias="createdById")
     updated_by_id: str | None = Field(default=None, alias="updatedById")
+    created_by_discord_id: str | None = Field(
+        default=None, alias="createdByDiscordId"
+    )
+    updated_by_discord_id: str | None = Field(
+        default=None, alias="updatedByDiscordId"
+    )
+    created_by_display_name: str | None = Field(
+        default=None, alias="createdByDisplayName"
+    )
+    updated_by_display_name: str | None = Field(
+        default=None, alias="updatedByDisplayName"
+    )
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
     version: int
@@ -217,6 +229,18 @@ class NoteSectionDto(CamelModel):
     color: int | None = None
     created_by_id: str | None = Field(default=None, alias="createdById")
     updated_by_id: str | None = Field(default=None, alias="updatedById")
+    created_by_discord_id: str | None = Field(
+        default=None, alias="createdByDiscordId"
+    )
+    updated_by_discord_id: str | None = Field(
+        default=None, alias="updatedByDiscordId"
+    )
+    created_by_display_name: str | None = Field(
+        default=None, alias="createdByDisplayName"
+    )
+    updated_by_display_name: str | None = Field(
+        default=None, alias="updatedByDisplayName"
+    )
     created_at: datetime = Field(alias="createdAt")
     updated_at: datetime = Field(alias="updatedAt")
     version: int
