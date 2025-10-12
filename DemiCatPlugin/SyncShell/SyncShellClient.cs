@@ -94,6 +94,52 @@ public sealed class SyncShellClient
         response.EnsureSuccessStatusCode();
     }
 
+    private sealed class ResponseStream : Stream
+    {
+        private readonly HttpResponseMessage _response;
+        private readonly Stream _inner;
+
+        public ResponseStream(HttpResponseMessage response, Stream inner)
+        {
+            _response = response;
+            _inner = inner;
+        }
+
+        public override bool CanRead => _inner.CanRead;
+        public override bool CanSeek => _inner.CanSeek;
+        public override bool CanWrite => _inner.CanWrite;
+        public override long Length => _inner.Length;
+        public override long Position
+        {
+            get => _inner.Position;
+            set => _inner.Position = value;
+        }
+
+        public override void Flush() => _inner.Flush();
+        public override int Read(byte[] buffer, int offset, int count) => _inner.Read(buffer, offset, count);
+        public override long Seek(long offset, SeekOrigin origin) => _inner.Seek(offset, origin);
+        public override void SetLength(long value) => _inner.SetLength(value);
+        public override void Write(byte[] buffer, int offset, int count) => _inner.Write(buffer, offset, count);
+#if NET8_0_OR_GREATER
+        public override ValueTask DisposeAsync()
+        {
+            var disposeTask = _inner.DisposeAsync();
+            _response.Dispose();
+            return disposeTask;
+        }
+#endif
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _inner.Dispose();
+            }
+
+            _response.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+
     public async Task<Stream> DownloadBlobAsync(string sha256, CancellationToken cancellationToken)
     {
         var uri = BuildUri($"{BlobDownloadPath}?sha256={Uri.EscapeDataString(sha256)}");
@@ -102,7 +148,43 @@ public sealed class SyncShellClient
 
         var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
         response.EnsureSuccessStatusCode();
-        return await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        return new ResponseStream(response, stream);
+    }
+
+    public async Task<MembershipsResponseDto?> GetMembershipsAsync(CancellationToken cancellationToken)
+    {
+        var uri = BuildUri(MembershipsPath);
+        using var request = new HttpRequestMessage(HttpMethod.Get, uri);
+        ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        return await JsonSerializer.DeserializeAsync<MembershipsResponseDto>(stream, SerializerOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task UpdatePresenceAsync(IEnumerable<string> activeMemberIds, CancellationToken cancellationToken)
+    {
+        var payload = new PresenceUpdateDto
+        {
+            ActiveMemberIds = new List<string>(activeMemberIds ?? Array.Empty<string>())
+        };
+
+        var uri = BuildUri(PresencePath);
+        using var request = new HttpRequestMessage(HttpMethod.Post, uri)
+        {
+            Content = new StringContent(JsonSerializer.Serialize(payload, SerializerOptions))
+        };
+        request.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
+        ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+        var response = await _httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        response.EnsureSuccessStatusCode();
     }
 
     public async Task<MembershipsResponseDto?> GetMembershipsAsync(CancellationToken cancellationToken)

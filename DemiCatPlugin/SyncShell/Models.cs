@@ -125,7 +125,7 @@ public sealed class MembershipsResponseDto
 public sealed class PresenceUpdateDto
 {
     [JsonPropertyName("activeMemberIds")]
-    public List<long> ActiveMemberIds { get; set; } = new();
+    public List<string> ActiveMemberIds { get; set; } = new();
 }
 
 public sealed class PresenceResponseEntryDto

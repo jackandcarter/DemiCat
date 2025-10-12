@@ -365,6 +365,22 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                 {
                     UpdateMemberSnapshot(memberships);
                 }
+
+                try
+                {
+                    var activeIds = ActiveMembers
+                        .Select(m => m.Id)
+                        .Where(id => !string.IsNullOrWhiteSpace(id))
+                        .ToArray();
+                    if (activeIds.Length > 0)
+                    {
+                        await _client.UpdatePresenceAsync(activeIds, token).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _log.Warning(ex, "Failed to update presence");
+                }
             }
             catch (OperationCanceledException)
             {
@@ -543,9 +559,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     private bool UpdateStatusForMembers(int activeCount)
     {
-        var status = activeCount > 0
-            ? $"Syncing {activeCount} member{(activeCount == 1 ? string.Empty : "s")}";
-            : "Active";
+        var status = FormatStatusForMembers(activeCount);
         if (!string.Equals(Status, status, StringComparison.Ordinal))
         {
             Status = status;
@@ -554,6 +568,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         return false;
     }
+
+    internal static string FormatStatusForMembers(int activeCount)
+        => activeCount > 0
+            ? $"Syncing {activeCount} member{(activeCount == 1 ? string.Empty : "s")}" : "Active";
 
     private static SyncshellMemberStatus MapMember(MembershipEntryDto entry)
     {
@@ -573,7 +591,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         };
     }
 
-    private static DateTimeOffset? ParseTimestamp(string? value)
+    internal static DateTimeOffset? ParseTimestamp(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
         {
