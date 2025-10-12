@@ -202,11 +202,12 @@ public static class EmbedPreviewRenderer
             {
                 var colorVec = ColorUtils.RgbToVector4(dto.Color.Value);
                 var color = ImGui.ColorConvertFloat4ToU32(colorVec);
+                var stripeRounding = Math.Min(cardRounding, stripeWidth * 0.5f);
                 dl.AddRectFilled(
                     stripeMin,
                     stripeMax,
                     color,
-                    cardRounding,
+                    stripeRounding,
                     ImDrawFlags.RoundCornersTopLeft | ImDrawFlags.RoundCornersBottomLeft);
             }
         }
