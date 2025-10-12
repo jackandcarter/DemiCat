@@ -95,6 +95,27 @@ public sealed class SyncShellClient
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<bool> BlobExistsAsync(string sha256, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(sha256))
+        {
+            return false;
+        }
+
+        var uri = BuildUri($"{BlobDownloadPath}?sha256={Uri.EscapeDataString(sha256)}");
+        using var request = new HttpRequestMessage(HttpMethod.Head, uri);
+        ApiHelpers.AddAuthHeader(request, _tokenManager);
+
+        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false);
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return false;
+        }
+
+        response.EnsureSuccessStatusCode();
+        return true;
+    }
+
     private sealed class ResponseStream : Stream
     {
         private readonly HttpResponseMessage _response;

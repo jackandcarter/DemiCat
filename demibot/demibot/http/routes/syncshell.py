@@ -4,7 +4,6 @@ import hashlib
 import json
 import logging
 import os
-import shutil
 import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -1069,54 +1068,54 @@ def _blob_path(sha256: str) -> Path:
     return BLOB_ROOT / shard_a / shard_b / sha256
 
 
-@router.put("/blobs", status_code=status.HTTP_201_CREATED)
-async def put_blob(
-    request: Request,
+@router.put("/blobs")
+async def upload_blob(
     sha256: str,
+    request: Request,
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
-) -> Response:
+) -> dict[str, str]:
     await _require_pairing(ctx, db)
     await _check_rate_limit(ctx.user.id, db)
+
     sha256 = _validate_sha(sha256)
     destination = _blob_path(sha256)
-    if destination.exists():
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
-
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=str(destination.parent), delete=False) as tmp_file:
-        temp_path = Path(tmp_file.name)
-        hasher = hashlib.sha256()
-        size = 0
+
+    hasher = hashlib.sha256()
+    total = 0
+    with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+        tmp_path = Path(tmp_file.name)
         try:
             async for chunk in request.stream():
                 if not chunk:
                     continue
+                total += len(chunk)
+                if MAX_BLOB_SIZE_BYTES and total > MAX_BLOB_SIZE_BYTES:
+                    tmp_file.close()
+                    tmp_path.unlink(missing_ok=True)
+                    raise HTTPException(status_code=413, detail="blob exceeds max size")
                 tmp_file.write(chunk)
                 hasher.update(chunk)
-                size += len(chunk)
-                if MAX_BLOB_SIZE_BYTES and size > MAX_BLOB_SIZE_BYTES:
-                    temp_path.unlink(missing_ok=True)
-                    raise HTTPException(status_code=413, detail="blob too large")
+
+            tmp_file.flush()
+            os.fsync(tmp_file.fileno())
         except Exception:
-            temp_path.unlink(missing_ok=True)
+            tmp_file.close()
+            tmp_path.unlink(missing_ok=True)
             raise
 
     digest = hasher.hexdigest()
     if digest != sha256:
-        temp_path.unlink(missing_ok=True)
+        tmp_path.unlink(missing_ok=True)
         raise HTTPException(status_code=400, detail="sha256 mismatch")
 
     if destination.exists():
-        temp_path.unlink(missing_ok=True)
-        return Response(status_code=status.HTTP_204_NO_CONTENT)
+        tmp_path.unlink(missing_ok=True)
+    else:
+        os.replace(tmp_path, destination)
 
-    shutil.move(str(temp_path), str(destination))
-    os.chmod(destination, 0o600)
-    response = Response(status_code=status.HTTP_201_CREATED)
-    response.headers["Content-Length"] = str(size)
-    response.headers["Cache-Control"] = CACHE_CONTROL_IMMUTABLE
-    return response
+    return {"status": "ok"}
 
 
 @router.head("/blobs")
