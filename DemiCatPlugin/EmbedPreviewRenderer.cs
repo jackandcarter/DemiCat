@@ -200,7 +200,7 @@ public static class EmbedPreviewRenderer
             var stripeMax = new Vector2(cardMin.X + borderInset + stripeWidth, cardMax.Y - borderInset);
             if (stripeMax.X > stripeMin.X && stripeMax.Y > stripeMin.Y)
             {
-                var colorVec = ColorUtils.RgbToImGui(dto.Color.Value);
+                var colorVec = ColorUtils.RgbToVector4(dto.Color.Value);
                 var color = ImGui.ColorConvertFloat4ToU32(colorVec);
                 dl.AddRectFilled(
                     stripeMin,
@@ -218,7 +218,7 @@ public static class EmbedPreviewRenderer
         if (borderEnabled && rectMax.X > rectMin.X && rectMax.Y > rectMin.Y)
         {
             var drawList = ImGui.GetWindowDrawList();
-            var colorVec = ColorUtils.RgbToImGui(borderColor);
+            var colorVec = ColorUtils.RgbToVector4(borderColor);
             var color = ImGui.ColorConvertFloat4ToU32(colorVec);
             var inset = new Vector2(1f, 1f);
             drawList.AddRect(rectMin + inset, rectMax - inset, color, 0f, ImDrawFlags.None, 1.5f);
