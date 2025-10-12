@@ -7,7 +7,7 @@ from demibot.db.models import User, SyncshellManifest
 from demibot.http.deps import RequestContext
 
 from .syncshell_import import syncshell
-from .syncshell_test_utils import build_manifest_payload
+from .syncshell_test_utils import build_publish_payload
 
 
 def test_manifest_blob_hashes_persist(tmp_path):
@@ -25,30 +25,46 @@ def test_manifest_blob_hashes_persist(tmp_path):
             syncshell.RATE_LIMIT = 5
             await syncshell.pair(ctx=ctx, db=db)
 
-            manifest, blob_hash = build_manifest_payload(tmp_path)
+            payload, file_path, blob_hash = build_publish_payload(
+                tmp_path, discord_id=str(user.discord_user_id)
+            )
             syncshell._transfer_budgets.clear()
-            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
-            need_hashes = {entry["hash"] for entry in response["diff"]["need"]}
-            assert blob_hash in need_hashes
+            response = await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
+            assert response["missing"] == [blob_hash]
+
+            blob_path = syncshell._blob_path(blob_hash)
+            blob_path.parent.mkdir(parents=True, exist_ok=True)
+            blob_path.write_bytes(file_path.read_bytes())
+
+            payload["complete"] = True
+            complete = await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
+            assert complete["missing"] == []
             record = await db.get(SyncshellManifest, user.id)
             assert record is not None
             stored = json.loads(record.manifest_json)
-            stored_file = stored["collections"][0]["mods"][0]["files"][0]
-            assert stored_file["hash"] == blob_hash
-            assert stored["wantBlobs"]["blobs"] == [blob_hash]
+            assert stored["appearance"]["blobs"][0]["sha256"] == blob_hash
 
-            # Updating the manifest replaces the stored payload.
-            newer_manifest, newer_hash = build_manifest_payload(tmp_path / "second")
-            response = await syncshell.upload_manifest(newer_manifest, ctx=ctx, db=db)
-            diff = response["diff"]
-            need_hashes = {entry["hash"] for entry in diff["need"]}
-            remove_hashes = {entry["hash"] for entry in diff["remove"]}
-            assert newer_hash in need_hashes
-            assert blob_hash in remove_hashes
-            assert diff["conflicts"]
+            newer_payload, newer_path, newer_hash = build_publish_payload(
+                tmp_path / "second", discord_id=str(user.discord_user_id)
+            )
+            newer_response = await syncshell.handle_publish_manifest(
+                newer_payload, ctx=ctx, db=db
+            )
+            assert newer_response["missing"] == [newer_hash]
+
+            newer_blob_path = syncshell._blob_path(newer_hash)
+            newer_blob_path.parent.mkdir(parents=True, exist_ok=True)
+            newer_blob_path.write_bytes(newer_path.read_bytes())
+
+            newer_payload["complete"] = True
+            newer_complete = await syncshell.handle_publish_manifest(
+                newer_payload, ctx=ctx, db=db
+            )
+            assert newer_complete["missing"] == []
+
             updated = await db.get(SyncshellManifest, user.id)
             assert updated is not None
             updated_payload = json.loads(updated.manifest_json)
-            assert updated_payload["collections"][0]["mods"][0]["files"][0]["hash"] == newer_hash
-            assert updated_payload["wantBlobs"]["blobs"] == [newer_hash]
+            stored_blob = updated_payload["appearance"]["blobs"][0]
+            assert stored_blob["sha256"] == newer_hash
     asyncio.run(_run())
