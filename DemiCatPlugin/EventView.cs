@@ -297,10 +297,11 @@ public class EventView : IDisposable
             DrawTitleSection(dto);
         }
 
-        if (!string.IsNullOrEmpty(dto.Description))
+        var description = EventEmbedHelpers.RemoveAppendedStartLine(dto.Description, dto.Timestamp, out _);
+        if (!string.IsNullOrEmpty(description))
         {
             BeginSection();
-            ImGui.TextWrapped(dto.Description);
+            ImGui.TextWrapped(description);
         }
 
         if (_thumbnail != null)
@@ -321,7 +322,7 @@ public class EventView : IDisposable
             DrawImageSection();
         }
 
-        if (_footerIcon != null || !string.IsNullOrEmpty(dto.FooterText) || dto.Timestamp.HasValue)
+        if (_footerIcon != null || !string.IsNullOrEmpty(dto.FooterText))
         {
             BeginSection();
             DrawFooterSection(dto);
@@ -463,11 +464,6 @@ public class EventView : IDisposable
             parts.Add(dto.FooterText!.Trim());
         }
 
-        if (dto.Timestamp.HasValue)
-        {
-            parts.Add(dto.Timestamp.Value.LocalDateTime.ToString());
-        }
-
         var hasText = parts.Count > 0;
 
         if (_footerIcon != null)
@@ -490,6 +486,14 @@ public class EventView : IDisposable
     public void DrawButtons()
     {
         using var emojiFont = _emojiManager.PushEmojiFont();
+        var showStartTime = EventEmbedHelpers.ShouldDisplayStartTime(_dto);
+        if (showStartTime)
+        {
+            var label = $"Starts: {EventEmbedHelpers.FormatLocalStartTime(_dto.Timestamp!.Value)}";
+            ImGui.TextUnformatted(label);
+            ImGui.Spacing();
+        }
+
         if (Buttons != null && Buttons.Count > 0)
         {
             foreach (var row in Buttons
@@ -536,7 +540,7 @@ public class EventView : IDisposable
                 }
             }
         }
-        else if (IsApolloEvent(_dto))
+        else if (EventEmbedHelpers.IsApolloEvent(_dto))
         {
             if (ImGui.Button($"Yes##rsvpYes{_dto.Id}", new Vector2(-1, 0)))
             {
@@ -556,26 +560,6 @@ public class EventView : IDisposable
         {
             ImGui.TextUnformatted(_lastResult);
         }
-    }
-
-    private static bool IsApolloEvent(EmbedDto dto)
-    {
-        if (!string.IsNullOrEmpty(dto.FooterText) &&
-            dto.FooterText.Contains("apollo", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-        if (!string.IsNullOrEmpty(dto.ProviderName) &&
-            dto.ProviderName.Contains("apollo", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-        if (!string.IsNullOrEmpty(dto.AuthorName) &&
-            dto.AuthorName.Contains("apollo", StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-        return false;
     }
 
     private void LoadTexture(string? url, Action<ISharedImmediateTexture?> set)

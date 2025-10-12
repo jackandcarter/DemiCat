@@ -169,6 +169,7 @@ public class EventPreviewFormatterTests
     private static void AssertPreviewMatches(JsonElement expected, EventPreviewFormatter.Result actual)
     {
         Assert.Equal(expected.GetProperty("content").GetString(), actual.Content);
+        Assert.Equal(Timestamp, actual.Embed.Timestamp);
         AssertJsonEqual(expected.GetProperty("embed"), BuildEmbedElement(actual.Embed));
         AssertJsonEqual(expected.GetProperty("buttons"), BuildButtonsElement(actual.Buttons));
     }
@@ -185,8 +186,6 @@ public class EventPreviewFormatterTests
         if (!string.IsNullOrWhiteSpace(embed.Description)) obj["description"] = embed.Description;
         if (!string.IsNullOrWhiteSpace(embed.Url)) obj["url"] = embed.Url;
         if (embed.Color.HasValue) obj["color"] = (int)embed.Color.Value;
-        if (embed.Timestamp.HasValue) obj["timestamp"] = embed.Timestamp.Value.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss+00:00");
-
         if (embed.Fields != null && embed.Fields.Count > 0)
         {
             obj["fields"] = embed.Fields.Select(f => new Dictionary<string, object?>

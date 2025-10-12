@@ -22,9 +22,8 @@
       ],
       "flags": 0,
       "color": 1193046,
-      "timestamp": "2024-04-01T20:00:00+00:00",
       "type": "rich",
-      "description": "Clear the raid together.",
+      "description": "Clear the raid together.\n\n**Starts:** <t:1712001600:F>",
       "url": "https://example.com/event",
       "title": "Raid Night",
       "footer": {
@@ -71,9 +70,8 @@
       ],
       "flags": 0,
       "color": 1193046,
-      "timestamp": "2024-04-01T20:00:00+00:00",
       "type": "rich",
-      "description": "Clear the raid together.",
+      "description": "Clear the raid together.\n\n**Starts:** <t:1712001600:F>",
       "url": "https://example.com/event",
       "title": "Raid Night",
       "footer": {
@@ -120,9 +118,8 @@
       ],
       "flags": 0,
       "color": 11163084,
-      "timestamp": "2024-04-01T20:00:00+00:00",
       "type": "rich",
-      "description": "Discuss strategy.",
+      "description": "Discuss strategy.\n\n**Starts:** <t:1712001600:F>",
       "url": "https://example.com/template",
       "title": "Static Meeting",
       "footer": {
@@ -183,9 +180,8 @@
       ],
       "flags": 0,
       "color": 11163084,
-      "timestamp": "2024-04-01T20:00:00+00:00",
       "type": "rich",
-      "description": "Discuss strategy.",
+      "description": "Discuss strategy.\n\n**Starts:** <t:1712001600:F>",
       "url": "https://example.com/template",
       "title": "Static Meeting",
       "footer": {

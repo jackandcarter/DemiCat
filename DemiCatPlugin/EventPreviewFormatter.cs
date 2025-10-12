@@ -74,11 +74,14 @@ public static class EventPreviewFormatter
 
         var footer = NormalizeFooter(creatorLabel);
 
+        var normalizedDescription = string.IsNullOrWhiteSpace(description) ? null : description;
+        var descriptionWithStart = EventEmbedHelpers.AppendDiscordStartLine(normalizedDescription, timestamp);
+
         var embed = new EmbedDto
         {
             Id = string.IsNullOrWhiteSpace(embedId) ? "preview" : embedId!,
             Title = string.IsNullOrWhiteSpace(title) ? null : title,
-            Description = string.IsNullOrWhiteSpace(description) ? null : description,
+            Description = descriptionWithStart,
             Url = string.IsNullOrWhiteSpace(url) ? null : url,
             ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl,
             ThumbnailUrl = string.IsNullOrWhiteSpace(thumbnailUrl) ? null : thumbnailUrl,

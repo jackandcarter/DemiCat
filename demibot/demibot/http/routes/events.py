@@ -285,6 +285,22 @@ class FormattedEvent(NamedTuple):
     buttons: List[EmbedButtonDto]
 
 
+def _append_start_line(description: str | None, start: datetime | None) -> str | None:
+    if start is None:
+        return description
+
+    unix = int(start.timestamp())
+    start_line = f"**Starts:** <t:{unix}:F>"
+    if not description:
+        return start_line
+
+    trimmed = description.rstrip()
+    if trimmed.endswith(start_line):
+        return description
+
+    return f"{trimmed}\n\n{start_line}"
+
+
 def format_event_embed(
     body: "CreateEventBody",
     *,
@@ -298,8 +314,9 @@ def format_event_embed(
                 EmbedButtonDto(label=tag.capitalize(), custom_id=f"rsvp:{tag}")
             )
 
-    embed = discord.Embed(title=body.title, description=body.description)
-    embed.timestamp = timestamp
+    description = _append_start_line(body.description, body.time)
+
+    embed = discord.Embed(title=body.title, description=description)
     if body.color is not None:
         embed.colour = body.color
     if body.url:
@@ -364,12 +381,12 @@ async def create_event(
 
     dto = EmbedDto(
         id=eid,
-        timestamp=ts,
+        timestamp=body.time,
         color=body.color,
         author_name=None,
         author_icon_url=None,
         title=body.title,
-        description=body.description,
+        description=formatted.embed.description,
         url=body.url,
         fields=[
             EmbedFieldDto(name=f.name, value=f.value, inline=f.inline)

@@ -81,10 +81,11 @@ public static class EmbedPreviewRenderer
             ImGui.TextUnformatted(dto.Title);
         }
 
-        if (!string.IsNullOrEmpty(dto.Description))
+        var description = EventEmbedHelpers.RemoveAppendedStartLine(dto.Description, dto.Timestamp, out _);
+        if (!string.IsNullOrEmpty(description))
         {
             BeginSection();
-            ImGui.TextWrapped(dto.Description);
+            ImGui.TextWrapped(description);
         }
 
         if (!string.IsNullOrEmpty(dto.ThumbnailUrl))
@@ -116,20 +117,19 @@ public static class EmbedPreviewRenderer
         }
 
         var footerText = dto.FooterText ?? string.Empty;
-        if (dto.Timestamp.HasValue)
-        {
-            if (footerText.Length > 0)
-            {
-                footerText += " • ";
-            }
-
-            footerText += dto.Timestamp.Value.LocalDateTime.ToString();
-        }
 
         if (!string.IsNullOrEmpty(footerText))
         {
             BeginSection();
             ImGui.TextUnformatted(footerText);
+        }
+
+        var showStartTime = EventEmbedHelpers.ShouldDisplayStartTime(dto);
+        if (showStartTime)
+        {
+            BeginSection();
+            var label = $"Starts: {EventEmbedHelpers.FormatLocalStartTime(dto.Timestamp!.Value)}";
+            ImGui.TextUnformatted(label);
         }
 
         if (dto.Buttons != null && dto.Buttons.Count > 0)
