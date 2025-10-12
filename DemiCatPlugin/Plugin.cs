@@ -236,7 +236,7 @@ public class Plugin : IDalamudPlugin
         }
         _syncShellService.Dispose();
         _blobStore.Dispose();
-        var log = _services.Log;
+        var log = _services?.Log;
         try
         {
             RunOnFrameworkAsync(WebTextureCache.Clear).GetAwaiter().GetResult();
