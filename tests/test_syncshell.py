@@ -1,5 +1,6 @@
 import asyncio
-import logging
+import hashlib
+import json
 
 import pytest
 
@@ -9,7 +10,7 @@ from demibot.db.models import User, SyncshellPairing, SyncshellManifest
 from demibot.http.deps import RequestContext
 
 from .syncshell_import import syncshell
-from .syncshell_test_utils import build_manifest_payload
+from .syncshell_test_utils import build_publish_payload
 
 
 async def _prepare_db():
@@ -35,17 +36,31 @@ def test_pair_token_persistence_and_expiry(tmp_path):
             pairing = await db.get(SyncshellPairing, user.id)
             assert pairing and pairing.token == token
 
-            manifest, _ = build_manifest_payload(tmp_path)
-            syncshell._transfer_budgets.clear()
-            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
-            assert response["status"] == "ok"
-            assert response["diff"]["need"]
-            assert response["diff"]["remove"] == []
-            assert response["limits"]["budget"]["limitBytes"] > 0
+            payload, file_path, sha = build_publish_payload(
+                tmp_path, discord_id=str(user.discord_user_id)
+            )
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
+            initial = await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
+            assert initial["missing"] == [sha]
+
+            blob_path = syncshell._blob_path(sha)
+            blob_path.parent.mkdir(parents=True, exist_ok=True)
+            blob_path.write_bytes(file_path.read_bytes())
+
+            payload["complete"] = True
+            complete = await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
+            assert complete["missing"] == []
+
+            record = await db.get(SyncshellManifest, user.id)
+            assert record is not None
+            stored = json.loads(record.manifest_json)
+            stored_blob = stored["appearance"]["blobs"][0]
+            assert stored_blob["sha256"] == sha
 
             await asyncio.sleep(1.1)
+            payload["complete"] = False
             with pytest.raises(syncshell.HTTPException) as exc:
-                await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+                await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
             assert exc.value.status_code == 401
     asyncio.run(_run())
 
@@ -62,12 +77,15 @@ def test_manifest_rate_limit(tmp_path):
             syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
             syncshell.RATE_LIMIT = 2
             await syncshell.pair(ctx=ctx, db=db)
-            manifest, _ = build_manifest_payload(tmp_path)
+            payload, _, _ = build_publish_payload(
+                tmp_path, discord_id=str(user.discord_user_id)
+            )
+            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
             syncshell._transfer_budgets.clear()
-            first = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
-            assert first["diff"]["need"]
+            first = await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
+            assert first["missing"]
             with pytest.raises(syncshell.HTTPException) as exc:
-                await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
+                await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
             assert exc.value.status_code == 429
     asyncio.run(_run())
 
@@ -83,15 +101,17 @@ def test_manifest_too_large(tmp_path):
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
             syncshell.MAX_MANIFEST_BYTES = 10
             await syncshell.pair(ctx=ctx, db=db)
-            big_manifest, _ = build_manifest_payload(tmp_path)
-            big_manifest.setdefault("meta", []).append({"key": "x", "value": "y" * 50})
+            payload, _, _ = build_publish_payload(
+                tmp_path, discord_id=str(user.discord_user_id)
+            )
+            payload["appearance"]["glamourer"] = "x" * 100
             with pytest.raises(syncshell.HTTPException) as exc:
-                await syncshell.upload_manifest(big_manifest, ctx=ctx, db=db)
+                await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
             assert exc.value.status_code == 413
     asyncio.run(_run())
 
 
-def test_manifest_corrupt_previous_logs_warning(tmp_path, caplog):
+def test_publish_overwrites_corrupted_manifest(tmp_path):
     async def _run():
         session_factory = await _prepare_db()
         async with session_factory as db:
@@ -100,8 +120,6 @@ def test_manifest_corrupt_previous_logs_warning(tmp_path, caplog):
             await db.commit()
 
             ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
-            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
-            syncshell.RATE_LIMIT = 5
 
             await syncshell.pair(ctx=ctx, db=db)
 
@@ -109,15 +127,20 @@ def test_manifest_corrupt_previous_logs_warning(tmp_path, caplog):
             db.add(corrupted)
             await db.commit()
 
-            manifest, _ = build_manifest_payload(tmp_path)
-            syncshell._transfer_budgets.clear()
+            payload, file_path, sha = build_publish_payload(
+                tmp_path, discord_id=str(user.discord_user_id)
+            )
+            blob_path = syncshell._blob_path(sha)
+            blob_path.parent.mkdir(parents=True, exist_ok=True)
+            blob_path.write_bytes(file_path.read_bytes())
 
-            caplog.set_level(logging.WARNING, logger="demibot.http.routes.syncshell")
-            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
-            assert response["status"] == "ok"
+            payload["complete"] = True
+            result = await syncshell.handle_publish_manifest(payload, ctx=ctx, db=db)
+            assert result["missing"] == []
+
+            updated = await db.get(SyncshellManifest, user.id)
+            assert updated is not None
+            stored = json.loads(updated.manifest_json)
+            assert stored["appearance"]["blobs"][0]["sha256"] == sha
 
     asyncio.run(_run())
-    assert any(
-        "syncshell.manifest.previous.decode_failed" in record.getMessage()
-        for record in caplog.records
-    )

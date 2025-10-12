@@ -36,6 +36,9 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/syncshell", tags=["syncshell"])
 
 BLOB_ROOT = Path(os.getenv("SYNC_SHELL_BLOB_ROOT", "data/blobs")).resolve()
+MAX_BLOB_SIZE_MIB = int(os.getenv("SYNC_SHELL_MAX_BLOB_SIZE_MIB", "0"))
+MAX_BLOB_SIZE_BYTES = MAX_BLOB_SIZE_MIB * 1024 * 1024 if MAX_BLOB_SIZE_MIB > 0 else 0
+CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable"
 
 RATE_LIMIT = int(os.getenv("SYNC_SHELL_MAX_REQUESTS_PER_MINUTE", "30"))
 TOKEN_TTL = int(os.getenv("SYNC_SHELL_TOKEN_TTL", "300"))  # seconds
@@ -1023,7 +1026,10 @@ async def put_blob(
     request: Request,
     sha256: str,
     ctx: RequestContext = Depends(api_key_auth),
-) -> Response:  # noqa: ARG001
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
     sha256 = _validate_sha(sha256)
     destination = _blob_path(sha256)
     if destination.exists():
@@ -1041,6 +1047,9 @@ async def put_blob(
                 tmp_file.write(chunk)
                 hasher.update(chunk)
                 size += len(chunk)
+                if MAX_BLOB_SIZE_BYTES and size > MAX_BLOB_SIZE_BYTES:
+                    temp_path.unlink(missing_ok=True)
+                    raise HTTPException(status_code=413, detail="blob too large")
         except Exception:
             temp_path.unlink(missing_ok=True)
             raise
@@ -1058,6 +1067,7 @@ async def put_blob(
     os.chmod(destination, 0o600)
     response = Response(status_code=status.HTTP_201_CREATED)
     response.headers["Content-Length"] = str(size)
+    response.headers["Cache-Control"] = CACHE_CONTROL_IMMUTABLE
     return response
 
 
@@ -1065,7 +1075,10 @@ async def put_blob(
 async def head_blob(
     sha256: str,
     ctx: RequestContext = Depends(api_key_auth),
-) -> Response:  # noqa: ARG001
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
     sha256 = _validate_sha(sha256)
     path = _blob_path(sha256)
     if not path.exists():
@@ -1074,6 +1087,8 @@ async def head_blob(
     size = path.stat().st_size
     response = Response(status_code=status.HTTP_200_OK)
     response.headers["Content-Length"] = str(size)
+    response.headers["Cache-Control"] = CACHE_CONTROL_IMMUTABLE
+    response.headers["Accept-Ranges"] = "bytes"
     return response
 
 
@@ -1082,7 +1097,10 @@ async def get_blob(
     request: Request,
     sha256: str,
     ctx: RequestContext = Depends(api_key_auth),
-):  # noqa: ARG001
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
     sha256 = _validate_sha(sha256)
     path = _blob_path(sha256)
     if not path.exists():
@@ -1091,7 +1109,14 @@ async def get_blob(
     size = path.stat().st_size
     range_header = request.headers.get("range")
     if not range_header:
-        return FileResponse(path, media_type="application/octet-stream")
+        return FileResponse(
+            path,
+            media_type="application/octet-stream",
+            headers={
+                "Cache-Control": CACHE_CONTROL_IMMUTABLE,
+                "Accept-Ranges": "bytes",
+            },
+        )
 
     if not range_header.lower().startswith("bytes="):
         raise HTTPException(status_code=416, detail="invalid range")
@@ -1118,6 +1143,7 @@ async def get_blob(
         "Content-Range": f"bytes {start}-{end}/{size}",
         "Content-Length": str(len(payload)),
         "Accept-Ranges": "bytes",
+        "Cache-Control": CACHE_CONTROL_IMMUTABLE,
     }
     return Response(
         content=payload,
@@ -1174,6 +1200,20 @@ class UserMetaModel(BaseModel):
         return value
 
 
+class PublishPayload(BaseModel):
+    discordId: str
+    appearance: AppearanceMetaModel
+    complete: bool = False
+
+    @field_validator("discordId")
+    @classmethod
+    def _validate_publish_discord_id(cls, value: str) -> str:  # noqa: D401
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("discord id required")
+        return value
+
+
 def _coerce_int(value: str) -> int:
     try:
         return int(value)
@@ -1191,6 +1231,50 @@ def _parse_appearance(payload: dict[str, Any]) -> AppearanceMetaModel:
         return AppearanceMetaModel.model_validate(appearance)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=404, detail="appearance unavailable") from exc
+
+
+async def handle_publish_manifest(
+    payload: dict[str, Any],
+    ctx: RequestContext,
+    db: AsyncSession,
+) -> dict[str, Any]:
+    await _require_pairing(ctx, db)
+    payload_size = len(json.dumps(payload).encode())
+    if payload_size > MAX_MANIFEST_BYTES:
+        raise HTTPException(status_code=413, detail="manifest too large")
+    publish = PublishPayload.model_validate(payload)
+    await _check_rate_limit(ctx.user.id, db)
+
+    missing: set[str] = set()
+    for blob in publish.appearance.blobs:
+        if not blob.sha256:
+            continue
+        path = _blob_path(blob.sha256)
+        if not path.exists():
+            missing.add(blob.sha256)
+
+    missing_list = sorted(missing)
+
+    if publish.complete:
+        if missing_list:
+            raise HTTPException(status_code=409, detail="missing blobs")
+
+        manifest_payload = {
+            "discordId": str(ctx.user.discord_user_id or ctx.user.id),
+            "appearance": publish.appearance.model_dump(mode="json"),
+        }
+
+        payload_json = json.dumps(manifest_payload)
+        record = await db.get(SyncshellManifest, ctx.user.id)
+        if record:
+            record.manifest_json = payload_json
+            record.updated_at = datetime.utcnow()
+        else:
+            record = SyncshellManifest(user_id=ctx.user.id, manifest_json=payload_json)
+            db.add(record)
+        await db.commit()
+
+    return {"missing": missing_list}
 
 
 @router.get("/meta", response_model=UserMetaModel)
