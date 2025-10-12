@@ -280,8 +280,8 @@ public class SyncshellWindow : IDisposable
         var openConflict = true;
         if (_penumbraConflict != null && ImGui.BeginPopupModal("Penumbra Conflict", ref openConflict, ImGuiWindowFlags.AlwaysAutoResize))
         {
-            ImGui.TextUnformatted($"Mod {_penumbraConflict.ModName} already exists. Use vault version or keep mine?");
-            if (ImGui.Button("Use vault version"))
+            ImGui.TextUnformatted($"Mod {_penumbraConflict.ModName} already exists. Use synced version or keep mine?");
+            if (ImGui.Button("Use synced version"))
             {
                 _penumbraConflict?.Tcs.TrySetResult(true);
                 _penumbraConflict = null;
@@ -3308,9 +3308,9 @@ public class SyncshellWindow : IDisposable
         if (!Directory.Exists(dest))
             return (true, null);
         var log = PluginServices.Instance?.Log;
-        if (_config.PenumbraChoices.TryGetValue(modName, out var useVault))
+        if (_config.PenumbraChoices.TryGetValue(modName, out var useSyncedVersion))
         {
-            if (!useVault)
+            if (!useSyncedVersion)
                 return (false, null);
         }
         else

@@ -185,7 +185,7 @@ public sealed class SizeHint
 }
 
 /// <summary>
-/// Payload describing the binary blobs or individual chunks required from the SyncShell vault.
+/// Payload describing the binary blobs or individual chunks required from the SyncShell service.
 /// </summary>
 public sealed class WantBlobs
 {

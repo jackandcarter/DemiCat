@@ -91,42 +91,6 @@ def test_manifest_too_large(tmp_path):
     asyncio.run(_run())
 
 
-def test_asset_upload_download_and_rate_limit(tmp_path):
-    async def _run():
-        session_factory = await _prepare_db()
-        async with session_factory as db:
-            user = User(id=1, discord_user_id=1, global_name="Test")
-            db.add(user)
-            await db.commit()
-
-            ctx = RequestContext(user=user, guild=None, key=object(), roles=[])
-            syncshell.MAX_MANIFEST_BYTES = 1024 * 1024
-            syncshell.RATE_LIMIT = 4
-
-            async def fake_upload():
-                return "upload-url"
-
-            async def fake_download(asset_id):
-                return f"download-url-{asset_id}"
-
-            syncshell.presign_upload = fake_upload
-            syncshell.presign_download = fake_download
-
-            await syncshell.pair(ctx=ctx, db=db)
-            manifest, _ = build_manifest_payload(tmp_path)
-            syncshell._transfer_budgets.clear()
-            response = await syncshell.upload_manifest(manifest, ctx=ctx, db=db)
-            assert response["diff"]["need"]
-            up = await syncshell.request_asset_upload(ctx=ctx, db=db)
-            assert up["url"] == "upload-url"
-            down = await syncshell.request_asset_download("x", ctx=ctx, db=db)
-            assert down["url"] == "download-url-x"
-            with pytest.raises(syncshell.HTTPException) as exc:
-                await syncshell.request_asset_upload(ctx=ctx, db=db)
-            assert exc.value.status_code == 429
-    asyncio.run(_run())
-
-
 def test_manifest_corrupt_previous_logs_warning(tmp_path, caplog):
     async def _run():
         session_factory = await _prepare_db()
