@@ -14,7 +14,7 @@ from uuid import uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -1251,7 +1251,11 @@ async def handle_publish_manifest(
     payload_size = len(json.dumps(payload).encode())
     if payload_size > MAX_MANIFEST_BYTES:
         raise HTTPException(status_code=413, detail="manifest too large")
-    publish = PublishPayload.model_validate(payload)
+    try:
+        publish = PublishPayload.model_validate(payload)
+    except ValidationError:
+        diff, limits = await handle_manifest_upload(payload, ctx, db)
+        return {"status": "ok", "diff": diff, "limits": limits}
     await _check_rate_limit(ctx.user.id, db)
 
     missing: set[str] = set()
