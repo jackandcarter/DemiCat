@@ -307,6 +307,33 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     public Task ResyncAllAsync(CancellationToken cancellationToken = default)
         => TriggerPublishAsync(cancellationToken);
 
+    internal void UpdateLocalAppearance(IEnumerable<LocalBlobInfo> blobs, string? glamourerJson)
+    {
+        lock (_appearanceLock)
+        {
+            _localBlobs.Clear();
+            if (blobs != null)
+            {
+                foreach (var blob in blobs)
+                {
+                    if (blob == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(blob.Sha256) || string.IsNullOrWhiteSpace(blob.FullPath))
+                    {
+                        continue;
+                    }
+
+                    _localBlobs[blob.Sha256] = blob;
+                }
+            }
+
+            _glamourerJson = string.IsNullOrWhiteSpace(glamourerJson) ? null : glamourerJson;
+        }
+    }
+
     public bool TryValidatePenumbraPath(string? path, out string? error)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -432,26 +459,158 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             return;
         }
 
+        PublishPayload payload;
+        Dictionary<string, LocalBlobInfo> localBlobs;
+        try
+        {
+            (payload, localBlobs) = BuildPublishPayload();
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Failed to build SyncShell appearance payload");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(payload.DiscordId))
+        {
+            _log.Warning("SyncShell publish skipped due to missing Discord ID");
+            return;
+        }
+
+        var previousStatus = Status;
+        try
+        {
+            Status = "Publishing…";
+            var result = await _client.PublishAsync(payload, token).ConfigureAwait(false);
+            var missing = (result?.Missing ?? new List<string>())
+                .Where(hash => !string.IsNullOrWhiteSpace(hash))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (missing.Count > 0)
+            {
+                await UploadMissingBlobsAsync(missing, localBlobs, token).ConfigureAwait(false);
+                Status = "Publishing…";
+            }
+
+            payload.Complete = true;
+            await _client.PublishAsync(payload, token).ConfigureAwait(false);
+            Status = "Active";
+        }
+        catch (OperationCanceledException)
+        {
+            Status = previousStatus;
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Failed to publish appearance");
+            Status = previousStatus;
+        }
+    }
+
+    private (PublishPayload Payload, Dictionary<string, LocalBlobInfo> LocalBlobs) BuildPublishPayload()
+    {
         var appearance = new AppearanceMeta
         {
             ActorHash = _clientState.LocalPlayer?.Name.TextValue ?? string.Empty,
-            GlamourerJson = null,
         };
+
+        Dictionary<string, LocalBlobInfo> localBlobs;
+        lock (_appearanceLock)
+        {
+            appearance.GlamourerJson = _glamourerJson;
+            localBlobs = _localBlobs.ToDictionary(kvp => kvp.Key, kvp => kvp.Value, StringComparer.OrdinalIgnoreCase);
+        }
+
+        foreach (var blob in localBlobs.Values.OrderBy(b => b.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            appearance.Blobs.Add(new BlobRef
+            {
+                Name = blob.Name,
+                Sha256 = blob.Sha256,
+                Size = blob.Size,
+            });
+        }
 
         var payload = new PublishPayload
         {
             DiscordId = _tokenManager.Token ?? string.Empty,
             Appearance = appearance,
-            Complete = true,
+            Complete = false,
         };
 
-        try
+        return (payload, localBlobs);
+    }
+
+    private async Task UploadMissingBlobsAsync(
+        IReadOnlyList<string> missing,
+        IReadOnlyDictionary<string, LocalBlobInfo> localBlobs,
+        CancellationToken token)
+    {
+        if (missing.Count == 0)
         {
-            await _client.PublishAsync(payload, token).ConfigureAwait(false);
+            return;
         }
-        catch (Exception ex)
+
+        var remaining = missing.Count;
+        foreach (var hash in missing)
         {
-            _log.Warning(ex, "Failed to publish appearance");
+            token.ThrowIfCancellationRequested();
+            Status = $"Uploading {remaining} blob{(remaining == 1 ? string.Empty : "s")}…";
+            remaining--;
+
+            if (!localBlobs.TryGetValue(hash, out var blob))
+            {
+                _log.Warning("Missing local blob for hash {Hash}", hash);
+                continue;
+            }
+
+            if (!File.Exists(blob.FullPath))
+            {
+                _log.Warning("Local blob path not found: {Path}", blob.FullPath);
+                continue;
+            }
+
+            var shouldUpload = true;
+            try
+            {
+                shouldUpload = !await _client.BlobExistsAsync(hash, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to query blob {Hash} existence", hash);
+            }
+
+            if (!shouldUpload)
+            {
+                continue;
+            }
+
+            await using var stream = new FileStream(
+                blob.FullPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                64 * 1024,
+                useAsync: true);
+
+            try
+            {
+                await _client.UploadBlobAsync(hash, stream, token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to upload blob {Hash}", hash);
+            }
         }
     }
 

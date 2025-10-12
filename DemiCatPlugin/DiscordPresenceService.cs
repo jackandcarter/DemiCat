@@ -215,7 +215,7 @@ public class DiscordPresenceService : IDisposable
 
         try
         {
-            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/users");
+            var request = new HttpRequestMessage(HttpMethod.Get, $"{_config.ApiBaseUrl.TrimEnd('/')}/api/presences");
             ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
             using var response = await _httpClient.SendAsync(request).ConfigureAwait(false);
             if (response.StatusCode == (HttpStatusCode)429)

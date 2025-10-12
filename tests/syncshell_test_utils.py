@@ -94,3 +94,29 @@ def build_manifest_payload(base: Path) -> Tuple[dict, str]:
     # Normalise through JSON to avoid non-serialisable objects leaking into tests.
     normalised = json.loads(json.dumps(manifest))
     return normalised, file_hash
+
+
+def build_publish_payload(base: Path, *, discord_id: str = "1234") -> tuple[dict, Path, str]:
+    file_path = base / "appearance.bin"
+    content = b"syncshell-publish"
+    file_path.parent.mkdir(parents=True, exist_ok=True)
+    file_path.write_bytes(content)
+    file_hash = hashlib.sha256(content).hexdigest()
+
+    payload = {
+        "discordId": discord_id,
+        "appearance": {
+            "actorHash": "actor-1",
+            "glamourer": "{\"foo\":1}",
+            "blobs": [
+                {
+                    "name": file_path.name,
+                    "sha256": file_hash,
+                    "size": len(content),
+                }
+            ],
+        },
+        "complete": False,
+    }
+
+    return payload, file_path, file_hash

@@ -1,15 +1,20 @@
 from __future__ import annotations
 
-import os
-from uuid import uuid4
-from typing import Any, Optional
-from datetime import datetime, timedelta, timezone
-from dataclasses import dataclass
+import hashlib
 import json
 import logging
+import os
+import shutil
+import tempfile
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from typing import Any, Optional
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,6 +34,11 @@ logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/api/syncshell", tags=["syncshell"])
+
+BLOB_ROOT = Path(os.getenv("SYNC_SHELL_BLOB_ROOT", "data/blobs")).resolve()
+MAX_BLOB_SIZE_MIB = int(os.getenv("SYNC_SHELL_MAX_BLOB_SIZE_MIB", "0"))
+MAX_BLOB_SIZE_BYTES = MAX_BLOB_SIZE_MIB * 1024 * 1024 if MAX_BLOB_SIZE_MIB > 0 else 0
+CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable"
 
 RATE_LIMIT = int(os.getenv("SYNC_SHELL_MAX_REQUESTS_PER_MINUTE", "30"))
 TOKEN_TTL = int(os.getenv("SYNC_SHELL_TOKEN_TTL", "300"))  # seconds
@@ -995,3 +1005,319 @@ async def clear_cache(
     await _check_rate_limit(ctx.user.id, db)
     await _clear_manifest(ctx, db)
     return {"status": "ok"}
+def _validate_sha(value: str) -> str:
+    if not isinstance(value, str) or len(value) != 64:
+        raise HTTPException(status_code=400, detail="invalid sha256")
+    try:
+        int(value, 16)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="invalid sha256") from exc
+    return value.lower()
+
+
+def _blob_path(sha256: str) -> Path:
+    shard_a = sha256[:2]
+    shard_b = sha256[2:4]
+    return BLOB_ROOT / shard_a / shard_b / sha256
+
+
+@router.put("/blobs", status_code=status.HTTP_201_CREATED)
+async def put_blob(
+    request: Request,
+    sha256: str,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
+    sha256 = _validate_sha(sha256)
+    destination = _blob_path(sha256)
+    if destination.exists():
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile(dir=str(destination.parent), delete=False) as tmp_file:
+        temp_path = Path(tmp_file.name)
+        hasher = hashlib.sha256()
+        size = 0
+        try:
+            async for chunk in request.stream():
+                if not chunk:
+                    continue
+                tmp_file.write(chunk)
+                hasher.update(chunk)
+                size += len(chunk)
+                if MAX_BLOB_SIZE_BYTES and size > MAX_BLOB_SIZE_BYTES:
+                    temp_path.unlink(missing_ok=True)
+                    raise HTTPException(status_code=413, detail="blob too large")
+        except Exception:
+            temp_path.unlink(missing_ok=True)
+            raise
+
+    digest = hasher.hexdigest()
+    if digest != sha256:
+        temp_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="sha256 mismatch")
+
+    if destination.exists():
+        temp_path.unlink(missing_ok=True)
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    shutil.move(str(temp_path), str(destination))
+    os.chmod(destination, 0o600)
+    response = Response(status_code=status.HTTP_201_CREATED)
+    response.headers["Content-Length"] = str(size)
+    response.headers["Cache-Control"] = CACHE_CONTROL_IMMUTABLE
+    return response
+
+
+@router.head("/blobs")
+async def head_blob(
+    sha256: str,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> Response:
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
+    sha256 = _validate_sha(sha256)
+    path = _blob_path(sha256)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="blob not found")
+
+    size = path.stat().st_size
+    response = Response(status_code=status.HTTP_200_OK)
+    response.headers["Content-Length"] = str(size)
+    response.headers["Cache-Control"] = CACHE_CONTROL_IMMUTABLE
+    response.headers["Accept-Ranges"] = "bytes"
+    return response
+
+
+@router.get("/blobs")
+async def get_blob(
+    request: Request,
+    sha256: str,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+):
+    await _require_pairing(ctx, db)
+    await _check_rate_limit(ctx.user.id, db)
+    sha256 = _validate_sha(sha256)
+    path = _blob_path(sha256)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="blob not found")
+
+    size = path.stat().st_size
+    range_header = request.headers.get("range")
+    if not range_header:
+        return FileResponse(
+            path,
+            media_type="application/octet-stream",
+            headers={
+                "Cache-Control": CACHE_CONTROL_IMMUTABLE,
+                "Accept-Ranges": "bytes",
+            },
+        )
+
+    if not range_header.lower().startswith("bytes="):
+        raise HTTPException(status_code=416, detail="invalid range")
+
+    range_spec = range_header.split("=", 1)[1]
+    start_str, _, end_str = range_spec.partition("-")
+    try:
+        start = int(start_str) if start_str else 0
+        end = int(end_str) if end_str else size - 1
+    except ValueError as exc:
+        raise HTTPException(status_code=416, detail="invalid range") from exc
+
+    if start < 0 or end < start or start >= size:
+        headers = {"Content-Range": f"bytes */{size}"}
+        raise HTTPException(status_code=416, detail="invalid range", headers=headers)
+
+    end = min(end, size - 1)
+    length = end - start + 1
+    with path.open("rb") as handle:
+        handle.seek(start)
+        payload = handle.read(length)
+
+    headers = {
+        "Content-Range": f"bytes {start}-{end}/{size}",
+        "Content-Length": str(len(payload)),
+        "Accept-Ranges": "bytes",
+        "Cache-Control": CACHE_CONTROL_IMMUTABLE,
+    }
+    return Response(
+        content=payload,
+        media_type="application/octet-stream",
+        status_code=status.HTTP_206_PARTIAL_CONTENT,
+        headers=headers,
+    )
+
+
+class BlobRefModel(BaseModel):
+    name: str
+    sha256: str
+    size: int = Field(ge=0)
+
+    @field_validator("name")
+    @classmethod
+    def _validate_name(cls, value: str) -> str:  # noqa: D401
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("name must be provided")
+        return value
+
+    @field_validator("sha256")
+    @classmethod
+    def _validate_sha_field(cls, value: str) -> str:  # noqa: D401
+        _validate_sha(value)
+        return value.lower()
+
+
+class AppearanceMetaModel(BaseModel):
+    actorHash: str
+    glamourer: Optional[str] = None
+    blobs: list[BlobRefModel] = Field(default_factory=list)
+
+    @field_validator("actorHash")
+    @classmethod
+    def _validate_actor_hash(cls, value: str) -> str:  # noqa: D401
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("actor hash required")
+        return value
+
+
+class UserMetaModel(BaseModel):
+    discordId: str
+    appearance: AppearanceMetaModel
+
+    @field_validator("discordId")
+    @classmethod
+    def _validate_discord_id(cls, value: str) -> str:  # noqa: D401
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("discord id required")
+        return value
+
+
+@router.post("/manifest")
+async def publish_manifest(
+    payload: dict[str, Any],
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> dict[str, Any]:
+    return await handle_publish_manifest(payload, ctx, db)
+
+
+class PublishPayload(BaseModel):
+    discordId: str
+    appearance: AppearanceMetaModel
+    complete: bool = False
+
+    @field_validator("discordId")
+    @classmethod
+    def _validate_publish_discord_id(cls, value: str) -> str:  # noqa: D401
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("discord id required")
+        return value
+
+
+def _coerce_int(value: str) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail="invalid discordId") from exc
+
+
+def _parse_appearance(payload: dict[str, Any]) -> AppearanceMetaModel:
+    appearance = payload.get("appearance")
+    if not isinstance(appearance, dict):
+        appearance = payload.get("appearanceMeta")
+    if not isinstance(appearance, dict):
+        raise HTTPException(status_code=404, detail="appearance unavailable")
+    try:
+        return AppearanceMetaModel.model_validate(appearance)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="appearance unavailable") from exc
+
+
+async def handle_publish_manifest(
+    payload: dict[str, Any],
+    ctx: RequestContext,
+    db: AsyncSession,
+) -> dict[str, Any]:
+    await _require_pairing(ctx, db)
+    payload_size = len(json.dumps(payload).encode())
+    if payload_size > MAX_MANIFEST_BYTES:
+        raise HTTPException(status_code=413, detail="manifest too large")
+    try:
+        publish = PublishPayload.model_validate(payload)
+    except ValidationError:
+        diff, limits = await handle_manifest_upload(payload, ctx, db)
+        return {"status": "ok", "diff": diff, "limits": limits}
+    await _check_rate_limit(ctx.user.id, db)
+
+    missing: set[str] = set()
+    for blob in publish.appearance.blobs:
+        if not blob.sha256:
+            continue
+        path = _blob_path(blob.sha256)
+        if not path.exists():
+            missing.add(blob.sha256)
+
+    missing_list = sorted(missing)
+
+    if publish.complete:
+        if missing_list:
+            raise HTTPException(status_code=409, detail="missing blobs")
+
+        manifest_payload = {
+            "discordId": str(ctx.user.discord_user_id or ctx.user.id),
+            "appearance": publish.appearance.model_dump(mode="json"),
+        }
+
+        payload_json = json.dumps(manifest_payload)
+        record = await db.get(SyncshellManifest, ctx.user.id)
+        if record:
+            record.manifest_json = payload_json
+            record.updated_at = datetime.utcnow()
+        else:
+            record = SyncshellManifest(user_id=ctx.user.id, manifest_json=payload_json)
+            db.add(record)
+        await db.commit()
+
+    return {"missing": missing_list}
+
+
+@router.get("/meta", response_model=UserMetaModel)
+async def get_latest_meta(
+    discordId: str,
+    ctx: RequestContext = Depends(api_key_auth),
+    db: AsyncSession = Depends(get_db),
+) -> UserMetaModel:
+    discord_id_value = (discordId or "").strip()
+    if not discord_id_value:
+        raise HTTPException(status_code=400, detail="discordId required")
+
+    discord_numeric = _coerce_int(discord_id_value)
+    stmt = select(User).where(User.discord_user_id == discord_numeric)
+    result = await db.execute(stmt)
+    user = result.scalar_one_or_none()
+    if user is None:
+        raise HTTPException(status_code=404, detail="user not found")
+
+    record = await db.get(SyncshellManifest, user.id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="appearance unavailable")
+
+    try:
+        manifest_payload = json.loads(record.manifest_json)
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "syncshell.meta.decode_failed user_id=%s", user.id, exc_info=exc
+        )
+        raise HTTPException(status_code=404, detail="appearance unavailable") from exc
+
+    appearance = _parse_appearance(manifest_payload)
+    return UserMetaModel(discordId=str(user.discord_user_id), appearance=appearance)

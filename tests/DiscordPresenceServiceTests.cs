@@ -24,7 +24,7 @@ public class DiscordPresenceServiceTests
             }
 
             if (request.Method == HttpMethod.Get && request.RequestUri != null &&
-                request.RequestUri.AbsolutePath.EndsWith("/api/users", StringComparison.OrdinalIgnoreCase))
+                request.RequestUri.AbsolutePath.EndsWith("/api/presences", StringComparison.OrdinalIgnoreCase))
             {
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
                 {
