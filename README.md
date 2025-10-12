@@ -26,7 +26,6 @@ DemiCat/
 
 ### DemiBot Services
 
-- Vault ingestion and archival (`demibot/demibot/discordbot/cogs/vault.py`).
 - Asset and bundle APIs (`demibot/demibot/http/routes/assets.py`, `demibot/demibot/http/routes/bundles.py`).
 - Delta tokens for incremental sync (`demibot/demibot/http/routes/delta_token.py`).
 - User settings endpoints (`demibot/demibot/http/routes/user_settings.py`).

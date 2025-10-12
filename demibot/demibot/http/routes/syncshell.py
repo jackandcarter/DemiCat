@@ -23,7 +23,6 @@ from ...db.models import (
     SyncshellPresence,
     User,
 )
-from ..vault import presign_upload, presign_download
 
 
 logger = logging.getLogger(__name__)
@@ -967,37 +966,6 @@ async def upload_manifest(
     """
     diff, limits = await handle_manifest_upload(manifest, ctx, db)
     return {"status": "ok", "diff": diff, "limits": limits}
-
-
-@router.post("/asset/upload")
-async def request_asset_upload(
-    ctx: RequestContext = Depends(api_key_auth),
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
-    """Return a pre-signed URL for chunked asset upload."""
-    await _require_pairing(ctx, db)
-    await _check_rate_limit(ctx.user.id, db)
-    try:
-        url = await presign_upload()
-    except Exception as e:  # pragma: no cover - network failure
-        raise HTTPException(status_code=502, detail="vault unavailable") from e
-    return {"url": url}
-
-
-@router.get("/asset/download/{asset_id}")
-async def request_asset_download(
-    asset_id: str,
-    ctx: RequestContext = Depends(api_key_auth),
-    db: AsyncSession = Depends(get_db),
-) -> dict[str, str]:
-    """Return a pre-signed URL for asset download."""
-    await _require_pairing(ctx, db)
-    await _check_rate_limit(ctx.user.id, db)
-    try:
-        url = await presign_download(asset_id)
-    except Exception as e:  # pragma: no cover - network failure
-        raise HTTPException(status_code=502, detail="vault unavailable") from e
-    return {"url": url}
 
 
 async def _clear_manifest(ctx: RequestContext, db: AsyncSession) -> None:
