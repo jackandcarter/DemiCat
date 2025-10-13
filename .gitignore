@@ -22,3 +22,4 @@ demibot/demibot/config.json
 
 # Local build configuration
 Directory.Build.props
+DemiCatPlugin/DemiCatPlugin.json

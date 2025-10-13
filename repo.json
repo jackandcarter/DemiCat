@@ -3,12 +3,23 @@
     "Author": "Demi Dev Unit",
     "Name": "DemiCat",
     "InternalName": "DemiCatPlugin",
-    "Punchline": "Discord-linked FC tools and chat.",
-    "Description": "A mod to manage Discord FC communities and Events.",
     "AssemblyVersion": "1.3.1.0",
+    "Description": "DemiCat Dalamud plugin. =Mew=",
     "ApplicableVersion": "any",
-    "DalamudApiLevel": 13,
     "RepoUrl": "https://github.com/jackandcarter/DemiCat",
-    "IconUrl": "https://the-demiurge.com/DemiDevUnit/icon.png"
+    "DalamudApiLevel": 13,
+    "DownloadLinkInstall": "https://the-demiurge.com/DemiCat.zip",
+    "DownloadLinkUpdate": "https://the-demiurge.com/DemiCat.zip",
+    "DownloadLinkTesting": "https://the-demiurge.com/DemiCat.zip",
+    "LoadRequiredState": 0,
+    "LoadSync": false,
+    "CanUnloadAsync": false,
+    "LoadPriority": 0,
+    "IconUrl": "https://the-demiurge.com/icon.png",
+    "Punchline": "Your Friendly Mechanical Catto!",
+    "AcceptsFeedback": true,
+    "IsHide": false,
+    "IsTestingExclusive": false,
+    "Changelog": ""
   }
 ]

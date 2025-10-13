@@ -60,5 +60,11 @@
     <DalamudIcon>icon.png</DalamudIcon>
   </PropertyGroup>
 
+  <Target Name="CopyDalamudManifest" BeforeTargets="Build">
+    <Copy SourceFiles="$(ProjectDir)manifest.json"
+          DestinationFiles="$(ProjectDir)$(AssemblyName).json"
+          SkipUnchangedFiles="true" />
+  </Target>
+
   <!-- DO NOT import a custom DalamudPackager.targets for v13 -->
 </Project>
