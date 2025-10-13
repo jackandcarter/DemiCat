@@ -430,9 +430,7 @@ public class MainWindow : IDisposable
                 var max = winPos + winSize;
                 if (max.X > min.X && max.Y > min.Y)
                 {
-                    var topColor = ImGui.GetColorU32(gradientStart);
-                    var bottomColor = ImGui.GetColorU32(gradientEnd);
-                    drawList.AddRectFilledMultiColor(min, max, topColor, topColor, bottomColor, bottomColor);
+                    DrawRoundedVerticalGradient(drawList, min, max, gradientStart, gradientEnd, rounding);
                     var borderColorU32 = ImGui.GetColorU32(style.Colors[(int)ImGuiCol.Border]);
                     drawList.AddRect(min, max, borderColorU32, rounding, ImDrawFlags.RoundCornersAll, borderSize);
                 }
@@ -1200,6 +1198,49 @@ public class MainWindow : IDisposable
     private static Vector4 WithAlpha(Vector4 color, float alphaMultiplier)
     {
         return new Vector4(color.X, color.Y, color.Z, Math.Clamp(color.W * alphaMultiplier, 0f, 1f));
+    }
+
+    private static void DrawRoundedVerticalGradient(
+        ImDrawListPtr drawList,
+        Vector2 min,
+        Vector2 max,
+        Vector4 topColor,
+        Vector4 bottomColor,
+        float rounding)
+    {
+        if (max.X <= min.X || max.Y <= min.Y)
+        {
+            return;
+        }
+
+        var height = max.Y - min.Y;
+        var segments = Math.Clamp((int)MathF.Ceiling(height / 4f), 4, 64);
+        for (var i = 0; i < segments; i++)
+        {
+            var t0 = (float)i / segments;
+            var t1 = (float)(i + 1) / segments;
+            var y0 = min.Y + height * t0;
+            var y1 = min.Y + height * t1;
+            var segmentMin = new Vector2(min.X, y0);
+            var segmentMax = new Vector2(max.X, i == segments - 1 ? max.Y : y1);
+            var color = Vector4.Lerp(topColor, bottomColor, (t0 + t1) * 0.5f);
+            var colorU32 = ImGui.GetColorU32(color);
+
+            var segmentRounding = 0f;
+            var flags = ImDrawFlags.RoundCornersNone;
+            if (i == 0 && rounding > 0f)
+            {
+                segmentRounding = rounding;
+                flags = ImDrawFlags.RoundCornersTop;
+            }
+            else if (i == segments - 1 && rounding > 0f)
+            {
+                segmentRounding = rounding;
+                flags = ImDrawFlags.RoundCornersBottom;
+            }
+
+            drawList.AddRectFilled(segmentMin, segmentMax, colorU32, segmentRounding, flags);
+        }
     }
 
 }
