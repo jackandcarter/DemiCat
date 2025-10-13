@@ -14,8 +14,8 @@
     <AssemblyVersion>1.3.1.0</AssemblyVersion>
     <FileVersion>1.3.1.0</FileVersion>
 
-    <DalamudManifest>manifest.json</DalamudManifest>
-    <DalamudPackagerManifest>manifest.json</DalamudPackagerManifest>
+    <DalamudManifest>$(MSBuildProjectDirectory)/manifest.json</DalamudManifest>
+    <DalamudPackagerManifest>$(DalamudManifest)</DalamudPackagerManifest>
     <DalamudIcon>images/icon.png</DalamudIcon>
 
     <NoWarn>CA1416</NoWarn>
@@ -43,7 +43,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Include="manifest.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="manifest.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
     <EmbeddedResource Include="images/icon.png" />
   </ItemGroup>
 
