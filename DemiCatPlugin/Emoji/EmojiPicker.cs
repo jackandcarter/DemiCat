@@ -16,6 +16,7 @@ public sealed class EmojiPicker
     private EmojiTab _tab;
     private string _search = string.Empty;
     private readonly ConcurrentDictionary<string, bool> _customTextureRequests = new();
+    private readonly ConcurrentDictionary<string, bool> _unicodeTextureRequests = new();
 
     private enum EmojiTab
     {
@@ -153,17 +154,59 @@ public sealed class EmojiPicker
             }
 
             var emoji = filtered[i];
-            ImGui.PushID(i);
-            using var _ = _manager.PushEmojiFont();
-            if (ImGui.Button(emoji.Emoji, new Vector2(_tileSize, _tileSize)))
+            var clicked = false;
+            var imageUrl = emoji.ImageUrl;
+
+            if (!string.IsNullOrEmpty(imageUrl))
             {
-                selected = EmojiFormatter.CreateUnicodeToken(emoji);
+                _unicodeTextureRequests.GetOrAdd(imageUrl, key =>
+                {
+                    WebTextureCache.Get(key, tex =>
+                    {
+                        if (tex != null)
+                        {
+                            _unicodeTextureRequests[key] = true;
+                        }
+                        else
+                        {
+                            _unicodeTextureRequests.TryRemove(key, out _);
+                        }
+                    });
+
+                    return false;
+                });
             }
+
+            ImGui.PushID(i);
+            if (!string.IsNullOrEmpty(imageUrl) &&
+                WebTextureCache.TryGetTexture(imageUrl, out var texture) &&
+                texture != null)
+            {
+                var wrap = texture.GetWrapOrEmpty();
+                if (ImGui.ImageButton(wrap.Handle, new Vector2(_tileSize, _tileSize)))
+                {
+                    clicked = true;
+                }
+            }
+            else
+            {
+                using var _ = _manager.PushEmojiFont();
+                if (ImGui.Button(emoji.Emoji, new Vector2(_tileSize, _tileSize)))
+                {
+                    clicked = true;
+                }
+            }
+
             if (!string.IsNullOrEmpty(emoji.Name) && ImGui.IsItemHovered())
             {
                 ImGui.SetTooltip(emoji.Name);
             }
             ImGui.PopID();
+
+            if (clicked)
+            {
+                selected = EmojiFormatter.CreateUnicodeToken(emoji);
+            }
 
             column++;
             if (column < columns)
