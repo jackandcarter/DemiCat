@@ -52,6 +52,8 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private readonly IFramework _framework;
     private readonly IObjectTable _objects;
 
+    private int _frameworkThreadId = -1;
+
     private readonly object _statusLock = new();
     private readonly SemaphoreSlim _lifecycleLock = new(1, 1);
     private readonly object _memberLock = new();
@@ -111,6 +113,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         _tokenManager.OnLinked += HandleTokenLinked;
         _tokenManager.OnUnlinked += HandleTokenUnlinked;
         _clientState.TerritoryChanged += HandleTerritoryChanged;
+        _framework.Update += OnFrameworkTick;
     }
 
     public event EventHandler? StatusChanged;
@@ -389,8 +392,14 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         _tokenManager.OnLinked -= HandleTokenLinked;
         _tokenManager.OnUnlinked -= HandleTokenUnlinked;
         _clientState.TerritoryChanged -= HandleTerritoryChanged;
+        _framework.Update -= OnFrameworkTick;
         _lifecycleLock.Dispose();
         _redrawGate.Dispose();
+    }
+
+    private void OnFrameworkTick(IFramework _)
+    {
+        _frameworkThreadId = Environment.CurrentManagedThreadId;
     }
 
     private void ThrowIfDisposed()
@@ -621,6 +630,11 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             throw new ArgumentNullException(nameof(fn));
         }
 
+        if (Environment.CurrentManagedThreadId == _frameworkThreadId)
+        {
+            return fn();
+        }
+
         var tcs = new TaskCompletionSource<T>();
         _framework.RunOnFrameworkThread(() =>
         {
@@ -642,6 +656,12 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         if (fn == null)
         {
             throw new ArgumentNullException(nameof(fn));
+        }
+
+        if (Environment.CurrentManagedThreadId == _frameworkThreadId)
+        {
+            fn();
+            return;
         }
 
         var tcs = new TaskCompletionSource<bool>();
