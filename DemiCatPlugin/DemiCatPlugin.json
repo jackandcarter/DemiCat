@@ -3,7 +3,7 @@
   "Name": "DemiCat",
   "InternalName": "DemiCatPlugin",
   "AssemblyName": "DemiCatPlugin",
-  "AssemblyVersion": "1.3.1.0",
+  "AssemblyVersion": "1.3.1.1",
   "Description": "DemiCat Dalamud plugin. =Mew=",
   "ApplicableVersion": "any",
   "RepoUrl": "https://github.com/jackandcarter/DemiCat",
