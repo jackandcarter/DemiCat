@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.Textures;
@@ -14,12 +15,19 @@ public static class WebTextureCache
 {
     private sealed class CacheEntry : IDisposable
     {
-        public CacheEntry(ISharedImmediateTexture texture)
+        public CacheEntry(ISharedImmediateTexture texture, long lastAccess)
         {
             Texture = texture;
+            LastAccess = lastAccess;
         }
 
         public ISharedImmediateTexture Texture { get; }
+        public long LastAccess { get; private set; }
+
+        public void Touch(long timestamp)
+        {
+            LastAccess = timestamp;
+        }
 
         public void Dispose()
         {
@@ -34,8 +42,11 @@ public static class WebTextureCache
         }
     }
 
+    private const int DefaultCapacity = 256;
+
     private static readonly Dictionary<string, CacheEntry> _map = new();
     private static readonly object _lock = new();
+    private static int _capacity = DefaultCapacity;
 
     // Tests set this to intercept fetches and provide mocked textures.
     public static Func<string, Action<ISharedImmediateTexture?>, object?>? FetchOverride { get; set; }
@@ -70,6 +81,7 @@ public static class WebTextureCache
         {
             if (_map.TryGetValue(url, out var entry))
             {
+                entry.Touch(Environment.TickCount64);
                 texture = entry.Texture;
                 return true;
             }
@@ -92,15 +104,21 @@ public static class WebTextureCache
                 return;
             }
 
+            var now = Environment.TickCount64;
+
             if (_map.TryGetValue(url, out var existing))
             {
                 if (ReferenceEquals(existing.Texture, texture))
+                {
+                    existing.Touch(now);
                     return;
+                }
 
                 existing.Dispose();
             }
 
-            _map[url] = new CacheEntry(texture);
+            _map[url] = new CacheEntry(texture, now);
+            TrimExcessLocked();
         }
     }
 
@@ -114,6 +132,65 @@ public static class WebTextureCache
             }
 
             _map.Clear();
+        }
+    }
+
+    internal static void SetCapacity(int capacity)
+    {
+        if (capacity <= 0)
+        {
+            capacity = 1;
+        }
+
+        lock (_lock)
+        {
+            _capacity = capacity;
+            TrimExcessLocked();
+        }
+    }
+
+    internal static int Capacity
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _capacity;
+            }
+        }
+    }
+
+    internal static int Count
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return _map.Count;
+            }
+        }
+    }
+
+    private static void TrimExcessLocked()
+    {
+        var capacity = _capacity;
+        if (_map.Count <= capacity)
+        {
+            return;
+        }
+
+        var toRemove = _map
+            .OrderBy(pair => pair.Value.LastAccess)
+            .Take(_map.Count - capacity)
+            .Select(pair => pair.Key)
+            .ToList();
+
+        foreach (var key in toRemove)
+        {
+            if (_map.Remove(key, out var entry))
+            {
+                entry.Dispose();
+            }
         }
     }
 
