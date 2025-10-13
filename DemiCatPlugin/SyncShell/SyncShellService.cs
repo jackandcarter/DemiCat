@@ -614,15 +614,61 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
+    private T OnFramework<T>(Func<T> fn)
+    {
+        if (fn == null)
+        {
+            throw new ArgumentNullException(nameof(fn));
+        }
+
+        var tcs = new TaskCompletionSource<T>();
+        _framework.RunOnFrameworkThread(() =>
+        {
+            try
+            {
+                tcs.SetResult(fn());
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+
+        return tcs.Task.GetAwaiter().GetResult();
+    }
+
+    private void OnFramework(Action fn)
+    {
+        if (fn == null)
+        {
+            throw new ArgumentNullException(nameof(fn));
+        }
+
+        var tcs = new TaskCompletionSource<bool>();
+        _framework.RunOnFrameworkThread(() =>
+        {
+            try
+            {
+                fn();
+                tcs.SetResult(true);
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+
+        tcs.Task.GetAwaiter().GetResult();
+    }
+
     private (PublishPayload Payload, Dictionary<string, LocalBlobInfo?> LocalBlobs) BuildPublishPayload()
     {
-        var actorHash = string.Empty;
-        var player = _clientState.LocalPlayer;
-        if (player != null)
+        var actorHash = OnFramework(() =>
         {
-            actorHash = player.Name.TextValue ?? string.Empty;
+            var player = _clientState.LocalPlayer;
+            return player?.Name.TextValue ?? string.Empty;
             // Omit world label to avoid GeneratedSheets dependency; actorHash is just the name.
-        }
+        });
 
         var appearance = new AppearanceMeta
         {
@@ -920,7 +966,11 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                 await Task.Delay(wait, token).ConfigureAwait(false);
             }
 
-            _penumbra.RedrawObject(_clientState.LocalPlayer?.ObjectIndex ?? 0);
+            OnFramework(() =>
+            {
+                var index = _clientState.LocalPlayer?.ObjectIndex ?? 0;
+                _penumbra.RedrawObject(index);
+            });
             _lastRedrawAt = DateTimeOffset.UtcNow;
         }
         finally
@@ -936,7 +986,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         {
             if (_glamourer.Available)
             {
-                glamourerJson = _glamourer.TryGetPlayerDesignJson();
+                glamourerJson = OnFramework(() => _glamourer.TryGetPlayerDesignJson());
             }
         }
         catch (Exception ex)
@@ -1044,33 +1094,34 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         => NormalizeHandle(member.DisplayName);
 
     private HashSet<string> GetVisibleHandles()
-    {
-        var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        try
+        => OnFramework(() =>
         {
-            for (var i = 0; i < _objects.Length; i++)
+            var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
             {
-                var obj = _objects[i];
-                if (obj == null || obj.ObjectKind != ObjectKind.Player)
+                for (var i = 0; i < _objects.Length; i++)
                 {
-                    continue;
-                }
+                    var obj = _objects[i];
+                    if (obj == null || obj.ObjectKind != ObjectKind.Player)
+                    {
+                        continue;
+                    }
 
-                var name = obj.Name?.TextValue ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(name))
-                {
-                    // No world decoration to avoid GeneratedSheets dependency
-                    set.Add(NormalizeHandle(name, null));
+                    var name = obj.Name?.TextValue ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(name))
+                    {
+                        // No world decoration to avoid GeneratedSheets dependency
+                        set.Add(NormalizeHandle(name, null));
+                    }
                 }
             }
-        }
-        catch (Exception ex)
-        {
-            _log.Warning(ex, "Failed to read visible players");
-        }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to read visible players");
+            }
 
-        return set;
-    }
+            return set;
+        });
 
     private void StageTempModForMember(string memberId, AppearanceMeta appearance)
     {
