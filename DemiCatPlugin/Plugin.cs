@@ -41,7 +41,7 @@ public class Plugin : IDalamudPlugin
     private readonly AvatarCache _avatarCache;
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
-    private readonly DiscordPresenceService? _presenceService;
+    private readonly DiscordPresenceService _presenceService;
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
@@ -149,16 +149,13 @@ public class Plugin : IDalamudPlugin
         _ui = new UiRenderer(_config, _httpClient, _channelSelection, _emojiManager);
         _settings = new SettingsWindow(_config, _tokenManager, _httpClient, () => RefreshRoles(_services.Log), _ui.StartNetworking, _services.Log, _services.PluginInterface);
 
-        _presenceService = _config.SyncedChat && _config.EnableFcChat
-            ? new DiscordPresenceService(_config, _httpClient)
-            : null;
+        _presenceService = new DiscordPresenceService(_config, _httpClient);
+        _presenceService.SetPresenceReady(false);
 
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
         _avatarCache = new AvatarCache(TextureProvider, _httpClient);
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _messageCache, _avatarCache, _emojiManager, _sharedChatBridge);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _messageCache, _avatarCache, _emojiManager, _sharedChatBridge);
-
-        _presenceService?.Reset();
 
         _notePadService = new NotePadService(_config, _httpClient, _tokenManager);
         _notePadWindow = new NotePadWindow(_config, _notePadService);

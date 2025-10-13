@@ -73,6 +73,7 @@ public class PresenceSidebar : IDisposable
         }
 
         var snapshot = _service.GetSnapshot();
+        var hasSnapshot = snapshot != null && snapshot.Count > 0;
         var connection = _service.ConnectionState;
         if (_lastConn != connection && connection == PresenceConnectionState.Connected)
         {
@@ -91,11 +92,11 @@ public class PresenceSidebar : IDisposable
 
         try
         {
-            if (!_service.IsPresenceReady)
+            if (!_service.IsPresenceReady && !hasSnapshot)
             {
                 ShowStatus(null);
             }
-            else if (!_service.Loaded)
+            else if (!_service.Loaded && !hasSnapshot)
             {
                 if (!_refreshInFlight && DateTime.UtcNow >= _nextRefreshAllowed)
                 {
@@ -126,6 +127,16 @@ public class PresenceSidebar : IDisposable
             }
             else
             {
+                if (!_service.IsPresenceReady && hasSnapshot)
+                {
+                    var status = _service.StatusMessage;
+                    if (!string.IsNullOrEmpty(status))
+                    {
+                        ImGui.TextUnformatted(status);
+                        ImGui.Spacing();
+                    }
+                }
+
                 var presencesSource = _items;
                 if (presencesSource == null || presencesSource.Count == 0)
                 {

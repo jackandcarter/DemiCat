@@ -138,7 +138,7 @@ public class DiscordPresenceService : IDisposable
         }
     }
 
-    public void Stop()
+    public void Stop(bool clearPresences = false)
     {
         var cts = Interlocked.Exchange(ref _wsCts, null);
         cts?.Cancel();
@@ -147,21 +147,17 @@ public class DiscordPresenceService : IDisposable
         var socket = Interlocked.Exchange(ref _ws, null);
         socket?.Dispose();
 
-        _ = DisposeAllPresencesAsync();
+        if (clearPresences)
+        {
+            _ = DisposeAllPresencesAsync();
+        }
+
         SetConnectionState(PresenceConnectionState.Disconnected);
     }
 
     public void Dispose()
     {
-        var cts = Interlocked.Exchange(ref _wsCts, null);
-        cts?.Cancel();
-        cts?.Dispose();
-
-        var socket = Interlocked.Exchange(ref _ws, null);
-        socket?.Dispose();
-
-        _ = DisposeAllPresencesAsync();
-        SetConnectionState(PresenceConnectionState.Disconnected);
+        Stop(clearPresences: true);
     }
 
     public Task Refresh(bool force = false)
