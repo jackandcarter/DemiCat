@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.Textures;
 
 namespace DemiCatPlugin.Emoji;
 
@@ -17,6 +18,7 @@ public sealed class EmojiPicker
     private string _search = string.Empty;
     private readonly ConcurrentDictionary<string, bool> _customTextureRequests = new();
     private readonly ConcurrentDictionary<string, bool> _unicodeTextureRequests = new();
+    private const int GridVirtualizationOverscanRows = 2;
 
     private enum EmojiTab
     {
@@ -142,84 +144,68 @@ public sealed class EmojiPicker
         ImGui.BeginChild("##emoji_std_grid", childSize, false);
         var avail = ImGui.GetContentRegionAvail().X;
         var columns = Math.Max(1, (int)Math.Floor((avail + 4f) / (_tileSize + 4f)));
-        var column = 0;
+        var grid = BeginGridVirtualization(filtered.Count, columns);
         string? selected = null;
 
-        for (var i = 0; i < filtered.Count; i++)
+        if (grid.HasRows)
         {
-            if (column >= columns)
+            for (var row = grid.FirstRow; row < grid.LastRow && string.IsNullOrEmpty(selected); row++)
             {
-                ImGui.NewLine();
-                column = 0;
-            }
+                var rowStartIndex = row * columns;
+                var rowPos = new Vector2(grid.StartCursor.X, grid.StartCursor.Y + row * grid.RowHeight);
+                ImGui.SetCursorPos(rowPos);
 
-            var emoji = filtered[i];
-            var clicked = false;
-            var imageUrl = emoji.ImageUrl;
-
-            if (!string.IsNullOrEmpty(imageUrl))
-            {
-                _unicodeTextureRequests.GetOrAdd(imageUrl, key =>
+                for (var column = 0; column < columns; column++)
                 {
-                    WebTextureCache.Get(key, tex =>
+                    var index = rowStartIndex + column;
+                    if (index >= filtered.Count)
                     {
-                        if (tex != null)
+                        break;
+                    }
+
+                    if (column > 0)
+                    {
+                        ImGui.SameLine();
+                    }
+
+                    var emoji = filtered[index];
+                    var texture = AcquireTexture(emoji.ImageUrl, _unicodeTextureRequests);
+                    var clicked = false;
+
+                    ImGui.PushID(index);
+                    if (texture != null)
+                    {
+                        var wrap = texture.GetWrapOrEmpty();
+                        if (ImGui.ImageButton(wrap.Handle, new Vector2(_tileSize, _tileSize)))
                         {
-                            _unicodeTextureRequests[key] = true;
+                            clicked = true;
                         }
-                        else
+                    }
+                    else
+                    {
+                        using var _ = _manager.PushEmojiFont();
+                        if (ImGui.Button(emoji.Emoji, new Vector2(_tileSize, _tileSize)))
                         {
-                            _unicodeTextureRequests.TryRemove(key, out _);
+                            clicked = true;
                         }
-                    });
+                    }
 
-                    return false;
-                });
-            }
+                    if (!string.IsNullOrEmpty(emoji.Name) && ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip(emoji.Name);
+                    }
+                    ImGui.PopID();
 
-            ImGui.PushID(i);
-            if (!string.IsNullOrEmpty(imageUrl) &&
-                WebTextureCache.TryGetTexture(imageUrl, out var texture) &&
-                texture != null)
-            {
-                var wrap = texture.GetWrapOrEmpty();
-                if (ImGui.ImageButton(wrap.Handle, new Vector2(_tileSize, _tileSize)))
-                {
-                    clicked = true;
+                    if (clicked)
+                    {
+                        selected = EmojiFormatter.CreateUnicodeToken(emoji);
+                        break;
+                    }
                 }
-            }
-            else
-            {
-                using var _ = _manager.PushEmojiFont();
-                if (ImGui.Button(emoji.Emoji, new Vector2(_tileSize, _tileSize)))
-                {
-                    clicked = true;
-                }
-            }
-
-            if (!string.IsNullOrEmpty(emoji.Name) && ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip(emoji.Name);
-            }
-            ImGui.PopID();
-
-            if (clicked)
-            {
-                selected = EmojiFormatter.CreateUnicodeToken(emoji);
-            }
-
-            column++;
-            if (column < columns)
-            {
-                ImGui.SameLine();
-            }
-
-            if (!string.IsNullOrEmpty(selected))
-            {
-                break;
             }
         }
 
+        FinalizeGridVirtualization(grid);
         ImGui.EndChild();
         return string.IsNullOrEmpty(selected) ? null : selected;
     }
@@ -283,83 +269,68 @@ public sealed class EmojiPicker
         ImGui.BeginChild("##emoji_custom_grid", childSize, false);
         var avail = ImGui.GetContentRegionAvail().X;
         var columns = Math.Max(1, (int)Math.Floor((avail + 6f) / (_tileSize + 6f)));
-        var column = 0;
+        var grid = BeginGridVirtualization(items.Count, columns);
         string? selected = null;
 
-        foreach (var emoji in items)
+        if (grid.HasRows)
         {
-            if (column >= columns)
+            for (var row = grid.FirstRow; row < grid.LastRow && string.IsNullOrEmpty(selected); row++)
             {
-                ImGui.NewLine();
-                column = 0;
-            }
+                var rowStartIndex = row * columns;
+                var rowPos = new Vector2(grid.StartCursor.X, grid.StartCursor.Y + row * grid.RowHeight);
+                ImGui.SetCursorPos(rowPos);
 
-            var clicked = false;
-            var tooltip = emoji.Animated ? $":{emoji.Name}: (gif)" : $":{emoji.Name}:";
-            var imageUrl = emoji.ImageUrl;
-
-            if (!string.IsNullOrEmpty(imageUrl))
-            {
-                _customTextureRequests.GetOrAdd(imageUrl, key =>
+                for (var column = 0; column < columns; column++)
                 {
-                    WebTextureCache.Get(key, tex =>
+                    var index = rowStartIndex + column;
+                    if (index >= items.Count)
                     {
-                        if (tex != null)
+                        break;
+                    }
+
+                    if (column > 0)
+                    {
+                        ImGui.SameLine();
+                    }
+
+                    var emoji = items[index];
+                    var tooltip = emoji.Animated ? $":{emoji.Name}: (gif)" : $":{emoji.Name}:";
+                    var texture = AcquireTexture(emoji.ImageUrl, _customTextureRequests);
+                    var clicked = false;
+
+                    ImGui.PushID(emoji.Id);
+                    if (texture != null)
+                    {
+                        var wrap = texture.GetWrapOrEmpty();
+                        if (ImGui.ImageButton(wrap.Handle, new Vector2(_tileSize, _tileSize)))
                         {
-                            _customTextureRequests[key] = true;
+                            clicked = true;
                         }
-                        else
+                    }
+                    else
+                    {
+                        if (ImGui.Button(tooltip, new Vector2(_tileSize * 3f, _tileSize)))
                         {
-                            _customTextureRequests.TryRemove(key, out _);
+                            clicked = true;
                         }
-                    });
+                    }
 
-                    return false;
-                });
-            }
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip(tooltip);
+                    }
+                    ImGui.PopID();
 
-            ImGui.PushID(emoji.Id);
-            if (!string.IsNullOrEmpty(imageUrl) &&
-                WebTextureCache.TryGetTexture(imageUrl, out var texture) &&
-                texture != null)
-            {
-                var wrap = texture.GetWrapOrEmpty();
-                if (ImGui.ImageButton(wrap.Handle, new Vector2(_tileSize, _tileSize)))
-                {
-                    clicked = true;
+                    if (clicked)
+                    {
+                        selected = EmojiFormatter.CreateCustomToken(emoji);
+                        break;
+                    }
                 }
-            }
-            else
-            {
-                if (ImGui.Button(tooltip, new Vector2(_tileSize * 3f, _tileSize)))
-                {
-                    clicked = true;
-                }
-            }
-
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetTooltip(tooltip);
-            }
-            ImGui.PopID();
-
-            if (clicked)
-            {
-                selected = EmojiFormatter.CreateCustomToken(emoji);
-            }
-
-            column++;
-            if (column < columns)
-            {
-                ImGui.SameLine();
-            }
-
-            if (!string.IsNullOrEmpty(selected))
-            {
-                break;
             }
         }
 
+        FinalizeGridVirtualization(grid);
         ImGui.EndChild();
         return string.IsNullOrEmpty(selected) ? null : selected;
     }
@@ -406,5 +377,110 @@ public sealed class EmojiPicker
     private void PersistSettings()
     {
         _persistSettings?.Invoke();
+    }
+
+    private GridVirtualizationInfo BeginGridVirtualization(int itemCount, int columns)
+    {
+        var startCursor = ImGui.GetCursorPos();
+        var totalRows = Math.Max(0, (itemCount + columns - 1) / columns);
+        if (totalRows <= 0)
+        {
+            return new GridVirtualizationInfo(startCursor, 0, 0, 0, 0f);
+        }
+
+        var style = ImGui.GetStyle();
+        var rowHeight = Math.Max(1f, _tileSize + style.ItemSpacing.Y);
+        var scrollY = ImGui.GetScrollY();
+        var windowHeight = ImGui.GetWindowHeight();
+        if (!float.IsFinite(windowHeight) || windowHeight <= 0f)
+        {
+            windowHeight = rowHeight;
+        }
+
+        var firstRow = Math.Max(0, (int)Math.Floor(scrollY / rowHeight) - GridVirtualizationOverscanRows);
+        var lastRow = Math.Min(totalRows, (int)Math.Ceiling((scrollY + windowHeight) / rowHeight) + GridVirtualizationOverscanRows);
+
+        if (firstRow >= totalRows)
+        {
+            firstRow = Math.Max(0, totalRows - 1);
+        }
+
+        if (lastRow <= firstRow)
+        {
+            lastRow = Math.Min(totalRows, firstRow + GridVirtualizationOverscanRows * 2 + 1);
+        }
+
+        return new GridVirtualizationInfo(startCursor, firstRow, lastRow, totalRows, rowHeight);
+    }
+
+    private static void FinalizeGridVirtualization(in GridVirtualizationInfo info)
+    {
+        if (!info.HasRows)
+        {
+            return;
+        }
+
+        var nextRowY = info.StartCursor.Y + info.LastRow * info.RowHeight;
+        ImGui.SetCursorPos(new Vector2(info.StartCursor.X, nextRowY));
+
+        var remainingRows = info.TotalRows - info.LastRow;
+        if (remainingRows > 0)
+        {
+            ImGui.Dummy(new Vector2(0f, remainingRows * info.RowHeight));
+        }
+    }
+
+    private static ISharedImmediateTexture? AcquireTexture(string? imageUrl, ConcurrentDictionary<string, bool> requests)
+    {
+        if (string.IsNullOrEmpty(imageUrl))
+        {
+            return null;
+        }
+
+        if (WebTextureCache.TryGetTexture(imageUrl, out var texture) && texture != null)
+        {
+            return texture;
+        }
+
+        if (requests.TryGetValue(imageUrl, out var completed) && completed)
+        {
+            requests.TryRemove(imageUrl, out _);
+        }
+
+        if (requests.TryAdd(imageUrl, false))
+        {
+            WebTextureCache.Get(imageUrl, tex =>
+            {
+                if (tex != null)
+                {
+                    requests[imageUrl] = true;
+                }
+                else
+                {
+                    requests.TryRemove(imageUrl, out _);
+                }
+            });
+        }
+
+        return null;
+    }
+
+    private readonly struct GridVirtualizationInfo
+    {
+        public GridVirtualizationInfo(Vector2 startCursor, int firstRow, int lastRow, int totalRows, float rowHeight)
+        {
+            StartCursor = startCursor;
+            FirstRow = firstRow;
+            LastRow = lastRow;
+            TotalRows = totalRows;
+            RowHeight = rowHeight;
+        }
+
+        public Vector2 StartCursor { get; }
+        public int FirstRow { get; }
+        public int LastRow { get; }
+        public int TotalRows { get; }
+        public float RowHeight { get; }
+        public bool HasRows => TotalRows > 0 && RowHeight > 0f;
     }
 }
