@@ -191,10 +191,13 @@ public static class UiTheme
         var closeRectMin = buttonPos;
         var closeRectMax = buttonPos + buttonSize;
 
+        var previousCursorPos = ImGui.GetCursorScreenPos();
+        ImGui.SetCursorScreenPos(buttonPos);
         ImGui.PushID("dc_theme_close");
         var clicked = ImGui.InvisibleButton("##close", buttonSize);
         var buttonHovered = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
         ImGui.PopID();
+        ImGui.SetCursorScreenPos(previousCursorPos);
 
         var buttonCenter = buttonPos + new Vector2(buttonRadius);
         var baseColor = buttonHovered ? _frameState.CloseButtonHoveredColor : _frameState.CloseButtonColor;
