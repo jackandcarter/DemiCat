@@ -43,6 +43,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Include="manifest.json" CopyToOutputDirectory="PreserveNewest" />
     <EmbeddedResource Include="images/icon.png" />
   </ItemGroup>
 
