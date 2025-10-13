@@ -32,7 +32,28 @@ from ..utils import api_call_with_retries, get_or_create_user
 class ApolloHelper:
     """Utility helpers for Apollo embed detection."""
 
-    APOLLO_APPLICATION_ID = int(os.getenv("APOLLO_APPLICATION_ID", "0"))
+    _DEFAULT_APPLICATION_ID = 475744554910351370
+
+    _env_app_id = os.getenv("APOLLO_APPLICATION_ID")
+    _parsed_app_id: int | None
+    if _env_app_id is None or not _env_app_id.strip():
+        _parsed_app_id = None
+    else:
+        try:
+            _parsed_app_id = int(_env_app_id)
+        except ValueError:
+            logging.getLogger(__name__).warning(
+                "Invalid APOLLO_APPLICATION_ID '%s'; using default %s",
+                _env_app_id,
+                _DEFAULT_APPLICATION_ID,
+            )
+            _parsed_app_id = None
+
+    APOLLO_APPLICATION_ID = (
+        _parsed_app_id
+        if _parsed_app_id and _parsed_app_id > 0
+        else _DEFAULT_APPLICATION_ID
+    )
 
     @staticmethod
     def IsApolloMessage(message: discord.Message) -> bool:  # noqa: N802
@@ -40,6 +61,9 @@ class ApolloHelper:
 
         app_id = getattr(message, "application_id", None)
         if ApolloHelper.APOLLO_APPLICATION_ID and app_id == ApolloHelper.APOLLO_APPLICATION_ID:
+            return True
+        author_id = getattr(getattr(message, "author", None), "id", None)
+        if ApolloHelper.APOLLO_APPLICATION_ID and author_id == ApolloHelper.APOLLO_APPLICATION_ID:
             return True
         for emb in getattr(message, "embeds", []) or []:
             data = emb.to_dict()

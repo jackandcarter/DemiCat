@@ -1094,10 +1094,23 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             var eventChannels = (dto.Event ?? new List<ChannelDto>())
                 .Where(c => c != null)
                 .ToList();
+
             foreach (var channel in eventChannels)
             {
                 channel.EnsureKind(ChannelKind.Event);
             }
+
+            eventChannels = ChannelDtoExtensions.SortForDisplay(eventChannels);
+
+            if (eventChannels.Count == 0)
+            {
+                var fallback = await FetchEventChannelsFallback();
+                if (fallback.Count > 0)
+                {
+                    eventChannels = fallback;
+                }
+            }
+
             if (await ChannelNameResolver.Resolve(eventChannels, _httpClient, _config, refreshed, () => FetchChannels(true))) return;
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
@@ -1189,6 +1202,29 @@ public class UiRenderer : IAsyncDisposable, IDisposable
                 _channelsLoaded = true;
             });
         }
+    }
+
+    private async Task<List<ChannelDto>> FetchEventChannelsFallback()
+    {
+        var fallbackUrl = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind={ChannelKind.Event}";
+        using var request = new HttpRequestMessage(HttpMethod.Get, fallbackUrl);
+        ApiHelpers.AddAuthHeader(request, TokenManager.Instance!);
+        using var response = await _httpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            return new List<ChannelDto>();
+        }
+
+        using var stream = await response.Content.ReadAsStreamAsync();
+        var channels = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream, JsonOpts) ?? new List<ChannelDto>();
+        var sanitized = channels.Where(c => c != null).ToList();
+
+        foreach (var channel in sanitized)
+        {
+            channel.EnsureKind(ChannelKind.Event);
+        }
+
+        return ChannelDtoExtensions.SortForDisplay(sanitized);
     }
 
     private class ChannelListDto
