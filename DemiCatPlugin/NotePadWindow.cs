@@ -264,9 +264,23 @@ public sealed class NotePadWindow : IDisposable
             ImGui.EndPopup();
         }
 
-        if (!IsReadOnly && ImGui.MenuItem("Delete"))
+        var canDeleteSection = OfficerPermissions.HasAccess(_config);
+        if (!IsReadOnly)
         {
-            _ = Task.Run(() => _service.DeleteSectionAsync(section.Id, CancellationToken.None));
+            if (!canDeleteSection)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            if (ImGui.MenuItem("Delete"))
+            {
+                _ = Task.Run(() => _service.DeleteSectionAsync(section.Id, CancellationToken.None));
+            }
+
+            if (!canDeleteSection)
+            {
+                ImGui.EndDisabled();
+            }
         }
 
         if (ImGui.MenuItem("Copy Link"))
@@ -554,8 +568,13 @@ public sealed class NotePadWindow : IDisposable
         });
     }
 
-    private static bool CanDeletePage(NotePadPage page)
+    private bool CanDeletePage(NotePadPage page)
     {
+        if (OfficerPermissions.HasAccess(_config))
+        {
+            return true;
+        }
+
         var current = MembershipCache.DiscordUserId;
         if (string.IsNullOrEmpty(current))
         {
@@ -622,9 +641,23 @@ public sealed class NotePadWindow : IDisposable
             ImGui.EndPopup();
         }
 
-        if (!IsReadOnly && CanDeletePage(page) && ImGui.MenuItem("Delete Note"))
+        if (!IsReadOnly)
         {
-            _ = Task.Run(() => _service.DeletePageAsync(section.Id, page.Id, CancellationToken.None));
+            var canDelete = CanDeletePage(page);
+            if (!canDelete)
+            {
+                ImGui.BeginDisabled();
+            }
+
+            if (ImGui.MenuItem("Delete Note"))
+            {
+                _ = Task.Run(() => _service.DeletePageAsync(section.Id, page.Id, CancellationToken.None));
+            }
+
+            if (!canDelete)
+            {
+                ImGui.EndDisabled();
+            }
         }
 
         if (ImGui.MenuItem("Copy Link"))
@@ -652,13 +685,21 @@ public sealed class NotePadWindow : IDisposable
         if (IsReadOnly)
         {
             var content = page.Content ?? string.Empty;
-            var readOnlyBuffer = ImGuiTextUtil.MakeUtf8Buffer(content, Math.Max(1024, content.Length + 512));
-            ImGui.BeginDisabled();
-            ImGui.InputTextMultiline("##NotePadEditorReadOnly", readOnlyBuffer, new Vector2(-1, -1), ImGuiInputTextFlags.ReadOnly);
-            ImGui.EndDisabled();
+            var formatted = MarkdownFormatter.Format(content);
+            ImGui.BeginChild("NotePadReadOnlyPreview", ImGui.GetContentRegionAvail(), true);
+            ImGui.PushTextWrapPos();
+            if (string.IsNullOrEmpty(formatted))
+            {
+                ImGui.TextDisabled("No content available.");
+            }
+            else
+            {
+                ImGui.TextUnformatted(formatted);
+            }
+            ImGui.PopTextWrapPos();
+            ImGui.EndChild();
             _editorContent = content;
             _editorVersion = page.Version;
-            DrawPreview(content);
             return;
         }
 
@@ -669,9 +710,37 @@ public sealed class NotePadWindow : IDisposable
             _focusEditorNextFrame = false;
         }
 
+        var style = ImGui.GetStyle();
+        var available = ImGui.GetContentRegionAvail();
+        var previewHeight = 0f;
+        if (available.Y > 220f)
+        {
+            var maxPreview = MathF.Max(120f, available.Y - 160f);
+            previewHeight = MathF.Clamp(available.Y * 0.35f, 120f, maxPreview);
+        }
+
+        if (previewHeight > 0f)
+        {
+            ImGui.BeginChild("NotePadLivePreview", new Vector2(-1, previewHeight), true);
+            ImGui.PushTextWrapPos();
+            var formatted = MarkdownFormatter.Format(_editorContent);
+            if (string.IsNullOrEmpty(formatted))
+            {
+                ImGui.TextDisabled("Start typing to see formatted output.");
+            }
+            else
+            {
+                ImGui.TextUnformatted(formatted);
+            }
+            ImGui.PopTextWrapPos();
+            ImGui.EndChild();
+            ImGui.Dummy(new Vector2(0f, style.ItemSpacing.Y * 0.5f));
+        }
+
+        var editorHeight = MathF.Max(150f, ImGui.GetContentRegionAvail().Y);
         ImGui.PushItemWidth(-1);
         var flags = ImGuiInputTextFlags.AllowTabInput | ImGuiInputTextFlags.CallbackAlways | ImGuiInputTextFlags.CallbackHistory;
-        var edited = ImGui.InputTextMultiline("##NotePadEditor", buffer, new Vector2(-1, -1), flags, new ImGui.ImGuiInputTextCallbackDelegate(OnEditorEdited));
+        var edited = ImGui.InputTextMultiline("##NotePadEditor", buffer, new Vector2(-1, editorHeight), flags, new ImGui.ImGuiInputTextCallbackDelegate(OnEditorEdited));
         ImGui.PopItemWidth();
 
         var newValue = ImGuiTextUtil.ReadUtf8Buffer(buffer);
@@ -686,8 +755,6 @@ public sealed class NotePadWindow : IDisposable
         {
             _ = SavePageAsync(section.Id, page.Id, force: true);
         }
-
-        DrawPreview(_editorContent);
     }
 
     private void DrawFormattingToolbar()
@@ -1055,21 +1122,6 @@ public sealed class NotePadWindow : IDisposable
         _editorContent = text ?? string.Empty;
         _dirty = true;
         _lastEditUtc = DateTime.UtcNow;
-    }
-
-    private void DrawPreview(string content)
-    {
-        if (string.IsNullOrEmpty(content))
-        {
-            return;
-        }
-
-        ImGui.Spacing();
-        UiTheme.DrawSectionSeparator();
-        ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1f), "Formatted Preview");
-        ImGui.PushTextWrapPos();
-        ImGui.TextUnformatted(MarkdownFormatter.Format(content));
-        ImGui.PopTextWrapPos();
     }
 
     private int OnEditorEdited(ref ImGuiInputTextCallbackData data)

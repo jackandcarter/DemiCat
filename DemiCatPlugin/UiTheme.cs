@@ -33,10 +33,15 @@ public static class UiTheme
         public Vector4 TextColor;
         public Vector4 CloseButtonColor;
         public Vector4 CloseButtonHoveredColor;
+        public Vector4 TitlePillColor;
+        public Vector4 TitlePillBorderColor;
     }
 
     private static readonly Stack<(int Vars, int Colors)> ScopeStack = new();
     private static FrameState _frameState;
+    private static bool _draggingWindow;
+    private static uint _dragWindowId;
+    private static Vector2 _dragOffset;
 
     public static bool RequestCloseThisFrame { get; private set; }
 
@@ -132,7 +137,7 @@ public static class UiTheme
         }
     }
 
-    public static void DrawWindowChrome(Config config, string? titleOverride = null, Action? onClose = null)
+    public static void DrawWindowChrome(Config config, string? titleOverride = null, Action? onClose = null, float reservedHeight = 0f)
     {
         RequestCloseThisFrame = false;
 
@@ -179,18 +184,17 @@ public static class UiTheme
                 ImGui.ColorConvertFloat4ToU32(_frameState.FocusGlowColor), rounding + 3f * scale, ImDrawFlags.RoundCornersAll, glowThickness);
         }
 
-        var previousCursor = ImGui.GetCursorScreenPos();
         var buttonRadius = 7f * scale;
         var buttonSize = new Vector2(buttonRadius * 2f, buttonRadius * 2f);
         var buttonOffsetY = MathF.Max(2f * scale, style.FramePadding.Y * 0.25f);
         var buttonPos = new Vector2(windowPos.X + style.WindowPadding.X, windowPos.Y + style.WindowPadding.Y + buttonOffsetY);
-        ImGui.SetCursorScreenPos(buttonPos);
+        var closeRectMin = buttonPos;
+        var closeRectMax = buttonPos + buttonSize;
 
         ImGui.PushID("dc_theme_close");
         var clicked = ImGui.InvisibleButton("##close", buttonSize);
         var buttonHovered = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
         ImGui.PopID();
-        ImGui.SetCursorScreenPos(previousCursor);
 
         var buttonCenter = buttonPos + new Vector2(buttonRadius);
         var baseColor = buttonHovered ? _frameState.CloseButtonHoveredColor : _frameState.CloseButtonColor;
@@ -202,9 +206,27 @@ public static class UiTheme
         drawList.AddLine(buttonCenter + new Vector2(-crossExtent, -crossExtent), buttonCenter + new Vector2(crossExtent, crossExtent), crossColor, crossThickness);
         drawList.AddLine(buttonCenter + new Vector2(-crossExtent, crossExtent), buttonCenter + new Vector2(crossExtent, -crossExtent), crossColor, crossThickness);
 
-        if (!string.IsNullOrEmpty(titleOverride))
+        var hasTitle = !string.IsNullOrEmpty(titleOverride);
+        Vector2 textPos = default;
+        Vector2 pillMin = default;
+        Vector2 pillMax = default;
+
+        if (hasTitle)
         {
-            var textPos = windowPos + new Vector2(style.WindowPadding.X + buttonSize.X + 6f * scale, style.WindowPadding.Y + style.FramePadding.Y * 0.25f * scale);
+            var textSize = ImGui.CalcTextSize(titleOverride);
+            var pillPadding = new Vector2(style.FramePadding.X * 0.8f, MathF.Max(style.FramePadding.Y * 0.45f, 4f * scale));
+            textPos = windowPos + new Vector2(style.WindowPadding.X + buttonSize.X + 10f * scale, style.WindowPadding.Y + style.FramePadding.Y * 0.25f * scale);
+            pillMin = textPos - pillPadding;
+            pillMax = textPos + textSize + pillPadding;
+            pillMin.X = MathF.Max(pillMin.X, windowPos.X + style.WindowPadding.X + buttonSize.X + style.ItemSpacing.X);
+            pillMax.X = MathF.Min(pillMax.X, windowPos.X + windowSize.X - style.WindowPadding.X);
+            pillMin.Y = MathF.Max(pillMin.Y, windowPos.Y + style.WindowPadding.Y);
+            pillMax.Y = MathF.Min(pillMax.Y, windowPos.Y + style.WindowPadding.Y + MathF.Max(reservedHeight, textSize.Y + pillPadding.Y * 2f));
+
+            var roundingRadius = (pillMax.Y - pillMin.Y) * 0.5f;
+            drawList.AddRectFilled(pillMin, pillMax, ImGui.ColorConvertFloat4ToU32(_frameState.TitlePillColor), roundingRadius);
+            drawList.AddRect(pillMin, pillMax, ImGui.ColorConvertFloat4ToU32(_frameState.TitlePillBorderColor), roundingRadius, ImDrawFlags.RoundCornersAll, 1.5f);
+
             drawList.AddText(textPos, ImGui.ColorConvertFloat4ToU32(_frameState.TextColor.W > 0f ? _frameState.TextColor : ImGui.GetStyle().Colors[(int)ImGuiCol.Text]), titleOverride);
         }
 
@@ -218,6 +240,36 @@ public static class UiTheme
             {
                 RequestCloseThisFrame = true;
             }
+        }
+
+        var dragHeight = reservedHeight > 0f ? reservedHeight : Math.Max(buttonSize.Y, (hasTitle ? pillMax.Y - pillMin.Y : buttonSize.Y) + style.FramePadding.Y * 0.5f);
+        var dragMin = new Vector2(closeRectMax.X + style.ItemSpacing.X, windowPos.Y + style.WindowPadding.Y);
+        var dragMax = new Vector2(windowPos.X + windowSize.X - style.WindowPadding.X, dragMin.Y + dragHeight);
+        if (hasTitle)
+        {
+            dragMin.X = MathF.Min(dragMin.X, pillMin.X);
+        }
+
+        var window = ImGui.GetCurrentWindow();
+        var windowId = window.ID;
+        var hoveringDragZone = ImGui.IsMouseHoveringRect(dragMin, dragMax, false);
+        if (_draggingWindow && _dragWindowId == windowId)
+        {
+            if (ImGui.IsMouseDown(ImGuiMouseButton.Left))
+            {
+                var mousePos = ImGui.GetMousePos();
+                ImGui.SetWindowPos(mousePos - _dragOffset);
+            }
+            else
+            {
+                _draggingWindow = false;
+            }
+        }
+        else if (hoveringDragZone && ImGui.IsMouseClicked(ImGuiMouseButton.Left))
+        {
+            _draggingWindow = true;
+            _dragWindowId = windowId;
+            _dragOffset = ImGui.GetMousePos() - windowPos;
         }
     }
 
@@ -305,6 +357,11 @@ public static class UiTheme
 
         _frameState.CloseButtonColor = AdjustAlpha(secondary, 0.7f);
         _frameState.CloseButtonHoveredColor = AdjustAlpha(accent, 0.85f);
+
+        var pillBase = Blend(primary, accent, 0.28f, Math.Clamp(primary.W + 0.12f, 0f, 1f));
+        _frameState.TitlePillColor = AdjustAlpha(pillBase, Math.Clamp(pillBase.W, 0.55f, 0.85f));
+        var pillBorder = Blend(_frameState.BorderColor, accent, 0.2f, Math.Clamp(_frameState.BorderHoverColor.W + 0.1f, 0f, 1f));
+        _frameState.TitlePillBorderColor = AdjustAlpha(pillBorder, Math.Clamp(pillBorder.W, 0.6f, 0.95f));
     }
 
     private static Vector4 Blend(Vector4 baseColor, Vector4 accent, float t, float alpha)

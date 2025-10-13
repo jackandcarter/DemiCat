@@ -42,6 +42,7 @@ public class PresenceSidebar : IDisposable
     private const string PresenceUnavailableMessage = "Presence unavailable";
     private static readonly TimeSpan RefreshCooldown = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan RebuildInterval = TimeSpan.FromMilliseconds(250);
+    private static readonly TimeSpan ForceRefreshInterval = TimeSpan.FromSeconds(10);
 
     private Task? _refreshTask;
     private bool _refreshInFlight;
@@ -49,6 +50,7 @@ public class PresenceSidebar : IDisposable
     private readonly List<PresenceDto> _items = new();
     private DateTime _lastRebuild = DateTime.MinValue;
     private PresenceConnectionState _lastConn = PresenceConnectionState.Disconnected;
+    private DateTime _lastForceRefresh = DateTime.MinValue;
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
     public Action<string?>? TextureTouch { get; set; }
@@ -136,14 +138,20 @@ public class PresenceSidebar : IDisposable
                 else
                 {
                     var presences = presencesSource.ToList();
-                    if (presences.Count == 0)
+                if (presences.Count == 0)
+                {
+                    if (DateTime.UtcNow - _lastForceRefresh >= ForceRefreshInterval)
                     {
-                        ShowStatus(_service.StatusMessage);
+                        _lastForceRefresh = DateTime.UtcNow;
+                        _ = _service.Refresh(force: true);
                     }
-                    else
+
+                    ShowStatus(string.IsNullOrWhiteSpace(_service.StatusMessage) ? null : _service.StatusMessage);
+                }
+                else
+                {
+                    if (!string.IsNullOrEmpty(_service.StatusMessage))
                     {
-                        if (!string.IsNullOrEmpty(_service.StatusMessage))
-                        {
                             ImGui.TextUnformatted(_service.StatusMessage);
                             ImGui.Spacing();
                         }
