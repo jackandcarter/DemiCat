@@ -83,6 +83,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private string? _glamourerJson;
     private DateTimeOffset _lastPublish;
     private DateTimeOffset _lastRedrawAt = DateTimeOffset.MinValue;
+    private bool _loggedSettingsJsonDetection;
 
     private List<SyncshellMemberStatus> _members = new();
     private List<SyncshellMemberStatus> _activeMembers = new();
@@ -114,6 +115,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         _tokenManager.OnUnlinked += HandleTokenUnlinked;
         _clientState.TerritoryChanged += HandleTerritoryChanged;
         _framework.Update += OnFrameworkTick;
+        _framework.RunOnFrameworkThread(() =>
+        {
+            _frameworkThreadId = Environment.CurrentManagedThreadId;
+        });
     }
 
     public event EventHandler? StatusChanged;
@@ -215,9 +220,34 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     public bool PenumbraAvailable => _penumbra.Available;
 
-    public string? DetectedPenumbraPath => _penumbra.Available
-        ? _penumbra.GetModDirectory()
-        : BlobStore.GuessDefaultPenumbraRoot();
+    public string? DetectedPenumbraPath => TryGetDetectedPenumbraPath(out _);
+
+    public bool DetectedPenumbraPathFromSettingsJson
+    {
+        get
+        {
+            TryGetDetectedPenumbraPath(out var fromSettingsJson);
+            return fromSettingsJson;
+        }
+    }
+
+    private string? TryGetDetectedPenumbraPath(out bool fromSettingsJson)
+    {
+        if (_penumbra.Available)
+        {
+            fromSettingsJson = false;
+            return _penumbra.GetModDirectory();
+        }
+
+        var path = BlobStore.GuessDefaultPenumbraRoot(out fromSettingsJson);
+        if (fromSettingsJson && !_loggedSettingsJsonDetection && !string.IsNullOrWhiteSpace(path))
+        {
+            _log.Debug("Detected Penumbra path from settings.json: {Path}", path);
+            _loggedSettingsJsonDetection = true;
+        }
+
+        return path;
+    }
 
     public SyncshellTargetStage GetStage(string memberId)
     {
@@ -403,6 +433,11 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     }
 
     private void ThrowIfDisposed()
+    {
+        EnsureNotDisposed();
+    }
+
+    private void EnsureNotDisposed()
     {
         if (_disposed)
         {
@@ -630,12 +665,14 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             throw new ArgumentNullException(nameof(fn));
         }
 
+        EnsureNotDisposed();
+
         if (Environment.CurrentManagedThreadId == _frameworkThreadId)
         {
             return fn();
         }
 
-        var tcs = new TaskCompletionSource<T>();
+        var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
         _framework.RunOnFrameworkThread(() =>
         {
             try
@@ -658,13 +695,15 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             throw new ArgumentNullException(nameof(fn));
         }
 
+        EnsureNotDisposed();
+
         if (Environment.CurrentManagedThreadId == _frameworkThreadId)
         {
             fn();
             return;
         }
 
-        var tcs = new TaskCompletionSource<bool>();
+        var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         _framework.RunOnFrameworkThread(() =>
         {
             try
@@ -999,8 +1038,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void RefreshAppearanceCaches()
+    public void RefreshAppearanceCaches()
     {
+        EnsureNotDisposed();
+
         string? glamourerJson = null;
         try
         {
@@ -1022,7 +1063,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         if (string.IsNullOrWhiteSpace(modRoot))
         {
-            modRoot = BlobStore.GuessDefaultPenumbraRoot();
+            modRoot = TryGetDetectedPenumbraPath(out _);
         }
 
         var discovered = new Dictionary<string, LocalBlobInfo?>(StringComparer.OrdinalIgnoreCase);
@@ -1187,7 +1228,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         var root = _penumbra.GetModDirectory() ?? _config.PenumbraPathOverride;
         if (string.IsNullOrWhiteSpace(root))
         {
-            root = BlobStore.GuessDefaultPenumbraRoot();
+            root = TryGetDetectedPenumbraPath(out _);
         }
 
         if (string.IsNullOrWhiteSpace(root))
