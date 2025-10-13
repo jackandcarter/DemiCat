@@ -425,9 +425,17 @@ public class SettingsWindow : IDisposable
 
         var penumbraAvailable = service?.PenumbraAvailable ?? false;
         var detectedPath = service?.DetectedPenumbraPath;
-        if (penumbraAvailable && !string.IsNullOrEmpty(detectedPath))
+        var detectedFromSettings = service?.DetectedPenumbraPathFromSettingsJson ?? false;
+        if (!string.IsNullOrEmpty(detectedPath))
         {
-            ImGui.TextDisabled($"Detected Penumbra path: {detectedPath}");
+            var label = detectedFromSettings
+                ? $"Detected from Penumbra settings.json: {detectedPath}"
+                : $"Detected Penumbra path: {detectedPath}";
+            ImGui.TextDisabled(label);
+        }
+        else if (penumbraAvailable)
+        {
+            ImGui.TextDisabled("Penumbra IPC reported no mod directory. Set a path manually if needed.");
         }
         else
         {
@@ -450,6 +458,7 @@ public class SettingsWindow : IDisposable
                     _penumbraOverride = path;
                     _config.PenumbraPathOverride = path;
                     SaveConfig();
+                    service?.RefreshAppearanceCaches();
                 }
             });
         }

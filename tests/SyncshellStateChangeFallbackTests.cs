@@ -56,6 +56,7 @@ public class SyncshellStateChangeFallbackTests
         public IReadOnlyList<SyncshellMemberStatus> ActiveMembers { get; private set; } = Array.Empty<SyncshellMemberStatus>();
         public bool PenumbraAvailable => false;
         public string? DetectedPenumbraPath => null;
+        public bool DetectedPenumbraPathFromSettingsJson => false;
 
         public Task Start(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
@@ -77,6 +78,10 @@ public class SyncshellStateChangeFallbackTests
         {
             error = null;
             return true;
+        }
+
+        public void RefreshAppearanceCaches()
+        {
         }
 
         public void EmitStatus(string status)

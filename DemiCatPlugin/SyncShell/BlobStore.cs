@@ -339,8 +339,10 @@ public sealed class BlobStore : IDisposable
         }
     }
 
-    public static string? GuessDefaultPenumbraRoot()
+    public static string? GuessDefaultPenumbraRoot(out bool fromSettingsJson)
     {
+        fromSettingsJson = false;
+
         IEnumerable<string> Candidates()
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
@@ -371,6 +373,7 @@ public sealed class BlobStore : IDisposable
                     var dir = md.GetString();
                     if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
                     {
+                        fromSettingsJson = true;
                         return dir;
                     }
                 }
