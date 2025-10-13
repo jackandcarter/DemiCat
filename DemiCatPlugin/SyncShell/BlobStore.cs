@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Dalamud.Plugin;
@@ -338,8 +339,48 @@ public sealed class BlobStore : IDisposable
         }
     }
 
-    public static string GuessDefaultPenumbraRoot()
+    public static string? GuessDefaultPenumbraRoot()
     {
+        IEnumerable<string> Candidates()
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                yield return Path.Combine(appData, "XIVLauncher", "pluginConfigs", "Penumbra", "settings.json");
+            }
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            {
+                var home = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
+                yield return Path.Combine(home, "Library", "Application Support", "XIV on Mac", "xivlauncher", "pluginConfigs", "Penumbra", "settings.json");
+            }
+        }
+
+        foreach (var cfg in Candidates())
+        {
+            try
+            {
+                if (!File.Exists(cfg))
+                {
+                    continue;
+                }
+
+                using var doc = JsonDocument.Parse(File.ReadAllText(cfg));
+                if (doc.RootElement.TryGetProperty("ModDirectory", out var md))
+                {
+                    var dir = md.GetString();
+                    if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+                    {
+                        return dir;
+                    }
+                }
+            }
+            catch
+            {
+                // ignored
+            }
+        }
+
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
@@ -359,6 +400,6 @@ public sealed class BlobStore : IDisposable
             }
         }
 
-        return string.Empty;
+        return null;
     }
 }

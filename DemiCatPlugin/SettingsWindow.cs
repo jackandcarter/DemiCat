@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using System.Globalization;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
+using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
@@ -26,6 +27,7 @@ public class SettingsWindow : IDisposable
     private readonly Func<Task> _startNetworking;
     private readonly DeveloperWindow _devWindow;
     private readonly IPluginLog _log;
+    private readonly FileDialogManager _fileDialog = new();
 
     private string _apiKey = string.Empty;
     private string _apiBaseUrl = string.Empty;
@@ -438,6 +440,20 @@ public class SettingsWindow : IDisposable
             SaveConfig();
         }
 
+        ImGui.SameLine();
+        if (ImGui.Button("Browse…"))
+        {
+            _fileDialog.OpenFolderDialog("Select Penumbra Mod Directory", (ok, path) =>
+            {
+                if (ok && !string.IsNullOrWhiteSpace(path))
+                {
+                    _penumbraOverride = path;
+                    _config.PenumbraPathOverride = path;
+                    SaveConfig();
+                }
+            });
+        }
+
         if (ImGui.Button("Validate Path"))
         {
             string? error = null;
@@ -464,6 +480,8 @@ public class SettingsWindow : IDisposable
             var color = _penumbraValidationSuccess ? new Vector4(0f, 0.8f, 0f, 1f) : new Vector4(0.9f, 0f, 0f, 1f);
             ImGui.TextColored(color, _penumbraValidationMessage);
         }
+
+        _fileDialog.Draw();
     }
 
     private void DrawAppearanceTab()

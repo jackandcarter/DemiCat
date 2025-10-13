@@ -43,6 +43,7 @@ public sealed class NotePadService : IDisposable
         _config = config;
         _httpClient = httpClient;
         _tokenManager = tokenManager;
+        _serializerOptions.Converters.Add(new NotePadColorJsonConverter());
     }
 
     public IReadOnlyList<NotePadSection> Sections
@@ -988,6 +989,8 @@ public sealed class NotePadPage
     public int Version { get; set; }
     public DateTime UpdatedAt { get; set; }
     public DateTime CreatedAt { get; set; }
+
+    [JsonConverter(typeof(NotePadColorJsonConverter))]
     public string? Color { get; set; }
     public string? CreatedById { get; set; }
     public string? CreatedByDiscordId { get; set; }
