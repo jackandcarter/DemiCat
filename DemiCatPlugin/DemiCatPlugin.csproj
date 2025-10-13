@@ -15,6 +15,9 @@
     <AssemblyVersion>1.3.1.0</AssemblyVersion>
     <FileVersion>1.3.1.0</FileVersion>
 
+    <DalamudManifest>manifest.json</DalamudManifest>
+    <DalamudIcon>icon.png</DalamudIcon>
+
     <NoWarn>CA1416</NoWarn>
   </PropertyGroup>
   <ItemGroup>
@@ -56,15 +59,5 @@
   <ItemGroup>
     <ProjectReference Include="../DemiCat.UI/DemiCat.UI.csproj" />
   </ItemGroup>
-  <PropertyGroup>
-    <DalamudIcon>icon.png</DalamudIcon>
-  </PropertyGroup>
-
-  <Target Name="CopyDalamudManifest" BeforeTargets="Build">
-    <Copy SourceFiles="$(ProjectDir)manifest.json"
-          DestinationFiles="$(ProjectDir)$(AssemblyName).json"
-          SkipUnchangedFiles="true" />
-  </Target>
-
   <!-- DO NOT import a custom DalamudPackager.targets for v13 -->
 </Project>
