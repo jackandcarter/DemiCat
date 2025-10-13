@@ -250,8 +250,7 @@ public static class UiTheme
             dragMin.X = MathF.Min(dragMin.X, pillMin.X);
         }
 
-        var window = ImGui.GetCurrentWindow();
-        var windowId = window.ID;
+        var windowId = ImGui.GetID("dc_theme_drag_zone");
         var hoveringDragZone = ImGui.IsMouseHoveringRect(dragMin, dragMax, false);
         if (_draggingWindow && _dragWindowId == windowId)
         {

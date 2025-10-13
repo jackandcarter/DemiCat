@@ -716,7 +716,8 @@ public sealed class NotePadWindow : IDisposable
         if (available.Y > 220f)
         {
             var maxPreview = MathF.Max(120f, available.Y - 160f);
-            previewHeight = MathF.Clamp(available.Y * 0.35f, 120f, maxPreview);
+            var previewTarget = available.Y * 0.35f;
+            previewHeight = MathF.Min(MathF.Max(previewTarget, 120f), maxPreview);
         }
 
         if (previewHeight > 0f)
