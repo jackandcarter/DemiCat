@@ -7,10 +7,10 @@ using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
+using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
-using Dalamud.Game.ClientState.Objects.Types;
 using Dalamud.Plugin.Services;
 
 namespace DemiCatPlugin.SyncShell;
@@ -409,7 +409,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void HandleTokenUnlinked(string? _)
+    private void HandleTokenUnlinked(string? _unused)
     {
         _ = Stop();
         lock (_statusLock)
@@ -1051,12 +1051,12 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             for (var i = 0; i < _objects.Length; i++)
             {
                 var obj = _objects[i];
-                if (obj is not PlayerCharacter player)
+                if (obj == null || obj.ObjectKind != ObjectKind.Player)
                 {
                     continue;
                 }
 
-                var name = player.Name?.TextValue ?? string.Empty;
+                var name = obj.Name?.TextValue ?? string.Empty;
                 if (!string.IsNullOrWhiteSpace(name))
                 {
                     // No world decoration to avoid GeneratedSheets dependency
@@ -1335,20 +1335,26 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             return false;
         }
 
-#if NET8_0_OR_GREATER
         try
         {
-            System.IO.File.CreateHardLink(destination, source);
-            return true;
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                return CreateHardLinkWindows(destination, source, IntPtr.Zero);
+            }
+
+            return link(source, destination) == 0;
         }
         catch
         {
             return false;
         }
-#else
-        return false;
-#endif
     }
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    private static extern bool CreateHardLinkWindows(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+
+    [DllImport("libc", SetLastError = true)]
+    private static extern int link(string oldpath, string newpath);
 
     public static string FormatStatusForMembers(int activeCount)
         => activeCount > 0 ? $"Syncing {activeCount} member{(activeCount == 1 ? string.Empty : "s")}" : "Idle";
