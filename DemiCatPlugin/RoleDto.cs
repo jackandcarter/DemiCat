@@ -16,7 +16,29 @@ public class RoleDto
 
 public class RoleTagsDto
 {
+    private bool _premiumSubscriber;
+
+    [JsonIgnore]
+    public bool PremiumSubscriber
+    {
+        get => _premiumSubscriber;
+        set => _premiumSubscriber = value;
+    }
+
     [JsonPropertyName("premium_subscriber")]
-    public bool PremiumSubscriber { get; set; }
+    [JsonInclude]
+    public bool LegacyPremiumSubscriber
+    {
+        get => _premiumSubscriber;
+        set => _premiumSubscriber = value;
+    }
+
+    [JsonPropertyName("premiumSubscriber")]
+    [JsonInclude]
+    public bool PremiumSubscriberCamel
+    {
+        get => _premiumSubscriber;
+        set => _premiumSubscriber = value;
+    }
 }
 
