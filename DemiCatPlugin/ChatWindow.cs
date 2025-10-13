@@ -490,8 +490,7 @@ public class ChatWindow : IDisposable
             EmbedColorOverride = GetEmbedColorOverride(),
             Border = _config.GetEmbedBorderSettingsCopy(_channelKind),
             EmojiManager = _emojiManager,
-            EmojiTileSize = Config.SanitizeEmojiTileSize(_config.EmojiTileSize),
-            EmojiGridHeight = Config.SanitizeEmojiGridHeight(_config.EmojiGridHeight)
+            EmojiPicker = _emojiPicker
         };
 
         var result = EmbedStyleControls.Draw(context);
