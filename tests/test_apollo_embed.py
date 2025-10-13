@@ -23,7 +23,7 @@ http_pkg = types.ModuleType("demibot.http")
 http_pkg.__path__ = [str(root / "demibot/http")]
 sys.modules.setdefault("demibot.http", http_pkg)
 
-from demibot.discordbot.cogs.mirror import Mirror
+from demibot.discordbot.cogs.mirror import ApolloHelper, Mirror
 from demibot.db.models import Embed, Guild, GuildChannel, ChannelKind
 from demibot.db.session import get_session, init_db
 from demibot.http.routes.embeds import get_embeds
@@ -35,11 +35,11 @@ class DummyBot:
 
 
 class DummyAuthor:
-    def __init__(self) -> None:
+    def __init__(self, name: str = "Apollo") -> None:
         self.bot = True
         self.id = 999
-        self.display_name = "Apollo"
-        self.name = "Apollo"
+        self.display_name = name
+        self.name = name
 
 
 class DummyChannel:
@@ -48,13 +48,21 @@ class DummyChannel:
 
 
 class DummyMessage:
-    def __init__(self, channel_id: int, embed: discord.Embed) -> None:
-        self.author = DummyAuthor()
+    def __init__(
+        self,
+        channel_id: int,
+        embed: discord.Embed,
+        *,
+        application_id: int | None = None,
+        author_name: str = "Apollo",
+    ) -> None:
+        self.author = DummyAuthor(author_name)
         self.channel = DummyChannel(channel_id)
         self.id = 42
         self.content = ""
         self.mentions = []
         self.embeds = [embed]
+        self.application_id = application_id
         btn = SimpleNamespace(
             type=2,
             custom_id="rsvp:yes",
@@ -64,7 +72,12 @@ class DummyMessage:
         )
         row = SimpleNamespace(children=[btn])
         self.components = [row]
-async def _run_test() -> None:
+async def _run_test(
+    *,
+    include_footer: bool = True,
+    application_id: int | None = None,
+    author_name: str = "Apollo",
+) -> None:
     db_path = Path("test.db")
     if db_path.exists():
         db_path.unlink()
@@ -80,8 +93,14 @@ async def _run_test() -> None:
         await db.commit()
 
     emb = discord.Embed(title="Raid Night", description="Prepare")
-    emb.set_footer(text="Powered by Apollo")
-    msg = DummyMessage(123, emb)
+    if include_footer:
+        emb.set_footer(text="Powered by Apollo")
+    msg = DummyMessage(
+        123,
+        emb,
+        application_id=application_id,
+        author_name=author_name,
+    )
 
     mirror = Mirror(bot)
     await mirror.on_message(msg)
@@ -104,3 +123,13 @@ async def _run_test() -> None:
 
 def test_apollo_embed_stored_and_retrieved() -> None:
     asyncio.run(_run_test())
+
+
+def test_apollo_embed_detected_by_application_id() -> None:
+    asyncio.run(
+        _run_test(
+            include_footer=False,
+            application_id=ApolloHelper.APOLLO_APPLICATION_ID,
+            author_name="Scheduler",
+        )
+    )
