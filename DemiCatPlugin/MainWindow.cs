@@ -426,8 +426,8 @@ public class MainWindow : IDisposable
                 var drawList = ImGui.GetWindowDrawList();
                 var winPos = ImGui.GetWindowPos();
                 var winSize = ImGui.GetWindowSize();
-                var min = winPos + new Vector2(borderSize, borderSize);
-                var max = winPos + winSize - new Vector2(borderSize, borderSize);
+                var min = winPos;
+                var max = winPos + winSize;
                 if (max.X > min.X && max.Y > min.Y)
                 {
                     var topColor = ImGui.GetColorU32(gradientStart);
