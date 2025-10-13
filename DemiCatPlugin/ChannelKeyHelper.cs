@@ -1,3 +1,5 @@
+using System;
+
 namespace DemiCatPlugin;
 
 public static class ChannelKeyHelper
@@ -22,5 +24,13 @@ public static class ChannelKeyHelper
     public static string BuildCursorKey(string? guildId, string? kind, string channelId)
         => $"{NormalizeGuildId(guildId)}:{NormalizeKind(kind)}:{channelId}";
 
-    public static bool IsDefaultGuild(string? guildId) => string.IsNullOrWhiteSpace(guildId);
+    public static bool IsDefaultGuild(string? guildId)
+    {
+        if (string.IsNullOrWhiteSpace(guildId))
+        {
+            return true;
+        }
+
+        return string.Equals(guildId.Trim(), DefaultGuildSentinel, StringComparison.OrdinalIgnoreCase);
+    }
 }
