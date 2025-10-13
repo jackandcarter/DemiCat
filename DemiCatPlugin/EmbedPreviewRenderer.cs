@@ -17,7 +17,7 @@ public static class EmbedPreviewRenderer
     {
         using var emojiFont = emojiManager.PushEmojiFont();
         var style = ImGui.GetStyle();
-        var stripeWidth = dto.Color.HasValue ? Math.Max(4f, style.FramePadding.X * 0.75f) : 0f;
+        var stripeWidth = dto.Color.HasValue ? Math.Max(6f, style.FramePadding.X * 0.9f) : 0f;
         const float contentPadding = 8f;
         const float verticalPadding = 4f;
 
@@ -195,20 +195,25 @@ public static class EmbedPreviewRenderer
             var cardMin = ImGui.GetWindowPos();
             var cardMax = cardMin + ImGui.GetWindowSize();
             var cardRounding = style.ChildRounding;
-            var borderInset = Math.Max(1f, style.ChildBorderSize > 0f ? style.ChildBorderSize : style.FrameBorderSize);
+            var borderInset = Math.Max(0f, style.ChildBorderSize > 0f ? style.ChildBorderSize : style.FrameBorderSize);
             var stripeMin = new Vector2(cardMin.X + borderInset, cardMin.Y + borderInset);
             var stripeMax = new Vector2(cardMin.X + borderInset + stripeWidth, cardMax.Y - borderInset);
             if (stripeMax.X > stripeMin.X && stripeMax.Y > stripeMin.Y)
             {
                 var colorVec = ColorUtils.RgbToVector4(dto.Color.Value);
                 var color = ImGui.ColorConvertFloat4ToU32(colorVec);
-                var stripeRounding = Math.Min(cardRounding, stripeWidth * 0.5f);
-                dl.AddRectFilled(
-                    stripeMin,
-                    stripeMax,
-                    color,
-                    stripeRounding,
-                    ImDrawFlags.RoundCornersTopLeft | ImDrawFlags.RoundCornersBottomLeft);
+                dl.AddRectFilled(stripeMin, stripeMax, color);
+
+                if (cardRounding > 0f)
+                {
+                    var stripeRounding = Math.Min(cardRounding, Math.Min(stripeWidth, stripeMax.Y - stripeMin.Y) * 0.5f);
+                    dl.AddRectFilled(
+                        stripeMin,
+                        stripeMax,
+                        color,
+                        stripeRounding,
+                        ImDrawFlags.RoundCornersTopLeft | ImDrawFlags.RoundCornersBottomLeft);
+                }
             }
         }
 

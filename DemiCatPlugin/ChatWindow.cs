@@ -524,12 +524,20 @@ public class ChatWindow : IDisposable
     {
         var width = MathF.Max(1f, baseBounds.X);
         var height = MathF.Max(1f, baseBounds.Y);
+        var aspect = height / MathF.Max(1f, width);
+
+        var availableWidth = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
 
         if (allowAutoStretch && _config.ChatImageAutoStretch)
         {
-            var availableWidth = MathF.Max(1f, ImGui.GetContentRegionAvail().X);
             width = availableWidth;
         }
+        else
+        {
+            width = MathF.Min(width, availableWidth);
+        }
+
+        height = MathF.Max(1f, width * aspect);
 
         return new Vector2(width, height);
     }
@@ -1932,21 +1940,13 @@ public class ChatWindow : IDisposable
         var began = ImGui.Begin(title, ref open, flags);
         if (began)
         {
-            UiTheme.DrawWindowChrome(_config, title, () => open = false);
-
             var style = ImGui.GetStyle();
-            var chromeHeight = Math.Max(14f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight());
+            var chromeHeight = Math.Max(22f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight() + style.FramePadding.Y * 1.5f);
             ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y));
-            var dragSize = new Vector2(ImGui.GetContentRegionAvail().X, chromeHeight);
-            ImGui.InvisibleButton($"##drag_zone_{title}", dragSize);
-            if (ImGui.IsItemActive() && ImGui.IsMouseDragging(0))
-            {
-                var io = ImGui.GetIO();
-                ImGui.SetWindowPos(ImGui.GetWindowPos() + io.MouseDelta);
-            }
-
-            ImGui.Dummy(new Vector2(1f, style.FramePadding.Y + chromeHeight));
+            ImGui.Dummy(new Vector2(1f, chromeHeight));
+            ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y + chromeHeight));
             Draw();
+            UiTheme.DrawWindowChrome(_config, title, () => open = false, chromeHeight);
         }
         ImGui.End();
         ImGui.PopStyleVar();

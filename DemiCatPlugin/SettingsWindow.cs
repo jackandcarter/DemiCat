@@ -87,20 +87,11 @@ public class SettingsWindow : IDisposable
             var began = ImGui.Begin("DemiCat Settings", ref open, flags);
             if (began)
             {
-                UiTheme.DrawWindowChrome(_config, "DemiCat Settings", () => open = false);
-
                 var style = ImGui.GetStyle();
-                var chromeHeight = Math.Max(14f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight());
+                var chromeHeight = Math.Max(22f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight() + style.FramePadding.Y * 1.5f);
                 ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y));
-                var dragSize = new Vector2(ImGui.GetContentRegionAvail().X, chromeHeight);
-                ImGui.InvisibleButton("##drag_zone_settings", dragSize);
-                if (ImGui.IsItemActive() && ImGui.IsMouseDragging(0))
-                {
-                    var io = ImGui.GetIO();
-                    ImGui.SetWindowPos(ImGui.GetWindowPos() + io.MouseDelta);
-                }
-
-                ImGui.Dummy(new Vector2(1f, style.FramePadding.Y + chromeHeight));
+                ImGui.Dummy(new Vector2(1f, chromeHeight));
+                ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y + chromeHeight));
 
                 if (!_settingsLoaded)
                 {
@@ -130,6 +121,8 @@ public class SettingsWindow : IDisposable
 
                     ImGui.EndTabBar();
                 }
+
+                UiTheme.DrawWindowChrome(_config, "DemiCat Settings", () => open = false, chromeHeight);
             }
             ImGui.End();
             ImGui.PopStyleVar();

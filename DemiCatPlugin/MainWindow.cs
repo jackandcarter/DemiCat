@@ -1010,26 +1010,18 @@ public class MainWindow : IDisposable
         var began = ImGui.Begin($"{title}##dc_{id}", ref openRef, windowFlags);
         if (began)
         {
+            var style = ImGui.GetStyle();
+            var chromeHeight = Math.Max(22f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight() + style.FramePadding.Y * 1.5f);
+            ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y));
+            ImGui.Dummy(new Vector2(1f, chromeHeight));
+            ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y + chromeHeight));
+            drawContent();
+            windowInteracted = HasWindowInteraction();
             UiTheme.DrawWindowChrome(_config, title, () =>
             {
                 openRef = false;
                 closeRequested = true;
-            });
-
-            var style = ImGui.GetStyle();
-            var chromeHeight = Math.Max(14f * ImGuiHelpers.GlobalScale, ImGui.GetFrameHeight());
-            ImGui.SetCursorPos(new Vector2(style.WindowPadding.X, style.WindowPadding.Y));
-            var dragSize = new Vector2(ImGui.GetContentRegionAvail().X, chromeHeight);
-            ImGui.InvisibleButton($"##drag_zone_dc_{id}", dragSize);
-            if (ImGui.IsItemActive() && ImGui.IsMouseDragging(0))
-            {
-                var io = ImGui.GetIO();
-                ImGui.SetWindowPos(ImGui.GetWindowPos() + io.MouseDelta);
-            }
-
-            ImGui.Dummy(new Vector2(1f, style.FramePadding.Y + chromeHeight));
-            drawContent();
-            windowInteracted = HasWindowInteraction();
+            }, chromeHeight);
         }
         ImGui.End();
         ImGui.PopStyleVar();
