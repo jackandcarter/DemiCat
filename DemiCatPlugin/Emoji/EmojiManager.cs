@@ -22,6 +22,7 @@ public sealed class EmojiManager : IDisposable
     private Task? _customTask;
 
     private UnicodeEmoji[] _unicode = Array.Empty<UnicodeEmoji>();
+    private Dictionary<string, UnicodeEmoji> _unicodeLookup = new(StringComparer.Ordinal);
     private CustomEmoji[] _custom = Array.Empty<CustomEmoji>();
     private Dictionary<string, CustomEmoji> _customLookup = new(StringComparer.Ordinal);
 
@@ -79,6 +80,19 @@ public sealed class EmojiManager : IDisposable
     public Task RefreshUnicodeAsync(CancellationToken ct = default) => StartUnicodeLoad(ct, true);
     public Task EnsureCustomAsync(CancellationToken ct = default) => StartCustomLoad(ct, false);
     public Task RefreshCustomAsync(CancellationToken ct = default) => StartCustomLoad(ct, true);
+
+    public bool TryGetUnicodeEmoji(string value, out UnicodeEmoji? emoji)
+    {
+        var lookup = Volatile.Read(ref _unicodeLookup);
+        if (lookup != null && lookup.TryGetValue(value, out var found))
+        {
+            emoji = found;
+            return true;
+        }
+
+        emoji = null;
+        return false;
+    }
 
     public bool TryGetCustomEmoji(string id, out CustomEmoji? emoji)
     {
@@ -147,6 +161,7 @@ public sealed class EmojiManager : IDisposable
         {
             var result = await FetchUnicodeAsync(ct).ConfigureAwait(false);
             Volatile.Write(ref _unicode, result);
+            Volatile.Write(ref _unicodeLookup, BuildUnicodeLookup(result));
             UpdateUnicodeState(new LoadState(false, true, null));
         }
         catch (OperationCanceledException)
@@ -221,6 +236,23 @@ public sealed class EmojiManager : IDisposable
         var list = await JsonSerializer.DeserializeAsync<List<UnicodeEmoji>>(stream, JsonOptions, ct).ConfigureAwait(false)
                    ?? new List<UnicodeEmoji>();
         return list.FindAll(e => !string.IsNullOrWhiteSpace(e.Emoji)).ToArray();
+    }
+
+    private static Dictionary<string, UnicodeEmoji> BuildUnicodeLookup(IReadOnlyList<UnicodeEmoji> emojis)
+    {
+        var lookup = new Dictionary<string, UnicodeEmoji>(emojis.Count, StringComparer.Ordinal);
+        for (var i = 0; i < emojis.Count; i++)
+        {
+            var emoji = emojis[i];
+            if (emoji == null || string.IsNullOrWhiteSpace(emoji.Emoji))
+            {
+                continue;
+            }
+
+            lookup[emoji.Emoji] = emoji;
+        }
+
+        return lookup;
     }
 
     private async Task<(CustomEmoji[] Items, Dictionary<string, CustomEmoji> Lookup)> FetchCustomAsync(CancellationToken ct)

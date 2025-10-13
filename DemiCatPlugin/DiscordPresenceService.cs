@@ -73,7 +73,7 @@ public class DiscordPresenceService : IDisposable
     {
         _loaded = false;
         _nextRefreshAllowed = DateTime.MinValue;
-        DisposeAllPresences();
+        _ = DisposeAllPresencesAsync();
     }
 
     /// <summary>
@@ -147,7 +147,7 @@ public class DiscordPresenceService : IDisposable
         var socket = Interlocked.Exchange(ref _ws, null);
         socket?.Dispose();
 
-        DisposeAllPresences();
+        _ = DisposeAllPresencesAsync();
         SetConnectionState(PresenceConnectionState.Disconnected);
     }
 
@@ -160,7 +160,7 @@ public class DiscordPresenceService : IDisposable
         var socket = Interlocked.Exchange(ref _ws, null);
         socket?.Dispose();
 
-        DisposeAllPresences();
+        _ = DisposeAllPresencesAsync();
         SetConnectionState(PresenceConnectionState.Disconnected);
     }
 
@@ -384,7 +384,7 @@ public class DiscordPresenceService : IDisposable
                 _retryAttempt = 0;
                 hadTransportError = false;
                 _loaded = false;
-                DisposeAllPresences();
+                await DisposeAllPresencesAsync().ConfigureAwait(false);
                 await Refresh(force: true).ConfigureAwait(false);
                 SetConnectionState(PresenceConnectionState.Connected);
                 UpdateStatusMessage(string.Empty);
@@ -719,23 +719,23 @@ public class DiscordPresenceService : IDisposable
         }
     }
 
-    private void DisposeAllPresences()
+    private Task DisposeAllPresencesAsync()
     {
         var framework = PluginServices.Instance?.Framework;
-        if (framework == null)
+        if (framework != null)
         {
-            DisposePresencesUnlocked(_presences);
-            _presences.Clear();
-            _indexById.Clear();
-            return;
+            return framework.RunOnTick(() =>
+            {
+                DisposePresencesUnlocked(_presences);
+                _presences.Clear();
+                _indexById.Clear();
+            });
         }
 
-        framework.RunOnTick(() =>
-        {
-            DisposePresencesUnlocked(_presences);
-            _presences.Clear();
-            _indexById.Clear();
-        });
+        DisposePresencesUnlocked(_presences);
+        _presences.Clear();
+        _indexById.Clear();
+        return Task.CompletedTask;
     }
 
     private readonly struct RefreshOutcome
