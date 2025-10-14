@@ -81,6 +81,10 @@ public class SyncshellServiceHelperTests
             using var blobStore = new BlobStore(pluginInterfaceMock.Object);
             var penumbra = new PenumbraIpc(pluginInterfaceMock.Object, logMock.Object);
             var glamourer = new GlamourerIpc(pluginInterfaceMock.Object, clientStateMock.Object, logMock.Object);
+            var customizePlus = new CustomizePlusIpc(pluginInterfaceMock.Object, logMock.Object);
+            var simpleHeels = new SimpleHeelsIpc(pluginInterfaceMock.Object, logMock.Object);
+            var palettePlus = new PalettePlusIpc(pluginInterfaceMock.Object, logMock.Object);
+            var honorific = new HonorificIpc(pluginInterfaceMock.Object, logMock.Object);
 
             var config = new Config
             {
@@ -103,6 +107,10 @@ public class SyncshellServiceHelperTests
                 blobStore,
                 penumbra,
                 glamourer,
+                customizePlus,
+                simpleHeels,
+                palettePlus,
+                honorific,
                 logMock.Object,
                 clientStateMock.Object,
                 frameworkMock.Object,

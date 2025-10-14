@@ -50,6 +50,19 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="SyncShell\CustomizePlusIpc.cs" />
+    <Compile Include="SyncShell\SimpleHeelsIpc.cs" />
+    <Compile Include="SyncShell\PalettePlusIpc.cs" />
+    <Compile Include="SyncShell\HonorificIpc.cs" />
+    <Compile Include="SyncShell\PenumbraIpc.cs" />
+    <Compile Include="SyncShell\GlamourerIpc.cs" />
+    <Compile Include="SyncShell\Debouncer.cs" />
+    <Compile Include="SyncShell\SyncShellWatcher.cs" />
+    <Compile Include="SyncShell\ISyncShellWatcher.cs" />
+    <Compile Include="SyncShell\ISyncShellService.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="Dock\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

@@ -65,6 +65,10 @@ public class SyncshellPublishFlowTests : IDisposable
         var frameworkMock = new Mock<IFramework>();
         var objectTableMock = new Mock<IObjectTable>();
         var glamourer = new GlamourerIpc(pluginInterfaceMock.Object, clientStateMock.Object, logMock.Object);
+        var customizePlus = new CustomizePlusIpc(pluginInterfaceMock.Object, logMock.Object);
+        var simpleHeels = new SimpleHeelsIpc(pluginInterfaceMock.Object, logMock.Object);
+        var palettePlus = new PalettePlusIpc(pluginInterfaceMock.Object, logMock.Object);
+        var honorific = new HonorificIpc(pluginInterfaceMock.Object, logMock.Object);
         var service = new SyncShellService(
             config,
             TokenManager.Instance!,
@@ -72,6 +76,10 @@ public class SyncshellPublishFlowTests : IDisposable
             blobStore,
             penumbra,
             glamourer,
+            customizePlus,
+            simpleHeels,
+            palettePlus,
+            honorific,
             logMock.Object,
             clientStateMock.Object,
             frameworkMock.Object,
@@ -145,6 +153,10 @@ public class SyncshellPublishFlowTests : IDisposable
         var frameworkMock = new Mock<IFramework>();
         var objectTableMock = new Mock<IObjectTable>();
         var glamourer = new GlamourerIpc(pluginInterfaceMock.Object, clientStateMock.Object, logMock.Object);
+        var customizePlus = new CustomizePlusIpc(pluginInterfaceMock.Object, logMock.Object);
+        var simpleHeels = new SimpleHeelsIpc(pluginInterfaceMock.Object, logMock.Object);
+        var palettePlus = new PalettePlusIpc(pluginInterfaceMock.Object, logMock.Object);
+        var honorific = new HonorificIpc(pluginInterfaceMock.Object, logMock.Object);
         var service = new SyncShellService(
             config,
             TokenManager.Instance!,
@@ -152,6 +164,10 @@ public class SyncshellPublishFlowTests : IDisposable
             blobStore,
             penumbra,
             glamourer,
+            customizePlus,
+            simpleHeels,
+            palettePlus,
+            honorific,
             logMock.Object,
             clientStateMock.Object,
             frameworkMock.Object,

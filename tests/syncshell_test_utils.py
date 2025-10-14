@@ -108,6 +108,10 @@ def build_publish_payload(base: Path, *, discord_id: str = "1234") -> tuple[dict
         "appearance": {
             "actorHash": "actor-1",
             "glamourer": "{\"foo\":1}",
+            "cplus": "{\"scale\":1}",
+            "heels": "{\"offset\":0.5}",
+            "palette": "{\"preset\":\"default\"}",
+            "honorific": "{\"title\":\"Champion\"}",
             "blobs": [
                 {
                     "name": file_path.name,
