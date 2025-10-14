@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import datetime
@@ -19,10 +20,11 @@ IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 DEFAULT_FC_COLOR = 0x5865F2
 DEFAULT_OFFICER_COLOR = 0xED4245
 MAX_BORDER_LINE_LENGTH = 120
-GLYPH_SYMBOLS = {
-    "square": "■",
-    "circle": "●",
-    "triangle": "▲",
+DEFAULT_EMBED_BORDER_GLYPH = "⬛"
+GLYPH_ALIASES = {
+    "square": DEFAULT_EMBED_BORDER_GLYPH,
+    "circle": "⚫",
+    "triangle": "🔺",
 }
 
 
@@ -204,6 +206,18 @@ def _sanitize_embed_color(value: int | None) -> int | None:
     return numeric
 
 
+def _normalize_embed_border_glyph(value: object) -> str:
+    if value is None:
+        return DEFAULT_EMBED_BORDER_GLYPH
+
+    glyph = str(value).strip()
+    if not glyph:
+        return DEFAULT_EMBED_BORDER_GLYPH
+
+    alias = glyph.lower()
+    return GLYPH_ALIASES.get(alias, glyph)
+
+
 def _sanitize_embed_border(
     settings: Mapping[str, object] | None, *, channel_kind: ChannelKind
 ) -> tuple[bool, str, int]:
@@ -213,12 +227,10 @@ def _sanitize_embed_border(
             if channel_kind == ChannelKind.OFFICER_CHAT
             else DEFAULT_FC_COLOR
         )
-        return False, "square", default_color
+        return False, DEFAULT_EMBED_BORDER_GLYPH, default_color
 
     enabled = bool(settings.get("enabled"))
-    glyph_value = str(settings.get("glyph") or "square").lower()
-    if glyph_value not in GLYPH_SYMBOLS:
-        glyph_value = "square"
+    glyph_value = _normalize_embed_border_glyph(settings.get("glyph"))
 
     color_value = _sanitize_embed_color(settings.get("color"))
     if color_value is None:
@@ -253,8 +265,11 @@ def _apply_embed_border(
         )
 
     width = max(1, max(len(line) for line in lines))
-    glyph_symbol = GLYPH_SYMBOLS.get(glyph, GLYPH_SYMBOLS["square"])
-    horizontal_count = width + (1 + 1) * 2
+    glyph_symbol = glyph or DEFAULT_EMBED_BORDER_GLYPH
+    glyph_length = max(len(glyph_symbol), 1)
+    row_template = f"{glyph_symbol} {' ' * width} {glyph_symbol}"
+    row_length = len(row_template)
+    horizontal_count = max(1, math.ceil(row_length / glyph_length))
     top = glyph_symbol * horizontal_count
     bordered_lines = [top]
     for line in lines:

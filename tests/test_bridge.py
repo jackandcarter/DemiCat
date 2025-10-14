@@ -255,6 +255,25 @@ def test_build_bridge_message_applies_embed_border(sample_user, sample_membershi
     assert embed_dict.get("description") == bordered
 
 
+def test_apply_embed_border_supports_custom_glyph():
+    settings = {"enabled": True, "glyph": "🟩"}
+
+    bordered, applied, warning = _apply_embed_border(
+        "Custom",
+        settings,
+        channel_kind=ChannelKind.FC_CHAT,
+    )
+
+    assert warning is None
+    assert applied is True
+
+    lines = bordered.splitlines()
+    assert lines[0].startswith("🟩")
+    assert lines[-1].startswith("🟩")
+    assert lines[1].startswith("🟩 ")
+    assert lines[1].endswith(" 🟩")
+
+
 @pytest.mark.parametrize(
     "provider_path",
     [
