@@ -338,7 +338,7 @@ public sealed class NotePadWindow : IDisposable
             headerPos.Y + (headerHeight - buttonSize.Y) * 0.5f);
         ImGui.SetCursorScreenPos(buttonPos);
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, style.FrameRounding);
-        if (IsReadOnly || isBuiltIn)
+        if (IsReadOnly || section.IsBuiltIn)
         {
             ImGui.BeginDisabled();
             ImGui.Button(buttonText, buttonSize);

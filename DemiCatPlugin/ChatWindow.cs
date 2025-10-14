@@ -409,7 +409,7 @@ public class ChatWindow : IDisposable
             return "Send a message";
         }
 
-        var prefix = channelName.StartsWith('#', StringComparison.Ordinal) ? string.Empty : "#";
+        var prefix = channelName.StartsWith("#", StringComparison.Ordinal) ? string.Empty : "#";
         return $"Send message to {prefix}{channelName}";
     }
 
