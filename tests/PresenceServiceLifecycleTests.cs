@@ -74,6 +74,9 @@ public class PresenceServiceLifecycleTests : IDisposable
         var window = new ChatWindow(config, httpClient, presence, tokenManager, channelService);
 
         window.StartNetworking();
+        Assert.False(presence.IsPresenceReady);
+
+        presence.Refresh(force: true).GetAwaiter().GetResult();
         Assert.True(presence.IsPresenceReady);
 
         window.StopNetworking();

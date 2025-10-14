@@ -51,7 +51,7 @@ public class PresenceSidebarTests
         var config = new Config();
         var httpClient = new HttpClient(new StubHandler());
         var service = new DiscordPresenceService(config, httpClient);
-        return new PresenceSidebar(service);
+        return new PresenceSidebar(service, config, httpClient);
     }
 
     private static void InvokeDrawPresence(PresenceSidebar sidebar, PresenceDto presence)

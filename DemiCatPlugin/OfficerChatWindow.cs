@@ -53,7 +53,7 @@ public class OfficerChatWindow : ChatWindow
     {
         if (presence != null)
         {
-            _presenceSidebar = new PresenceSidebar(presence)
+            _presenceSidebar = new PresenceSidebar(presence, config, httpClient)
             {
                 TextureLoader = LoadTexture,
                 TextureTouch = TextureTouchAction
@@ -171,7 +171,6 @@ public class OfficerChatWindow : ChatWindow
         var showPresence = _presenceSidebar != null && _tokenManager.IsReady();
         if (showPresence)
         {
-            _ = RoleCache.EnsureLoaded(_httpClient, _config);
             _presenceSidebar!.Draw(ref _presenceWidth);
             ImGui.SameLine();
             ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), false);

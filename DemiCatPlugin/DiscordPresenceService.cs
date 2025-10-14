@@ -46,6 +46,8 @@ public class DiscordPresenceService : IDisposable
     private const string ApiKeyMissingStatus = "API key not configured";
     private const string PluginDisabledStatus = "Plugin disabled";
 
+    public event EventHandler? PresencesChanged;
+
     public IReadOnlyList<PresenceDto> Presences => _presences;
     public string StatusMessage => _statusMessage;
     public bool Loaded => _loaded;
@@ -547,6 +549,8 @@ public class DiscordPresenceService : IDisposable
                 _indexById[dto.Id] = _presences.Count - 1;
             }
         }
+
+        OnPresencesChanged();
     }
 
     private static void MutatePresenceInPlace(PresenceDto existing, PresenceDto dto)
@@ -656,6 +660,7 @@ public class DiscordPresenceService : IDisposable
         }
 
         Reindex();
+        OnPresencesChanged();
     }
 
     private void Reindex()
@@ -725,12 +730,14 @@ public class DiscordPresenceService : IDisposable
                 DisposePresencesUnlocked(_presences);
                 _presences.Clear();
                 _indexById.Clear();
+                OnPresencesChanged();
             });
         }
 
         DisposePresencesUnlocked(_presences);
         _presences.Clear();
         _indexById.Clear();
+        OnPresencesChanged();
         return Task.CompletedTask;
     }
 
@@ -757,6 +764,9 @@ public class DiscordPresenceService : IDisposable
 
     private void UpdateStatusMessage(string message)
         => _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = message);
+
+    private void OnPresencesChanged()
+        => PresencesChanged?.Invoke(this, EventArgs.Empty);
 
     private void SetConnectionState(PresenceConnectionState state)
     {

@@ -41,6 +41,7 @@ public class ChatWindow : IDisposable
     protected string _statusMessage = string.Empty;
     private string _lastError = string.Empty;
     protected readonly DiscordPresenceService? _presence;
+    private bool _presenceAwaitingSnapshot;
     protected readonly List<string> _attachments = new();
     private readonly FileDialogManager _fileDialog = new();
     private string _attachmentError = string.Empty;
@@ -673,6 +674,10 @@ public class ChatWindow : IDisposable
         _config = config;
         _httpClient = httpClient;
         _presence = presence;
+        if (_presence != null)
+        {
+            _presence.PresencesChanged += HandlePresenceServicePresencesChanged;
+        }
         _tokenManager = tokenManager;
         _channelService = channelService;
         _channelSelection = channelSelection;
@@ -758,6 +763,17 @@ public class ChatWindow : IDisposable
         _subscribeCts?.Cancel();
         _subscribeCts?.Dispose();
         _subscribeCts = null;
+    }
+
+    private void BeginAwaitingPresenceSnapshot()
+    {
+        if (_presence == null)
+        {
+            return;
+        }
+
+        _presenceAwaitingSnapshot = true;
+        _presence.SetPresenceReady(false);
     }
 
     protected bool TrySubscribeCurrentChannel(bool force = false, bool refreshMessages = true)
@@ -919,7 +935,7 @@ public class ChatWindow : IDisposable
             return;
         }
 
-        _presence?.SetPresenceReady(true);
+        BeginAwaitingPresenceSnapshot();
         _bridge.Start();
         TrySubscribeCurrentChannel(force: true);
         _presence?.Reset();
@@ -932,6 +948,7 @@ public class ChatWindow : IDisposable
         OnSubscriptionStateChanged(false);
         _presence?.Stop();
         _presence?.SetPresenceReady(false);
+        _presenceAwaitingSnapshot = false;
         _ = PluginServices.Instance!.Framework.RunOnTick(() => _statusMessage = string.Empty);
     }
 
@@ -4255,6 +4272,10 @@ public class ChatWindow : IDisposable
     public void Dispose()
     {
         StopNetworking();
+        if (_presence != null)
+        {
+            _presence.PresencesChanged -= HandlePresenceServicePresencesChanged;
+        }
         DetachBridgeEvents();
         _channelSelection.ChannelChanged -= HandleChannelSelectionChanged;
         _typingCoalescer.TypingUsersChanged -= HandleTypingUsersChanged;
@@ -4610,6 +4631,7 @@ public class ChatWindow : IDisposable
 
     private void HandleBridgeLinked()
     {
+        BeginAwaitingPresenceSnapshot();
         _presence?.Reload();
         _ = _presence?.Refresh(force: true);
         TrySubscribeCurrentChannel(force: true, refreshMessages: false);
@@ -4618,6 +4640,36 @@ public class ChatWindow : IDisposable
     private void HandleBridgeUnlinked()
     {
         // nothing additional
+    }
+
+    private void HandlePresenceServicePresencesChanged(object? sender, EventArgs e)
+    {
+        if (_presence == null)
+        {
+            return;
+        }
+
+        if (!_networkingActive && !_presenceAwaitingSnapshot)
+        {
+            return;
+        }
+
+        if (!_presence.Loaded)
+        {
+            if (_networkingActive)
+            {
+                _presenceAwaitingSnapshot = true;
+                _presence.SetPresenceReady(false);
+            }
+
+            return;
+        }
+
+        if (_presenceAwaitingSnapshot)
+        {
+            _presence.SetPresenceReady(true);
+            _presenceAwaitingSnapshot = false;
+        }
     }
 
     protected virtual Uri BuildWebSocketUri()

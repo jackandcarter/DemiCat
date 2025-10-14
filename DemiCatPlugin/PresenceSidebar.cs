@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Collections.Generic;
+using System.Net.Http;
 using System.Numerics;
 using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
@@ -17,6 +18,8 @@ namespace DemiCatPlugin;
 public class PresenceSidebar : IDisposable
 {
     private readonly DiscordPresenceService _service;
+    private readonly Config _config;
+    private readonly HttpClient _httpClient;
     private static readonly Vector4 OnlineColor = new(0.2f, 0.8f, 0.2f, 1f);
     private static readonly Vector4 IdleColor = new(0.95f, 0.75f, 0.2f, 1f);
     private static readonly Vector4 DndColor = new(0.9f, 0.3f, 0.3f, 1f);
@@ -41,23 +44,22 @@ public class PresenceSidebar : IDisposable
 
     private const string PresenceUnavailableMessage = "Presence unavailable";
     private static readonly TimeSpan RefreshCooldown = TimeSpan.FromSeconds(1);
-    private static readonly TimeSpan RebuildInterval = TimeSpan.FromMilliseconds(250);
-    private static readonly TimeSpan ForceRefreshInterval = TimeSpan.FromSeconds(10);
-
     private Task? _refreshTask;
     private bool _refreshInFlight;
     private DateTime _nextRefreshAllowed = DateTime.MinValue;
     private readonly List<PresenceDto> _items = new();
-    private DateTime _lastRebuild = DateTime.MinValue;
     private PresenceConnectionState _lastConn = PresenceConnectionState.Disconnected;
-    private DateTime _lastForceRefresh = DateTime.MinValue;
+    private bool _pendingRebuild = true;
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
     public Action<string?>? TextureTouch { get; set; }
 
-    public PresenceSidebar(DiscordPresenceService service)
+    public PresenceSidebar(DiscordPresenceService service, Config config, HttpClient httpClient)
     {
         _service = service;
+        _config = config;
+        _httpClient = httpClient;
+        _service.PresencesChanged += HandlePresencesChanged;
     }
 
     public void Draw(ref float width)
@@ -72,21 +74,23 @@ public class PresenceSidebar : IDisposable
             shouldReturn = true;
         }
 
-        var snapshot = _service.GetSnapshot();
-        var hasSnapshot = snapshot != null && snapshot.Count > 0;
+        EnsureRolesLoaded();
+
         var connection = _service.ConnectionState;
         if (_lastConn != connection && connection == PresenceConnectionState.Connected)
         {
             _items.Clear();
-            _lastRebuild = DateTime.MinValue;
+            _pendingRebuild = true;
         }
         _lastConn = connection;
 
-        if (DateTime.UtcNow - _lastRebuild >= RebuildInterval)
+        if (_pendingRebuild)
         {
-            RebuildFrom(snapshot);
-            _lastRebuild = DateTime.UtcNow;
+            RebuildFrom(_service.Presences);
+            _pendingRebuild = false;
         }
+
+        var hasSnapshot = _items.Count > 0;
 
         ImGui.BeginChild("##presence", new Vector2(width, 0), true);
 
@@ -98,31 +102,7 @@ public class PresenceSidebar : IDisposable
             }
             else if (!_service.Loaded && !hasSnapshot)
             {
-                if (!_refreshInFlight && DateTime.UtcNow >= _nextRefreshAllowed)
-                {
-                    var refreshTask = _service.Refresh();
-                    _refreshTask = refreshTask;
-                    _refreshInFlight = true;
-
-                    void CompleteRefresh()
-                    {
-                        _nextRefreshAllowed = DateTime.UtcNow + RefreshCooldown;
-                        if (ReferenceEquals(_refreshTask, refreshTask))
-                        {
-                            _refreshTask = null;
-                        }
-                        _refreshInFlight = false;
-                    }
-
-                    if (!refreshTask.IsCompleted)
-                    {
-                        _ = refreshTask.ContinueWith(_ => CompleteRefresh(), TaskScheduler.Default);
-                    }
-                    else
-                    {
-                        CompleteRefresh();
-                    }
-                }
+                TryRequestRefresh(force: false);
                 ShowStatus(_service.StatusMessage);
             }
             else
@@ -140,7 +120,8 @@ public class PresenceSidebar : IDisposable
                 var presencesSource = _items;
                 if (presencesSource == null || presencesSource.Count == 0)
                 {
-                    ShowStatus(_service.StatusMessage);
+                    MaybeRequestRecoveryRefresh(connection);
+                    ShowStatus(string.IsNullOrWhiteSpace(_service.StatusMessage) ? null : _service.StatusMessage);
                 }
                 else if (!RoleCache.IsLoaded)
                 {
@@ -149,20 +130,15 @@ public class PresenceSidebar : IDisposable
                 else
                 {
                     var presences = presencesSource.ToList();
-                if (presences.Count == 0)
-                {
-                    if (DateTime.UtcNow - _lastForceRefresh >= ForceRefreshInterval)
+                    if (presences.Count == 0)
                     {
-                        _lastForceRefresh = DateTime.UtcNow;
-                        _ = _service.Refresh(force: true);
+                        MaybeRequestRecoveryRefresh(connection);
+                        ShowStatus(string.IsNullOrWhiteSpace(_service.StatusMessage) ? null : _service.StatusMessage);
                     }
-
-                    ShowStatus(string.IsNullOrWhiteSpace(_service.StatusMessage) ? null : _service.StatusMessage);
-                }
-                else
-                {
-                    if (!string.IsNullOrEmpty(_service.StatusMessage))
+                    else
                     {
+                        if (!string.IsNullOrEmpty(_service.StatusMessage))
+                        {
                             ImGui.TextUnformatted(_service.StatusMessage);
                             ImGui.Spacing();
                         }
@@ -575,7 +551,75 @@ public class PresenceSidebar : IDisposable
 
     public void Dispose()
     {
-        // No resources to dispose; the underlying service is disposed separately.
+        _service.PresencesChanged -= HandlePresencesChanged;
+    }
+
+    private void HandlePresencesChanged(object? sender, EventArgs e)
+    {
+        _pendingRebuild = true;
+    }
+
+    private void TryRequestRefresh(bool force)
+    {
+        if (_refreshInFlight)
+        {
+            return;
+        }
+
+        if (!force && DateTime.UtcNow < _nextRefreshAllowed)
+        {
+            return;
+        }
+
+        var refreshTask = _service.Refresh(force: force);
+        _refreshTask = refreshTask;
+        _refreshInFlight = true;
+
+        void CompleteRefresh()
+        {
+            _nextRefreshAllowed = DateTime.UtcNow + RefreshCooldown;
+            if (ReferenceEquals(_refreshTask, refreshTask))
+            {
+                _refreshTask = null;
+            }
+
+            _refreshInFlight = false;
+        }
+
+        if (!refreshTask.IsCompleted)
+        {
+            _ = refreshTask.ContinueWith(_ => CompleteRefresh(), TaskScheduler.Default);
+        }
+        else
+        {
+            CompleteRefresh();
+        }
+    }
+
+    private void MaybeRequestRecoveryRefresh(PresenceConnectionState connection)
+    {
+        if (connection == PresenceConnectionState.Connected && string.IsNullOrWhiteSpace(_service.StatusMessage))
+        {
+            return;
+        }
+
+        TryRequestRefresh(force: true);
+    }
+
+    private void EnsureRolesLoaded()
+    {
+        if (RoleCache.IsLoaded)
+        {
+            return;
+        }
+
+        var tokenManager = TokenManager.Instance;
+        if (tokenManager?.IsReady() != true)
+        {
+            return;
+        }
+
+        _ = RoleCache.EnsureLoaded(_httpClient, _config);
     }
 
     private static bool IsOffline(string? status)
