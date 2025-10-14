@@ -1223,6 +1223,10 @@ class BlobRefModel(BaseModel):
 class AppearanceMetaModel(BaseModel):
     actorHash: str
     glamourer: Optional[str] = None
+    cplus: Optional[str] = None
+    heels: Optional[str] = None
+    palette: Optional[str] = None
+    honorific: Optional[str] = None
     blobs: list[BlobRefModel] = Field(default_factory=list)
 
     @field_validator("actorHash")

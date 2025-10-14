@@ -121,6 +121,10 @@ def test_meta_returns_latest_manifest(tmp_path, monkeypatch):
         "appearance": {
             "actorHash": "actor-1",
             "glamourer": "{\"foo\":1}",
+            "cplus": "{\"scale\":1}",
+            "heels": "{\"offset\":0.5}",
+            "palette": "{\"preset\":\"default\"}",
+            "honorific": "{\"title\":\"Champion\"}",
             "blobs": [
                 {
                     "name": "mod/file",
