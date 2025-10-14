@@ -18,7 +18,10 @@ public sealed class EmojiPicker
     private string _search = string.Empty;
     private readonly ConcurrentDictionary<string, bool> _customTextureRequests = new();
     private readonly ConcurrentDictionary<string, bool> _unicodeTextureRequests = new();
-    private const int GridVirtualizationOverscanRows = 2;
+    private readonly ConcurrentDictionary<string, DateTime> _customTextureFailures = new();
+    private readonly ConcurrentDictionary<string, DateTime> _unicodeTextureFailures = new();
+    private static readonly TimeSpan TextureFailureRetryDelay = TimeSpan.FromMinutes(2);
+    private const int GridVirtualizationOverscanRows = 5;
 
     private enum EmojiTab
     {
@@ -169,7 +172,7 @@ public sealed class EmojiPicker
                     }
 
                     var emoji = filtered[index];
-                    var texture = AcquireTexture(emoji.ImageUrl, _unicodeTextureRequests);
+                    var texture = AcquireTexture(emoji.ImageUrl, _unicodeTextureRequests, _unicodeTextureFailures);
                     var clicked = false;
 
                     ImGui.PushID(index);
@@ -183,11 +186,7 @@ public sealed class EmojiPicker
                     }
                     else
                     {
-                        using var _ = _manager.PushEmojiFont();
-                        if (ImGui.Button(emoji.Emoji, new Vector2(_tileSize, _tileSize)))
-                        {
-                            clicked = true;
-                        }
+                        clicked = EmojiPlaceholderRenderer.DrawButton(new Vector2(_tileSize, _tileSize));
                     }
 
                     if (!string.IsNullOrEmpty(emoji.Name) && ImGui.IsItemHovered())
@@ -295,7 +294,7 @@ public sealed class EmojiPicker
 
                     var emoji = items[index];
                     var tooltip = emoji.Animated ? $":{emoji.Name}: (gif)" : $":{emoji.Name}:";
-                    var texture = AcquireTexture(emoji.ImageUrl, _customTextureRequests);
+                    var texture = AcquireTexture(emoji.ImageUrl, _customTextureRequests, _customTextureFailures);
                     var clicked = false;
 
                     ImGui.PushID(emoji.Id);
@@ -309,10 +308,7 @@ public sealed class EmojiPicker
                     }
                     else
                     {
-                        if (ImGui.Button(tooltip, new Vector2(_tileSize * 3f, _tileSize)))
-                        {
-                            clicked = true;
-                        }
+                        clicked = EmojiPlaceholderRenderer.DrawButton(new Vector2(_tileSize, _tileSize));
                     }
 
                     if (ImGui.IsItemHovered())
@@ -430,7 +426,10 @@ public sealed class EmojiPicker
         }
     }
 
-    private static ISharedImmediateTexture? AcquireTexture(string? imageUrl, ConcurrentDictionary<string, bool> requests)
+    private static ISharedImmediateTexture? AcquireTexture(
+        string? imageUrl,
+        ConcurrentDictionary<string, bool> requests,
+        ConcurrentDictionary<string, DateTime> failures)
     {
         if (string.IsNullOrEmpty(imageUrl))
         {
@@ -440,6 +439,16 @@ public sealed class EmojiPicker
         if (WebTextureCache.TryGetTexture(imageUrl, out var texture) && texture != null)
         {
             return texture;
+        }
+
+        if (failures.TryGetValue(imageUrl, out var lastFailure))
+        {
+            if (DateTime.UtcNow - lastFailure < TextureFailureRetryDelay)
+            {
+                return null;
+            }
+
+            failures.TryRemove(imageUrl, out _);
         }
 
         if (requests.TryGetValue(imageUrl, out var completed) && completed)
@@ -454,9 +463,11 @@ public sealed class EmojiPicker
                 if (tex != null)
                 {
                     requests[imageUrl] = true;
+                    failures.TryRemove(imageUrl, out _);
                 }
                 else
                 {
+                    failures[imageUrl] = DateTime.UtcNow;
                     requests.TryRemove(imageUrl, out _);
                 }
             });
