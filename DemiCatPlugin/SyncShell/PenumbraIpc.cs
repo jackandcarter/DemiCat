@@ -1,6 +1,7 @@
 using System;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Plugin.Services;
 using Penumbra.Api.Enums;
 
@@ -27,9 +28,21 @@ public sealed class PenumbraIpc
             _modDirectory = _pluginInterface.GetIpcSubscriber<string>("Penumbra.ModDirectory");
             _setTemporaryMod = _pluginInterface.GetIpcSubscriber<string, object?>("Penumbra.Api/SetTemporaryMod");
             _redrawObject = _pluginInterface.GetIpcSubscriber<(int, int), object?>("Penumbra.Api/RedrawObject");
-            Available = _apiAvailable.InvokeFunc()
+
+            var apiEnabled = TryInvokeApiEnabled();
+            Available = apiEnabled
                 && _setTemporaryMod != null
                 && _redrawObject != null;
+        }
+        catch (IpcNotReadyError)
+        {
+            Available = false;
+            _log.Information("Penumbra IPC is not ready yet; integration features will stay disabled until Penumbra finishes loading.");
+        }
+        catch (IpcNotSupportedError)
+        {
+            Available = false;
+            _log.Information("Penumbra IPC is unavailable. Penumbra may not be installed or its API support is disabled.");
         }
         catch (Exception ex)
         {
@@ -89,6 +102,32 @@ public sealed class PenumbraIpc
         catch (Exception ex)
         {
             _log.Warning(ex, "Failed to redraw object {ObjectIndex}", objectIndex);
+        }
+    }
+
+    private bool TryInvokeApiEnabled()
+    {
+        if (_apiAvailable == null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return _apiAvailable.InvokeFunc();
+        }
+        catch (IpcNotReadyError)
+        {
+            throw;
+        }
+        catch (IpcNotSupportedError)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _log.Information(ex, "Failed to determine Penumbra IPC availability");
+            return false;
         }
     }
 }
