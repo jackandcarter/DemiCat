@@ -49,6 +49,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private readonly BlobStore _blobStore;
     private readonly PenumbraIpc _penumbra;
     private readonly GlamourerIpc _glamourer;
+    private readonly CustomizePlusIpc _customizePlus;
+    private readonly SimpleHeelsIpc _simpleHeels;
+    private readonly PalettePlusIpc _palettePlus;
+    private readonly HonorificIpc _honorific;
     private readonly IPluginLog _log;
     private readonly IClientState _clientState;
     private readonly IFramework _framework;
@@ -85,6 +89,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private bool _validationFailed;
     private string _status = "SyncShell disabled";
     private string? _glamourerJson;
+    private string? _customizePlusJson;
+    private string? _simpleHeelsJson;
+    private string? _palettePlusJson;
+    private string? _honorificJson;
     private DateTimeOffset _lastRedrawAt = DateTimeOffset.MinValue;
     private bool _loggedSettingsJsonDetection;
     private string? _cachedPenRoot;
@@ -104,6 +112,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         BlobStore blobStore,
         PenumbraIpc penumbra,
         GlamourerIpc glamourer,
+        CustomizePlusIpc customizePlus,
+        SimpleHeelsIpc simpleHeels,
+        PalettePlusIpc palettePlus,
+        HonorificIpc honorific,
         IPluginLog log,
         IClientState clientState,
         IFramework framework,
@@ -116,6 +128,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         _blobStore = blobStore ?? throw new ArgumentNullException(nameof(blobStore));
         _penumbra = penumbra ?? throw new ArgumentNullException(nameof(penumbra));
         _glamourer = glamourer ?? throw new ArgumentNullException(nameof(glamourer));
+        _customizePlus = customizePlus ?? throw new ArgumentNullException(nameof(customizePlus));
+        _simpleHeels = simpleHeels ?? throw new ArgumentNullException(nameof(simpleHeels));
+        _palettePlus = palettePlus ?? throw new ArgumentNullException(nameof(palettePlus));
+        _honorific = honorific ?? throw new ArgumentNullException(nameof(honorific));
         _log = log ?? throw new ArgumentNullException(nameof(log));
         _clientState = clientState ?? throw new ArgumentNullException(nameof(clientState));
         _framework = framework ?? throw new ArgumentNullException(nameof(framework));
@@ -421,6 +437,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             }
 
             _runCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            _lastAppearanceHash = null;
             Status = "Initializing…";
             RefreshAppearanceCaches();
 
@@ -469,6 +486,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
             _runCts.Dispose();
             _runCts = null;
+            _lastAppearanceHash = null;
             Status = _config.EnableSyncShell ? "Idle" : "SyncShell disabled";
         }
         finally
@@ -600,6 +618,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private void HandleTokenUnlinked(string? _unused)
     {
         _ = Stop();
+        _lastAppearanceHash = null;
         lock (_statusLock)
         {
             _status = "Not linked";
@@ -735,6 +754,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             return;
         }
 
+        _lastAppearanceHash = null;
         _ = Task.Run(async () =>
         {
             try
@@ -807,19 +827,40 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             return;
         }
 
-        List<string> ids = handles?
+        var input = handles?
             .Where(h => !string.IsNullOrWhiteSpace(h))
             .Select(h => h.Trim())
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList() ?? new List<string>();
 
-        if (ids.Count == 0)
+        if (input.Count == 0)
         {
             return;
         }
 
-        var before = ids.Count;
-        var filtered = new List<string>();
+        var resolved = new List<SyncshellMemberStatus>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var handle in input)
+        {
+            var member = ResolveMemberFromHandle(handle);
+            if (member == null || string.IsNullOrWhiteSpace(member.Id))
+            {
+                continue;
+            }
+
+            if (seen.Add(member.Id))
+            {
+                resolved.Add(member);
+            }
+        }
+
+        if (resolved.Count == 0)
+        {
+            return;
+        }
+
+        var before = resolved.Count;
+        var filtered = new List<SyncshellMemberStatus>();
         HashSet<string>? visibleHandles = null;
 
         if (_config.OnlySyncVisible)
@@ -827,16 +868,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             visibleHandles = GetVisibleHandles();
         }
 
-        foreach (var id in ids)
+        foreach (var member in resolved)
         {
             if (_config.OnlySyncVisible)
             {
-                var member = FindMember(id);
-                if (member == null)
-                {
-                    continue;
-                }
-
                 if (visibleHandles == null || !visibleHandles.Contains(MemberHandle(member)))
                 {
                     continue;
@@ -845,13 +880,13 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
             if (!_config.SyncAutoMode)
             {
-                if (!ulong.TryParse(id, out var parsed) || !_config.ManualAutoList.Contains(parsed))
+                if (!ulong.TryParse(member.Id, out var parsed) || !_config.ManualAutoList.Contains(parsed))
                 {
                     continue;
                 }
             }
 
-            filtered.Add(id);
+            filtered.Add(member);
         }
 
         if (_config.OnlySyncVisible)
@@ -861,10 +896,11 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         var token = _runCts.Token;
 
-        foreach (var id in filtered)
+        foreach (var member in filtered)
         {
             try
             {
+                var id = member.Id;
                 var target = GetOrCreateTarget(id);
                 target.Stage = SyncshellTargetStage.Queued;
 
@@ -987,6 +1023,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         lock (_appearanceLock)
         {
             appearance.GlamourerJson = _glamourerJson;
+            appearance.CustomizePlusJson = _customizePlusJson;
+            appearance.SimpleHeelsJson = _simpleHeelsJson;
+            appearance.PalettePlusJson = _palettePlusJson;
+            appearance.HonorificJson = _honorificJson;
             localBlobs = new Dictionary<string, LocalBlobInfo?>(_localBlobs, StringComparer.OrdinalIgnoreCase);
         }
 
@@ -1244,6 +1284,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                 target.Stage = SyncshellTargetStage.Applying;
                 ActivateTempMod(memberId);
                 ApplyGlamourer(memberId);
+                ApplyCustomizePlus(memberId);
+                ApplySimpleHeels(memberId);
+                ApplyPalettePlus(memberId);
+                ApplyHonorific(memberId);
                 await DebouncedRedrawAsync(token).ConfigureAwait(false);
 
                 target.LastAppliedAt = DateTimeOffset.UtcNow;
@@ -1292,6 +1336,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         EnsureNotDisposed();
 
         string? glamourerJson = null;
+        string? customizePlusJson = null;
+        string? simpleHeelsJson = null;
+        string? palettePlusJson = null;
+        string? honorificJson = null;
         try
         {
             if (_glamourer.Available)
@@ -1302,6 +1350,54 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         catch (Exception ex)
         {
             _log.Warning(ex, "Glamourer IPC failed");
+        }
+
+        try
+        {
+            if (_customizePlus.Available)
+            {
+                customizePlusJson = OnFramework(() => _customizePlus.TryExportProfileJson());
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Debug(ex, "Customize+ IPC failed");
+        }
+
+        try
+        {
+            if (_simpleHeels.Available)
+            {
+                simpleHeelsJson = OnFramework(() => _simpleHeels.TryExportOffsetsJson());
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Debug(ex, "SimpleHeels IPC failed");
+        }
+
+        try
+        {
+            if (_palettePlus.Available)
+            {
+                palettePlusJson = OnFramework(() => _palettePlus.TryExportProfileJson());
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Debug(ex, "Palette+ IPC failed");
+        }
+
+        try
+        {
+            if (_honorific.Available)
+            {
+                honorificJson = OnFramework(() => _honorific.TryGetTitleJson());
+            }
+        }
+        catch (Exception ex)
+        {
+            _log.Debug(ex, "Honorific IPC failed");
         }
 
         var modRoot = ResolvePenumbraRoot();
@@ -1333,7 +1429,11 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         lock (_appearanceLock)
         {
-            _glamourerJson = string.IsNullOrWhiteSpace(glamourerJson) ? null : glamourerJson;
+            _glamourerJson = NormalizeJsonValue(glamourerJson);
+            _customizePlusJson = NormalizeJsonValue(customizePlusJson);
+            _simpleHeelsJson = NormalizeJsonValue(simpleHeelsJson);
+            _palettePlusJson = NormalizeJsonValue(palettePlusJson);
+            _honorificJson = NormalizeJsonValue(honorificJson);
             _localBlobs.Clear();
             foreach (var entry in discovered)
             {
@@ -1391,10 +1491,26 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         return relative.Replace('\\', '/').ToLowerInvariant();
     }
 
+    private static string? NormalizeJsonValue(string? json)
+        => string.IsNullOrWhiteSpace(json) ? null : json;
+
     private static string NormalizeHandle(string name, string? world = null)
         => string.IsNullOrWhiteSpace(world)
             ? name.Trim().ToLowerInvariant()
             : $"{name.Trim().ToLowerInvariant()}@{world.Trim().ToLowerInvariant()}";
+
+    private static string NormalizeIncomingHandle(string handle)
+    {
+        if (string.IsNullOrWhiteSpace(handle))
+        {
+            return string.Empty;
+        }
+
+        var parts = handle.Split('@', 2, StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length == 2
+            ? NormalizeHandle(parts[0], parts[1])
+            : NormalizeHandle(handle);
+    }
 
     private static string MemberHandle(SyncshellMemberStatus member)
         => NormalizeHandle(member.DisplayName);
@@ -1462,10 +1578,48 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(appearance.GlamourerJson))
+        WriteSystemJsonFile(modPath, "glamourer.json", appearance.GlamourerJson);
+        WriteSystemJsonFile(modPath, "cplus.json", appearance.CustomizePlusJson);
+        WriteSystemJsonFile(modPath, "heels.json", appearance.SimpleHeelsJson);
+        WriteSystemJsonFile(modPath, "palette.json", appearance.PalettePlusJson);
+        WriteSystemJsonFile(modPath, "honorific.json", appearance.HonorificJson);
+    }
+
+    private void WriteSystemJsonFile(string modPath, string fileName, string? json)
+    {
+        var path = Path.Combine(modPath, fileName);
+
+        try
         {
-            File.WriteAllText(Path.Combine(modPath, "glamourer.json"), appearance.GlamourerJson);
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+
+                return;
+            }
+
+            File.WriteAllText(path, json);
         }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Failed to stage {File} for SyncShell", fileName);
+        }
+    }
+
+    private string? ReadSystemJson(string memberId, string fileName)
+    {
+        var root = EnsureWorkspaceRoot();
+        var path = Path.Combine(root, "mods", memberId, "current", fileName);
+        if (!File.Exists(path))
+        {
+            return null;
+        }
+
+        var json = File.ReadAllText(path);
+        return string.IsNullOrWhiteSpace(json) ? null : json;
     }
 
     private string EnsureWorkspaceRoot()
@@ -1492,26 +1646,116 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     private void ApplyGlamourer(string memberId)
     {
+        if (!_glamourer.CanApply)
+        {
+            return;
+        }
+
         try
         {
-            var root = EnsureWorkspaceRoot();
-            var path = Path.Combine(root, "mods", memberId, "current", "glamourer.json");
-            if (!File.Exists(path))
+            var json = ReadSystemJson(memberId, "glamourer.json");
+            if (string.IsNullOrWhiteSpace(json))
             {
                 return;
             }
 
-            var json = File.ReadAllText(path);
-            if (string.IsNullOrWhiteSpace(json) || !_glamourer.Available)
-            {
-                return;
-            }
-
-            OnFramework(() => _glamourer.TryGetPlayerDesignJson());
+            OnFramework(() => _glamourer.ApplyPlayerDesignJson(json));
         }
         catch (Exception ex)
         {
             _log.Warning(ex, "ApplyGlamourer failed for {Member}", memberId);
+        }
+    }
+
+    private void ApplyCustomizePlus(string memberId)
+    {
+        if (!_customizePlus.Available)
+        {
+            return;
+        }
+
+        try
+        {
+            var json = ReadSystemJson(memberId, "cplus.json");
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            OnFramework(() => _customizePlus.ApplyProfileJson(json));
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "ApplyCustomizePlus failed for {Member}", memberId);
+        }
+    }
+
+    private void ApplySimpleHeels(string memberId)
+    {
+        if (!_simpleHeels.Available)
+        {
+            return;
+        }
+
+        try
+        {
+            var json = ReadSystemJson(memberId, "heels.json");
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            OnFramework(() => _simpleHeels.ApplyOffsetsJson(json));
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "ApplySimpleHeels failed for {Member}", memberId);
+        }
+    }
+
+    private void ApplyPalettePlus(string memberId)
+    {
+        if (!_palettePlus.Available)
+        {
+            return;
+        }
+
+        try
+        {
+            var json = ReadSystemJson(memberId, "palette.json");
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            OnFramework(() => _palettePlus.ApplyProfileJson(json));
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "ApplyPalettePlus failed for {Member}", memberId);
+        }
+    }
+
+    private void ApplyHonorific(string memberId)
+    {
+        if (!_honorific.Available)
+        {
+            return;
+        }
+
+        try
+        {
+            var json = ReadSystemJson(memberId, "honorific.json");
+            if (string.IsNullOrWhiteSpace(json))
+            {
+                return;
+            }
+
+            OnFramework(() => _honorific.SetTitleJson(json));
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "ApplyHonorific failed for {Member}", memberId);
         }
     }
 
@@ -1526,6 +1770,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
 
         Add(appearance.GlamourerJson);
+        Add(appearance.CustomizePlusJson);
+        Add(appearance.SimpleHeelsJson);
+        Add(appearance.PalettePlusJson);
+        Add(appearance.HonorificJson);
 
         foreach (var blob in (appearance.Blobs ?? new List<BlobRef>()).OrderBy(b => b.Sha256, StringComparer.OrdinalIgnoreCase))
         {
@@ -1653,6 +1901,28 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         lock (_memberLock)
         {
             return _members.FirstOrDefault(m => string.Equals(m.Id, memberId, StringComparison.OrdinalIgnoreCase));
+        }
+    }
+
+    private SyncshellMemberStatus? ResolveMemberFromHandle(string handleOrId)
+    {
+        if (string.IsNullOrWhiteSpace(handleOrId))
+        {
+            return null;
+        }
+
+        var trimmed = handleOrId.Trim();
+        var normalizedHandle = NormalizeIncomingHandle(trimmed);
+
+        lock (_memberLock)
+        {
+            var byId = _members.FirstOrDefault(m => string.Equals(m.Id, trimmed, StringComparison.OrdinalIgnoreCase));
+            if (byId != null)
+            {
+                return byId;
+            }
+
+            return _members.FirstOrDefault(m => string.Equals(MemberHandle(m), normalizedHandle, StringComparison.OrdinalIgnoreCase));
         }
     }
 

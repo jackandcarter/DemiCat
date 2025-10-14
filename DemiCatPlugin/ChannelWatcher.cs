@@ -341,7 +341,7 @@ public class ChannelWatcher : IDisposable
         PluginServices.Instance!.Log.Error(ex, $"channel.ws {stage} failed");
     }
 
-    internal static async Task<(string message, WebSocketMessageType messageType)> ReceiveMessageAsync(WebSocket ws, byte[] buffer, CancellationToken token)
+    public static async Task<(string message, WebSocketMessageType messageType)> ReceiveMessageAsync(WebSocket ws, byte[] buffer, CancellationToken token)
     {
         using var ms = new MemoryStream();
         WebSocketReceiveResult result;
