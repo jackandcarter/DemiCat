@@ -16,6 +16,9 @@ namespace DemiCatPlugin;
 
 public sealed class NotePadService : IDisposable
 {
+    internal const string BuiltInAboutSectionId = "builtin-about";
+    private const string BuiltInAboutPageId = "builtin-about-page";
+
     private readonly Config _config;
     private readonly HttpClient _httpClient;
     private readonly TokenManager _tokenManager;
@@ -35,6 +38,7 @@ public sealed class NotePadService : IDisposable
 
     private static readonly TimeSpan ToastThrottle = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan AutosyncDelay = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan BuiltInTimestampEpsilon = TimeSpan.FromMinutes(1);
 
     public event Action? Changed;
 
@@ -52,7 +56,9 @@ public sealed class NotePadService : IDisposable
         {
             lock (_sections)
             {
-                return _sections.Select(CloneSection).ToList();
+                var result = _sections.Select(CloneSection).ToList();
+                InsertBuiltInSection(result);
+                return result;
             }
         }
     }
@@ -267,7 +273,13 @@ public sealed class NotePadService : IDisposable
 
     public async Task<bool> ReorderSectionsAsync(IReadOnlyList<string> sectionIds, CancellationToken cancellationToken)
     {
-        var payload = new { sectionIds = sectionIds.ToArray() };
+        var actualIds = sectionIds.Where(id => !IsBuiltInSectionId(id)).ToArray();
+        if (actualIds.Length == 0)
+        {
+            return true;
+        }
+
+        var payload = new { sectionIds = actualIds };
         var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/notepad/sections/reorder";
         var request = new HttpRequestMessage(HttpMethod.Post, url)
         {
@@ -789,6 +801,7 @@ public sealed class NotePadService : IDisposable
         {
             _sections.Clear();
             _sections.AddRange(sections.Select(CloneSection));
+            InsertBuiltInSection(_sections);
         }
         finally
         {
@@ -812,6 +825,7 @@ public sealed class NotePadService : IDisposable
             {
                 _sections.Add(CloneSection(section));
             }
+            InsertBuiltInSection(_sections);
         }
         finally
         {
@@ -823,10 +837,16 @@ public sealed class NotePadService : IDisposable
 
     private async Task RemoveSectionAsync(string sectionId)
     {
+        if (IsBuiltInSectionId(sectionId))
+        {
+            return;
+        }
+
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
         {
             _sections.RemoveAll(s => string.Equals(s.Id, sectionId, StringComparison.Ordinal));
+            InsertBuiltInSection(_sections);
         }
         finally
         {
@@ -867,6 +887,11 @@ public sealed class NotePadService : IDisposable
 
     private async Task RemovePageAsync(string sectionId, string pageId)
     {
+        if (IsBuiltInSectionId(sectionId))
+        {
+            return;
+        }
+
         await _stateLock.WaitAsync().ConfigureAwait(false);
         try
         {
@@ -914,8 +939,16 @@ public sealed class NotePadService : IDisposable
         _refreshLock.Dispose();
     }
 
+    internal static bool IsBuiltInSectionId(string? id)
+        => string.Equals(id, BuiltInAboutSectionId, StringComparison.Ordinal);
+
     private static NotePadSection CloneSection(NotePadSection source)
     {
+        if (IsBuiltInSectionId(source.Id))
+        {
+            return CreateBuiltInSection();
+        }
+
         return new NotePadSection
         {
             Id = source.Id,
@@ -953,6 +986,58 @@ public sealed class NotePadService : IDisposable
             UpdatedByDisplayName = source.UpdatedByDisplayName
         };
     }
+
+    private static void InsertBuiltInSection(IList<NotePadSection> sections)
+    {
+        for (var i = sections.Count - 1; i >= 0; i--)
+        {
+            if (IsBuiltInSectionId(sections[i].Id))
+            {
+                sections.RemoveAt(i);
+            }
+        }
+
+        sections.Insert(0, CreateBuiltInSection());
+    }
+
+    private static NotePadSection CreateBuiltInSection()
+    {
+        var now = DateTime.UtcNow;
+        return new NotePadSection
+        {
+            Id = BuiltInAboutSectionId,
+            Name = "About NotePad",
+            Color = NotePadColorHelper.DefaultHexColor,
+            CreatedAt = now,
+            UpdatedAt = now + BuiltInTimestampEpsilon,
+            Version = 1,
+            Pages = new List<NotePadPage>
+            {
+                new()
+                {
+                    Id = BuiltInAboutPageId,
+                    Title = "Test Page",
+                    Content = BuildAboutContent(),
+                    Version = 1,
+                    CreatedAt = now,
+                    UpdatedAt = now + BuiltInTimestampEpsilon,
+                    Color = NotePadColorHelper.DefaultHexColor
+                }
+            }
+        };
+    }
+
+    private static string BuildAboutContent()
+    {
+        return "Welcome to DemiCat NotePad!\n\n" +
+               "• Create tabs to organize your notes. Tabs automatically wrap into additional rows when space runs out." +
+               "\n• Use the + button to add tabs and the New Page button to populate them." +
+               "\n• Password protect a tab to hide its pages until a password is entered for the current session." +
+               "\n• Page authors can delete their own work. Tab owners can delete their tab, and officers can manage all content." +
+               "\n• Paste or upload images up to 20 MB. They automatically scale to fit inside the editor while respecting appearance settings." +
+               "\n• Changes autosave after a short pause or when you press Ctrl+S." +
+               "\n• Locked tabs must be unlocked again after restarting the plugin.";
+    }
 }
 
 public sealed class NotePadSection
@@ -979,6 +1064,9 @@ public sealed class NotePadSection
     }
 
     public List<NotePadPage> Pages { get; set; } = new();
+
+    [JsonIgnore]
+    public bool IsBuiltIn => NotePadService.IsBuiltInSectionId(Id);
 }
 
 public sealed class NotePadPage
