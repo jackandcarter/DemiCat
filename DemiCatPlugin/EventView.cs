@@ -211,11 +211,12 @@ public class EventView : IDisposable
     private void DrawEmbed(EmbedDto dto, float? availableHeight)
     {
         using var emojiFont = _emojiManager.PushEmojiFont();
-        const float stripeWidth = 4f;
+        var style = ImGui.GetStyle();
+        var stripeWidth = dto.Color.HasValue ? Math.Max(6f, style.FramePadding.X * 0.9f) : 0f;
         const float contentPadding = 8f;
         const float verticalPadding = 4f;
 
-        var indent = contentPadding + (dto.Color.HasValue ? stripeWidth : 0f);
+        var indent = contentPadding + stripeWidth;
         var availWidth = ImGui.GetContentRegionAvail().X;
         if (availWidth <= 0)
         {
@@ -236,7 +237,7 @@ public class EventView : IDisposable
             childHeight = 0f;
         }
 
-        ImGui.BeginChild($"eventEmbed{dto.Id}", new Vector2(availWidth, childHeight), false);
+        ImGui.BeginChild($"eventEmbed{dto.Id}", new Vector2(availWidth, childHeight), true);
 
         ImGui.Indent(indent);
         ImGui.Dummy(new Vector2(0f, verticalPadding));
@@ -246,12 +247,32 @@ public class EventView : IDisposable
 
         ImGui.EndChild();
 
-        if (dto.Color.HasValue)
+        if (dto.Color.HasValue && stripeWidth > 0f)
         {
-            var min = ImGui.GetItemRectMin();
-            var max = ImGui.GetItemRectMax();
-            var color = ColorUtils.RgbToImGui(dto.Color.Value);
-            ImGui.GetWindowDrawList().AddRectFilled(min, new Vector2(min.X + stripeWidth, max.Y), color);
+            var childMin = ImGui.GetItemRectMin();
+            var childMax = ImGui.GetItemRectMax();
+            var borderInset = Math.Max(0f, style.ChildBorderSize > 0f ? style.ChildBorderSize : style.FrameBorderSize);
+            var stripeMin = new Vector2(childMin.X + borderInset, childMin.Y + borderInset);
+            var stripeMax = new Vector2(childMin.X + borderInset + stripeWidth, childMax.Y - borderInset);
+            if (stripeMax.X > stripeMin.X && stripeMax.Y > stripeMin.Y)
+            {
+                var colorVec = ColorUtils.RgbToVector4(dto.Color.Value);
+                var color = ImGui.ColorConvertFloat4ToU32(colorVec);
+                var drawList = ImGui.GetWindowDrawList();
+                drawList.AddRectFilled(stripeMin, stripeMax, color);
+
+                if (style.ChildRounding > 0f)
+                {
+                    var stripeHeight = stripeMax.Y - stripeMin.Y;
+                    var stripeRounding = Math.Min(style.ChildRounding, Math.Min(stripeWidth, stripeHeight) * 0.5f);
+                    drawList.AddRectFilled(
+                        stripeMin,
+                        stripeMax,
+                        color,
+                        stripeRounding,
+                        ImDrawFlags.RoundCornersTopLeft | ImDrawFlags.RoundCornersBottomLeft);
+                }
+            }
         }
     }
 
@@ -510,11 +531,6 @@ public class EventView : IDisposable
                 {
                     if (i > 0) ImGui.SameLine();
                     var button = buttons[i];
-                    if (!string.IsNullOrEmpty(button.Emoji))
-                    {
-                        EmojiRenderer.Draw(button.Emoji, _emojiManager);
-                        ImGui.SameLine();
-                    }
                     var id = button.CustomId ?? button.Label;
                     var styled = button.Style.HasValue && button.Style.Value != ButtonStyle.Link;
                     if (styled)
@@ -526,7 +542,7 @@ public class EventView : IDisposable
                     }
 
                     var w = button.Width ?? -1;
-                    if (ImGui.Button($"{button.Label}##{id}{_dto.Id}", new Vector2(w, 0)))
+                    if (EmbedButtonRenderer.Draw(button.Label, $"{id}{_dto.Id}", button.Emoji, _emojiManager, new Vector2(w, 0)))
                     {
                         if (!string.IsNullOrEmpty(button.Url))
                         {

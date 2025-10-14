@@ -147,12 +147,6 @@ public static class EmbedPreviewRenderer
                         ImGui.SameLine();
                     }
 
-                    if (!string.IsNullOrEmpty(button.Emoji))
-                    {
-                        EmojiRenderer.Draw(button.Emoji, emojiManager);
-                        ImGui.SameLine();
-                    }
-
                     var id = button.CustomId ?? button.Label;
                     var styled = button.Style.HasValue && button.Style.Value != ButtonStyle.Link;
                     if (styled)
@@ -164,7 +158,7 @@ public static class EmbedPreviewRenderer
                     }
 
                     var w = button.Width ?? -1;
-                    if (ImGui.Button($"{button.Label}##{id}{dto.Id}", new Vector2(w, 0)))
+                    if (EmbedButtonRenderer.Draw(button.Label, $"{id}{dto.Id}", button.Emoji, emojiManager, new Vector2(w, 0)))
                     {
                         if (!string.IsNullOrEmpty(button.Url))
                         {
