@@ -25,6 +25,18 @@ public sealed class AppearanceMeta
     [JsonPropertyName("glamourer")]
     public string? GlamourerJson { get; set; }
 
+    [JsonPropertyName("cplus")]
+    public string? CustomizePlusJson { get; set; }
+
+    [JsonPropertyName("heels")]
+    public string? SimpleHeelsJson { get; set; }
+
+    [JsonPropertyName("palette")]
+    public string? PalettePlusJson { get; set; }
+
+    [JsonPropertyName("honorific")]
+    public string? HonorificJson { get; set; }
+
     [JsonPropertyName("blobs")]
     public List<BlobRef> Blobs { get; } = new();
 }

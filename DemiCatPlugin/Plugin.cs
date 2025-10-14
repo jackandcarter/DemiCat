@@ -70,6 +70,10 @@ public class Plugin : IDalamudPlugin
     private readonly SyncShellClient _syncShellClient;
     private readonly PenumbraIpc _penumbraIpc;
     private readonly GlamourerIpc _glamourerIpc;
+    private readonly CustomizePlusIpc _customizePlusIpc;
+    private readonly SimpleHeelsIpc _simpleHeelsIpc;
+    private readonly PalettePlusIpc _palettePlusIpc;
+    private readonly HonorificIpc _honorificIpc;
     private readonly SyncShellWatcher _syncShellWatcher;
     private readonly SyncShellService _syncShellService;
 
@@ -112,6 +116,10 @@ public class Plugin : IDalamudPlugin
         _syncShellClient = new SyncShellClient(_httpClient, _config, _tokenManager);
         _penumbraIpc = new PenumbraIpc(_services.PluginInterface, _services.Log);
         _glamourerIpc = new GlamourerIpc(_services.PluginInterface, _services.ClientState, _services.Log);
+        _customizePlusIpc = new CustomizePlusIpc(_services.PluginInterface, _services.Log);
+        _simpleHeelsIpc = new SimpleHeelsIpc(_services.PluginInterface, _services.Log);
+        _palettePlusIpc = new PalettePlusIpc(_services.PluginInterface, _services.Log);
+        _honorificIpc = new HonorificIpc(_services.PluginInterface, _services.Log);
         _syncShellWatcher = new SyncShellWatcher(_config, _tokenManager, _services.Log);
         _syncShellService = new SyncShellService(
             _config,
@@ -120,12 +128,20 @@ public class Plugin : IDalamudPlugin
             _blobStore,
             _penumbraIpc,
             _glamourerIpc,
+            _customizePlusIpc,
+            _simpleHeelsIpc,
+            _palettePlusIpc,
+            _honorificIpc,
             _services.Log,
             _services.ClientState,
             _services.Framework,
             _services.ObjectTable,
             _syncShellWatcher);
         _services.GlamourerIpc = _glamourerIpc;
+        _services.CustomizePlusIpc = _customizePlusIpc;
+        _services.SimpleHeelsIpc = _simpleHeelsIpc;
+        _services.PalettePlusIpc = _palettePlusIpc;
+        _services.HonorificIpc = _honorificIpc;
         _services.SyncShellService = _syncShellService;
         var baseChatBridge = new ChatBridge(
             _config,

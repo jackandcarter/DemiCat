@@ -1,6 +1,7 @@
 using System;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Ipc.Exceptions;
 using Dalamud.Plugin.Services;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -11,8 +12,16 @@ public sealed class GlamourerIpc
 {
     private readonly IDalamudPluginInterface _pluginInterface;
     private readonly IClientState _clientState;
+    private static readonly string[] ApplyGateNames =
+    {
+        "Glamourer.Api/ApplyPlayerDesign",
+        "Glamourer.Api/ApplyAll",
+        "Glamourer.Api/Design/Apply",
+    };
+
     private readonly IPluginLog _log;
     private readonly ICallGateSubscriber<int, uint, (int, JObject?)>? _getState;
+    private readonly ICallGateSubscriber<string, object?>? _applyDesign;
 
     public GlamourerIpc(IDalamudPluginInterface pluginInterface, IClientState clientState, IPluginLog log)
     {
@@ -23,16 +32,19 @@ public sealed class GlamourerIpc
         try
         {
             _getState = _pluginInterface.GetIpcSubscriber<int, uint, (int, JObject?)>("Glamourer.GetState");
-            Available = _getState != null;
         }
         catch (Exception ex)
         {
-            Available = false;
             _log.Information(ex, "Glamourer IPC unavailable");
         }
+
+        _applyDesign = TryGetApplyGate();
+        Available = _getState != null || _applyDesign != null;
     }
 
     public bool Available { get; }
+
+    public bool CanApply => _applyDesign != null;
 
     public string? TryGetPlayerDesignJson()
     {
@@ -62,5 +74,49 @@ public sealed class GlamourerIpc
             _log.Warning(ex, "Failed to capture Glamourer state");
             return null;
         }
+    }
+
+    public void ApplyPlayerDesignJson(string json)
+    {
+        if (!CanApply || _applyDesign == null || string.IsNullOrWhiteSpace(json))
+        {
+            return;
+        }
+
+        try
+        {
+            _applyDesign.InvokeAction(json);
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Failed to apply Glamourer design");
+        }
+    }
+
+    private ICallGateSubscriber<string, object?>? TryGetApplyGate()
+    {
+        foreach (var gate in ApplyGateNames)
+        {
+            try
+            {
+                var subscriber = _pluginInterface.GetIpcSubscriber<string, object?>(gate);
+                if (subscriber != null)
+                {
+                    return subscriber;
+                }
+            }
+            catch (IpcNotReadyError)
+            {
+            }
+            catch (IpcError)
+            {
+            }
+            catch (Exception ex)
+            {
+                _log.Debug(ex, "Glamourer apply gate {Gate} unavailable", gate);
+            }
+        }
+
+        return null;
     }
 }

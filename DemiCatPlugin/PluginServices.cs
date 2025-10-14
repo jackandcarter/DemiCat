@@ -52,6 +52,14 @@ internal class PluginServices
 
     internal GlamourerIpc? GlamourerIpc { get; set; }
 
+    internal CustomizePlusIpc? CustomizePlusIpc { get; set; }
+
+    internal SimpleHeelsIpc? SimpleHeelsIpc { get; set; }
+
+    internal PalettePlusIpc? PalettePlusIpc { get; set; }
+
+    internal HonorificIpc? HonorificIpc { get; set; }
+
     public PluginServices()
     {
         Instance = this;
