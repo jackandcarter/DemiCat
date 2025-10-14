@@ -39,7 +39,7 @@ public sealed class PenumbraIpc
             Available = false;
             _log.Information("Penumbra IPC is not ready yet; integration features will stay disabled until Penumbra finishes loading.");
         }
-        catch (IpcNotSupportedError)
+        catch (Dalamud.Plugin.Ipc.Exceptions.IpcError)
         {
             Available = false;
             _log.Information("Penumbra IPC is unavailable. Penumbra may not be installed or its API support is disabled.");
@@ -120,7 +120,7 @@ public sealed class PenumbraIpc
         {
             throw;
         }
-        catch (IpcNotSupportedError)
+        catch (Dalamud.Plugin.Ipc.Exceptions.IpcError)
         {
             throw;
         }

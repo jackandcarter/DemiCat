@@ -3,11 +3,12 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
-using System.Runtime.InteropServices;
 using Dalamud.Game.ClientState;
 using Dalamud.Game.ClientState.Objects;
 using Dalamud.Game.ClientState.Objects.Enums;
@@ -17,9 +18,10 @@ namespace DemiCatPlugin.SyncShell;
 
 public sealed class SyncShellService : ISyncShellService, IDisposable
 {
-    private static readonly TimeSpan PresencePollInterval = TimeSpan.FromSeconds(12);
-    private static readonly TimeSpan PublishCooldown = TimeSpan.FromSeconds(3);
     private static readonly TimeSpan TerritoryDebounce = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan RootRetryGap = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan AppearanceDebounceGap = TimeSpan.FromMilliseconds(400);
+    private static readonly TimeSpan SkippedPublishLogThrottle = TimeSpan.FromSeconds(30);
     private const long MaxSyncshellFileSizeBytes = 64L * 1024L * 1024L;
 
     private static readonly HashSet<string> SupportedExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -51,6 +53,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private readonly IClientState _clientState;
     private readonly IFramework _framework;
     private readonly IObjectTable _objects;
+    private readonly ISyncShellWatcher _watcher;
 
     private int _frameworkThreadId = -1;
 
@@ -59,12 +62,14 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private readonly object _memberLock = new();
     private readonly object _appearanceLock = new();
     private readonly object _applyStateLock = new();
+    private readonly object _penRootLock = new();
 
     private readonly Dictionary<string, LocalBlobInfo?> _localBlobs = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, TargetInfo> _targets = new(StringComparer.Ordinal);
     private readonly Dictionary<string, DateTimeOffset> _localSyncedAt = new(StringComparer.OrdinalIgnoreCase);
 
-    private readonly HashSet<string> _nearbyUsers = new(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> _nearby = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _nearbyLock = new();
 
     private readonly SemaphoreSlim _redrawGate = new(1, 1);
 
@@ -72,18 +77,22 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private Channel<string> _applyQueue = Channel.CreateUnbounded<string>();
 
     private CancellationTokenSource? _runCts;
-    private Task? _presenceTask;
-    private Task? _publishTask;
     private Task? _prefetchTask;
     private Task? _applyTask;
+    private Task? _membershipTask;
     private bool _disposed;
     private bool _paused;
     private bool _validationFailed;
     private string _status = "SyncShell disabled";
     private string? _glamourerJson;
-    private DateTimeOffset _lastPublish;
     private DateTimeOffset _lastRedrawAt = DateTimeOffset.MinValue;
     private bool _loggedSettingsJsonDetection;
+    private string? _cachedPenRoot;
+    private string? _lastPenumbraSource;
+    private DateTime _lastRootAttempt;
+    private readonly Debouncer _appearanceDebounce = new(AppearanceDebounceGap);
+    private string? _lastAppearanceHash;
+    private DateTime _lastSkippedPublishLog;
 
     private List<SyncshellMemberStatus> _members = new();
     private List<SyncshellMemberStatus> _activeMembers = new();
@@ -98,7 +107,8 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         IPluginLog log,
         IClientState clientState,
         IFramework framework,
-        IObjectTable objects)
+        IObjectTable objects,
+        ISyncShellWatcher watcher)
     {
         _config = config ?? throw new ArgumentNullException(nameof(config));
         _tokenManager = tokenManager ?? throw new ArgumentNullException(nameof(tokenManager));
@@ -110,6 +120,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         _clientState = clientState ?? throw new ArgumentNullException(nameof(clientState));
         _framework = framework ?? throw new ArgumentNullException(nameof(framework));
         _objects = objects ?? throw new ArgumentNullException(nameof(objects));
+        _watcher = watcher ?? throw new ArgumentNullException(nameof(watcher));
 
         _tokenManager.OnLinked += HandleTokenLinked;
         _tokenManager.OnUnlinked += HandleTokenUnlinked;
@@ -119,6 +130,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         {
             _frameworkThreadId = Environment.CurrentManagedThreadId;
         });
+
+        _watcher.Connected += HandleWatcherConnected;
+        _watcher.NearbySet += HandleWatcherNearbySet;
+        _watcher.MemberChanged += HandleWatcherMemberChanged;
     }
 
     public event EventHandler? StatusChanged;
@@ -189,9 +204,9 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     {
         get
         {
-            lock (_nearbyUsers)
+            lock (_nearbyLock)
             {
-                return _nearbyUsers.Count;
+                return _nearby.Count;
             }
         }
     }
@@ -220,33 +235,157 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     public bool PenumbraAvailable => _penumbra.Available;
 
-    public string? DetectedPenumbraPath => TryGetDetectedPenumbraPath(out _);
+    public string? DetectedPenumbraPath => GetPenumbraDetectionDetails().Path;
 
     public bool DetectedPenumbraPathFromSettingsJson
     {
         get
         {
-            TryGetDetectedPenumbraPath(out var fromSettingsJson);
-            return fromSettingsJson;
+            var details = GetPenumbraDetectionDetails();
+            return details.Source != null
+                && details.Source.Contains("settings", StringComparison.OrdinalIgnoreCase);
         }
     }
 
-    private string? TryGetDetectedPenumbraPath(out bool fromSettingsJson)
+    public PenumbraDetectionDetails GetPenumbraDetectionDetails()
     {
-        if (_penumbra.Available)
+        lock (_penRootLock)
         {
-            fromSettingsJson = false;
-            return _penumbra.GetModDirectory();
+            string? path = null;
+            if (!string.IsNullOrWhiteSpace(_cachedPenRoot) && Directory.Exists(_cachedPenRoot))
+            {
+                path = _cachedPenRoot;
+            }
+            else
+            {
+                _cachedPenRoot = null;
+            }
+
+            TimeSpan? retry = null;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                var remaining = RootRetryGap - (DateTime.UtcNow - _lastRootAttempt);
+                if (remaining > TimeSpan.Zero)
+                {
+                    retry = remaining;
+                }
+            }
+
+            return new PenumbraDetectionDetails(path, _lastPenumbraSource, retry);
+        }
+    }
+
+    private string? ResolvePenumbraRoot()
+    {
+        lock (_penRootLock)
+        {
+            if (!string.IsNullOrWhiteSpace(_cachedPenRoot) && Directory.Exists(_cachedPenRoot))
+            {
+                return _cachedPenRoot;
+            }
+
+            if (DateTime.UtcNow - _lastRootAttempt < RootRetryGap)
+            {
+                return null;
+            }
+
+            _cachedPenRoot = null;
+            _lastRootAttempt = DateTime.UtcNow;
         }
 
-        var path = BlobStore.GuessDefaultPenumbraRoot(out fromSettingsJson);
-        if (fromSettingsJson && !_loggedSettingsJsonDetection && !string.IsNullOrWhiteSpace(path))
+        var attempts = new List<string>();
+        string? resolved = null;
+        string? source = null;
+
+        var overridePath = _config.PenumbraPathOverride;
+        if (!string.IsNullOrWhiteSpace(overridePath))
         {
-            _log.Debug("Detected Penumbra path from settings.json: {Path}", path);
-            _loggedSettingsJsonDetection = true;
+            if (Directory.Exists(overridePath))
+            {
+                resolved = overridePath;
+                source = "Override";
+            }
+            else
+            {
+                attempts.Add($"Override missing: {overridePath}");
+            }
         }
 
-        return path;
+        if (resolved == null)
+        {
+            if (_penumbra.Available)
+            {
+                try
+                {
+                    var viaIpc = OnFramework(() => _penumbra.GetModDirectory());
+                    if (!string.IsNullOrWhiteSpace(viaIpc) && Directory.Exists(viaIpc))
+                    {
+                        resolved = viaIpc;
+                        source = "IPC";
+                    }
+                    else
+                    {
+                        attempts.Add("IPC returned no directory");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    attempts.Add($"IPC error: {ex.GetType().Name}");
+                    _log.Debug(ex, "Penumbra IPC mod directory query failed");
+                }
+            }
+            else
+            {
+                attempts.Add("IPC unavailable");
+            }
+        }
+
+        if (resolved == null)
+        {
+            var diskPath = BlobStore.FindPenumbraModRootOnDisk(out var diskSource);
+            if (!string.IsNullOrWhiteSpace(diskPath))
+            {
+                resolved = diskPath;
+                source = diskSource switch
+                {
+                    null => "Disk",
+                    "penumbra.json" => "penumbra.json",
+                    "Penumbra.json" => "Installed Penumbra.json",
+                    _ when diskSource.Contains("settings", StringComparison.OrdinalIgnoreCase) => "settings.json",
+                    _ => diskSource,
+                };
+
+                if (!_loggedSettingsJsonDetection && diskSource != null && diskSource.Contains("settings", StringComparison.OrdinalIgnoreCase))
+                {
+                    _log.Debug("Detected Penumbra path from {Source}: {Path}", diskSource, diskPath);
+                    _loggedSettingsJsonDetection = true;
+                }
+            }
+            else
+            {
+                attempts.Add("Disk scan found no path");
+            }
+        }
+
+        lock (_penRootLock)
+        {
+            if (!string.IsNullOrWhiteSpace(resolved) && Directory.Exists(resolved))
+            {
+                _cachedPenRoot = resolved;
+                _lastPenumbraSource = source;
+                _log.Debug("Penumbra root resolved via {Source}: {Path}", source ?? "unknown", resolved);
+                return resolved;
+            }
+
+            _cachedPenRoot = null;
+            _lastPenumbraSource = null;
+            if (attempts.Count > 0)
+            {
+                _log.Information("Penumbra root resolve attempts: {Attempts}", string.Join("; ", attempts));
+            }
+
+            return null;
+        }
     }
 
     public SyncshellTargetStage GetStage(string memberId)
@@ -288,10 +427,10 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             _prefetchQueue = Channel.CreateUnbounded<string>();
             _applyQueue = Channel.CreateUnbounded<string>();
 
-            _presenceTask = Task.Run(() => PresenceLoopAsync(_runCts.Token), CancellationToken.None);
-            _publishTask = Task.Run(() => PublishLoopAsync(_runCts.Token), CancellationToken.None);
             _prefetchTask = Task.Run(() => PrefetchLoopAsync(_runCts.Token), CancellationToken.None);
             _applyTask = Task.Run(() => ApplyLoopAsync(_runCts.Token), CancellationToken.None);
+            _membershipTask = Task.Run(() => RefreshMembershipsAsync(_runCts.Token), CancellationToken.None);
+            _watcher.Start();
             Status = "Idle";
         }
         finally
@@ -315,19 +454,18 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             try
             {
                 await Task.WhenAll(
-                    _presenceTask ?? Task.CompletedTask,
-                    _publishTask ?? Task.CompletedTask,
                     _prefetchTask ?? Task.CompletedTask,
-                    _applyTask ?? Task.CompletedTask).ConfigureAwait(false);
+                    _applyTask ?? Task.CompletedTask,
+                    _membershipTask ?? Task.CompletedTask).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
             }
 
-            _presenceTask = null;
-            _publishTask = null;
+            _watcher.Stop();
             _prefetchTask = null;
             _applyTask = null;
+            _membershipTask = null;
 
             _runCts.Dispose();
             _runCts = null;
@@ -354,7 +492,8 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                 return;
             }
 
-            await PublishAsync(_runCts!.Token).ConfigureAwait(false);
+            RefreshAppearanceCaches();
+            _appearanceDebounce.Run(PublishIfChanged);
         }
         finally
         {
@@ -423,8 +562,13 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         _tokenManager.OnUnlinked -= HandleTokenUnlinked;
         _clientState.TerritoryChanged -= HandleTerritoryChanged;
         _framework.Update -= OnFrameworkTick;
+        _watcher.Connected -= HandleWatcherConnected;
+        _watcher.NearbySet -= HandleWatcherNearbySet;
+        _watcher.MemberChanged -= HandleWatcherMemberChanged;
+        _watcher.Dispose();
         _lifecycleLock.Dispose();
         _redrawGate.Dispose();
+        _appearanceDebounce.Dispose();
     }
 
     private void OnFrameworkTick(IFramework _)
@@ -477,7 +621,6 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             {
                 await Task.Delay(TerritoryDebounce, _runCts?.Token ?? CancellationToken.None).ConfigureAwait(false);
                 RefreshAppearanceCaches();
-                await TriggerPublishAsync(_runCts?.Token ?? CancellationToken.None).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -485,129 +628,37 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         });
     }
 
-    private async Task PresenceLoopAsync(CancellationToken token)
+    private async Task RefreshMembershipsAsync(CancellationToken token)
     {
-        var initial = true;
-        while (!token.IsCancellationRequested)
-        {
-            try
-            {
-                if (!initial)
-                {
-                    await Task.Delay(PresencePollInterval, token).ConfigureAwait(false);
-                }
-                else
-                {
-                    initial = false;
-                }
-
-                if (_paused)
-                {
-                    continue;
-                }
-
-                var memberships = await _client.GetMembershipsAsync(token).ConfigureAwait(false);
-                if (memberships != null)
-                {
-                    UpdateMemberSnapshot(memberships);
-                }
-
-                var activeIds = BuildActiveMemberList();
-                if (activeIds.Length > 0)
-                {
-                    await _client.UpdatePresenceAsync(activeIds, token).ConfigureAwait(false);
-                }
-
-                foreach (var id in activeIds)
-                {
-                    var target = GetOrCreateTarget(id);
-                    if (target.Stage is SyncshellTargetStage.Unknown or SyncshellTargetStage.Failed)
-                    {
-                        target.Stage = SyncshellTargetStage.Queued;
-                        if (_config.BackgroundPrefetch)
-                        {
-                            await _prefetchQueue.Writer.WriteAsync(id, token).ConfigureAwait(false);
-                        }
-                        else
-                        {
-                            await _applyQueue.Writer.WriteAsync(id, token).ConfigureAwait(false);
-                        }
-                    }
-                }
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(ex, "Presence loop failed");
-            }
-        }
-    }
-
-    private string[] BuildActiveMemberList()
-    {
-        var roster = Members;
-        var eligible = roster.Where(m => m.TokenLinked && string.Equals(m.Presence, "online", StringComparison.OrdinalIgnoreCase));
-
-        if (_config.OnlySyncVisible)
-        {
-            var visible = GetVisibleHandles();
-            eligible = eligible.Where(m => visible.Contains(MemberHandle(m)));
-        }
-
-        if (!_config.SyncAutoMode)
-        {
-            var allow = _config.ManualAutoList;
-            eligible = eligible.Where(m => ulong.TryParse(m.Id, out var id) && allow.Contains(id));
-        }
-
-        return eligible.Select(m => m.Id)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct()
-            .ToArray();
-    }
-
-    private async Task PublishLoopAsync(CancellationToken token)
-    {
-        while (!token.IsCancellationRequested)
-        {
-            try
-            {
-                await Task.Delay(TimeSpan.FromSeconds(5), token).ConfigureAwait(false);
-                if (_paused)
-                {
-                    continue;
-                }
-
-                if (DateTimeOffset.UtcNow - _lastPublish < PublishCooldown)
-                {
-                    continue;
-                }
-
-                await PublishAsync(token).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _log.Warning(ex, "Publish loop failed");
-            }
-        }
-    }
-
-    private async Task PublishAsync(CancellationToken token)
-    {
-        _lastPublish = DateTimeOffset.UtcNow;
-        if (_tokenManager.State != LinkState.Linked)
+        if (_paused)
         {
             return;
         }
 
-        RefreshAppearanceCaches();
+        try
+        {
+            var memberships = await _client.GetMembershipsAsync(token).ConfigureAwait(false);
+            if (memberships != null)
+            {
+                UpdateMemberSnapshot(memberships);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception ex)
+        {
+            _log.Warning(ex, "Failed to refresh SyncShell memberships");
+        }
+    }
+
+    private void PublishIfChanged()
+    {
+        if (_paused || _runCts == null || _tokenManager.State != LinkState.Linked)
+        {
+            return;
+        }
+
         PublishPayload payload;
         Dictionary<string, LocalBlobInfo?> localBlobs;
         try
@@ -626,6 +677,25 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             return;
         }
 
+        var hash = ComputeAppearanceHash(payload.Appearance);
+        if (string.Equals(hash, _lastAppearanceHash, StringComparison.Ordinal))
+        {
+            Status = "Idle";
+            if (DateTime.UtcNow - _lastSkippedPublishLog > SkippedPublishLogThrottle)
+            {
+                _log.Debug("SyncShell publish skipped; appearance unchanged.");
+                _lastSkippedPublishLog = DateTime.UtcNow;
+            }
+
+            return;
+        }
+
+        _lastAppearanceHash = hash;
+        _ = PublishAsync(payload, localBlobs, _runCts.Token);
+    }
+
+    private async Task PublishAsync(PublishPayload payload, Dictionary<string, LocalBlobInfo?> localBlobs, CancellationToken token)
+    {
         var previousStatus = Status;
         try
         {
@@ -656,6 +726,185 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             _log.Warning(ex, "Failed to publish appearance");
             Status = previousStatus;
         }
+    }
+
+    private void HandleWatcherConnected()
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await RefreshMembershipsAsync(_runCts?.Token ?? CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }, CancellationToken.None);
+
+        _ = Task.Run(RefreshAppearanceCaches, CancellationToken.None);
+    }
+
+    private void HandleWatcherNearbySet(string[] handles)
+    {
+        if (!IsRunning)
+        {
+            return;
+        }
+
+        handles ??= Array.Empty<string>();
+        var sanitized = handles
+            .Where(h => !string.IsNullOrWhiteSpace(h))
+            .Select(h => h.Trim())
+            .ToArray();
+
+        lock (_nearbyLock)
+        {
+            _nearby = new HashSet<string>(sanitized, StringComparer.OrdinalIgnoreCase);
+        }
+
+        Status = FormatStatusForMembers(sanitized.Length);
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await RefreshMembershipsAsync(_runCts?.Token ?? CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }, CancellationToken.None);
+        _ = Task.Run(() => EnqueuePrefetchApplyForAsync(sanitized), CancellationToken.None);
+    }
+
+    private void HandleWatcherMemberChanged(string handle)
+    {
+        if (!IsRunning || string.IsNullOrWhiteSpace(handle))
+        {
+            return;
+        }
+
+        var trimmed = handle.Trim();
+        lock (_nearbyLock)
+        {
+            if (!_nearby.Contains(trimmed))
+            {
+                return;
+            }
+        }
+
+        _ = Task.Run(() => EnqueuePrefetchApplyForAsync(new[] { trimmed }), CancellationToken.None);
+    }
+
+    private async Task EnqueuePrefetchApplyForAsync(IEnumerable<string> handles)
+    {
+        if (_runCts == null || _paused)
+        {
+            return;
+        }
+
+        List<string> ids = handles?
+            .Where(h => !string.IsNullOrWhiteSpace(h))
+            .Select(h => h.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList() ?? new List<string>();
+
+        if (ids.Count == 0)
+        {
+            return;
+        }
+
+        var before = ids.Count;
+        var filtered = new List<string>();
+        HashSet<string>? visibleHandles = null;
+
+        if (_config.OnlySyncVisible)
+        {
+            visibleHandles = GetVisibleHandles();
+        }
+
+        foreach (var id in ids)
+        {
+            if (_config.OnlySyncVisible)
+            {
+                var member = FindMember(id);
+                if (member == null)
+                {
+                    continue;
+                }
+
+                if (visibleHandles == null || !visibleHandles.Contains(MemberHandle(member)))
+                {
+                    continue;
+                }
+            }
+
+            if (!_config.SyncAutoMode)
+            {
+                if (!ulong.TryParse(id, out var parsed) || !_config.ManualAutoList.Contains(parsed))
+                {
+                    continue;
+                }
+            }
+
+            filtered.Add(id);
+        }
+
+        if (_config.OnlySyncVisible)
+        {
+            _log.Debug("Filtered SyncShell targets by visibility: {Before} -> {After}", before, filtered.Count);
+        }
+
+        var token = _runCts.Token;
+
+        foreach (var id in filtered)
+        {
+            try
+            {
+                var target = GetOrCreateTarget(id);
+                target.Stage = SyncshellTargetStage.Queued;
+
+                if (_config.BackgroundPrefetch)
+                {
+                    await _prefetchQueue.Writer.WriteAsync(id, token).ConfigureAwait(false);
+                }
+                else
+                {
+                    await _applyQueue.Writer.WriteAsync(id, token).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
+    }
+
+    private string[] BuildActiveMemberList()
+    {
+        var roster = Members;
+        var eligible = roster.Where(m => m.TokenLinked && string.Equals(m.Presence, "online", StringComparison.OrdinalIgnoreCase));
+
+        if (_config.OnlySyncVisible)
+        {
+            var visible = GetVisibleHandles();
+            eligible = eligible.Where(m => visible.Contains(MemberHandle(m)));
+        }
+
+        if (!_config.SyncAutoMode)
+        {
+            var allow = _config.ManualAutoList;
+            eligible = eligible.Where(m => ulong.TryParse(m.Id, out var id) && allow.Contains(id));
+        }
+
+        return eligible.Select(m => m.Id)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct()
+            .ToArray();
     }
 
     private T OnFramework<T>(Func<T> fn)
@@ -1055,16 +1304,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             _log.Warning(ex, "Glamourer IPC failed");
         }
 
-        var modRoot = _penumbra.GetModDirectory();
-        if (string.IsNullOrWhiteSpace(modRoot))
-        {
-            modRoot = _config.PenumbraPathOverride;
-        }
-
-        if (string.IsNullOrWhiteSpace(modRoot))
-        {
-            modRoot = TryGetDetectedPenumbraPath(out _);
-        }
+        var modRoot = ResolvePenumbraRoot();
 
         var discovered = new Dictionary<string, LocalBlobInfo?>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(modRoot) && Directory.Exists(modRoot))
@@ -1099,6 +1339,11 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             {
                 _localBlobs[entry.Key] = entry.Value;
             }
+        }
+
+        if (IsRunning)
+        {
+            _appearanceDebounce.Run(PublishIfChanged);
         }
     }
 
@@ -1225,11 +1470,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     private string EnsureWorkspaceRoot()
     {
-        var root = _penumbra.GetModDirectory() ?? _config.PenumbraPathOverride;
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            root = TryGetDetectedPenumbraPath(out _);
-        }
+        var root = ResolvePenumbraRoot();
 
         if (string.IsNullOrWhiteSpace(root))
         {
@@ -1246,7 +1487,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     {
         var root = EnsureWorkspaceRoot();
         var modPath = Path.Combine(root, "mods", memberId, "current");
-        _penumbra.SetTemporaryMod(modPath);
+        OnFramework(() => _penumbra.SetTemporaryMod(modPath));
     }
 
     private void ApplyGlamourer(string memberId)
@@ -1266,7 +1507,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                 return;
             }
 
-            _ = _glamourer.TryGetPlayerDesignJson();
+            OnFramework(() => _glamourer.TryGetPlayerDesignJson());
         }
         catch (Exception ex)
         {
@@ -1276,14 +1517,23 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
     private static string ComputeAppearanceHash(AppearanceMeta appearance)
     {
-        var builder = new StringBuilder();
-        builder.Append(appearance.GlamourerJson ?? string.Empty);
-        foreach (var blob in (appearance.Blobs ?? new List<BlobRef>()).OrderBy(b => b.Sha256, StringComparer.Ordinal))
+        using var sha = SHA256.Create();
+
+        void Add(string? value)
         {
-            builder.Append(blob.Sha256);
+            var bytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
+            sha.TransformBlock(bytes, 0, bytes.Length, bytes, 0);
         }
 
-        return Hasher.Sha256String(builder.ToString());
+        Add(appearance.GlamourerJson);
+
+        foreach (var blob in (appearance.Blobs ?? new List<BlobRef>()).OrderBy(b => b.Sha256, StringComparer.OrdinalIgnoreCase))
+        {
+            Add($"{blob.Sha256}:{blob.Size}");
+        }
+
+        sha.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+        return Convert.ToHexString(sha.Hash ?? Array.Empty<byte>());
     }
 
     private TargetInfo GetOrCreateTarget(string id)
@@ -1338,18 +1588,6 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             _activeMembers = active;
         }
 
-        lock (_nearbyUsers)
-        {
-            _nearbyUsers.Clear();
-            foreach (var entry in active)
-            {
-                if (!string.IsNullOrEmpty(entry.Id))
-                {
-                    _nearbyUsers.Add(entry.Id);
-                }
-            }
-        }
-
         var statusChanged = false;
         if (!_paused)
         {
@@ -1402,6 +1640,19 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         lock (_applyStateLock)
         {
             return _localSyncedAt.TryGetValue(memberId, out var value) ? value : null;
+        }
+    }
+
+    private SyncshellMemberStatus? FindMember(string memberId)
+    {
+        if (string.IsNullOrWhiteSpace(memberId))
+        {
+            return null;
+        }
+
+        lock (_memberLock)
+        {
+            return _members.FirstOrDefault(m => string.Equals(m.Id, memberId, StringComparison.OrdinalIgnoreCase));
         }
     }
 

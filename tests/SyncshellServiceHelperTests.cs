@@ -1,5 +1,4 @@
 using System;
-using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net.Http;
@@ -13,6 +12,7 @@ using DemiCatPlugin;
 using DemiCatPlugin.SyncShell;
 using Moq;
 using Xunit;
+using Tests;
 
 public class SyncshellServiceHelperTests
 {
@@ -106,7 +106,8 @@ public class SyncshellServiceHelperTests
                 logMock.Object,
                 clientStateMock.Object,
                 frameworkMock.Object,
-                objectTableMock.Object);
+                objectTableMock.Object,
+                new FakeSyncShellWatcher());
 
             var members = new List<SyncshellMemberStatus>
             {

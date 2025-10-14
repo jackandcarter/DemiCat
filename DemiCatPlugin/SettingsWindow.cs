@@ -417,14 +417,17 @@ public class SettingsWindow : IDisposable
         ImGui.Separator();
 
         var penumbraAvailable = service?.PenumbraAvailable ?? false;
-        var detectedPath = service?.DetectedPenumbraPath;
-        var detectedFromSettings = service?.DetectedPenumbraPathFromSettingsJson ?? false;
+        var detection = service != null ? service.GetPenumbraDetectionDetails() : default;
+        var detectedPath = detection.Path;
+        var detectionSource = detection.Source;
+        var nextRetry = detection.NextRetry;
         if (!string.IsNullOrEmpty(detectedPath))
         {
-            var label = detectedFromSettings
-                ? $"Detected from Penumbra settings.json: {detectedPath}"
-                : $"Detected Penumbra path: {detectedPath}";
-            ImGui.TextDisabled(label);
+            ImGui.TextDisabled($"Detected Penumbra path: {detectedPath}");
+            if (!string.IsNullOrWhiteSpace(detectionSource))
+            {
+                ImGui.TextDisabled($"Detected from: {detectionSource}");
+            }
         }
         else if (penumbraAvailable)
         {
@@ -433,6 +436,10 @@ public class SettingsWindow : IDisposable
         else
         {
             ImGui.TextDisabled("Penumbra IPC not detected. Set a path manually if needed.");
+            if (nextRetry is { } retry)
+            {
+                ImGui.TextDisabled($"Next retry in: {Math.Max(0, retry.TotalSeconds):0.##}s");
+            }
         }
 
         if (ImGui.InputText("Penumbra path override", ref _penumbraOverride, 512))

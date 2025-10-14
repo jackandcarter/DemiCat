@@ -57,6 +57,7 @@ public class SyncshellStateChangeFallbackTests
         public bool PenumbraAvailable => false;
         public string? DetectedPenumbraPath => null;
         public bool DetectedPenumbraPathFromSettingsJson => false;
+        public PenumbraDetectionDetails GetPenumbraDetectionDetails() => default;
 
         public Task Start(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
