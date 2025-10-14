@@ -131,10 +131,13 @@ async def list_presences(
         pass
     if db_presences is not None:
         return db_presences
-    presences = get_presences(ctx.guild.id)
+    discord_guild_id = getattr(ctx.guild, "discord_guild_id", None)
+    if discord_guild_id is None:
+        discord_guild_id = ctx.guild.id
+    presences = get_presences(discord_guild_id)
     role_names: dict[int, str] = {}
     if discord_client:
-        guild = discord_client.get_guild(getattr(ctx.guild, "discord_guild_id", ctx.guild.id))
+        guild = discord_client.get_guild(discord_guild_id)
         if guild:
             role_names = {
                 r.id: r.name

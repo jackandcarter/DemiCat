@@ -110,9 +110,15 @@ from demibot.db.session import init_db, get_session
 from sqlalchemy import delete
 
 
+GUILD_DB_ID = 1
+GUILD_DISCORD_ID = 101
+
+
 class StubContext:
-    def __init__(self, guild_id: int):
-        self.guild = types.SimpleNamespace(id=guild_id, discord_guild_id=guild_id)
+    def __init__(self, guild_id: int, discord_guild_id: int | None = None):
+        if discord_guild_id is None:
+            discord_guild_id = guild_id
+        self.guild = types.SimpleNamespace(id=guild_id, discord_guild_id=discord_guild_id)
         self.roles = []
         
 
@@ -128,13 +134,13 @@ def test_get_users_includes_status_from_cache():
             await db.commit()
             db.add(User(id=1, discord_user_id=10, global_name='Alice'))
             db.add(User(id=2, discord_user_id=20, global_name='Bob'))
-            db.add(Role(id=1, guild_id=1, discord_role_id=100, name='Officer'))
-            db.add(Membership(id=1, guild_id=1, user_id=1))
-            db.add(Membership(id=2, guild_id=1, user_id=2))
+            db.add(Role(id=1, guild_id=GUILD_DB_ID, discord_role_id=100, name='Officer'))
+            db.add(Membership(id=1, guild_id=GUILD_DB_ID, user_id=1))
+            db.add(Membership(id=2, guild_id=GUILD_DB_ID, user_id=2))
             db.add(MembershipRole(membership_id=1, role_id=1))
             await db.commit()
             set_presence(
-                1,
+                GUILD_DISCORD_ID,
                 StorePresence(
                     id=10,
                     name='Alice',
@@ -145,8 +151,8 @@ def test_get_users_includes_status_from_cache():
                     accent_color=0x112233,
                 ),
             )
-            set_presence(1, StorePresence(id=20, name='Bob', status='offline'))
-            ctx = StubContext(1)
+            set_presence(GUILD_DISCORD_ID, StorePresence(id=20, name='Bob', status='offline'))
+            ctx = StubContext(GUILD_DB_ID, GUILD_DISCORD_ID)
             res = await get_users(ctx=ctx, db=db)
             data = {u['id']: u for u in res}
             assert data['10']['status'] == 'online'
@@ -178,15 +184,15 @@ def test_get_users_uses_cached_avatars_without_discord():
             db.add(
                 Membership(
                     id=11,
-                    guild_id=99,
+                    guild_id=GUILD_DB_ID,
                     user_id=11,
                     avatar_url='https://example.com/avatar.png',
                 )
             )
-            db.add(Membership(id=12, guild_id=99, user_id=12))
+            db.add(Membership(id=12, guild_id=GUILD_DB_ID, user_id=12))
             await db.commit()
             set_presence(
-                99,
+                GUILD_DISCORD_ID,
                 StorePresence(
                     id=120,
                     name='PresenceUser',
@@ -197,7 +203,7 @@ def test_get_users_uses_cached_avatars_without_discord():
                 ),
             )
             users_route.discord_client = None
-            ctx = StubContext(99)
+            ctx = StubContext(GUILD_DB_ID, GUILD_DISCORD_ID)
             res = await get_users(ctx=ctx, db=db)
             data = {u['id']: u for u in res}
             assert data['110']['avatar_url'] == 'https://example.com/avatar.png'
@@ -221,12 +227,12 @@ def test_get_users_reads_presence_from_db():
             await db.commit()
             db.add(User(id=3, discord_user_id=30, global_name='Alice'))
             db.add(User(id=4, discord_user_id=40, global_name='Bob'))
-            db.add(Membership(guild_id=1, user_id=3))
-            db.add(Membership(guild_id=1, user_id=4))
-            db.add(DbPresence(guild_id=1, user_id=30, status='idle', status_text='Away'))
-            db.add(DbPresence(guild_id=1, user_id=40, status='dnd'))
+            db.add(Membership(guild_id=GUILD_DB_ID, user_id=3))
+            db.add(Membership(guild_id=GUILD_DB_ID, user_id=4))
+            db.add(DbPresence(guild_id=GUILD_DB_ID, user_id=30, status='idle', status_text='Away'))
+            db.add(DbPresence(guild_id=GUILD_DB_ID, user_id=40, status='dnd'))
             await db.commit()
-            ctx = StubContext(1)
+            ctx = StubContext(GUILD_DB_ID, GUILD_DISCORD_ID)
             res = await get_users(ctx=ctx, db=db)
             data = {u['id']: u for u in res}
             assert data['30']['status'] == 'idle'
@@ -270,12 +276,12 @@ def test_get_users_name_fallbacks():
             db.add(User(id=5, discord_user_id=50, global_name='GlobalNick'))
             db.add(User(id=6, discord_user_id=60, global_name='Bob'))
             db.add(User(id=7, discord_user_id=70))
-            db.add(Membership(id=5, guild_id=1, user_id=5, nickname='Nick'))
-            db.add(Membership(id=6, guild_id=1, user_id=6))
-            db.add(Membership(id=7, guild_id=1, user_id=7))
+            db.add(Membership(id=5, guild_id=GUILD_DB_ID, user_id=5, nickname='Nick'))
+            db.add(Membership(id=6, guild_id=GUILD_DB_ID, user_id=6))
+            db.add(Membership(id=7, guild_id=GUILD_DB_ID, user_id=7))
             await db.commit()
             users_route.discord_client = DummyDiscordClient()
-            ctx = StubContext(1)
+            ctx = StubContext(GUILD_DB_ID, GUILD_DISCORD_ID)
             res = await get_users(ctx=ctx, db=db)
             names = {u['id']: u['name'] for u in res}
             assert names['50'] == 'Nick'
@@ -318,12 +324,12 @@ def test_get_users_fetches_multiple_users_once():
             await db.commit()
             db.add(User(id=8, discord_user_id=80))
             db.add(User(id=9, discord_user_id=90))
-            db.add(Membership(id=8, guild_id=1, user_id=8))
-            db.add(Membership(id=9, guild_id=1, user_id=9))
+            db.add(Membership(id=8, guild_id=GUILD_DB_ID, user_id=8))
+            db.add(Membership(id=9, guild_id=GUILD_DB_ID, user_id=9))
             await db.commit()
             client = DummyDiscordClient()
             users_route.discord_client = client
-            ctx = StubContext(1)
+            ctx = StubContext(GUILD_DB_ID, GUILD_DISCORD_ID)
             res = await get_users(ctx=ctx, db=db)
             names = {u['id']: u['name'] for u in res}
             assert names['80'] == 'Name80'
@@ -363,9 +369,9 @@ def test_get_my_profile_returns_creator_label():
             await db.execute(delete(User))
             await db.commit()
             db.add(User(id=10, discord_user_id=100, global_name='ProfileUser'))
-            db.add(Membership(id=10, guild_id=1, user_id=10, nickname='ProfileNick'))
+            db.add(Membership(id=10, guild_id=GUILD_DB_ID, user_id=10, nickname='ProfileNick'))
             await db.commit()
-            ctx = StubContext(1)
+            ctx = StubContext(GUILD_DB_ID, GUILD_DISCORD_ID)
             ctx.user = types.SimpleNamespace(
                 id=10,
                 global_name='ProfileUser',
