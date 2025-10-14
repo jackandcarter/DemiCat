@@ -42,7 +42,7 @@ public class FcChatWindow : ChatWindow
     {
         if (presence != null)
         {
-            _presenceSidebar = new PresenceSidebar(presence)
+            _presenceSidebar = new PresenceSidebar(presence, config, httpClient)
             {
                 TextureLoader = LoadTexture,
                 TextureTouch = TextureTouchAction
@@ -72,8 +72,6 @@ public class FcChatWindow : ChatWindow
             base.Draw();
             return;
         }
-
-        _ = RoleCache.EnsureLoaded(_httpClient, _config);
 
         if (_presenceSidebar != null)
         {
