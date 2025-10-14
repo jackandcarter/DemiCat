@@ -18,6 +18,7 @@ public interface ISyncShellService
     bool PenumbraAvailable { get; }
     string? DetectedPenumbraPath { get; }
     bool DetectedPenumbraPathFromSettingsJson { get; }
+    PenumbraDetectionDetails GetPenumbraDetectionDetails();
 
     SyncshellTargetStage GetStage(string memberId);
 
@@ -32,3 +33,5 @@ public interface ISyncShellService
     bool TryValidatePenumbraPath(string? path, out string? error);
     void RefreshAppearanceCaches();
 }
+
+public readonly record struct PenumbraDetectionDetails(string? Path, string? Source, TimeSpan? NextRetry);

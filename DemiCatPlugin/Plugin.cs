@@ -70,6 +70,7 @@ public class Plugin : IDalamudPlugin
     private readonly SyncShellClient _syncShellClient;
     private readonly PenumbraIpc _penumbraIpc;
     private readonly GlamourerIpc _glamourerIpc;
+    private readonly SyncShellWatcher _syncShellWatcher;
     private readonly SyncShellService _syncShellService;
 
     public Plugin()
@@ -111,6 +112,7 @@ public class Plugin : IDalamudPlugin
         _syncShellClient = new SyncShellClient(_httpClient, _config, _tokenManager);
         _penumbraIpc = new PenumbraIpc(_services.PluginInterface, _services.Log);
         _glamourerIpc = new GlamourerIpc(_services.PluginInterface, _services.ClientState, _services.Log);
+        _syncShellWatcher = new SyncShellWatcher(_config, _tokenManager, _services.Log);
         _syncShellService = new SyncShellService(
             _config,
             _tokenManager,
@@ -121,7 +123,8 @@ public class Plugin : IDalamudPlugin
             _services.Log,
             _services.ClientState,
             _services.Framework,
-            _services.ObjectTable);
+            _services.ObjectTable,
+            _syncShellWatcher);
         _services.GlamourerIpc = _glamourerIpc;
         _services.SyncShellService = _syncShellService;
         var baseChatBridge = new ChatBridge(

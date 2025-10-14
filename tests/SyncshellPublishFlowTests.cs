@@ -17,6 +17,7 @@ using DemiCatPlugin;
 using DemiCatPlugin.SyncShell;
 using Moq;
 using Xunit;
+using Tests;
 
 public class SyncshellPublishFlowTests : IDisposable
 {
@@ -74,7 +75,8 @@ public class SyncshellPublishFlowTests : IDisposable
             logMock.Object,
             clientStateMock.Object,
             frameworkMock.Object,
-            objectTableMock.Object);
+            objectTableMock.Object,
+            new FakeSyncShellWatcher());
 
         try
         {
@@ -89,7 +91,7 @@ public class SyncshellPublishFlowTests : IDisposable
             var sha = Hasher.Sha256Bytes(payload);
 
             await service.TriggerPublishAsync();
-            await Task.Delay(50);
+            await Task.Delay(600);
 
             Assert.Contains(statuses, status => status == "Publishing…");
             Assert.Contains(statuses, status => status.StartsWith("Uploading 1 blob", StringComparison.Ordinal));
@@ -153,7 +155,8 @@ public class SyncshellPublishFlowTests : IDisposable
             logMock.Object,
             clientStateMock.Object,
             frameworkMock.Object,
-            objectTableMock.Object);
+            objectTableMock.Object,
+            new FakeSyncShellWatcher());
 
         try
         {
@@ -163,7 +166,7 @@ public class SyncshellPublishFlowTests : IDisposable
             await File.WriteAllBytesAsync(localPath, existingPayload);
 
             await service.TriggerPublishAsync();
-            await Task.Delay(50);
+            await Task.Delay(600);
 
             Assert.Equal("Active", service.Status);
             Assert.DoesNotContain(handler.Requests, r => r.Method == HttpMethod.Put && r.Path == "/api/syncshell/blobs");

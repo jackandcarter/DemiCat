@@ -339,67 +339,87 @@ public sealed class BlobStore : IDisposable
         }
     }
 
-    public static string? GuessDefaultPenumbraRoot(out bool fromSettingsJson)
+    public static string? FindPenumbraModRootOnDisk(out string? source)
     {
-        fromSettingsJson = false;
+        source = null;
 
-        IEnumerable<string> Candidates()
-        {
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                yield return Path.Combine(appData, "XIVLauncher", "pluginConfigs", "Penumbra", "settings.json");
-            }
-
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                var home = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-                yield return Path.Combine(home, "Library", "Application Support", "XIV on Mac", "xivlauncher", "pluginConfigs", "Penumbra", "settings.json");
-            }
-        }
-
-        foreach (var cfg in Candidates())
+        static string? ReadModDir(string file)
         {
             try
             {
-                if (!File.Exists(cfg))
+                using var doc = JsonDocument.Parse(File.ReadAllText(file));
+                foreach (var property in doc.RootElement.EnumerateObject())
                 {
-                    continue;
-                }
-
-                using var doc = JsonDocument.Parse(File.ReadAllText(cfg));
-                if (doc.RootElement.TryGetProperty("ModDirectory", out var md))
-                {
-                    var dir = md.GetString();
-                    if (!string.IsNullOrWhiteSpace(dir) && Directory.Exists(dir))
+                    if (!string.Equals(property.Name, "ModDirectory", StringComparison.OrdinalIgnoreCase))
                     {
-                        fromSettingsJson = true;
-                        return dir;
+                        continue;
+                    }
+
+                    var value = property.Value.GetString();
+                    if (!string.IsNullOrWhiteSpace(value) && Directory.Exists(value))
+                    {
+                        return value;
                     }
                 }
             }
             catch
             {
-                // ignored
             }
+
+            return null;
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             var appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-            var xivLauncher = Path.Combine(appData, "XIVLauncher", "pluginConfigs", "Penumbra");
-            if (Directory.Exists(xivLauncher))
+            foreach (var path in new[]
             {
-                return xivLauncher;
+                Path.Combine(appData, "XIVLauncher", "pluginConfigs", "penumbra.json"),
+                Path.Combine(appData, "XIVLauncher", "pluginConfigs", "Penumbra", "settings.json"),
+            })
+            {
+                if (File.Exists(path) && ReadModDir(path) is { } dir)
+                {
+                    source = Path.GetFileName(path);
+                    return dir;
+                }
             }
+
+            return null;
         }
-        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
         {
             var home = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
-            var macPath = Path.Combine(home, "Library", "Application Support", "XIV on Mac", "xivlauncher", "pluginConfigs", "Penumbra");
-            if (Directory.Exists(macPath))
+            var basePath = Path.Combine(home, "Library", "Application Support", "XIV on Mac");
+
+            foreach (var path in new[]
             {
-                return macPath;
+                Path.Combine(basePath, "pluginConfigs", "penumbra.json"),
+                Path.Combine(basePath, "pluginConfigs", "Penumbra", "settings.json"),
+                Path.Combine(basePath, "dalamud", "pluginConfigs", "Penumbra", "settings.json"),
+            })
+            {
+                if (File.Exists(path) && ReadModDir(path) is { } dir)
+                {
+                    source = Path.GetFileName(path);
+                    return dir;
+                }
+            }
+
+            var installed = Path.Combine(basePath, "dalamud", "InstalledPlugins", "Penumbra");
+            if (Directory.Exists(installed))
+            {
+                var newest = Directory.GetDirectories(installed)
+                    .Select(p => new DirectoryInfo(p))
+                    .OrderByDescending(info => info.CreationTimeUtc)
+                    .FirstOrDefault();
+                var cfg = newest == null ? null : Path.Combine(newest.FullName, "Penumbra.json");
+                if (cfg != null && File.Exists(cfg) && ReadModDir(cfg) is { } dir)
+                {
+                    source = Path.GetFileName(cfg);
+                    return dir;
+                }
             }
         }
 
