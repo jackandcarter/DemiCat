@@ -13,7 +13,6 @@ public sealed class NotePadWindow : IDisposable
 {
     private const int MaxTitleLength = 25;
     private static readonly ImGuiMouseCursor ResizeEwCursor = ResolveResizeEwCursor();
-    private static readonly ImGuiTabBarFlags SectionTabBarFlags = ResolveSectionTabBarFlags();
 
     private readonly Config _config;
     private readonly NotePadService _service;
@@ -136,92 +135,94 @@ public sealed class NotePadWindow : IDisposable
 
     private void DrawSectionTabs(IReadOnlyList<NotePadSection> sections)
     {
-        if (ImGui.BeginTabBar("NotePadSections", SectionTabBarFlags))
+        var style = ImGui.GetStyle();
+        var availableWidth = ImGui.GetContentRegionAvail().X;
+        if (availableWidth <= 0f)
         {
-            foreach (var section in sections)
-            {
-                ImGui.PushID(section.Id);
-                var selected = string.Equals(section.Id, _selectedSectionId, StringComparison.Ordinal);
-                var title = string.IsNullOrWhiteSpace(section.Name) ? "Untitled" : section.Name;
-                var label = $"{title}##{section.Id}";
-                var tabFlags = selected ? ImGuiTabItemFlags.SetSelected : ImGuiTabItemFlags.None;
-
-                var textSize = ImGui.CalcTextSize(title);
-                var style = ImGui.GetStyle();
-                var padding = style.FramePadding.X + 6f;
-                var textLineHeight = ImGui.GetTextLineHeight();
-                var chipGap = MathF.Min(style.FramePadding.X * 0.5f, 6f);
-                var chipWidth = MathF.Max(0f, MathF.Min(textLineHeight, style.FramePadding.X - chipGap));
-                var minWidth = textSize.X + padding * 2f + chipWidth + chipGap;
-
-                var color = ParseColor(section.Color);
-                var previousTabMinWidth = style.TabMinWidthForCloseButton;
-                style.TabMinWidthForCloseButton = Math.Max(previousTabMinWidth, minWidth);
-                ImGui.PushStyleColor(ImGuiCol.Tab, AdjustTabColor(color, 0.7f));
-                ImGui.PushStyleColor(ImGuiCol.TabActive, AdjustTabColor(color, 1f));
-                ImGui.PushStyleColor(ImGuiCol.TabHovered, AdjustTabColor(color, 1.2f));
-
-                var tabOpen = ImGui.BeginTabItem(label, tabFlags);
-                var rectMin = ImGui.GetItemRectMin();
-                var rectMax = ImGui.GetItemRectMax();
-                var drawList = ImGui.GetWindowDrawList();
-                var textStartX = rectMin.X + style.FramePadding.X;
-                var chipRight = textStartX - chipGap;
-                var chipLeft = chipRight - chipWidth;
-                if (chipWidth > 0f && chipRight > rectMin.X)
-                {
-                    var chipMin = new Vector2(MathF.Max(chipLeft, rectMin.X + 1f), rectMin.Y + 4f);
-                    var chipMax = new Vector2(chipRight, rectMax.Y - 4f);
-                    drawList.AddRectFilled(chipMin, chipMax, ImGui.ColorConvertFloat4ToU32(color), 3f);
-                }
-
-                if (tabOpen)
-                {
-                    if (!selected)
-                    {
-                        SelectSection(section.Id);
-                    }
-                    ImGui.EndTabItem();
-                }
-
-                ImGui.PopStyleColor(3);
-                style.TabMinWidthForCloseButton = previousTabMinWidth;
-
-                if (ImGui.BeginDragDropSource())
-                {
-                    _draggingSectionId = section.Id;
-                    ImGui.SetDragDropPayload("NotePadSection", ReadOnlySpan<byte>.Empty);
-                    ImGui.TextUnformatted(title);
-                    ImGui.EndDragDropSource();
-                }
-
-                if (ImGui.BeginDragDropTarget())
-                {
-                    var payload = ImGui.AcceptDragDropPayload("NotePadSection");
-                    if (!payload.Equals(default(ImGuiPayloadPtr)) && !string.IsNullOrEmpty(_draggingSectionId) &&
-                        !string.Equals(_draggingSectionId, section.Id, StringComparison.Ordinal))
-                    {
-                        ReorderSections(_draggingSectionId, section.Id);
-                        _draggingSectionId = null;
-                    }
-                    ImGui.EndDragDropTarget();
-                }
-
-                if (ImGui.BeginPopupContextItem($"SectionContext##{section.Id}"))
-                {
-                    DrawSectionContext(section);
-                    ImGui.EndPopup();
-                }
-
-                ImGui.PopID();
-            }
-
-            if (ImGui.TabItemButton("+"))
-            {
-                OpenNewSectionPopup();
-            }
-            ImGui.EndTabBar();
+            availableWidth = float.MaxValue;
         }
+
+        var rowHeight = ImGui.GetFrameHeight() + style.FramePadding.Y;
+        var spacing = style.ItemSpacing.X;
+        var rowWidth = 0f;
+
+        ImGui.BeginGroup();
+
+        foreach (var section in sections)
+        {
+            var title = string.IsNullOrWhiteSpace(section.Name) ? "Untitled" : section.Name;
+            var metrics = CalculateSectionTabMetrics(title);
+            var buttonWidth = metrics.Width;
+            if (rowWidth > 0f && rowWidth + buttonWidth > availableWidth)
+            {
+                ImGui.NewLine();
+                rowWidth = 0f;
+            }
+
+            if (rowWidth > 0f)
+            {
+                ImGui.SameLine(0f, spacing);
+            }
+
+            ImGui.PushID(section.Id);
+            var isSelected = string.Equals(section.Id, _selectedSectionId, StringComparison.Ordinal);
+            var buttonSize = new Vector2(buttonWidth, rowHeight);
+            DrawSectionTabButton(section, title, buttonSize, isSelected, metrics);
+
+            if (ImGui.IsItemClicked(ImGuiMouseButton.Left) && !isSelected)
+            {
+                SelectSection(section.Id);
+            }
+
+            if (!section.IsBuiltIn && ImGui.BeginDragDropSource())
+            {
+                _draggingSectionId = section.Id;
+                ImGui.SetDragDropPayload("NotePadSection", ReadOnlySpan<byte>.Empty);
+                ImGui.TextUnformatted(title);
+                ImGui.EndDragDropSource();
+            }
+
+            if (!section.IsBuiltIn && ImGui.BeginDragDropTarget())
+            {
+                var payload = ImGui.AcceptDragDropPayload("NotePadSection");
+                if (!payload.Equals(default(ImGuiPayloadPtr)) && !string.IsNullOrEmpty(_draggingSectionId) &&
+                    !string.Equals(_draggingSectionId, section.Id, StringComparison.Ordinal))
+                {
+                    ReorderSections(_draggingSectionId, section.Id);
+                    _draggingSectionId = null;
+                }
+                ImGui.EndDragDropTarget();
+            }
+
+            if (ImGui.BeginPopupContextItem($"SectionContext##{section.Id}"))
+            {
+                DrawSectionContext(section);
+                ImGui.EndPopup();
+            }
+
+            ImGui.PopID();
+
+            rowWidth += buttonWidth + spacing;
+        }
+
+        var plusWidth = CalculatePlusButtonWidth();
+        if (rowWidth > 0f && rowWidth + plusWidth > availableWidth)
+        {
+            ImGui.NewLine();
+            rowWidth = 0f;
+        }
+
+        if (rowWidth > 0f)
+        {
+            ImGui.SameLine(0f, spacing);
+        }
+
+        if (ImGui.Button("+", new Vector2(plusWidth, rowHeight)))
+        {
+            OpenNewSectionPopup();
+        }
+
+        ImGui.EndGroup();
 
         if (!ImGui.IsMouseDown(ImGuiMouseButton.Left))
         {
@@ -229,10 +230,21 @@ public sealed class NotePadWindow : IDisposable
         }
 
         DrawNewSectionPopup();
+
+        ImGui.Dummy(new Vector2(0f, style.ItemSpacing.Y));
     }
 
     private void DrawSectionContext(NotePadSection section)
     {
+        if (section.IsBuiltIn)
+        {
+            if (ImGui.MenuItem("Copy Link"))
+            {
+                ImGui.SetClipboardText(section.Name);
+            }
+            return;
+        }
+
         if (!IsReadOnly && ImGui.MenuItem("Rename"))
         {
             _sectionRenameBuffers[section.Id] = section.Name;
@@ -326,7 +338,7 @@ public sealed class NotePadWindow : IDisposable
             headerPos.Y + (headerHeight - buttonSize.Y) * 0.5f);
         ImGui.SetCursorScreenPos(buttonPos);
         ImGui.PushStyleVar(ImGuiStyleVar.FrameRounding, style.FrameRounding);
-        if (IsReadOnly)
+        if (IsReadOnly || isBuiltIn)
         {
             ImGui.BeginDisabled();
             ImGui.Button(buttonText, buttonSize);
@@ -551,6 +563,12 @@ public sealed class NotePadWindow : IDisposable
 
     private void CreateNewPage(NotePadSection section)
     {
+        if (section.IsBuiltIn)
+        {
+            PluginServices.Instance?.ToastGui.ShowError("The About NotePad tab is read-only.");
+            return;
+        }
+
         if (IsReadOnly)
         {
             PluginServices.Instance?.ToastGui.ShowError("You do not have permission to create notes.");
@@ -568,8 +586,13 @@ public sealed class NotePadWindow : IDisposable
         });
     }
 
-    private bool CanDeletePage(NotePadPage page)
+    private bool CanDeletePage(NotePadSection section, NotePadPage page)
     {
+        if (section.IsBuiltIn)
+        {
+            return false;
+        }
+
         if (OfficerPermissions.HasAccess(_config))
         {
             return true;
@@ -610,13 +633,15 @@ public sealed class NotePadWindow : IDisposable
 
         ImGui.Separator();
 
-        if (!IsReadOnly && ImGui.MenuItem("Rename"))
+        var allowPageEdits = !IsReadOnly && !section.IsBuiltIn;
+
+        if (allowPageEdits && ImGui.MenuItem("Rename"))
         {
             _pageRenameBuffers[page.Id] = page.Title;
             ImGui.OpenPopup($"RenamePage##{page.Id}");
         }
 
-        if (!IsReadOnly && ImGui.BeginPopup($"RenamePage##{page.Id}"))
+        if (allowPageEdits && ImGui.BeginPopup($"RenamePage##{page.Id}"))
         {
             var buffer = _pageRenameBuffers.GetValueOrDefault(page.Id, page.Title) ?? string.Empty;
             var submitted = ImGui.InputText("##PageRename", ref buffer, 128, ImGuiInputTextFlags.EnterReturnsTrue);
@@ -641,9 +666,9 @@ public sealed class NotePadWindow : IDisposable
             ImGui.EndPopup();
         }
 
-        if (!IsReadOnly)
+        if (!IsReadOnly && !section.IsBuiltIn)
         {
-            var canDelete = CanDeletePage(page);
+            var canDelete = CanDeletePage(section, page);
             if (!canDelete)
             {
                 ImGui.BeginDisabled();
@@ -678,6 +703,26 @@ public sealed class NotePadWindow : IDisposable
         {
             LoadPageContent(page);
             _pendingReload = false;
+        }
+
+        if (section.IsBuiltIn)
+        {
+            var content = page.Content ?? string.Empty;
+            ImGui.BeginChild("NotePadAbout", ImGui.GetContentRegionAvail(), true);
+            ImGui.PushTextWrapPos();
+            if (string.IsNullOrEmpty(content))
+            {
+                ImGui.TextDisabled("No content available.");
+            }
+            else
+            {
+                ImGui.TextUnformatted(content);
+            }
+            ImGui.PopTextWrapPos();
+            ImGui.EndChild();
+            _editorContent = content;
+            _editorVersion = page.Version;
+            return;
         }
 
         DrawFormattingToolbar();
@@ -1146,7 +1191,7 @@ public sealed class NotePadWindow : IDisposable
         order.RemoveAt(fromIndex);
         order.Insert(toIndex, item);
         _sectionOrder.Clear();
-        _sectionOrder.AddRange(order);
+        _sectionOrder.AddRange(order.Where(id => !NotePadService.IsBuiltInSectionId(id)));
         _sectionOrderDirty = true;
     }
 
@@ -1229,7 +1274,65 @@ public sealed class NotePadWindow : IDisposable
 
         _pendingReload = true;
         _sectionOrder.Clear();
-        _sectionOrder.AddRange(sections.Select(s => s.Id));
+        _sectionOrder.AddRange(sections.Select(s => s.Id).Where(id => !NotePadService.IsBuiltInSectionId(id)));
+    }
+
+    private static SectionTabMetrics CalculateSectionTabMetrics(string title)
+    {
+        var style = ImGui.GetStyle();
+        var textSize = ImGui.CalcTextSize(title);
+        var textLineHeight = ImGui.GetTextLineHeight();
+        var padding = style.FramePadding.X + 6f;
+        var chipGap = MathF.Min(style.FramePadding.X * 0.5f, 6f);
+        var chipWidth = MathF.Max(0f, MathF.Min(textLineHeight, style.FramePadding.X - chipGap));
+        var width = textSize.X + padding * 2f + chipWidth + chipGap;
+        return new SectionTabMetrics(width, chipWidth, chipGap);
+    }
+
+    private void DrawSectionTabButton(NotePadSection section, string title, Vector2 size, bool selected, SectionTabMetrics metrics)
+    {
+        var drawList = ImGui.GetWindowDrawList();
+        var style = ImGui.GetStyle();
+        var min = ImGui.GetCursorScreenPos();
+        var max = new Vector2(min.X + size.X, min.Y + size.Y);
+
+        ImGui.InvisibleButton("##SectionTab", size);
+        var hovered = ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenBlockedByActiveItem);
+        var active = ImGui.IsItemActive();
+
+        var baseColor = ParseColor(section.Color);
+        Vector4 background;
+        if (selected)
+        {
+            background = AdjustTabColor(baseColor, active ? 0.95f : (hovered ? 1.1f : 1f));
+        }
+        else
+        {
+            background = AdjustTabColor(baseColor, hovered ? 0.85f : 0.7f);
+        }
+
+        drawList.AddRectFilled(min, max, ImGui.ColorConvertFloat4ToU32(background), style.FrameRounding);
+
+        if (metrics.ChipWidth > 0f)
+        {
+            var chipHeight = MathF.Min(ImGui.GetTextLineHeight(), size.Y - style.FramePadding.Y * 2f);
+            var chipMin = new Vector2(min.X + style.FramePadding.X, min.Y + (size.Y - chipHeight) * 0.5f);
+            var chipMax = new Vector2(chipMin.X + metrics.ChipWidth, chipMin.Y + chipHeight);
+            drawList.AddRectFilled(chipMin, chipMax, ImGui.ColorConvertFloat4ToU32(baseColor), style.FrameRounding / 2f);
+        }
+
+        var textX = min.X + style.FramePadding.X + metrics.ChipWidth + metrics.ChipGap;
+        var textY = min.Y + MathF.Max(style.FramePadding.Y * 0.5f, (size.Y - ImGui.GetTextLineHeight()) / 2f);
+        drawList.AddText(new Vector2(textX, textY), ImGui.GetColorU32(ImGuiCol.Text), title);
+
+        drawList.AddRect(min, max, ImGui.GetColorU32(ImGuiCol.Border), style.FrameRounding);
+    }
+
+    private static float CalculatePlusButtonWidth()
+    {
+        var style = ImGui.GetStyle();
+        var text = ImGui.CalcTextSize("+");
+        return text.X + style.FramePadding.X * 2f;
     }
 
     private static Vector4 AdjustTabColor(Vector4 color, float multiplier)
@@ -1251,14 +1354,17 @@ public sealed class NotePadWindow : IDisposable
         return ImGuiMouseCursor.ResizeAll;
     }
 
-    private static ImGuiTabBarFlags ResolveSectionTabBarFlags()
+    private readonly struct SectionTabMetrics
     {
-        var flags = ImGuiTabBarFlags.Reorderable;
-        if (Enum.TryParse("TabListPopupButton", ignoreCase: true, out ImGuiTabBarFlags extra))
+        public SectionTabMetrics(float width, float chipWidth, float chipGap)
         {
-            flags |= extra;
+            Width = width;
+            ChipWidth = chipWidth;
+            ChipGap = chipGap;
         }
 
-        return flags;
+        public float Width { get; }
+        public float ChipWidth { get; }
+        public float ChipGap { get; }
     }
 }
