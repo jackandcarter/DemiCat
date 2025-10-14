@@ -78,6 +78,7 @@ public class ChatWindow : IDisposable
     private const int MinInputLines = 1;
     private const int MaxInputLines = 8;
     private readonly Dictionary<string, TextureCacheEntry> _textureCache = new();
+    private const string EmojiButtonGlyph = "🙂";
     private readonly LinkedList<string> _textureLru = new();
     private readonly TypingCoalescer _typingCoalescer;
     private readonly Dictionary<string, string> _typingNameMap = new(StringComparer.Ordinal);
@@ -397,6 +398,39 @@ public class ChatWindow : IDisposable
         }
 
         return Math.Clamp(manualScale, Config.MinChatImageScale, Config.MaxChatImageScale);
+    }
+
+    private string GetComposerPlaceholderText()
+    {
+        var channel = GetCurrentChannel();
+        var channelName = channel?.Name?.Trim();
+        if (string.IsNullOrEmpty(channelName))
+        {
+            return "Send a message";
+        }
+
+        var prefix = channelName.StartsWith('#', StringComparison.Ordinal) ? string.Empty : "#";
+        return $"Send message to {prefix}{channelName}";
+    }
+
+    private ChannelDto? GetCurrentChannel()
+    {
+        var channelId = CurrentChannelId;
+        if (!string.IsNullOrEmpty(channelId))
+        {
+            var match = _channels.FirstOrDefault(c => string.Equals(c.Id, channelId, StringComparison.Ordinal));
+            if (match != null)
+            {
+                return match;
+            }
+        }
+
+        if (_selectedIndex >= 0 && _selectedIndex < _channels.Count)
+        {
+            return _channels[_selectedIndex];
+        }
+
+        return null;
     }
 
     private bool SupportsEmbedColorSelection()
@@ -1740,7 +1774,7 @@ public class ChatWindow : IDisposable
         var emojiButtonWidth = 0f;
         using (var _ = _emojiManager.PushEmojiFont())
         {
-            emojiButtonWidth = ImGui.CalcTextSize("😊").X + framePadding;
+            emojiButtonWidth = ImGui.CalcTextSize(EmojiButtonGlyph).X + framePadding;
         }
         var sendButtonWidth = ImGui.CalcTextSize("Send").X + framePadding;
         var spacing = style.ItemSpacing.X * 2f;
@@ -1768,13 +1802,26 @@ public class ChatWindow : IDisposable
             ImGuiInputTextFlags.EnterReturnsTrue | ImGuiInputTextFlags.CallbackAlways,
             new ImGui.ImGuiInputTextCallbackDelegate(OnInputEdited)
         );
+        var inputRectMin = ImGui.GetItemRectMin();
+        var inputRectMax = ImGui.GetItemRectMax();
         if (MentionsEnabled)
         {
             var mentionState = EnsureMentionDrawerState();
-            mentionState.AnchorMin = ImGui.GetItemRectMin();
-            mentionState.AnchorMax = ImGui.GetItemRectMax();
+            mentionState.AnchorMin = inputRectMin;
+            mentionState.AnchorMax = inputRectMax;
         }
         _input = ImGuiTextUtil.ReadUtf8Buffer(inputBuf);
+        if (string.IsNullOrEmpty(_input))
+        {
+            var placeholder = GetComposerPlaceholderText();
+            if (!string.IsNullOrEmpty(placeholder))
+            {
+                var color = ImGui.GetColorU32(ImGuiCol.TextDisabled);
+                var drawList = ImGui.GetWindowDrawList();
+                var pos = new Vector2(inputRectMin.X + style.FramePadding.X, inputRectMin.Y + style.FramePadding.Y);
+                drawList.AddText(pos, color, placeholder);
+            }
+        }
 
         var composerActive = ImGui.IsItemActive();
         var inputEdited = ImGui.IsItemEdited();
@@ -1823,7 +1870,7 @@ public class ChatWindow : IDisposable
         ImGui.SameLine();
         using (var _ = _emojiManager.PushEmojiFont())
         {
-            if (ImGui.Button("😊")) ImGui.OpenPopup("##dc_emoji_picker");
+            if (ImGui.Button(EmojiButtonGlyph)) ImGui.OpenPopup("##dc_emoji_picker");
         }
         if (ImGui.BeginPopup("##dc_emoji_picker"))
         {
