@@ -53,6 +53,9 @@ async def get_users(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
 ):
+    discord_guild_id = getattr(ctx.guild, "discord_guild_id", None)
+    if discord_guild_id is None:
+        discord_guild_id = ctx.guild.id
     stmt = (
         select(
             User,
@@ -84,7 +87,7 @@ async def get_users(
     )
     result = await db.execute(stmt)
     rows = result.all()
-    cache = {p.id: p for p in get_presences(ctx.guild.id)}
+    cache = {p.id: p for p in get_presences(discord_guild_id)}
 
     user_map: dict[int, dict[str, object]] = {}
     for u, n, s, st, rid, role_name, avatar, banner, accent in rows:
@@ -139,7 +142,7 @@ async def get_users(
     role_names: dict[int, str] = {}
     guild = None
     if discord_client:
-        guild = discord_client.get_guild(ctx.guild.discord_guild_id)
+        guild = discord_client.get_guild(discord_guild_id)
         if guild:
             role_names = {
                 r.id: r.name
