@@ -2141,7 +2141,11 @@ public class ChatWindow : IDisposable
                             emoji.LoadRequested = false;
                         });
                     }
-                    ImGui.TextUnformatted($":{name}:");
+                    EmojiPlaceholderRenderer.Draw(new Vector2(20f, 20f));
+                    if (ImGui.IsItemHovered())
+                    {
+                        ImGui.SetTooltip($":{name}:");
+                    }
                 }
                 else
                 {
@@ -2172,7 +2176,11 @@ public class ChatWindow : IDisposable
                                 emoji.LoadRequested = false;
                             });
                         }
-                        ImGui.TextUnformatted($":{name}:");
+                        EmojiPlaceholderRenderer.Draw(new Vector2(20f, 20f));
+                        if (ImGui.IsItemHovered())
+                        {
+                            ImGui.SetTooltip($":{name}:");
+                        }
                     }
                 }
             }

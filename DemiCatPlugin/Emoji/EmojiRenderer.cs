@@ -45,11 +45,11 @@ public static class EmojiRenderer
             }
             else
             {
-                ImGui.TextUnformatted(label);
+                EmojiPlaceholderRenderer.Draw(new Vector2(size, size));
             }
         });
 
-        if (ImGui.IsItemHovered())
+        if (!string.IsNullOrEmpty(label) && ImGui.IsItemHovered())
         {
             ImGui.SetTooltip(label);
         }
@@ -85,8 +85,7 @@ public static class EmojiRenderer
                 RequestUnicodeTexture(imageUrl);
             }
 
-            using var font = manager.PushEmojiFont();
-            ImGui.TextUnformatted(value);
+            EmojiPlaceholderRenderer.Draw(new Vector2(size, size));
             if (!string.IsNullOrEmpty(tooltip) && ImGui.IsItemHovered())
             {
                 ImGui.SetTooltip(tooltip);
@@ -94,8 +93,7 @@ public static class EmojiRenderer
             return;
         }
 
-        using var fallbackFont = manager.PushEmojiFont();
-        ImGui.TextUnformatted(value);
+        EmojiPlaceholderRenderer.Draw(new Vector2(size, size));
     }
 
     private static void RequestUnicodeTexture(string imageUrl)
