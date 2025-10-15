@@ -12,6 +12,17 @@ from ..config import AppConfig
 logger = logging.getLogger(__name__)
 
 
+COG_MODULES: tuple[str, ...] = (
+    "admin",
+    "events",
+    "keygen",
+    "mirror",
+    "presence",
+    "requests",
+    "setup_wizard",
+)
+
+
 class DemiBot(commands.Bot):
     def __init__(
         self, cfg: AppConfig, intents: discord.Intents | None = None
@@ -26,15 +37,22 @@ class DemiBot(commands.Bot):
         self.cfg = cfg
 
     async def setup_hook(self) -> None:
-        base = Path(__file__).parent / "cogs"
-        for mod in pkgutil.iter_modules([str(base)]):
-            module_path = f"{__package__}.cogs.{mod.name}"
+        for module_name in COG_MODULES:
+            module_path = f"{__package__}.cogs.{module_name}"
             try:
                 await self.load_extension(module_path)
             except Exception:
                 logger.exception("Failed to load extension %s", module_path)
             else:
                 logger.info("Loaded extension %s", module_path)
+
+        cogs_base = Path(__file__).parent / "cogs"
+        loaded_modules = {f"{__package__}.cogs.{name}" for name in COG_MODULES}
+        for mod in pkgutil.iter_modules([str(cogs_base)]):
+            module_path = f"{__package__}.cogs.{mod.name}"
+            if module_path in loaded_modules:
+                continue
+            logger.warning("Ignoring unexpected cog module %s", module_path)
 
         modules_base = Path(__file__).parent.parent / "modules"
         for mod in pkgutil.iter_modules([str(modules_base)]):
