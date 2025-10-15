@@ -6,6 +6,7 @@ from datetime import datetime
 import discord
 from discord.ext import commands
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.exc import IntegrityError
 
 from ...db.models import (
@@ -150,13 +151,26 @@ class PresenceTracker(commands.Cog):
             )
             user_row = user_res.scalar_one_or_none()
             if user_row is None:
-                user_row = User(
+                member_global_name = getattr(member, "global_name", None)
+                member_discriminator = getattr(member, "discriminator", None)
+                stmt = mysql_insert(User).values(
                     discord_user_id=member.id,
-                    global_name=getattr(member, "global_name", None),
-                    discriminator=getattr(member, "discriminator", None),
+                    global_name=member_global_name,
+                    discriminator=member_discriminator,
                 )
-                db.add(user_row)
-                await db.flush()
+                await db.execute(
+                    stmt.on_duplicate_key_update(
+                        global_name=stmt.inserted.global_name,
+                        discriminator=stmt.inserted.discriminator,
+                    )
+                )
+                user_res = await db.execute(
+                    select(User).where(User.discord_user_id == member.id)
+                )
+                user_row = user_res.scalar_one()
+            else:
+                user_row.global_name = getattr(member, "global_name", None)
+                user_row.discriminator = getattr(member, "discriminator", None)
 
             mem_stmt = select(Membership).where(
                 Membership.guild_id == guild_row.id,
