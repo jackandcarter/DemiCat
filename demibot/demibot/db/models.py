@@ -322,6 +322,16 @@ class SyncshellRateLimit(Base):
     window_start: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class SyncshellTransferBudget(Base):
+    __tablename__ = "syncshell_transfer_budgets"
+
+    user_id: Mapped[int] = mapped_column(
+        BIGINT(unsigned=True), ForeignKey("users.id"), primary_key=True
+    )
+    window_start: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    used_bytes: Mapped[int] = mapped_column(BigInteger, default=0)
+
+
 class SyncshellInvite(Base):
     __tablename__ = "syncshell_invites"
     __table_args__ = (
