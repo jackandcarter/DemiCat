@@ -232,13 +232,21 @@ internal static class RequestStateService
         _ => RequestStatus.Open
     };
 
-    private static RequestType ParseType(string type) => type switch
+    private static RequestType ParseType(string type)
     {
-        "item" => RequestType.Item,
-        "run" => RequestType.Run,
-        "event" => RequestType.Event,
-        _ => RequestType.Item
-    };
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return RequestType.Item;
+        }
+
+        return type.ToLowerInvariant() switch
+        {
+            "item" => RequestType.Item,
+            "run" => RequestType.Run,
+            "event" => RequestType.Event,
+            _ => RequestType.Item
+        };
+    }
 
     private static RequestUrgency ParseUrgency(string urgency) => urgency switch
     {

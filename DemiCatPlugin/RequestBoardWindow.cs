@@ -332,13 +332,21 @@ public class RequestBoardWindow
         _ => "item"
     };
 
-    private static RequestType ParseType(string type) => type switch
+    private static RequestType ParseType(string type)
     {
-        "item" => RequestType.Item,
-        "run" => RequestType.Run,
-        "event" => RequestType.Event,
-        _ => RequestType.Item
-    };
+        if (string.IsNullOrWhiteSpace(type))
+        {
+            return RequestType.Item;
+        }
+
+        return type.ToLowerInvariant() switch
+        {
+            "item" => RequestType.Item,
+            "run" => RequestType.Run,
+            "event" => RequestType.Event,
+            _ => RequestType.Item
+        };
+    }
 
     private static string UrgencyToString(RequestUrgency urgency) => urgency switch
     {
