@@ -143,41 +143,44 @@ public class UiRenderer : IAsyncDisposable, IDisposable
         _webSocket = null;
         if (socket != null)
         {
-            try
+            _ = Task.Run(async () =>
             {
-                var closeTask = CloseClientWebSocketWithTimeoutAsync(socket, CancellationToken.None);
-                var completedTask = Task.WhenAny(closeTask, Task.Delay(WebSocketCloseWaitTimeout)).GetAwaiter().GetResult();
-                if (completedTask != closeTask)
+                try
+                {
+                    var closeTask = CloseClientWebSocketWithTimeoutAsync(socket, CancellationToken.None);
+                    var completedTask = await Task.WhenAny(closeTask, Task.Delay(WebSocketCloseWaitTimeout)).ConfigureAwait(false);
+                    if (completedTask != closeTask)
+                    {
+                        socket.Abort();
+                    }
+                    else
+                    {
+                        await closeTask.ConfigureAwait(false);
+                    }
+                }
+                catch (OperationCanceledException)
                 {
                     socket.Abort();
                 }
-                else
+                catch (WebSocketException)
                 {
-                    closeTask.GetAwaiter().GetResult();
+                    socket.Abort();
                 }
-            }
-            catch (OperationCanceledException)
-            {
-                socket.Abort();
-            }
-            catch (WebSocketException)
-            {
-                socket.Abort();
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            catch (InvalidOperationException)
-            {
-            }
-            catch (Exception)
-            {
-                socket.Abort();
-            }
-            finally
-            {
-                socket.Dispose();
-            }
+                catch (ObjectDisposedException)
+                {
+                }
+                catch (InvalidOperationException)
+                {
+                }
+                catch (Exception)
+                {
+                    socket.Abort();
+                }
+                finally
+                {
+                    socket.Dispose();
+                }
+            });
         }
         _webSocketReconnectAttempt = 0;
         _nextWebSocketAttempt = DateTime.MaxValue;
@@ -1267,7 +1270,7 @@ public class UiRenderer : IAsyncDisposable, IDisposable
     public void Dispose()
     {
         _channelSelection.ChannelChanged -= HandleChannelChanged;
-        DisposeAsync().GetAwaiter().GetResult();
+        _ = DisposeAsync();
     }
 }
 

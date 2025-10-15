@@ -265,7 +265,15 @@ public class Plugin : IDalamudPlugin
         var log = services?.Log;
         try
         {
-            RunOnFrameworkAsync(WebTextureCache.Clear).GetAwaiter().GetResult();
+            var clearTask = RunOnFrameworkAsync(WebTextureCache.Clear);
+            _ = clearTask.ContinueWith(t =>
+            {
+                if (t.Exception != null)
+                {
+                    log?.Warning(t.Exception, "Failed to clear web texture cache on framework thread.");
+                    WebTextureCache.Clear();
+                }
+            }, TaskScheduler.Default);
         }
         catch (Exception ex)
         {
@@ -311,7 +319,7 @@ public class Plugin : IDalamudPlugin
         _officerChatWindow.Dispose();
         _sharedChatBridge.Dispose();
         _mainWindow.Dispose();
-        _ui.DisposeAsync().GetAwaiter().GetResult();
+        _ = _ui.DisposeAsync();
         _settings.Dispose();
         _avatarCache.Dispose();
         _emojiManager.Dispose();
@@ -730,7 +738,7 @@ public class Plugin : IDalamudPlugin
         await _watcherRestartLock.WaitAsync().ConfigureAwait(false);
         try
         {
-            StopWatchers();
+            await StopWatchersAsync().ConfigureAwait(false);
             await StartWatchersAsync().ConfigureAwait(false);
         }
         finally
@@ -756,25 +764,39 @@ public class Plugin : IDalamudPlugin
 
     private void HandleTokenUnlinked(string? reason)
     {
-        void Execute()
+        async Task ExecuteAsync()
         {
-            StopWatchers();
-            _mainWindow.IsOpen = false;
-            _mainWindow.SetNotePadReadOnly(true);
-            _mainWindow.NotifyLinkRequired();
-            _settings.IsOpen = true;
+            await StopWatchersAsync().ConfigureAwait(false);
 
-            var hadOfficerAccess = _config.IsOfficerToken;
-            _config.IsOfficerToken = false;
-            _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
-            if (hadOfficerAccess)
+            void UpdateUi()
             {
-                _services.PluginInterface?.SavePluginConfig(_config);
+                _mainWindow.IsOpen = false;
+                _mainWindow.SetNotePadReadOnly(true);
+                _mainWindow.NotifyLinkRequired();
+                _settings.IsOpen = true;
+
+                var hadOfficerAccess = _config.IsOfficerToken;
+                _config.IsOfficerToken = false;
+                _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
+                if (hadOfficerAccess)
+                {
+                    _services.PluginInterface?.SavePluginConfig(_config);
+                }
+
+                if (IsAuthenticationFailure(reason))
+                {
+                    ShowInvalidTokenToast();
+                }
             }
 
-            if (IsAuthenticationFailure(reason))
+            var frameworkInner = PluginServices.Instance?.Framework ?? _services.Framework;
+            if (frameworkInner != null)
             {
-                ShowInvalidTokenToast();
+                frameworkInner.RunOnTick(UpdateUi);
+            }
+            else
+            {
+                UpdateUi();
             }
         }
 
@@ -784,7 +806,7 @@ public class Plugin : IDalamudPlugin
         {
             try
             {
-                framework.RunOnTick(Execute);
+                framework.RunOnTick(() => _ = ExecuteAsync());
                 return;
             }
             catch (Exception ex)
@@ -794,7 +816,7 @@ public class Plugin : IDalamudPlugin
             }
         }
 
-        Execute();
+        _ = ExecuteAsync();
     }
 
     private async Task StartWatchersAsync()
@@ -961,12 +983,12 @@ public class Plugin : IDalamudPlugin
         PluginServices.Instance?.ToastGui.ShowError(message);
     }
 
-    private void StopWatchers()
+    private async Task StopWatchersAsync()
     {
         _services.Log.Info("Stopping watchers");
-        _requestWatcher.Stop();
-        _channelWatcher.Stop();
-        _notePadService.Stop();
+        await _requestWatcher.Stop().ConfigureAwait(false);
+        await _channelWatcher.Stop().ConfigureAwait(false);
+        await _notePadService.Stop().ConfigureAwait(false);
         _chatWindow.StopNetworking();
         _officerChatWindow.StopNetworking();
         _officerWatcherRunning = false;
@@ -1123,13 +1145,13 @@ public class Plugin : IDalamudPlugin
                         if (stopRequestWatcher)
                         {
                             _services.Log.Info("Stopping request watcher");
-                            _requestWatcher.Stop();
+                            await _requestWatcher.Stop().ConfigureAwait(false);
                         }
 
                         if (stopChannelWatcher)
                         {
                             _services.Log.Info("Stopping channel watcher");
-                            _channelWatcher.Stop();
+                            await _channelWatcher.Stop().ConfigureAwait(false);
                         }
 
                         if (stopOfficer)

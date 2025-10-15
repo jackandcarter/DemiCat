@@ -291,7 +291,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private string? ResolvePenumbraRoot()
+    private async Task<string?> ResolvePenumbraRootAsync()
     {
         lock (_penRootLock)
         {
@@ -333,7 +333,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             {
                 try
                 {
-                    var viaIpc = OnFramework(() => _penumbra.GetModDirectory());
+                    var viaIpc = await OnFrameworkAsync(() => _penumbra.GetModDirectory()).ConfigureAwait(false);
                     if (!string.IsNullOrWhiteSpace(viaIpc) && Directory.Exists(viaIpc))
                     {
                         resolved = viaIpc;
@@ -439,7 +439,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             _runCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             _lastAppearanceHash = null;
             Status = "Initializing…";
-            RefreshAppearanceCaches();
+            await RefreshAppearanceCachesAsync().ConfigureAwait(false);
 
             _prefetchQueue = Channel.CreateUnbounded<string>();
             _applyQueue = Channel.CreateUnbounded<string>();
@@ -510,8 +510,8 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                 return;
             }
 
-            RefreshAppearanceCaches();
-            _appearanceDebounce.Run(PublishIfChanged);
+            await RefreshAppearanceCachesAsync().ConfigureAwait(false);
+            _appearanceDebounce.Run(() => PublishIfChangedAsync());
         }
         finally
         {
@@ -639,7 +639,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             try
             {
                 await Task.Delay(TerritoryDebounce, _runCts?.Token ?? CancellationToken.None).ConfigureAwait(false);
-                RefreshAppearanceCaches();
+                await RefreshAppearanceCachesAsync().ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
@@ -671,7 +671,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void PublishIfChanged()
+    private async Task PublishIfChangedAsync()
     {
         if (_paused || _runCts == null || _tokenManager.State != LinkState.Linked)
         {
@@ -682,7 +682,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         Dictionary<string, LocalBlobInfo?> localBlobs;
         try
         {
-            (payload, localBlobs) = BuildPublishPayload();
+            (payload, localBlobs) = await BuildPublishPayloadAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -865,7 +865,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         if (_config.OnlySyncVisible)
         {
-            visibleHandles = GetVisibleHandles();
+            visibleHandles = await GetVisibleHandlesAsync().ConfigureAwait(false);
         }
 
         foreach (var member in resolved)
@@ -920,14 +920,14 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private string[] BuildActiveMemberList()
+    private async Task<string[]> BuildActiveMemberListAsync()
     {
         var roster = Members;
         var eligible = roster.Where(m => m.TokenLinked && string.Equals(m.Presence, "online", StringComparison.OrdinalIgnoreCase));
 
         if (_config.OnlySyncVisible)
         {
-            var visible = GetVisibleHandles();
+            var visible = await GetVisibleHandlesAsync().ConfigureAwait(false);
             eligible = eligible.Where(m => visible.Contains(MemberHandle(m)));
         }
 
@@ -943,7 +943,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             .ToArray();
     }
 
-    private T OnFramework<T>(Func<T> fn)
+    private Task<T> OnFrameworkAsync<T>(Func<T> fn)
     {
         if (fn == null)
         {
@@ -954,7 +954,14 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         if (Environment.CurrentManagedThreadId == _frameworkThreadId)
         {
-            return fn();
+            try
+            {
+                return Task.FromResult(fn());
+            }
+            catch (Exception ex)
+            {
+                return Task.FromException<T>(ex);
+            }
         }
 
         var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -962,18 +969,18 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         {
             try
             {
-                tcs.SetResult(fn());
+                tcs.TrySetResult(fn());
             }
             catch (Exception ex)
             {
-                tcs.SetException(ex);
+                tcs.TrySetException(ex);
             }
         });
 
-        return tcs.Task.GetAwaiter().GetResult();
+        return tcs.Task;
     }
 
-    private void OnFramework(Action fn)
+    private Task OnFrameworkAsync(Action fn)
     {
         if (fn == null)
         {
@@ -984,8 +991,15 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         if (Environment.CurrentManagedThreadId == _frameworkThreadId)
         {
-            fn();
-            return;
+            try
+            {
+                fn();
+                return Task.CompletedTask;
+            }
+            catch (Exception ex)
+            {
+                return Task.FromException(ex);
+            }
         }
 
         var tcs = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -994,25 +1008,25 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             try
             {
                 fn();
-                tcs.SetResult(true);
+                tcs.TrySetResult(true);
             }
             catch (Exception ex)
             {
-                tcs.SetException(ex);
+                tcs.TrySetException(ex);
             }
         });
 
-        tcs.Task.GetAwaiter().GetResult();
+        return tcs.Task;
     }
 
-    private (PublishPayload Payload, Dictionary<string, LocalBlobInfo?> LocalBlobs) BuildPublishPayload()
+    private async Task<(PublishPayload Payload, Dictionary<string, LocalBlobInfo?> LocalBlobs)> BuildPublishPayloadAsync()
     {
-        var actorHash = OnFramework(() =>
+        var actorHash = await OnFrameworkAsync(() =>
         {
             var player = _clientState.LocalPlayer;
             return player?.Name.TextValue ?? string.Empty;
             // Omit world label to avoid GeneratedSheets dependency; actorHash is just the name.
-        });
+        }).ConfigureAwait(false);
 
         var appearance = new AppearanceMeta
         {
@@ -1185,7 +1199,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                         token).ConfigureAwait(false);
                 }
 
-                StageTempModForMember(memberId, meta.Appearance);
+                await StageTempModForMemberAsync(memberId, meta.Appearance).ConfigureAwait(false);
                 target.LastHash = ComputeAppearanceHash(meta.Appearance);
                 target.Stage = SyncshellTargetStage.Prefetched;
 
@@ -1247,7 +1261,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                             token).ConfigureAwait(false);
                     }
 
-                    StageTempModForMember(memberId, meta.Appearance);
+                    await StageTempModForMemberAsync(memberId, meta.Appearance).ConfigureAwait(false);
                     target.LastHash = ComputeAppearanceHash(meta.Appearance);
                     target.Stage = SyncshellTargetStage.Prefetched;
                 }
@@ -1266,7 +1280,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             if (_config.OnlySyncVisible)
             {
                 var member = Members.FirstOrDefault(m => string.Equals(m.Id, memberId, StringComparison.OrdinalIgnoreCase));
-                var visible = GetVisibleHandles();
+                var visible = await GetVisibleHandlesAsync().ConfigureAwait(false);
                 if (member == null || !visible.Contains(MemberHandle(member)))
                 {
                     continue;
@@ -1282,12 +1296,12 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             try
             {
                 target.Stage = SyncshellTargetStage.Applying;
-                ActivateTempMod(memberId);
-                ApplyGlamourer(memberId);
-                ApplyCustomizePlus(memberId);
-                ApplySimpleHeels(memberId);
-                ApplyPalettePlus(memberId);
-                ApplyHonorific(memberId);
+                await ActivateTempModAsync(memberId).ConfigureAwait(false);
+                await ApplyGlamourerAsync(memberId).ConfigureAwait(false);
+                await ApplyCustomizePlusAsync(memberId).ConfigureAwait(false);
+                await ApplySimpleHeelsAsync(memberId).ConfigureAwait(false);
+                await ApplyPalettePlusAsync(memberId).ConfigureAwait(false);
+                await ApplyHonorificAsync(memberId).ConfigureAwait(false);
                 await DebouncedRedrawAsync(token).ConfigureAwait(false);
 
                 target.LastAppliedAt = DateTimeOffset.UtcNow;
@@ -1318,11 +1332,11 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
                 await Task.Delay(wait, token).ConfigureAwait(false);
             }
 
-            OnFramework(() =>
+            await OnFrameworkAsync(() =>
             {
                 var index = _clientState.LocalPlayer?.ObjectIndex ?? 0;
                 _penumbra.RedrawObject(index);
-            });
+            }).ConfigureAwait(false);
             _lastRedrawAt = DateTimeOffset.UtcNow;
         }
         finally
@@ -1331,7 +1345,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    public void RefreshAppearanceCaches()
+    public async Task RefreshAppearanceCachesAsync()
     {
         EnsureNotDisposed();
 
@@ -1344,7 +1358,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         {
             if (_glamourer.Available)
             {
-                glamourerJson = OnFramework(() => _glamourer.TryGetPlayerDesignJson());
+                glamourerJson = await OnFrameworkAsync(() => _glamourer.TryGetPlayerDesignJson()).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -1356,7 +1370,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         {
             if (_customizePlus.Available)
             {
-                customizePlusJson = OnFramework(() => _customizePlus.TryExportProfileJson());
+                customizePlusJson = await OnFrameworkAsync(() => _customizePlus.TryExportProfileJson()).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -1368,7 +1382,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         {
             if (_simpleHeels.Available)
             {
-                simpleHeelsJson = OnFramework(() => _simpleHeels.TryExportOffsetsJson());
+                simpleHeelsJson = await OnFrameworkAsync(() => _simpleHeels.TryExportOffsetsJson()).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -1380,7 +1394,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         {
             if (_palettePlus.Available)
             {
-                palettePlusJson = OnFramework(() => _palettePlus.TryExportProfileJson());
+                palettePlusJson = await OnFrameworkAsync(() => _palettePlus.TryExportProfileJson()).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -1392,7 +1406,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         {
             if (_honorific.Available)
             {
-                honorificJson = OnFramework(() => _honorific.TryGetTitleJson());
+                honorificJson = await OnFrameworkAsync(() => _honorific.TryGetTitleJson()).ConfigureAwait(false);
             }
         }
         catch (Exception ex)
@@ -1400,7 +1414,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             _log.Debug(ex, "Honorific IPC failed");
         }
 
-        var modRoot = ResolvePenumbraRoot();
+        var modRoot = await ResolvePenumbraRootAsync().ConfigureAwait(false);
 
         var discovered = new Dictionary<string, LocalBlobInfo?>(StringComparer.OrdinalIgnoreCase);
         if (!string.IsNullOrWhiteSpace(modRoot) && Directory.Exists(modRoot))
@@ -1443,7 +1457,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         if (IsRunning)
         {
-            _appearanceDebounce.Run(PublishIfChanged);
+            _appearanceDebounce.Run(() => PublishIfChangedAsync());
         }
     }
 
@@ -1515,8 +1529,8 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
     private static string MemberHandle(SyncshellMemberStatus member)
         => NormalizeHandle(member.DisplayName);
 
-    private HashSet<string> GetVisibleHandles()
-        => OnFramework(() =>
+    private Task<HashSet<string>> GetVisibleHandlesAsync()
+        => OnFrameworkAsync(() =>
         {
             var set = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
@@ -1545,9 +1559,9 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             return set;
         });
 
-    private void StageTempModForMember(string memberId, AppearanceMeta appearance)
+    private async Task StageTempModForMemberAsync(string memberId, AppearanceMeta appearance)
     {
-        var root = EnsureWorkspaceRoot();
+        var root = await EnsureWorkspaceRootAsync().ConfigureAwait(false);
         var modPath = Path.Combine(root, "mods", memberId, "current");
         var filesRoot = Path.Combine(modPath, "files");
         Directory.CreateDirectory(filesRoot);
@@ -1609,9 +1623,9 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private string? ReadSystemJson(string memberId, string fileName)
+    private async Task<string?> ReadSystemJsonAsync(string memberId, string fileName)
     {
-        var root = EnsureWorkspaceRoot();
+        var root = await EnsureWorkspaceRootAsync().ConfigureAwait(false);
         var path = Path.Combine(root, "mods", memberId, "current", fileName);
         if (!File.Exists(path))
         {
@@ -1622,9 +1636,9 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         return string.IsNullOrWhiteSpace(json) ? null : json;
     }
 
-    private string EnsureWorkspaceRoot()
+    private async Task<string> EnsureWorkspaceRootAsync()
     {
-        var root = ResolvePenumbraRoot();
+        var root = await ResolvePenumbraRootAsync().ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(root))
         {
@@ -1637,14 +1651,14 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         return dcRoot;
     }
 
-    private void ActivateTempMod(string memberId)
+    private async Task ActivateTempModAsync(string memberId)
     {
-        var root = EnsureWorkspaceRoot();
+        var root = await EnsureWorkspaceRootAsync().ConfigureAwait(false);
         var modPath = Path.Combine(root, "mods", memberId, "current");
-        OnFramework(() => _penumbra.SetTemporaryMod(modPath));
+        await OnFrameworkAsync(() => _penumbra.SetTemporaryMod(modPath)).ConfigureAwait(false);
     }
 
-    private void ApplyGlamourer(string memberId)
+    private async Task ApplyGlamourerAsync(string memberId)
     {
         if (!_glamourer.CanApply)
         {
@@ -1653,13 +1667,13 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         try
         {
-            var json = ReadSystemJson(memberId, "glamourer.json");
+            var json = await ReadSystemJsonAsync(memberId, "glamourer.json").ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(json))
             {
                 return;
             }
 
-            OnFramework(() => _glamourer.ApplyPlayerDesignJson(json));
+            await OnFrameworkAsync(() => _glamourer.ApplyPlayerDesignJson(json!)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1667,7 +1681,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void ApplyCustomizePlus(string memberId)
+    private async Task ApplyCustomizePlusAsync(string memberId)
     {
         if (!_customizePlus.Available)
         {
@@ -1676,13 +1690,13 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         try
         {
-            var json = ReadSystemJson(memberId, "cplus.json");
+            var json = await ReadSystemJsonAsync(memberId, "cplus.json").ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(json))
             {
                 return;
             }
 
-            OnFramework(() => _customizePlus.ApplyProfileJson(json));
+            await OnFrameworkAsync(() => _customizePlus.ApplyProfileJson(json!)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1690,7 +1704,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void ApplySimpleHeels(string memberId)
+    private async Task ApplySimpleHeelsAsync(string memberId)
     {
         if (!_simpleHeels.Available)
         {
@@ -1699,13 +1713,13 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         try
         {
-            var json = ReadSystemJson(memberId, "heels.json");
+            var json = await ReadSystemJsonAsync(memberId, "heels.json").ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(json))
             {
                 return;
             }
 
-            OnFramework(() => _simpleHeels.ApplyOffsetsJson(json));
+            await OnFrameworkAsync(() => _simpleHeels.ApplyOffsetsJson(json!)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1713,7 +1727,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void ApplyPalettePlus(string memberId)
+    private async Task ApplyPalettePlusAsync(string memberId)
     {
         if (!_palettePlus.Available)
         {
@@ -1722,13 +1736,13 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         try
         {
-            var json = ReadSystemJson(memberId, "palette.json");
+            var json = await ReadSystemJsonAsync(memberId, "palette.json").ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(json))
             {
                 return;
             }
 
-            OnFramework(() => _palettePlus.ApplyProfileJson(json));
+            await OnFrameworkAsync(() => _palettePlus.ApplyProfileJson(json!)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1736,7 +1750,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         }
     }
 
-    private void ApplyHonorific(string memberId)
+    private async Task ApplyHonorificAsync(string memberId)
     {
         if (!_honorific.Available)
         {
@@ -1745,13 +1759,13 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
 
         try
         {
-            var json = ReadSystemJson(memberId, "honorific.json");
+            var json = await ReadSystemJsonAsync(memberId, "honorific.json").ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(json))
             {
                 return;
             }
 
-            OnFramework(() => _honorific.SetTitleJson(json));
+            await OnFrameworkAsync(() => _honorific.SetTitleJson(json!)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

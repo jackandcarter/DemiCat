@@ -72,10 +72,20 @@ public sealed class NotePadService : IDisposable
         _task = Task.Run(() => RunAsync(_cts.Token));
     }
 
-    public void Stop()
+    public async Task Stop()
     {
         _cts?.Cancel();
-        try { _task?.GetAwaiter().GetResult(); } catch { }
+        if (_task != null)
+        {
+            try
+            {
+                await _task.ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+
         _cts = null;
         _task = null;
     }
@@ -934,7 +944,7 @@ public sealed class NotePadService : IDisposable
 
     public void Dispose()
     {
-        Stop();
+        _ = Stop();
         _stateLock.Dispose();
         _refreshLock.Dispose();
     }

@@ -63,12 +63,25 @@ public class ChannelWatcher : IDisposable
         _task = Run(_cts.Token);
     }
 
-    public void Stop()
+    public async Task Stop()
     {
-        _cts?.Cancel();
-        try { _task?.GetAwaiter().GetResult(); } catch { }
+        var cts = _cts;
         _cts = null;
+
+        cts?.Cancel();
+        if (_task != null)
+        {
+            try
+            {
+                await _task.ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+
         _task = null;
+        cts?.Dispose();
     }
 
     private async Task Run(CancellationToken token)
@@ -407,11 +420,7 @@ public class ChannelWatcher : IDisposable
 
     public void Dispose()
     {
-        _cts?.Cancel();
-        try { _task?.GetAwaiter().GetResult(); } catch { }
-        _cts?.Dispose();
-        _cts = null;
-        _task = null;
+        _ = Stop();
         if (Instance == this) Instance = null;
     }
 }

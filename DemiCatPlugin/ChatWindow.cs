@@ -123,6 +123,7 @@ public class ChatWindow : IDisposable
         TimeSpan.FromMilliseconds(800)
     };
     private CancellationTokenSource? _subscribeCts;
+    private int _disposed;
 
     protected string CurrentChannelId => _channelSelection.GetChannel(_channelKind, _config.GuildId);
     protected string ChannelKindKey => _channelKind;
@@ -812,6 +813,11 @@ public class ChatWindow : IDisposable
 
     protected bool TrySubscribeCurrentChannel(bool force = false, bool refreshMessages = true)
     {
+        if (IsDisposed)
+        {
+            return false;
+        }
+
         if (refreshMessages)
         {
             _pendingRefreshAfterSubscribe = true;
@@ -825,12 +831,23 @@ public class ChatWindow : IDisposable
 
         _ = Task.Run(async () =>
         {
+            if (IsDisposed)
+            {
+                cts.Dispose();
+                return;
+            }
+
             try
             {
                 await Task.Delay(150, cts.Token).ConfigureAwait(false);
 
                 void Execute()
                 {
+                    if (IsDisposed)
+                    {
+                        return;
+                    }
+
                     if (!ReferenceEquals(_subscribeCts, cts))
                     {
                         return;
@@ -888,6 +905,11 @@ public class ChatWindow : IDisposable
 
     private void DoSubscribeCurrentChannel(bool force, bool refreshMessages)
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         if (refreshMessages)
         {
             _pendingRefreshAfterSubscribe = true;
@@ -963,6 +985,11 @@ public class ChatWindow : IDisposable
 
     public virtual void StartNetworking()
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         if (!MarkNetworkingStarted())
         {
             TrySubscribeCurrentChannel(force: true);
@@ -976,6 +1003,16 @@ public class ChatWindow : IDisposable
     }
 
     public void StopNetworking()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        StopNetworkingCore();
+    }
+
+    private void StopNetworkingCore()
     {
         _bridge.Stop();
         MarkNetworkingStopped();
@@ -3864,6 +3901,11 @@ public class ChatWindow : IDisposable
 
     public virtual async Task RefreshMessages(CancellationToken cancellationToken = default)
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         var channelId = CurrentChannelId;
         if (!ApiHelpers.ValidateApiBaseUrl(_config) || string.IsNullOrEmpty(channelId))
         {
@@ -3939,6 +3981,11 @@ public class ChatWindow : IDisposable
 
     private async Task DoRefreshMessagesAsync(string channelId, CancellationToken token)
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         var requestedChannelId = channelId;
         const int PageSize = 50;
         var all = new List<DiscordMessageDto>();
@@ -4081,6 +4128,11 @@ public class ChatWindow : IDisposable
 
         _ = PluginServices.Instance!.Framework.RunOnTick(() =>
         {
+            if (IsDisposed)
+            {
+                return;
+            }
+
             if (!string.Equals(requestedChannelId, CurrentChannelId, StringComparison.Ordinal))
             {
                 return;
@@ -4318,7 +4370,12 @@ public class ChatWindow : IDisposable
 
     public void Dispose()
     {
-        StopNetworking();
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
+
+        StopNetworkingCore();
         if (_presence != null)
         {
             _presence.PresencesChanged -= HandlePresenceServicePresencesChanged;
@@ -4851,3 +4908,5 @@ public class ChatWindow : IDisposable
         });
     }
 }
+    protected bool IsDisposed => Volatile.Read(ref _disposed) == 1;
+

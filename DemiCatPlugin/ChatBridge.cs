@@ -293,28 +293,50 @@ public class ChatBridge : IChatBridge
 
     public void Stop()
     {
-        _cts?.Cancel();
-        try { _task?.GetAwaiter().GetResult(); }
-        catch (OperationCanceledException) { }
-        catch { }
-        if (_ws != null)
-        {
-            using var closeCts = new CancellationTokenSource(WebSocketCloseTimeout);
-            var closeTask = CloseWebSocketGracefully(closeCts.Token);
-            try
-            {
-                closeTask.GetAwaiter().GetResult();
-            }
-            catch (OperationCanceledException)
-            {
-            }
-        }
-        _ws?.Dispose();
-        _ws = null;
-        _cts?.Dispose();
+        var cts = _cts;
         _cts = null;
-        _tokenValid = false;
+        cts?.Cancel();
+
+        var runTask = _task;
         _task = null;
+        if (runTask != null)
+        {
+            _ = runTask.ContinueWith(t =>
+            {
+                if (t.Exception != null)
+                {
+                    PluginServices.Instance?.Log.Debug(t.Exception, "ChatBridge run loop faulted during stop");
+                }
+            }, TaskScheduler.Default);
+        }
+
+        var socket = _ws;
+        _ws = null;
+        if (socket != null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    using var closeCts = new CancellationTokenSource(WebSocketCloseTimeout);
+                    await CloseWebSocketGracefully(closeCts.Token, socket).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Debug(ex, "ChatBridge websocket close failed");
+                }
+                finally
+                {
+                    socket.Dispose();
+                }
+            });
+        }
+
+        cts?.Dispose();
+        _tokenValid = false;
         ResetState();
     }
 
@@ -1382,9 +1404,9 @@ public class ChatBridge : IChatBridge
         }
     }
 
-    private async Task CloseWebSocketGracefully(CancellationToken token)
+    private async Task CloseWebSocketGracefully(CancellationToken token, ClientWebSocket? socketOverride = null)
     {
-        var socket = _ws;
+        var socket = socketOverride ?? _ws;
         if (socket == null)
         {
             return;
