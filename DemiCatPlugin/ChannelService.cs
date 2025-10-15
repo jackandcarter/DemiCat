@@ -19,6 +19,14 @@ public class ChannelService
         PropertyNameCaseInsensitive = true
     };
 
+    private static string S(string? v) => string.IsNullOrWhiteSpace(v) ? string.Empty : v;
+    private static string? SN(object? v) => v switch
+    {
+        null => null,
+        string s => s,
+        _ => v.ToString()
+    };
+
     public ChannelService(Config config, HttpClient httpClient, TokenManager tokenManager)
     {
         _config = config;
@@ -28,7 +36,8 @@ public class ChannelService
 
     public async Task<IReadOnlyList<ChannelDto>> FetchAsync(string kind, CancellationToken ct)
     {
-        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind={kind}";
+        var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
+        var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels?kind={Uri.EscapeDataString(normalizedKind)}";
         var delay = TimeSpan.FromMilliseconds(500);
 
         for (var attempt = 0; ; attempt++)
@@ -45,8 +54,11 @@ public class ChannelService
                 var channels = await JsonSerializer.DeserializeAsync<List<ChannelDto>>(stream, JsonOpts, linkedCts.Token) ?? new List<ChannelDto>();
                 foreach (var channel in channels)
                 {
-                    channel.EnsureKind(kind);
-                    channel.Name = DecodeJsonUnicodeEscapes(channel.Name);
+                    channel.EnsureKind(normalizedKind);
+                    channel.Id = S(channel.Id);
+                    channel.Name = DecodeJsonUnicodeEscapes(S(channel.Name));
+                    channel.ParentId = SN(channel.ParentId);
+                    channel.GuildId = SN(channel.GuildId);
                 }
                 return ChannelDtoExtensions.SortForDisplay(channels);
             }
@@ -69,7 +81,8 @@ public class ChannelService
         CancellationToken ct
     )
     {
-        if (string.IsNullOrWhiteSpace(channelId))
+        channelId = S(channelId);
+        if (string.IsNullOrEmpty(channelId))
         {
             return null;
         }
@@ -80,8 +93,9 @@ public class ChannelService
         }
 
         var normalizedKind = ChannelKeyHelper.NormalizeKind(kind);
+        var encodedId = Uri.EscapeDataString(channelId);
         var url =
-            $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{channelId}/validate?kind={normalizedKind}";
+            $"{_config.ApiBaseUrl.TrimEnd('/')}/api/channels/{encodedId}/validate?kind={Uri.EscapeDataString(normalizedKind)}";
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         ApiHelpers.AddAuthHeader(request, _tokenManager);

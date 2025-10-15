@@ -14,6 +14,14 @@ internal static class RequestStateService
     private static readonly object LockObj = new();
     private static Config? _config;
 
+    private static string S(string? v) => string.IsNullOrWhiteSpace(v) ? string.Empty : v;
+    private static string? SN(object? v) => v switch
+    {
+        null => null,
+        string s => s,
+        _ => v.ToString()
+    };
+
     public static IEnumerable<RequestState> All
     {
         get
@@ -68,6 +76,21 @@ internal static class RequestStateService
 
     public static void Upsert(RequestState state)
     {
+        if (state == null)
+        {
+            return;
+        }
+
+        state.Id = S(state.Id);
+        state.Title = string.IsNullOrWhiteSpace(state.Title) ? "Request" : state.Title;
+        state.Description = S(state.Description);
+        state.CreatedBy = S(state.CreatedBy);
+
+        if (string.IsNullOrEmpty(state.Id))
+        {
+            return;
+        }
+
         lock (LockObj)
         {
             if (RequestsMap.TryGetValue(state.Id, out var existing))
@@ -166,14 +189,15 @@ internal static class RequestStateService
                 list = Array.Empty<JsonElement>();
             foreach (var payload in list)
             {
-                var id = payload.TryGetProperty("id", out var idEl) ? idEl.GetString() : null;
+                var id = S(payload.TryGetProperty("id", out var idEl) ? idEl.GetString() : null);
                 var deleted = payload.TryGetProperty("deleted", out var delEl) && delEl.GetBoolean();
                 if (deleted)
                 {
-                    if (id != null) Remove(id);
+                    if (!string.IsNullOrEmpty(id)) Remove(id);
                     continue;
                 }
-                var title = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() ?? "Request" : "Request";
+                var titleRaw = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() : null;
+                var title = string.IsNullOrWhiteSpace(titleRaw) ? "Request" : titleRaw!;
                 var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
                 var typeString = payload.TryGetProperty("type", out var typeEl) ? typeEl.GetString() : null;
                 var urgencyString = payload.TryGetProperty("urgency", out var urgEl) ? urgEl.GetString() : null;
@@ -183,12 +207,12 @@ internal static class RequestStateService
                 var hq = payload.TryGetProperty("hq", out var hqEl) && hqEl.GetBoolean();
                 var quantity = payload.TryGetProperty("quantity", out var qtyEl) ? qtyEl.GetInt32() : 0;
                 var assigneeId = payload.TryGetProperty("assigneeId", out var aEl) ? aEl.GetUInt32() : (uint?)null;
-                var description = payload.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? string.Empty : string.Empty;
-                var createdBy = payload.TryGetProperty("createdBy", out var cbEl) ? cbEl.GetString() ?? string.Empty : string.Empty;
+                var description = S(payload.TryGetProperty("description", out var descEl) ? descEl.GetString() : null);
+                var createdBy = S(payload.TryGetProperty("createdBy", out var cbEl) ? cbEl.GetString() : null);
                 DateTime createdAt = DateTime.MinValue;
                 if (payload.TryGetProperty("created", out var cEl))
                     cEl.TryGetDateTime(out createdAt);
-                if (id == null || statusString == null) continue;
+                if (string.IsNullOrEmpty(id) || string.IsNullOrWhiteSpace(statusString)) continue;
                 Upsert(new RequestState
                 {
                     Id = id,
@@ -209,7 +233,7 @@ internal static class RequestStateService
             }
             if (newToken != null)
             {
-                config.RequestsDeltaToken = newToken;
+                config.RequestsDeltaToken = SN(newToken) ?? string.Empty;
             }
             Prune();
         }
