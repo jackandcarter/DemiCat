@@ -61,7 +61,9 @@ class PresenceTracker(commands.Cog):
                 return None
         return None
 
-    async def _update(self, member: discord.Member) -> dict[str, str | None]:
+    async def _update(
+        self, member: discord.Member, *, _retry: bool = False
+    ) -> dict[str, str | None]:
         member_roles = [r for r in member.roles if r.name != "@everyone"]
         role_ids = [r.id for r in member_roles]
         role_details = [
