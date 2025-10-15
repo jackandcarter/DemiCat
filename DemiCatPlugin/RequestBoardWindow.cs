@@ -35,6 +35,14 @@ public class RequestBoardWindow
     private SortMode _sortMode = SortMode.MostRecent;
     private static readonly string[] SortLabels = { "Type", "Name", "Most Recent" };
 
+    private static string S(string? v) => string.IsNullOrWhiteSpace(v) ? string.Empty : v;
+    private static string? SN(object? v) => v switch
+    {
+        null => null,
+        string s => s,
+        _ => v.ToString()
+    };
+
     public RequestBoardWindow(Config config, HttpClient httpClient)
     {
         _config = config;
@@ -79,8 +87,9 @@ public class RequestBoardWindow
         foreach (var req in requests)
         {
             ImGui.PushID(req.Id);
-            ImGui.TextWrapped(string.IsNullOrEmpty(req.Description) ? req.Title : req.Description);
-            ImGui.TextUnformatted($"Created By: {req.CreatedBy}");
+            var displayText = string.IsNullOrWhiteSpace(req.Description) ? req.Title : req.Description;
+            ImGui.TextWrapped(S(displayText));
+            ImGui.TextUnformatted($"Created By: {S(req.CreatedBy)}");
             if (req.Status == RequestStatus.Approved)
             {
                 ImGui.TextUnformatted("[Legacy Status: Approved]");
@@ -107,7 +116,7 @@ public class RequestBoardWindow
             if (ImGui.Combo("Urgency", ref urgIdx, urgLabels, urgLabels.Length))
                 _newUrgency = (RequestUrgency)urgIdx;
             if (!string.IsNullOrEmpty(_createStatus))
-                ImGui.TextUnformatted(_createStatus);
+                ImGui.TextUnformatted(S(_createStatus));
             if (ImGui.Button("Create"))
             {
                 if (ValidateNewRequest())
@@ -192,8 +201,14 @@ public class RequestBoardWindow
                         _conflicts[req.Id] = true;
                         return;
                     }
-                    var id = payload.GetProperty("id").GetString() ?? req.Id;
-                    var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? req.Title : req.Title;
+                    var id = S(payload.GetProperty("id").GetString() ?? req.Id);
+                    if (string.IsNullOrEmpty(id))
+                    {
+                        _conflicts[req.Id] = true;
+                        return;
+                    }
+                    var titleRaw = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() : null;
+                    var title = string.IsNullOrWhiteSpace(titleRaw) ? req.Title : titleRaw!;
                     var statusStr = payload.GetProperty("status").GetString() ?? StatusToString(newStatus);
                     var typeStr = payload.TryGetProperty("type", out var typeEl) ? typeEl.GetString() ?? TypeToString(req.Type) : TypeToString(req.Type);
                     var urgencyStr = payload.TryGetProperty("urgency", out var uEl) ? uEl.GetString() ?? UrgencyToString(req.Urgency) : UrgencyToString(req.Urgency);
@@ -202,8 +217,8 @@ public class RequestBoardWindow
                     var hq = payload.TryGetProperty("hq", out var hEl) ? hEl.GetBoolean() : req.Hq;
                     var quantity = payload.TryGetProperty("quantity", out var qEl) ? qEl.GetInt32() : req.Quantity;
                     var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)req.AssigneeId;
-                    var description = payload.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? req.Description : req.Description;
-                    var createdBy = payload.TryGetProperty("created_by", out var cbEl) ? cbEl.GetString() ?? req.CreatedBy : req.CreatedBy;
+                    var description = S(payload.TryGetProperty("description", out var descEl) ? descEl.GetString() : req.Description);
+                    var createdBy = S(payload.TryGetProperty("created_by", out var cbEl) ? cbEl.GetString() : req.CreatedBy);
                     DateTime createdAt = req.CreatedAt;
                     if (payload.TryGetProperty("created", out var cEl))
                         cEl.TryGetDateTime(out createdAt);
@@ -258,7 +273,8 @@ public class RequestBoardWindow
                 var json = await resp.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(json);
                 var payload = doc.RootElement;
-                var title = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() ?? "Request" : "Request";
+                var titleRaw = payload.TryGetProperty("title", out var tEl) ? tEl.GetString() : null;
+                var title = string.IsNullOrWhiteSpace(titleRaw) ? "Request" : titleRaw!;
                 var statusStr = payload.TryGetProperty("status", out var sEl) ? sEl.GetString() ?? "open" : "open";
                 var typeStr = payload.TryGetProperty("type", out var tType) ? tType.GetString() ?? "item" : "item";
                 var urgencyStr = payload.TryGetProperty("urgency", out var uEl) ? uEl.GetString() ?? "low" : "low";
@@ -268,8 +284,8 @@ public class RequestBoardWindow
                 var hq = payload.TryGetProperty("hq", out var hEl) && hEl.GetBoolean();
                 var quantity = payload.TryGetProperty("quantity", out var qEl) ? qEl.GetInt32() : 0;
                 var assigneeId = payload.TryGetProperty("assignee_id", out var aEl) ? aEl.GetUInt32() : (uint?)null;
-                var description = payload.TryGetProperty("description", out var descEl) ? descEl.GetString() ?? string.Empty : string.Empty;
-                var createdBy = payload.TryGetProperty("created_by", out var cbEl) ? cbEl.GetString() ?? string.Empty : string.Empty;
+                var description = S(payload.TryGetProperty("description", out var descEl) ? descEl.GetString() : null);
+                var createdBy = S(payload.TryGetProperty("created_by", out var cbEl) ? cbEl.GetString() : null);
                 DateTime createdAt = DateTime.MinValue;
                 if (payload.TryGetProperty("created", out var cEl))
                     cEl.TryGetDateTime(out createdAt);
@@ -384,8 +400,8 @@ public class RequestBoardWindow
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests";
             var body = new
             {
-                title = _newTitle,
-                description = string.IsNullOrWhiteSpace(_newDescription) ? null : _newDescription,
+                title = S(_newTitle),
+                description = SN(string.IsNullOrWhiteSpace(_newDescription) ? null : _newDescription),
                 type = TypeToString(_newType),
                 urgency = UrgencyToString(_newUrgency)
             };
