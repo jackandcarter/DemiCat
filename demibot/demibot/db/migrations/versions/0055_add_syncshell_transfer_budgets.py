@@ -16,7 +16,10 @@ from sqlalchemy.dialects.mysql import BIGINT
 
 # revision identifiers, used by Alembic.
 revision: str = "0055_add_syncshell_transfer_budgets"
-down_revision: Union[str, None] = "0054_expand_channelkind_and_status_text"
+down_revision: Union[str, Sequence[str], None] = (
+    "0054_expand_channelkind_and_status_text",
+    "0054_add_syncshell_member_scope",
+)
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
