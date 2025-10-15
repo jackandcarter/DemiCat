@@ -14,7 +14,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "0056_add_requests_channel_kind"
-down_revision: Union[str, None] = "0054_expand_channelkind_and_status_text"
+down_revision: Union[str, None] = "0055_add_syncshell_transfer_budgets"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
