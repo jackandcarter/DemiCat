@@ -6,6 +6,8 @@ using System.Net;
 using System.Text.Json;
 using System.Threading.Tasks;
 
+using static DemiCatPlugin.StringUtil;
+
 namespace DemiCatPlugin;
 
 internal static class RequestStateService
@@ -13,14 +15,6 @@ internal static class RequestStateService
     private static readonly Dictionary<string, RequestState> RequestsMap = new();
     private static readonly object LockObj = new();
     private static Config? _config;
-
-    private static string S(string? v) => string.IsNullOrWhiteSpace(v) ? string.Empty : v;
-    private static string? SN(object? v) => v switch
-    {
-        null => null,
-        string s => s,
-        _ => v.ToString()
-    };
 
     public static IEnumerable<RequestState> All
     {
@@ -82,7 +76,7 @@ internal static class RequestStateService
         }
 
         state.Id = S(state.Id);
-        state.Title = string.IsNullOrWhiteSpace(state.Title) ? "Request" : state.Title;
+        state.Title = string.IsNullOrWhiteSpace(state.Title) ? "Request" : TrimLimit(state.Title);
         state.Description = S(state.Description);
         state.CreatedBy = S(state.CreatedBy);
 
@@ -197,7 +191,7 @@ internal static class RequestStateService
                     continue;
                 }
                 var titleRaw = payload.TryGetProperty("title", out var titleEl) ? titleEl.GetString() : null;
-                var title = string.IsNullOrWhiteSpace(titleRaw) ? "Request" : titleRaw!;
+                var title = string.IsNullOrWhiteSpace(titleRaw) ? "Request" : TrimLimit(titleRaw);
                 var statusString = payload.TryGetProperty("status", out var statusEl) ? statusEl.GetString() : null;
                 var typeString = payload.TryGetProperty("type", out var typeEl) ? typeEl.GetString() : null;
                 var urgencyString = payload.TryGetProperty("urgency", out var urgEl) ? urgEl.GetString() : null;

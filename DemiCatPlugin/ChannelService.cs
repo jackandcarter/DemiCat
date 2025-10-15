@@ -7,6 +7,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
+using static DemiCatPlugin.StringUtil;
+
 namespace DemiCatPlugin;
 
 public class ChannelService
@@ -17,14 +19,6 @@ public class ChannelService
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNameCaseInsensitive = true
-    };
-
-    private static string S(string? v) => string.IsNullOrWhiteSpace(v) ? string.Empty : v;
-    private static string? SN(object? v) => v switch
-    {
-        null => null,
-        string s => s,
-        _ => v.ToString()
     };
 
     public ChannelService(Config config, HttpClient httpClient, TokenManager tokenManager)
