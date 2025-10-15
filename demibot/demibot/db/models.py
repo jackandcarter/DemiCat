@@ -4,6 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
+import sqlalchemy as sa
 from sqlalchemy import (
     BigInteger,
     Boolean,
@@ -520,7 +521,7 @@ class Presence(Base):
     guild_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True), primary_key=True)
     status: Mapped[str] = mapped_column(String(16))
-    status_text: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    status_text: Mapped[Optional[str]] = mapped_column(sa.Text(), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow
     )
