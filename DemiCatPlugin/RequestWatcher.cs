@@ -43,12 +43,25 @@ public class RequestWatcher : IDisposable
         _task = Run(_cts.Token);
     }
 
-    public void Stop()
+    public async Task Stop()
     {
-        _cts?.Cancel();
-        try { _task?.GetAwaiter().GetResult(); } catch { }
+        var cts = _cts;
         _cts = null;
+
+        cts?.Cancel();
+        if (_task != null)
+        {
+            try
+            {
+                await _task.ConfigureAwait(false);
+            }
+            catch
+            {
+            }
+        }
+
         _task = null;
+        cts?.Dispose();
     }
 
     private async Task Run(CancellationToken token)
@@ -368,8 +381,7 @@ public class RequestWatcher : IDisposable
 
     public void Dispose()
     {
-        _cts?.Cancel();
-        try { _task?.GetAwaiter().GetResult(); } catch { }
+        _ = Stop();
         _cts?.Dispose();
         _cts = null;
         _task = null;

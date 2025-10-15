@@ -78,14 +78,18 @@ public sealed class SyncShellWatcher : ISyncShellWatcher
         }
 
         cts.Cancel();
-        try
+        if (task != null)
         {
-            task?.GetAwaiter().GetResult();
+            _ = task.ContinueWith(t =>
+            {
+                if (t.Exception != null)
+                {
+                    PluginServices.Instance?.Log.Debug(t.Exception, "SyncShell watcher stop fault");
+                }
+                cts.Dispose();
+            }, TaskScheduler.Default);
         }
-        catch
-        {
-        }
-        finally
+        else
         {
             cts.Dispose();
         }

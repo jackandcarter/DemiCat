@@ -57,6 +57,44 @@ internal sealed class Debouncer : IDisposable
         }
     }
 
+    public void Run(Func<Task> action)
+    {
+        if (action == null)
+        {
+            throw new ArgumentNullException(nameof(action));
+        }
+
+        lock (_lock)
+        {
+            ThrowIfDisposed();
+            _cts?.Cancel();
+            _cts?.Dispose();
+            _cts = new CancellationTokenSource();
+            var token = _cts.Token;
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(_delay, token).ConfigureAwait(false);
+                    if (token.IsCancellationRequested)
+                    {
+                        return;
+                    }
+
+                    await action().ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                }
+                catch (Exception ex)
+                {
+                    PluginServices.Instance?.Log.Warning(ex, "Debouncer action failed");
+                }
+            }, CancellationToken.None);
+        }
+    }
+
     private void ThrowIfDisposed()
     {
         if (_disposed)
