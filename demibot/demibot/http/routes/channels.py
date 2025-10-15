@@ -184,6 +184,7 @@ async def get_channels(
         ChannelKind.EVENT.value: ChannelKind.EVENT,
         ChannelKind.FC_CHAT.value: ChannelKind.FC_CHAT,
         ChannelKind.OFFICER_CHAT.value: ChannelKind.OFFICER_CHAT,
+        ChannelKind.REQUESTS.value: ChannelKind.REQUESTS,
     }
     if kind in single_kinds:
         channel_kind = single_kinds[kind]

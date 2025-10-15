@@ -376,7 +376,7 @@ DROP TABLE IF EXISTS `guild_channels`;
 CREATE TABLE `guild_channels` (
   `guild_id` int NOT NULL,
   `channel_id` bigint unsigned NOT NULL,
-  `kind` enum('chat','event','fc_chat','officer_chat','officer_visible') NOT NULL,
+  `kind` enum('chat','event','fc_chat','officer_chat','officer_visible','requests') NOT NULL,
   `name` varchar(255) DEFAULT NULL,
   `webhook_url` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`guild_id`,`channel_id`,`kind`),
@@ -810,7 +810,7 @@ CREATE TABLE `presences` (
   `user_id` bigint unsigned NOT NULL,
   `status` varchar(16) NOT NULL,
   `updated_at` datetime NOT NULL,
-  `status_text` varchar(128) DEFAULT NULL,
+  `status_text` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`guild_id`,`user_id`),
   KEY `ix_presences_guild_id_status` (`guild_id`,`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
