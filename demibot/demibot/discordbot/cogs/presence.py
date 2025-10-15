@@ -60,7 +60,9 @@ class PresenceTracker(commands.Cog):
                 return None
         return None
 
-    async def _update(self, member: discord.Member) -> dict[str, str | None]:
+    async def _update(
+        self, member: discord.Member, *, _retry: bool = False
+    ) -> dict[str, str | None]:
         member_roles = [r for r in member.roles if r.name != "@everyone"]
         role_ids = [r.id for r in member_roles]
         role_details = [
@@ -156,7 +158,16 @@ class PresenceTracker(commands.Cog):
                     discriminator=getattr(member, "discriminator", None),
                 )
                 db.add(user_row)
-                await db.flush()
+                try:
+                    await db.flush()
+                except IntegrityError:
+                    await db.rollback()
+                    if _retry:
+                        raise
+                    return await self._update(member, _retry=True)
+            else:
+                user_row.global_name = getattr(member, "global_name", None)
+                user_row.discriminator = getattr(member, "discriminator", None)
 
             mem_stmt = select(Membership).where(
                 Membership.guild_id == guild_row.id,
