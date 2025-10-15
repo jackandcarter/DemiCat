@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using Dalamud.Bindings.ImGui;
 using System.Numerics;
 
+using static DemiCatPlugin.StringUtil;
+
 namespace DemiCatPlugin;
 
 public class RequestBoardWindow
@@ -34,14 +36,6 @@ public class RequestBoardWindow
 
     private SortMode _sortMode = SortMode.MostRecent;
     private static readonly string[] SortLabels = { "Type", "Name", "Most Recent" };
-
-    private static string S(string? v) => string.IsNullOrWhiteSpace(v) ? string.Empty : v;
-    private static string? SN(object? v) => v switch
-    {
-        null => null,
-        string s => s,
-        _ => v.ToString()
-    };
 
     public RequestBoardWindow(Config config, HttpClient httpClient)
     {
@@ -382,11 +376,21 @@ public class RequestBoardWindow
 
     private bool ValidateNewRequest()
     {
+        var title = TrimLimit(_newTitle);
+        var desc = TrimLimit(_newDescription);
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            _createStatus = "Title is required.";
+            return false;
+        }
         if (_newTitle.Length > 2000 || _newDescription.Length > 2000)
         {
             _createStatus = "Title or description exceeds 2000 characters";
             return false;
         }
+        // Normalize fields in place so CreateRequest uses the sanitized values
+        _newTitle = title;
+        _newDescription = desc;
         _createStatus = string.Empty;
         return true;
     }
@@ -400,8 +404,8 @@ public class RequestBoardWindow
             var url = $"{_config.ApiBaseUrl.TrimEnd('/')}/api/requests";
             var body = new
             {
-                title = S(_newTitle),
-                description = SN(string.IsNullOrWhiteSpace(_newDescription) ? null : _newDescription),
+                title = TrimLimit(_newTitle),
+                description = NullIfWhite(TrimLimit(_newDescription)),
                 type = TypeToString(_newType),
                 urgency = UrgencyToString(_newUrgency)
             };
