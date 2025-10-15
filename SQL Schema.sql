@@ -810,7 +810,7 @@ CREATE TABLE `presences` (
   `user_id` bigint unsigned NOT NULL,
   `status` varchar(16) NOT NULL,
   `updated_at` datetime NOT NULL,
-  `status_text` varchar(255) DEFAULT NULL,
+  `status_text` text DEFAULT NULL,
   PRIMARY KEY (`guild_id`,`user_id`),
   KEY `ix_presences_guild_id_status` (`guild_id`,`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
