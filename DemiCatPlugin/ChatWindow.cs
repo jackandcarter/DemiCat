@@ -4907,6 +4907,7 @@ public class ChatWindow : IDisposable
             }
         });
     }
-}
+
     protected bool IsDisposed => Volatile.Read(ref _disposed) == 1;
+}
 
