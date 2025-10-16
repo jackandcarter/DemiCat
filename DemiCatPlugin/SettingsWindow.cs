@@ -1102,11 +1102,23 @@ public class SettingsWindow : IDisposable
         {
             if (ChannelWatcher != null)
             {
-                ChannelWatcher.Stop();
+                ChannelWatcher.Stop().GetAwaiter().GetResult();
             }
         }, "Failed to stop ChannelWatcher.");
-        SafeInvoke(() => RequestWatcher?.Stop(), "Failed to stop RequestWatcher.");
-        SafeInvoke(() => NotePadService?.Stop(), "Failed to stop NotePad service.");
+        SafeInvoke(() =>
+        {
+            if (RequestWatcher != null)
+            {
+                RequestWatcher.Stop().GetAwaiter().GetResult();
+            }
+        }, "Failed to stop RequestWatcher.");
+        SafeInvoke(() =>
+        {
+            if (NotePadService != null)
+            {
+                NotePadService.Stop().GetAwaiter().GetResult();
+            }
+        }, "Failed to stop NotePad service.");
         SafeInvoke(() =>
         {
             var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;

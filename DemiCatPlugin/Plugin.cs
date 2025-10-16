@@ -822,7 +822,7 @@ public class Plugin : IDalamudPlugin
             var frameworkInner = PluginServices.Instance?.Framework ?? _services.Framework;
             if (frameworkInner != null)
             {
-                frameworkInner.RunOnTick(UpdateUi);
+            _ = frameworkInner.RunOnTick(UpdateUi);
             }
             else
             {
