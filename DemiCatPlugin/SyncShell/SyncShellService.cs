@@ -567,6 +567,26 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
         return true;
     }
 
+    public void RefreshAppearanceCaches()
+    {
+        EnsureNotDisposed();
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await RefreshAppearanceCachesAsync().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                _log.Warning(ex, "Failed to refresh appearance caches");
+            }
+        }, CancellationToken.None);
+    }
+
     public void Dispose()
     {
         if (_disposed)
@@ -766,7 +786,7 @@ public sealed class SyncShellService : ISyncShellService, IDisposable
             }
         }, CancellationToken.None);
 
-        _ = Task.Run(RefreshAppearanceCaches, CancellationToken.None);
+        RefreshAppearanceCaches();
     }
 
     private void HandleWatcherNearbySet(string[] handles)
