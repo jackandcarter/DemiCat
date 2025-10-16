@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using DemiCatPlugin;
+using System.Text.Json;
 using Xunit;
 
 public class ChatBridgeNoTokenTests
@@ -105,6 +106,88 @@ public class ChatBridgeNoTokenTests
 
 #if TEST
         Assert.Contains("{\"op\":\"sub\",\"channels\":[]}", frames);
+#endif
+    }
+
+    [Fact]
+    public async Task Send_FormatsPayloadForServerCompatibility()
+    {
+        var handler = new SuccessHandler();
+        var client = new HttpClient(handler);
+        var config = new Config { ApiBaseUrl = "http://localhost" };
+        var tm = new TokenManager();
+        var bridge = new ChatBridge(config, client, tm, () => new Uri("ws://localhost"), new ChannelSelectionService(config));
+
+#if TEST
+        var frames = new List<string>();
+        bridge.ForceWebSocketOpen = true;
+        bridge.SendRawInterceptor = frames.Add;
+#endif
+
+        var payload = new
+        {
+            content = "hello",
+            embedColor = 42,
+            metadata = new { nested = true }
+        };
+
+        await bridge.Send("123", payload);
+
+#if TEST
+        var frame = Assert.Single(frames);
+        using var doc = JsonDocument.Parse(frame);
+        var root = doc.RootElement;
+        Assert.Equal("send", root.GetProperty("op").GetString());
+        Assert.Equal("123", root.GetProperty("channel").GetString());
+        var data = root.GetProperty("d");
+        Assert.Equal("hello", data.GetProperty("content").GetString());
+        Assert.Equal(42, data.GetProperty("embedColor").GetInt32());
+        Assert.True(data.GetProperty("metadata").GetProperty("nested").GetBoolean());
+#endif
+    }
+
+    [Fact]
+    public async Task AckAsync_UsesCurFieldForCursorUpdates()
+    {
+        var handler = new SuccessHandler();
+        var client = new HttpClient(handler);
+        var config = new Config { ApiBaseUrl = "http://localhost", GuildId = "guild" };
+        var tm = new TokenManager();
+        var bridge = new ChatBridge(config, client, tm, () => new Uri("ws://localhost"), new ChannelSelectionService(config));
+
+#if TEST
+        var frames = new List<string>();
+        bridge.ForceWebSocketOpen = true;
+        bridge.SendRawInterceptor = frames.Add;
+#endif
+
+        bridge.Subscribe("123", config.GuildId, ChannelKind.Chat);
+
+        await Task.Delay(10);
+
+#if TEST
+        frames.Clear();
+#endif
+
+        var cursorsField = typeof(ChatBridge).GetField("_cursors", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var ackedField = typeof(ChatBridge).GetField("_acked", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var cursors = (Dictionary<string, long>)cursorsField.GetValue(bridge)!;
+        var acked = (Dictionary<string, long>)ackedField.GetValue(bridge)!;
+        var key = ChannelKeyHelper.BuildCursorKey(config.GuildId, ChannelKind.Chat, "123");
+        cursors[key] = 9876;
+        acked.Remove(key);
+
+        var ackAsync = typeof(ChatBridge).GetMethod("AckAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        var task = (Task)ackAsync.Invoke(bridge, new object[] { "123" })!;
+        await task;
+
+#if TEST
+        var frame = Assert.Single(frames);
+        using var doc = JsonDocument.Parse(frame);
+        var root = doc.RootElement;
+        Assert.Equal("ack", root.GetProperty("op").GetString());
+        Assert.Equal("123", root.GetProperty("channel").GetString());
+        Assert.Equal(9876, root.GetProperty("cur").GetInt64());
 #endif
     }
 
