@@ -1079,6 +1079,48 @@ def test_chat_ws_unsubscribe_cleans_channel_state(monkeypatch):
     _run(scenario())
 
 
+def test_chat_ws_sub_accepts_lowercase_kind(monkeypatch):
+    async def scenario():
+        manager = ws_chat.ChatConnectionManager()
+        ws = StubWebSocket()
+        ctx = RequestContext(
+            user=types.SimpleNamespace(character_name=None),
+            guild=types.SimpleNamespace(id=1, discord_guild_id=777),
+            key=types.SimpleNamespace(),
+            roles=[],
+        )
+        connection = ws_chat.ChatConnection(ctx=ctx)
+        manager.connections[ws] = connection
+
+        channel_id = "55"
+        meta = ws_chat.ChannelMeta(guild_id=1, discord_guild_id=777, kind="FC_CHAT")
+
+        async def fake_fetch(channels):
+            assert channels == {channel_id}
+            return {channel_id: meta}
+
+        monkeypatch.setattr(manager, "_fetch_channel_meta_bulk", fake_fetch)
+
+        request = {"channels": [{"id": channel_id, "kind": "fc_chat", "guildId": "777"}]}
+        await manager.sub(ws, request)
+
+        assert channel_id in connection.channels
+        assert connection.metadata[channel_id].kind == "FC_CHAT"
+        assert connection.metadata[channel_id].guild_id_value() == "777"
+
+        assert len(ws.sent) >= 2
+        ack = json.loads(ws.sent[0])
+        resync = json.loads(ws.sent[1])
+        assert ack["op"] == "ack"
+        assert ack["kind"] == "FC_CHAT"
+        assert ack["guildId"] == "777"
+        assert resync["op"] == "resync"
+        assert resync["kind"] == "FC_CHAT"
+        assert resync["guildId"] == "777"
+
+    _run(scenario())
+
+
 def test_chat_ws_history_global_cap(monkeypatch):
     async def scenario():
         manager = ws_chat.ChatConnectionManager()
