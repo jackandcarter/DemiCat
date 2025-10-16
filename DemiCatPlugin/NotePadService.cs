@@ -722,12 +722,38 @@ public sealed class NotePadService : IDisposable
             catch (HttpRequestException ex)
             {
                 PluginServices.Instance?.Log.Warning(ex, "NotePad websocket transport error");
-                ShowThrottledToast("NotePad connection failed", ex.Message);
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    _tokenManager.Clear("Authentication failed");
+                    ShowThrottledToast("NotePad connection failed", "Authentication failed");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowThrottledToast("NotePad connection failed", "Forbidden – check API key/roles");
+                }
+                else
+                {
+                    ShowThrottledToast("NotePad connection failed", ex.Message);
+                }
             }
             catch (WebSocketException ex)
             {
                 PluginServices.Instance?.Log.Warning(ex, "NotePad websocket error");
-                ShowThrottledToast("NotePad connection failed", ex.Message);
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    _tokenManager.Clear("Authentication failed");
+                    ShowThrottledToast("NotePad connection failed", "Authentication failed");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowThrottledToast("NotePad connection failed", "Forbidden – check API key/roles");
+                }
+                else
+                {
+                    ShowThrottledToast("NotePad connection failed", ex.Message);
+                }
             }
             catch (Exception ex)
             {

@@ -157,6 +157,16 @@ public sealed class SyncShellWatcher : ISyncShellWatcher
             }
             catch (Exception ex)
             {
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    _tokenManager.Clear("Authentication failed");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    _log.Warning("SyncShell watcher forbidden; check API key/roles");
+                }
+
                 _attempt++;
                 _log.Warning(ex, "SyncShell watcher connection failed (attempt {Attempt})", _attempt);
             }

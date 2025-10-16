@@ -58,6 +58,7 @@ public class ChatBridge : IChatBridge
     private static readonly JsonSerializerOptions JsonOpts = new() { PropertyNameCaseInsensitive = true };
     private static readonly TimeSpan DefaultConnectTimeout = TimeSpan.FromSeconds(10);
     private const string ForbiddenMessage = "Forbidden – check API key/roles";
+    private const string InvalidTokenMessage = "Invalid API key";
     private bool _permissionWarningShown;
     private static void OnFramework(Action action)
         => PluginServices.Instance?.Framework.RunOnTick(action);
@@ -751,6 +752,7 @@ public class ChatBridge : IChatBridge
             }
 
             var forbidden = false;
+            var unauthorized = false;
             Exception? transportError = null;
             var failureStage = "connect";
             var connected = false;
@@ -823,25 +825,45 @@ public class ChatBridge : IChatBridge
             }
             catch (HttpRequestException ex)
             {
-                forbidden = ex.StatusCode == HttpStatusCode.Forbidden;
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                forbidden = status == HttpStatusCode.Forbidden;
+                unauthorized = status == HttpStatusCode.Unauthorized;
                 transportError = ex;
                 failureStage = connected ? "receive" : "connect";
             }
             catch (WebSocketException ex)
             {
-                forbidden = ex.Message?.Contains("403", StringComparison.Ordinal) == true
-                    || (ex.InnerException as HttpRequestException)?.StatusCode == HttpStatusCode.Forbidden;
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                forbidden = status == HttpStatusCode.Forbidden;
+                unauthorized = status == HttpStatusCode.Unauthorized;
                 transportError = ex;
                 failureStage = connected ? "receive" : "connect";
             }
             catch (IOException ex)
             {
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Forbidden)
+                {
+                    forbidden = true;
+                }
+                if (status == HttpStatusCode.Unauthorized)
+                {
+                    unauthorized = true;
+                }
                 transportError = ex;
                 failureStage = connected ? "receive" : "connect";
             }
             catch (Exception ex)
             {
-                forbidden |= (ex.InnerException as HttpRequestException)?.StatusCode == HttpStatusCode.Forbidden;
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Forbidden)
+                {
+                    forbidden = true;
+                }
+                if (status == HttpStatusCode.Unauthorized)
+                {
+                    unauthorized = true;
+                }
                 transportError = ex;
                 failureStage = connected ? "receive" : "connect";
             }
@@ -878,7 +900,15 @@ public class ChatBridge : IChatBridge
                 LogConnectionException(transportError, failureStage);
             }
 
-            if (forbidden)
+            if (unauthorized)
+            {
+                ResetState();
+                OnFramework(() => Unlinked?.Invoke());
+                _tokenValid = false;
+                _tokenManager.Clear("Invalid API key");
+                OnFramework(() => StatusChanged?.Invoke(InvalidTokenMessage));
+            }
+            else if (forbidden)
             {
                 ShowPermissionWarning();
                 ResetState();
@@ -892,11 +922,13 @@ public class ChatBridge : IChatBridge
             }
             _reconnectAttempt++;
             var backoff = GetReconnectDelay(_reconnectAttempt);
-            var statusMessage = forbidden
-                ? ForbiddenMessage
-                : connectTimedOut
-                    ? "Connection timed out; retrying..."
-                    : $"Reconnecting in {backoff.TotalSeconds:0.#}s...";
+            var statusMessage = unauthorized
+                ? InvalidTokenMessage
+                : forbidden
+                    ? ForbiddenMessage
+                    : connectTimedOut
+                        ? "Connection timed out; retrying..."
+                        : $"Reconnecting in {backoff.TotalSeconds:0.#}s...";
             OnFramework(() => StatusChanged?.Invoke(statusMessage));
             await DelayWithBackoff(backoff, token);
         }

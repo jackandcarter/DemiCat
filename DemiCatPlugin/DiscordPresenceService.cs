@@ -758,6 +758,19 @@ public class DiscordPresenceService : IDisposable
 
     private void HandleConnectionException(Exception ex)
     {
+        var status = ApiHelpers.ExtractStatusCode(ex);
+        if (status == HttpStatusCode.Unauthorized)
+        {
+            TokenManager.Instance?.Clear("Invalid API key");
+            UpdateStatusMessage("Authentication failed");
+            return;
+        }
+
+        if (status == HttpStatusCode.Forbidden)
+        {
+            UpdateStatusMessage("Forbidden – check API key/roles");
+        }
+
         LogConnectionException(ex, "connect");
         UpdateStatusMessage($"Connection failed: {ex.Message}");
     }

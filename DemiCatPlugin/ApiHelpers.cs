@@ -2,6 +2,7 @@ using System;
 using System.Net.Http;
 using System.Net.WebSockets;
 using System.Net;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -9,6 +10,9 @@ namespace DemiCatPlugin;
 
 internal static class ApiHelpers
 {
+    private static readonly Regex StatusCodeRegex =
+        new("status code '?([0-9]{3})'?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     internal static bool ValidateApiBaseUrl(Config config)
     {
         if (!Uri.TryCreate(config.ApiBaseUrl, UriKind.Absolute, out var uri) ||
@@ -30,6 +34,51 @@ internal static class ApiHelpers
             request.Headers.Add("X-Api-Key", token);
         }
     }
+
+    internal static HttpStatusCode? ExtractStatusCode(Exception ex)
+    {
+        Exception? current = ex;
+        while (current != null)
+        {
+            if (current is HttpRequestException http && http.StatusCode.HasValue)
+            {
+                return http.StatusCode.Value;
+            }
+
+            if (current is WebSocketException ws)
+            {
+                if (ws.InnerException != null)
+                {
+                    var inner = ExtractStatusCode(ws.InnerException);
+                    if (inner.HasValue)
+                    {
+                        return inner.Value;
+                    }
+                }
+
+                var message = ws.Message;
+                if (!string.IsNullOrEmpty(message))
+                {
+                    var match = StatusCodeRegex.Match(message);
+                    if (match.Success && int.TryParse(match.Groups[1].Value, out var numeric) &&
+                        Enum.IsDefined(typeof(HttpStatusCode), numeric))
+                    {
+                        return (HttpStatusCode)numeric;
+                    }
+                }
+            }
+
+            current = current.InnerException;
+        }
+
+        return null;
+    }
+
+    internal static bool IsUnauthorized(Exception ex)
+        => ExtractStatusCode(ex) == HttpStatusCode.Unauthorized;
+
+    internal static bool IsForbidden(Exception ex)
+        => ExtractStatusCode(ex) == HttpStatusCode.Forbidden;
 
     internal static void AddAuthHeader(ClientWebSocket socket, TokenManager tokenManager)
         => AddAuthHeader(socket, tokenManager.Token);

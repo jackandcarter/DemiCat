@@ -497,21 +497,57 @@ public class UiRenderer : IAsyncDisposable, IDisposable
             catch (HttpRequestException ex)
             {
                 LogWebSocketException(ex, "connect");
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized)
+                {
+                    TokenManager.Instance?.Clear("Invalid API key");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionToast();
+                }
                 ScheduleNextWebSocketAttempt();
             }
             catch (WebSocketException ex)
             {
                 LogWebSocketException(ex, "connect");
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized)
+                {
+                    TokenManager.Instance?.Clear("Invalid API key");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionToast();
+                }
                 ScheduleNextWebSocketAttempt();
             }
             catch (IOException ex)
             {
                 LogWebSocketException(ex, "connect");
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized)
+                {
+                    TokenManager.Instance?.Clear("Invalid API key");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionToast();
+                }
                 ScheduleNextWebSocketAttempt();
             }
             catch (Exception ex)
             {
                 LogWebSocketException(ex, "connect");
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized)
+                {
+                    TokenManager.Instance?.Clear("Invalid API key");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionToast();
+                }
                 ScheduleNextWebSocketAttempt();
             }
             finally

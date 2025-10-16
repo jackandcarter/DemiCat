@@ -156,36 +156,61 @@ public class RequestWatcher : IDisposable
             catch (HttpRequestException ex)
             {
                 hadTransportError = true;
-                if (ex.StatusCode == HttpStatusCode.Unauthorized)
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
                 {
-                    if (_tokenManager.IsReady())
-                    {
-                        _tokenManager.Clear("Authentication failed");
-                    }
+                    _tokenManager.Clear("Authentication failed");
                 }
-                else if (ex.StatusCode == HttpStatusCode.Forbidden)
+                else if (status == HttpStatusCode.Forbidden)
                 {
                     ShowPermissionWarning();
                 }
+
                 LogConnectionException(ex, "connect");
             }
             catch (WebSocketException ex)
             {
                 hadTransportError = true;
-                if (ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    _tokenManager.Clear("Authentication failed");
+                }
+                else if (status == HttpStatusCode.Forbidden || ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
                     ShowPermissionWarning();
                 }
+
                 LogConnectionException(ex, "connect");
             }
             catch (IOException ex)
             {
                 hadTransportError = true;
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    _tokenManager.Clear("Authentication failed");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionWarning();
+                }
+
                 LogConnectionException(ex, "connect");
             }
             catch (Exception ex)
             {
                 hadTransportError = true;
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    _tokenManager.Clear("Authentication failed");
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionWarning();
+                }
+
                 PluginServices.Instance?.Log.Error(ex, "Request watcher loop failed");
             }
             finally
