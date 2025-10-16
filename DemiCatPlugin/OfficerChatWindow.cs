@@ -24,6 +24,7 @@ public class OfficerChatWindow : ChatWindow
     private bool _subscribed;
     private readonly PresenceSidebar? _presenceSidebar;
     private float _presenceWidth = 200f;
+    private CancellationTokenSource? _refreshRolesCts;
 
     protected override bool MentionsEnabled => true;
 
@@ -94,6 +95,11 @@ public class OfficerChatWindow : ChatWindow
 
     public override void StartNetworking()
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         if (!OfficerPermissions.HasAccess(_config))
         {
             MarkNetworkingStopped();
@@ -390,6 +396,12 @@ public class OfficerChatWindow : ChatWindow
 
     private void Subscribe()
     {
+        if (IsDisposed)
+        {
+            _subscribed = false;
+            return;
+        }
+
         var subscribed = TrySubscribeCurrentChannel(force: true);
         if (!subscribed)
         {
@@ -409,6 +421,11 @@ public class OfficerChatWindow : ChatWindow
 
     private async Task RefreshRoles()
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         if (!_tokenManager.IsReady() || !ApiHelpers.ValidateApiBaseUrl(_config))
         {
             return;
@@ -494,16 +511,77 @@ public class OfficerChatWindow : ChatWindow
 
     private void TryRefreshRoles()
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         if (DateTime.UtcNow - _lastRolesRefresh < TimeSpan.FromSeconds(30))
         {
             return;
         }
         _lastRolesRefresh = DateTime.UtcNow;
-        _ = PluginServices.Instance!.Framework.RunOnTick(async () => await RefreshRoles());
+
+        var services = PluginServices.Instance;
+        var framework = services?.Framework;
+
+        var cts = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _refreshRolesCts, cts);
+        previous?.Cancel();
+        previous?.Dispose();
+
+        async Task RunAsync()
+        {
+            try
+            {
+                if (IsDisposed || cts.IsCancellationRequested)
+                {
+                    return;
+                }
+
+                await RefreshRoles().ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            finally
+            {
+                if (Interlocked.CompareExchange(ref _refreshRolesCts, null, cts) == cts)
+                {
+                    cts.Dispose();
+                }
+                else
+                {
+                    cts.Dispose();
+                }
+            }
+        }
+
+        if (framework != null)
+        {
+            _ = framework.RunOnTick(async () => await RunAsync());
+        }
+        else
+        {
+            _ = Task.Run(RunAsync);
+        }
     }
 
     public new void Dispose()
     {
+        var cts = Interlocked.Exchange(ref _refreshRolesCts, null);
+        if (cts != null)
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch
+            {
+            }
+            cts.Dispose();
+        }
+
         _bridge.StatusChanged -= OnBridgeStatusChangedForOfficer;
         base.Dispose();
     }

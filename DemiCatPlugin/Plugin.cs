@@ -249,7 +249,15 @@ public class Plugin : IDalamudPlugin
 
     public void Dispose()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _disposed = true;
+
+        ScheduleWatcherShutdown();
+
         _queueMetricsTimer.Dispose();
         WebTextureCache.FetchOverride = null;
 
@@ -327,6 +335,28 @@ public class Plugin : IDalamudPlugin
         if (services != null)
         {
             services.ProgressOverlay = null;
+        }
+    }
+
+    private void ScheduleWatcherShutdown()
+    {
+        try
+        {
+            var stopTask = StopWatchersAsync();
+            if (!stopTask.IsCompleted)
+            {
+                _ = stopTask.ContinueWith(t =>
+                {
+                    if (t.Exception != null)
+                    {
+                        _services.Log.Warning(t.Exception.Flatten().InnerException ?? t.Exception, "Failed to stop watchers during dispose");
+                    }
+                }, TaskScheduler.Default);
+            }
+        }
+        catch (Exception ex)
+        {
+            _services.Log.Error(ex, "Failed to schedule watcher shutdown");
         }
     }
 
