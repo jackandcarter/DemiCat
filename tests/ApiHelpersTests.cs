@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Net.WebSockets;
 using System.Reflection;
 using System.Text;
 using System.Threading;
@@ -145,5 +146,24 @@ public class ApiHelpersTests
         {
             RestorePluginServices(previousServices);
         }
+    }
+
+    [Fact]
+    public void ExtractStatusCode_FromHttpRequestException()
+    {
+        var ex = new HttpRequestException("auth", null, HttpStatusCode.Unauthorized);
+        Assert.Equal(HttpStatusCode.Unauthorized, ApiHelpers.ExtractStatusCode(ex));
+        Assert.True(ApiHelpers.IsUnauthorized(ex));
+        Assert.False(ApiHelpers.IsForbidden(ex));
+    }
+
+    [Fact]
+    public void ExtractStatusCode_FromWebSocketExceptionMessage()
+    {
+        var message = "The server returned status code '403' when status code '101' was expected.";
+        var ex = new WebSocketException(WebSocketError.Success, message);
+        Assert.Equal(HttpStatusCode.Forbidden, ApiHelpers.ExtractStatusCode(ex));
+        Assert.True(ApiHelpers.IsForbidden(ex));
+        Assert.False(ApiHelpers.IsUnauthorized(ex));
     }
 }

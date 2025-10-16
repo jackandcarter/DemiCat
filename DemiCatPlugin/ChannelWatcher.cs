@@ -201,35 +201,89 @@ public class ChannelWatcher : IDisposable
             catch (HttpRequestException ex)
             {
                 hadTransportError = true;
-                retryStatusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : null;
-                retryStatusDetail = ex.StatusCode?.ToString() ?? ex.Message;
-                if (ex.StatusCode == HttpStatusCode.Forbidden)
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status.HasValue)
+                {
+                    retryStatusCode = (int)status.Value;
+                    retryStatusDetail = status.Value.ToString();
+                }
+                else
+                {
+                    retryStatusCode = ex.StatusCode.HasValue ? (int)ex.StatusCode.Value : null;
+                    retryStatusDetail = ex.StatusCode?.ToString() ?? ex.Message;
+                }
+
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
+                    _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
+                }
+                else if (status == HttpStatusCode.Forbidden)
                 {
                     ShowPermissionWarning();
                 }
+
                 LogConnectionException(ex, "connect");
             }
             catch (WebSocketException ex)
             {
                 hadTransportError = true;
-                if (ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation || ex.Message?.Contains("403", StringComparison.Ordinal) == true)
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status.HasValue)
+                {
+                    retryStatusCode = (int)status.Value;
+                    retryStatusDetail = status.Value.ToString();
+                }
+                else
+                {
+                    retryStatusCode = (int)ex.WebSocketErrorCode;
+                    retryStatusDetail = ex.WebSocketErrorCode.ToString();
+                }
+
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
+                    _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
+                }
+                else if (status == HttpStatusCode.Forbidden || ws?.CloseStatus == WebSocketCloseStatus.PolicyViolation)
                 {
                     ShowPermissionWarning();
                 }
-                retryStatusCode = (int)ex.WebSocketErrorCode;
-                retryStatusDetail = ex.WebSocketErrorCode.ToString();
+
                 LogConnectionException(ex, "connect");
             }
             catch (IOException ex)
             {
                 hadTransportError = true;
-                retryStatusDetail = ex.Message;
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
+                    _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionWarning();
+                }
+
+                retryStatusDetail = status?.ToString() ?? ex.Message;
                 LogConnectionException(ex, "connect");
             }
             catch (Exception ex)
             {
                 hadTransportError = true;
-                retryStatusDetail = ex.Message;
+                var status = ApiHelpers.ExtractStatusCode(ex);
+                if (status == HttpStatusCode.Unauthorized && _tokenManager.IsReady())
+                {
+                    PluginServices.Instance!.Log.Warning("Clearing stored token after channel watcher auth failure.");
+                    _ = Task.Run(() => _tokenManager.Clear("Authentication failed"));
+                }
+                else if (status == HttpStatusCode.Forbidden)
+                {
+                    ShowPermissionWarning();
+                }
+
+                retryStatusDetail = status?.ToString() ?? ex.Message;
                 LogConnectionException(ex, "loop");
             }
             finally
