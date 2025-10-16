@@ -67,7 +67,7 @@ public sealed class NotePadService : IDisposable
 
     public void Start()
     {
-        Stop();
+        Stop().GetAwaiter().GetResult();
         _cts = new CancellationTokenSource();
         _task = Task.Run(() => RunAsync(_cts.Token));
     }
