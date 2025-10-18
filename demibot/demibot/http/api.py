@@ -82,7 +82,16 @@ def create_app() -> FastAPI:
     from . import routes as routes_pkg
 
     for _, module_name, _ in pkgutil.iter_modules(routes_pkg.__path__):
-        module = import_module(f"{routes_pkg.__name__}.{module_name}")
+        try:
+            module = import_module(f"{routes_pkg.__name__}.{module_name}")
+        except ImportError as exc:
+            logger.warning(
+                "routes.import_failed",
+                module=module_name,
+                error=str(exc),
+            )
+            continue
+
         router = getattr(module, "router", None)
         if router is not None:
             app.include_router(router)
