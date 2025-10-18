@@ -54,6 +54,7 @@ except Exception:  # pragma: no cover - fallback when discord.utils missing
 from fastapi import HTTPException, UploadFile
 from pydantic import BaseModel, Field, ConfigDict, model_validator, field_validator
 from sqlalchemy import select
+from sqlalchemy.dialects.mysql import insert as mysql_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..deps import RequestContext
@@ -1090,30 +1091,38 @@ async def fetch_messages(
                 if author_avatar is not None:
                     user_kwargs["avatar_url"] = getattr(author_avatar, "url", None)
                 user = await get_or_create_user(db, **user_kwargs)
-                db.add(
-                    Message(
-                        discord_message_id=msg.id,
-                        channel_id=msg.channel.id,
-                        guild_id=ctx.guild.id,
-                        author_id=user.id,
-                        author_name=dto.author_name,
-                        author_avatar_url=dto.author_avatar_url,
-                        content_raw=msg.content,
-                        content_display=msg.content,
-                        content=dto.content,
-                        attachments_json=fragments["attachments_json"],
-                        mentions_json=fragments["mentions_json"],
-                        author_json=fragments["author_json"],
-                        embeds_json=fragments["embeds_json"],
-                        reference_json=fragments["reference_json"],
-                        components_json=fragments["components_json"],
-                        reactions_json=fragments["reactions_json"],
-                        edited_timestamp=dto.edited_timestamp,
-                        is_officer=is_officer,
-                        created_at=msg.created_at,
-                    )
+                message_data = {
+                    "discord_message_id": msg.id,
+                    "channel_id": msg.channel.id,
+                    "guild_id": ctx.guild.id,
+                    "author_id": user.id,
+                    "author_name": dto.author_name,
+                    "author_avatar_url": dto.author_avatar_url,
+                    "content_raw": msg.content,
+                    "content_display": msg.content,
+                    "content": dto.content,
+                    "attachments_json": fragments["attachments_json"],
+                    "mentions_json": fragments["mentions_json"],
+                    "author_json": fragments["author_json"],
+                    "embeds_json": fragments["embeds_json"],
+                    "reference_json": fragments["reference_json"],
+                    "components_json": fragments["components_json"],
+                    "reactions_json": fragments["reactions_json"],
+                    "edited_timestamp": dto.edited_timestamp,
+                    "is_officer": is_officer,
+                    "created_at": msg.created_at,
+                }
+                insert_stmt = mysql_insert(Message).values(**message_data)
+                update_cols = {
+                    key: insert_stmt.inserted[key]
+                    for key in message_data
+                    if key != "discord_message_id"
+                }
+                result = await db.execute(
+                    insert_stmt.on_duplicate_key_update(**update_cols)
                 )
-                inserted = True
+                if result.rowcount:
+                    inserted = True
             if inserted:
                 await db.commit()
                 result = await db.execute(stmt)
@@ -1672,28 +1681,33 @@ async def save_message(
         mapping.embed_json = fragments["embeds_json"]
         mapping.nonce = nonce
 
-    msg = Message(
-        discord_message_id=discord_msg_id,
-        channel_id=cid,
-        guild_id=ctx.guild.id,
-        author_id=ctx.user.id,
-        author_name=author.name,
-        author_avatar_url=author.avatar_url,
-        content_raw=body.content,
-        content_display=body.content,
-        content=bridge_content,
-        author_json=fragments["author_json"],
-        attachments_json=fragments["attachments_json"],
-        mentions_json=fragments["mentions_json"],
-        embeds_json=fragments["embeds_json"],
-        reference_json=fragments["reference_json"],
-        components_json=fragments["components_json"],
-        reactions_json=fragments["reactions_json"],
-        is_officer=is_officer,
-    )
-    db.add(msg)
+    message_data = {
+        "discord_message_id": discord_msg_id,
+        "channel_id": cid,
+        "guild_id": ctx.guild.id,
+        "author_id": ctx.user.id,
+        "author_name": author.name,
+        "author_avatar_url": author.avatar_url,
+        "content_raw": body.content,
+        "content_display": body.content,
+        "content": bridge_content,
+        "author_json": fragments["author_json"],
+        "attachments_json": fragments["attachments_json"],
+        "mentions_json": fragments["mentions_json"],
+        "embeds_json": fragments["embeds_json"],
+        "reference_json": fragments["reference_json"],
+        "components_json": fragments["components_json"],
+        "reactions_json": fragments["reactions_json"],
+        "is_officer": is_officer,
+    }
+    insert_stmt = mysql_insert(Message).values(**message_data)
+    update_cols = {
+        key: insert_stmt.inserted[key]
+        for key in message_data
+        if key != "discord_message_id"
+    }
+    await db.execute(insert_stmt.on_duplicate_key_update(**update_cols))
     await db.commit()
-    await db.refresh(msg)
 
     payload = dto.model_dump(mode="json", by_alias=True, exclude_none=True)
     await manager.broadcast_text(

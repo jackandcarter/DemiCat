@@ -15,6 +15,7 @@ import os
 import pkgutil
 
 from fastapi import FastAPI
+from sqlalchemy import text
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
@@ -22,6 +23,7 @@ import structlog
 
 from .ws import websocket_endpoint
 from .ws_chat import websocket_endpoint_chat
+from ..db.session import get_session
 
 
 logger = structlog.get_logger()
@@ -78,6 +80,14 @@ def create_app() -> FastAPI:
     async def health() -> dict[str, str]:
         """Simple health check endpoint."""
         return {"status": "ok"}
+
+    @app.get("/ready")
+    async def ready() -> dict[str, str]:
+        """Readiness probe that verifies database connectivity."""
+
+        async with get_session() as session:
+            await session.execute(text("SELECT 1"))
+        return {"status": "ready"}
 
     # Dynamically include routers from all modules in the routes package
     from . import routes as routes_pkg
