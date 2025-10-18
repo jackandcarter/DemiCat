@@ -536,6 +536,10 @@ public class DiscordPresenceService : IDisposable
             var presence = _presences[idx];
             var oldId = presence.Id;
             MutatePresenceInPlace(presence, dto);
+            if (!string.Equals(oldId, presence.Id, StringComparison.Ordinal))
+            {
+                PluginServices.Instance?.Log.Warning($"Presence Id changed {oldId} -> {presence.Id}");
+            }
             UpdateIndexForIdChange(idx, oldId, presence.Id);
         }
         else
@@ -546,6 +550,10 @@ public class DiscordPresenceService : IDisposable
                 var presence = _presences[idx];
                 var oldId = presence.Id;
                 MutatePresenceInPlace(presence, dto);
+                if (!string.Equals(oldId, presence.Id, StringComparison.Ordinal))
+                {
+                    PluginServices.Instance?.Log.Warning($"Presence Id changed {oldId} -> {presence.Id}");
+                }
                 UpdateIndexForIdChange(idx, oldId, presence.Id);
             }
             else
@@ -577,6 +585,7 @@ public class DiscordPresenceService : IDisposable
                 existing.AvatarTexture = null;
                 existing.AvatarLoadFailed = false;
                 existing.AvatarLoadRequested = false;
+                existing.AvatarFailedAt = null;
                 changed = true;
             }
         }
@@ -589,6 +598,7 @@ public class DiscordPresenceService : IDisposable
                 existing.BannerTexture = null;
                 existing.BannerLoadFailed = false;
                 existing.BannerLoadRequested = false;
+                existing.BannerFailedAt = null;
                 changed = true;
             }
         }
@@ -607,6 +617,7 @@ public class DiscordPresenceService : IDisposable
         {
             existing.AvatarTexture = dto.AvatarTexture;
             existing.AvatarLoadFailed = false;
+            existing.AvatarFailedAt = null;
             changed = true;
         }
 
@@ -614,6 +625,7 @@ public class DiscordPresenceService : IDisposable
         {
             existing.BannerTexture = dto.BannerTexture;
             existing.BannerLoadFailed = false;
+            existing.BannerFailedAt = null;
             changed = true;
         }
 
