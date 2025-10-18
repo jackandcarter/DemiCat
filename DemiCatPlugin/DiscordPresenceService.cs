@@ -545,6 +545,8 @@ public class DiscordPresenceService : IDisposable
             }
             else
             {
+                dto.ResetTransientState();
+                dto.Touch();
                 _presences.Add(dto);
                 _indexById[dto.Id] = _presences.Count - 1;
             }
@@ -555,61 +557,111 @@ public class DiscordPresenceService : IDisposable
 
     private static void MutatePresenceInPlace(PresenceDto existing, PresenceDto dto)
     {
-        if (!string.IsNullOrWhiteSpace(dto.AvatarUrl) &&
-            !string.Equals(dto.AvatarUrl, existing.AvatarUrl, StringComparison.Ordinal))
+        if (existing == null || dto == null)
         {
-            existing.AvatarTexture = null;
+            return;
         }
 
-        if (!string.IsNullOrWhiteSpace(dto.BannerUrl) &&
-            !string.Equals(dto.BannerUrl, existing.BannerUrl, StringComparison.Ordinal))
+        var changed = false;
+
+        void AssignAvatarUrl(string? value)
         {
-            existing.BannerTexture = null;
+            if (!string.Equals(value, existing.AvatarUrl, StringComparison.Ordinal))
+            {
+                existing.AvatarUrl = value;
+                existing.AvatarTexture = null;
+                existing.AvatarLoadFailed = false;
+                existing.AvatarLoadRequested = false;
+                changed = true;
+            }
+        }
+
+        void AssignBannerUrl(string? value)
+        {
+            if (!string.Equals(value, existing.BannerUrl, StringComparison.Ordinal))
+            {
+                existing.BannerUrl = value;
+                existing.BannerTexture = null;
+                existing.BannerLoadFailed = false;
+                existing.BannerLoadRequested = false;
+                changed = true;
+            }
         }
 
         if (dto.AvatarUrl != null)
         {
-            existing.AvatarUrl = dto.AvatarUrl;
+            AssignAvatarUrl(dto.AvatarUrl);
         }
 
         if (dto.BannerUrl != null)
         {
-            existing.BannerUrl = dto.BannerUrl;
+            AssignBannerUrl(dto.BannerUrl);
         }
 
         if (dto.AvatarTexture != null)
         {
             existing.AvatarTexture = dto.AvatarTexture;
+            existing.AvatarLoadFailed = false;
+            changed = true;
         }
 
         if (dto.BannerTexture != null)
         {
             existing.BannerTexture = dto.BannerTexture;
+            existing.BannerLoadFailed = false;
+            changed = true;
         }
 
-        if (dto.AccentColorValue.HasValue)
+        if (dto.AccentColorValue.HasValue && dto.AccentColorValue != existing.AccentColorValue)
         {
             existing.AccentColorValue = dto.AccentColorValue;
+            changed = true;
         }
 
-        if (dto.Roles.Count > 0)
+        if (!string.Equals(existing.Id, dto.Id, StringComparison.Ordinal))
         {
-            existing.Roles = dto.Roles;
+            existing.Id = dto.Id;
+            changed = true;
         }
 
-        if (dto.RoleDetails.Count > 0)
+        if (!string.Equals(existing.Name, dto.Name, StringComparison.Ordinal))
         {
-            existing.RoleDetails = dto.RoleDetails;
+            existing.Name = dto.Name;
+            changed = true;
+        }
+
+        if (!string.Equals(existing.Status, dto.Status, StringComparison.Ordinal))
+        {
+            existing.Status = dto.Status;
+            changed = true;
         }
 
         if (!string.IsNullOrWhiteSpace(dto.StatusText))
         {
-            existing.StatusText = dto.StatusText;
+            var sanitized = string.IsNullOrWhiteSpace(dto.StatusText) ? null : dto.StatusText;
+            if (!string.Equals(existing.StatusText, sanitized, StringComparison.Ordinal))
+            {
+                existing.StatusText = sanitized;
+                changed = true;
+            }
         }
 
-        existing.Id = dto.Id;
-        existing.Name = dto.Name;
-        existing.Status = dto.Status;
+        if (dto.Roles.Count > 0 && !ReferenceEquals(existing.Roles, dto.Roles))
+        {
+            existing.Roles = dto.Roles;
+            changed = true;
+        }
+
+        if (dto.RoleDetails.Count > 0 && !ReferenceEquals(existing.RoleDetails, dto.RoleDetails))
+        {
+            existing.RoleDetails = dto.RoleDetails;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            existing.Touch();
+        }
     }
 
     private void ApplyPresenceSnapshot(List<PresenceDto> list)
@@ -643,6 +695,8 @@ public class DiscordPresenceService : IDisposable
                 }
                 else
                 {
+                    dto.ResetTransientState();
+                    dto.Touch();
                     _presences.Add(dto);
                     seen.Add(dto.Id);
                 }

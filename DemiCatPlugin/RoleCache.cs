@@ -11,16 +11,31 @@ internal static class RoleCache
     private static List<RoleDto> _roles = new();
     private static bool _loaded;
     private static string? _lastErrorMessage;
+    private static long _version;
 
     internal static IReadOnlyList<RoleDto> Roles => _roles;
     internal static string? LastErrorMessage => _lastErrorMessage;
     internal static bool IsLoaded => _loaded;
+    internal static long Version => _version;
+
+    private static void IncrementVersion()
+    {
+        if (_version == long.MaxValue)
+        {
+            _version = 0;
+        }
+        else
+        {
+            _version++;
+        }
+    }
 
     internal static void Reset()
     {
         _roles = new();
         _loaded = false;
         _lastErrorMessage = null;
+        IncrementVersion();
     }
 
     internal static async Task EnsureLoaded(HttpClient httpClient, Config config)
@@ -31,6 +46,7 @@ internal static class RoleCache
         {
             _roles = new List<RoleDto>(config.GuildRoles);
             _loaded = true;
+            IncrementVersion();
             return;
         }
         await Refresh(httpClient, config);
@@ -72,6 +88,7 @@ internal static class RoleCache
             _roles = roles;
             _lastErrorMessage = null;
             _loaded = true;
+            IncrementVersion();
             _ = PluginServices.Instance!.Framework.RunOnTick(() =>
             {
                 config.GuildRoles = roles;
@@ -83,6 +100,7 @@ internal static class RoleCache
         {
             _lastErrorMessage = "Failed to load roles";
             _loaded = true;
+            IncrementVersion();
         }
     }
 }

@@ -63,6 +63,7 @@ public class PresenceDto
 
     [JsonIgnore] public ISharedImmediateTexture? AvatarTexture { get; set; }
     [JsonIgnore] public bool AvatarLoadRequested { get; set; }
+    [JsonIgnore] public bool AvatarLoadFailed { get; set; }
 
     private string? _bannerUrl;
 
@@ -91,6 +92,7 @@ public class PresenceDto
 
     [JsonIgnore] public ISharedImmediateTexture? BannerTexture { get; set; }
     [JsonIgnore] public bool BannerLoadRequested { get; set; }
+    [JsonIgnore] public bool BannerLoadFailed { get; set; }
 
     private uint? _accentColorValue;
 
@@ -123,6 +125,9 @@ public class PresenceDto
 
     [JsonIgnore] public Vector4? AccentColor { get; private set; }
 
+    [JsonIgnore]
+    public long Revision { get; private set; }
+
     [JsonPropertyName("roles")] public List<string> Roles { get; set; } = new();
 
     private List<PresenceRoleDto> _roleDetails = new();
@@ -148,6 +153,26 @@ public class PresenceDto
     {
         get => _roleDetails;
         set => RoleDetails = value;
+    }
+
+    public void Touch()
+    {
+        if (Revision == long.MaxValue)
+        {
+            Revision = 0;
+        }
+        else
+        {
+            Revision++;
+        }
+    }
+
+    public void ResetTransientState()
+    {
+        AvatarLoadRequested = false;
+        BannerLoadRequested = false;
+        AvatarLoadFailed = false;
+        BannerLoadFailed = false;
     }
 }
 
