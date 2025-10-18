@@ -47,9 +47,11 @@ public class PresenceSidebar : IDisposable
     private Task? _refreshTask;
     private bool _refreshInFlight;
     private DateTime _nextRefreshAllowed = DateTime.MinValue;
-    private readonly List<PresenceDto> _items = new();
+    private readonly List<PresenceCard> _items = new();
+    private readonly Dictionary<string, PresenceCard> _cardById = new(StringComparer.Ordinal);
     private PresenceConnectionState _lastConn = PresenceConnectionState.Disconnected;
     private bool _pendingRebuild = true;
+    private long _lastRoleVersion = long.MinValue;
 
     public Action<string?, Action<ISharedImmediateTexture?>>? TextureLoader { get; set; }
     public Action<string?>? TextureTouch { get; set; }
@@ -165,8 +167,8 @@ public class PresenceSidebar : IDisposable
                 }
                 else
                 {
-                    var presences = presencesSource.ToList();
-                    if (presences.Count == 0)
+                    var cards = presencesSource;
+                    if (cards.Count == 0)
                     {
                         MaybeRequestRecoveryRefresh(connection);
                         ShowStatus(string.IsNullOrWhiteSpace(_service.StatusMessage) ? null : _service.StatusMessage);
@@ -187,14 +189,6 @@ public class PresenceSidebar : IDisposable
                         else
                         {
                             var roleList = roles.ToList();
-                            var online = presences
-                                .Where(p => !IsOffline(p.Status))
-                                .ToList();
-                            var offline = presences
-                                .Where(p => IsOffline(p.Status))
-                                .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
-                                .ToList();
-
                             var roleById = new Dictionary<string, RoleDto>(StringComparer.Ordinal);
                             foreach (var role in roleList)
                             {
@@ -205,6 +199,30 @@ public class PresenceSidebar : IDisposable
 
                                 roleById[role.Id] = role;
                             }
+
+                            var roleVersion = RoleCache.Version;
+                            if (_lastRoleVersion != roleVersion)
+                            {
+                                foreach (var card in cards)
+                                {
+                                    card.InvalidateMetadata();
+                                }
+                                _lastRoleVersion = roleVersion;
+                            }
+
+                            foreach (var card in cards)
+                            {
+                                card.EnsureMetadata(roleById);
+                            }
+
+                            var online = cards
+                                .Where(p => !IsOffline(p.Presence.Status))
+                                .ToList();
+                            var offline = cards
+                                .Where(p => IsOffline(p.Presence.Status))
+                                .OrderByDescending(p => p.PrimaryRolePosition)
+                                .ThenBy(p => p.Presence.Name, StringComparer.OrdinalIgnoreCase)
+                                .ToList();
 
                             var hoistedOrder = roleList
                                 .Where(r => r != null && !string.IsNullOrEmpty(r.Id) && IsHoistedRole(r))
@@ -229,10 +247,10 @@ public class PresenceSidebar : IDisposable
                                 roleGroups[roleId] = new RoleGroup(roleId, label);
                             }
 
-                            var ungroupedOnline = new List<PresenceDto>();
+                            var ungroupedOnline = new List<PresenceCard>();
                             foreach (var presence in online)
                             {
-                                var primaryRoleId = GetHighestHoistedRoleId(presence, roleById);
+                                var primaryRoleId = presence.PrimaryRoleId;
                                 if (!string.IsNullOrEmpty(primaryRoleId) &&
                                     roleGroups.TryGetValue(primaryRoleId, out var group))
                                 {
@@ -259,7 +277,7 @@ public class PresenceSidebar : IDisposable
                             if (ungroupedOnline.Count > 0)
                             {
                                 anyOnline = true;
-                                ungroupedOnline.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+                                ungroupedOnline.Sort((a, b) => string.Compare(a.Presence.Name, b.Presence.Name, StringComparison.OrdinalIgnoreCase));
                                 ImGui.TextUnformatted($"ONLINE — {ungroupedOnline.Count}");
                                 foreach (var presence in ungroupedOnline)
                                 {
@@ -308,68 +326,77 @@ public class PresenceSidebar : IDisposable
         }
     }
 
-    private void DrawPresence(PresenceDto p)
+    private void DrawPresence(PresenceCard card)
     {
-        ImGui.PushID(p.Id);
+        var presence = card.Presence;
+        ImGui.PushID(presence.Id);
         var drawList = ImGui.GetWindowDrawList();
 
-        const float rowHeight = 40f;
+        const float rowHeight = 44f;
         var backgroundMin = ImGui.GetCursorScreenPos();
         var availableWidth = MathF.Max(0f, ImGui.GetContentRegionAvail().X);
         var backgroundMax = new Vector2(backgroundMin.X + availableWidth, backgroundMin.Y + rowHeight);
-        DrawPresenceBackground(drawList, backgroundMin, backgroundMax, p);
+        DrawPresenceBackground(drawList, backgroundMin, backgroundMax, presence);
+
+        var hovered = ImGui.IsMouseHoveringRect(backgroundMin, backgroundMax);
+        if (hovered)
+        {
+            var style = ImGui.GetStyle();
+            var highlight = style.Colors[(int)ImGuiCol.ButtonHovered];
+            highlight.W = MathF.Max(0.15f, highlight.W);
+            drawList.AddRectFilled(backgroundMin, backgroundMax, ImGui.ColorConvertFloat4ToU32(highlight));
+            ImGui.SetMouseCursor(ImGuiMouseCursor.Hand);
+        }
 
         ImGui.BeginGroup();
 
         var avatarSize = new Vector2(36f, 36f);
-        var color = GetStatusColor(p.Status);
+        var statusColor = GetStatusColor(presence.Status);
 
         var groupStartY = ImGui.GetCursorPosY();
         var avatarOffsetY = MathF.Max(0f, (rowHeight - avatarSize.Y) * 0.5f);
         ImGui.SetCursorPosY(groupStartY + avatarOffsetY);
 
-        if (TextureLoader != null && !string.IsNullOrEmpty(p.AvatarUrl) && p.AvatarTexture == null)
+        if (TextureLoader != null && !string.IsNullOrEmpty(presence.AvatarUrl) &&
+            presence.AvatarTexture == null && !presence.AvatarLoadRequested && !presence.AvatarLoadFailed)
         {
-            if (!p.AvatarLoadRequested)
+            presence.AvatarLoadRequested = true;
+            TextureLoader(presence.AvatarUrl, t =>
             {
-                p.AvatarLoadRequested = true;
-                TextureLoader(p.AvatarUrl, t =>
-                {
-                    p.AvatarTexture = t;
-                    p.AvatarLoadRequested = false;
-                });
-            }
+                presence.AvatarTexture = t;
+                presence.AvatarLoadRequested = false;
+                presence.AvatarLoadFailed = t == null;
+            });
         }
 
         var avatarPos = ImGui.GetCursorScreenPos();
         var drewAvatar = false;
-        if (p.AvatarTexture != null)
+        if (presence.AvatarTexture != null)
         {
             try
             {
-                var wrap = p.AvatarTexture.GetWrapOrEmpty();
+                var wrap = presence.AvatarTexture.GetWrapOrEmpty();
                 if (wrap.Width > 0 && wrap.Height > 0)
                 {
                     ImGui.Image(wrap.Handle, avatarSize);
-                    TextureTouch?.Invoke(p.AvatarUrl);
+                    TextureTouch?.Invoke(presence.AvatarUrl);
                     drewAvatar = true;
                 }
             }
             catch (ObjectDisposedException)
             {
-                p.AvatarTexture = null;
-                p.AvatarLoadRequested = false;
-                if (TextureLoader != null && !string.IsNullOrEmpty(p.AvatarUrl))
+                presence.AvatarTexture = null;
+                presence.AvatarLoadRequested = false;
+                presence.AvatarLoadFailed = false;
+                if (TextureLoader != null && !string.IsNullOrEmpty(presence.AvatarUrl))
                 {
-                    if (!p.AvatarLoadRequested)
+                    presence.AvatarLoadRequested = true;
+                    TextureLoader(presence.AvatarUrl, t =>
                     {
-                        p.AvatarLoadRequested = true;
-                        TextureLoader(p.AvatarUrl, t =>
-                        {
-                            p.AvatarTexture = t;
-                            p.AvatarLoadRequested = false;
-                        });
-                    }
+                        presence.AvatarTexture = t;
+                        presence.AvatarLoadRequested = false;
+                        presence.AvatarLoadFailed = t == null;
+                    });
                 }
             }
         }
@@ -385,19 +412,19 @@ public class PresenceSidebar : IDisposable
         var borderColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0f, 0f, 0f, 0.75f));
         drawList.AddCircleFilled(indicatorCenter, indicatorRadius + 2.5f, windowBgColor, 16);
         drawList.AddCircleFilled(indicatorCenter, indicatorRadius + 1.5f, borderColor, 16);
-        drawList.AddCircleFilled(indicatorCenter, indicatorRadius, ImGui.ColorConvertFloat4ToU32(color), 16);
+        drawList.AddCircleFilled(indicatorCenter, indicatorRadius, ImGui.ColorConvertFloat4ToU32(statusColor), 16);
 
         ImGui.SetCursorPosY(groupStartY);
         ImGui.SameLine(0f, 8f);
         ImGui.BeginGroup();
 
-        var nameColor = color;
+        var nameColor = card.NameColor;
         nameColor.W = 1f;
         ImGui.PushStyleColor(ImGuiCol.Text, nameColor);
-        ImGui.TextUnformatted(p.Name);
+        ImGui.TextUnformatted(presence.Name);
         ImGui.PopStyleColor();
 
-        var statusText = p.StatusText;
+        var statusText = presence.StatusText;
         if (!string.IsNullOrWhiteSpace(statusText))
         {
             ImGui.PushStyleColor(ImGuiCol.Text, StatusTextColor);
@@ -414,34 +441,6 @@ public class PresenceSidebar : IDisposable
             ImGui.PopStyleColor();
         }
 
-
-        if (p.RoleDetails.Count > 0)
-        {
-            var firstBadge = true;
-            for (var i = 0; i < p.RoleDetails.Count; i++)
-            {
-                var role = p.RoleDetails[i];
-                if (role == null || string.IsNullOrWhiteSpace(role.Name))
-                {
-                    continue;
-                }
-
-                if (firstBadge)
-                {
-                    ImGui.Spacing();
-                    firstBadge = false;
-                }
-                else
-                {
-                    ImGui.SameLine(0f, 4f);
-                }
-
-                ImGui.PushID(i);
-                DrawRoleBadge(drawList, role.Name);
-                ImGui.PopID();
-            }
-        }
-
         ImGui.EndGroup();
 
         var usedHeight = ImGui.GetCursorPosY() - groupStartY;
@@ -452,23 +451,192 @@ public class PresenceSidebar : IDisposable
 
         ImGui.EndGroup();
         ImGui.PopID();
+
+        if (hovered)
+        {
+            DrawRolesTooltip(card);
+        }
+    }
+
+    private void DrawRolesTooltip(PresenceCard card)
+    {
+        var roles = card.RoleNames;
+        if (roles.Count == 0)
+        {
+            return;
+        }
+
+        if (!ImGui.BeginTooltip())
+        {
+            return;
+        }
+
+        try
+        {
+            var nameColor = card.NameColor;
+            nameColor.W = 1f;
+            ImGui.PushStyleColor(ImGuiCol.Text, nameColor);
+            ImGui.TextUnformatted(card.Presence.Name);
+            ImGui.PopStyleColor();
+
+            if (!string.IsNullOrWhiteSpace(card.Presence.StatusText))
+            {
+                ImGui.PushStyleColor(ImGuiCol.Text, StatusTextColor);
+                ImGui.TextUnformatted(card.Presence.StatusText);
+                ImGui.PopStyleColor();
+            }
+
+            if (roles.Count > 0)
+            {
+                if (!string.IsNullOrWhiteSpace(card.Presence.StatusText))
+                {
+                    ImGui.Separator();
+                }
+
+                ImGui.TextUnformatted("Roles");
+                ImGui.Separator();
+                foreach (var role in roles)
+                {
+                    ImGui.TextUnformatted(role);
+                }
+            }
+        }
+        finally
+        {
+            ImGui.EndTooltip();
+        }
+    }
+
+    private sealed class PresenceCard
+    {
+        private long _cachedRevision = long.MinValue;
+        private int _cachedRoleVersion = -1;
+        private readonly List<string> _roleNames = new();
+
+        public PresenceCard(PresenceDto presence)
+        {
+            Presence = presence;
+            NameColor = new Vector4(1f, 1f, 1f, 1f);
+            PrimaryRolePosition = int.MinValue;
+        }
+
+        public PresenceDto Presence { get; private set; }
+        public Vector4 NameColor { get; private set; }
+        public string? PrimaryRoleId { get; private set; }
+        public int PrimaryRolePosition { get; private set; }
+        public IReadOnlyList<string> RoleNames => _roleNames;
+
+        public void UpdatePresence(PresenceDto presence)
+        {
+            Presence = presence;
+            InvalidateMetadata();
+        }
+
+        public void InvalidateMetadata()
+        {
+            _cachedRevision = long.MinValue;
+            _cachedRoleVersion = -1;
+        }
+
+        public void EnsureMetadata(IReadOnlyDictionary<string, RoleDto> roleById)
+        {
+            var revision = Presence.Revision;
+            var roleVersion = roleById?.Count ?? 0;
+            if (_cachedRevision == revision && _cachedRoleVersion == roleVersion)
+            {
+                return;
+            }
+
+            _cachedRevision = revision;
+            _cachedRoleVersion = roleVersion;
+
+            PrimaryRoleId = null;
+            PrimaryRolePosition = int.MinValue;
+            _roleNames.Clear();
+
+            var accent = Presence.AccentColor;
+            if (accent.HasValue)
+            {
+                var color = accent.Value;
+                if (color.W <= 0f)
+                {
+                    color.W = 1f;
+                }
+                NameColor = color;
+            }
+            else
+            {
+                var fallback = GetStatusColor(Presence.Status);
+                fallback.W = 1f;
+                NameColor = fallback;
+            }
+
+            if (roleById == null || roleById.Count == 0)
+            {
+                foreach (var detail in Presence.RoleDetails)
+                {
+                    if (detail != null && !string.IsNullOrWhiteSpace(detail.Name))
+                    {
+                        _roleNames.Add(detail.Name);
+                    }
+                }
+                return;
+            }
+
+            PrimaryRoleId = GetHighestHoistedRoleId(Presence, roleById);
+            if (!string.IsNullOrEmpty(PrimaryRoleId) && roleById.TryGetValue(PrimaryRoleId, out var primaryRole))
+            {
+                PrimaryRolePosition = primaryRole.Position;
+            }
+
+            var sorted = new List<(string Name, int Position)>();
+            foreach (var detail in Presence.RoleDetails)
+            {
+                if (detail == null || string.IsNullOrWhiteSpace(detail.Name))
+                {
+                    continue;
+                }
+
+                var position = int.MinValue;
+                if (!string.IsNullOrEmpty(detail.Id) && roleById.TryGetValue(detail.Id, out var role))
+                {
+                    position = role.Position;
+                    if (PrimaryRolePosition == int.MinValue || position > PrimaryRolePosition)
+                    {
+                        PrimaryRolePosition = position;
+                    }
+                }
+
+                sorted.Add((detail.Name, position));
+            }
+
+            sorted.Sort((a, b) =>
+            {
+                var cmp = b.Position.CompareTo(a.Position);
+                return cmp != 0 ? cmp : string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase);
+            });
+
+            foreach (var (name, _) in sorted)
+            {
+                _roleNames.Add(name);
+            }
+        }
     }
 
     protected virtual void DrawPresenceBackground(ImDrawListPtr drawList, Vector2 min, Vector2 max, PresenceDto presence)
     {
         if (max.X <= min.X || max.Y <= min.Y)
         {
-            if (TextureLoader != null && !string.IsNullOrEmpty(presence.BannerUrl) && presence.BannerTexture == null)
+            if (TextureLoader != null && !string.IsNullOrEmpty(presence.BannerUrl) &&
+                presence.BannerTexture == null && !presence.BannerLoadRequested && !presence.BannerLoadFailed)
             {
-                if (!presence.BannerLoadRequested)
+                presence.BannerLoadRequested = true;
+                TextureLoader(presence.BannerUrl, t =>
                 {
-                    presence.BannerLoadRequested = true;
-                    TextureLoader(presence.BannerUrl, t =>
-                    {
-                        presence.BannerTexture = t;
-                        presence.BannerLoadRequested = false;
-                    });
-                }
+                    presence.BannerTexture = t;
+                    presence.BannerLoadRequested = false;
+                    presence.BannerLoadFailed = t == null;
+                });
             }
             return;
         }
@@ -490,20 +658,20 @@ public class PresenceSidebar : IDisposable
             {
                 presence.BannerTexture = null;
                 presence.BannerLoadRequested = false;
+                presence.BannerLoadFailed = false;
             }
         }
 
-        if (!bannerDrawn && TextureLoader != null && !string.IsNullOrEmpty(presence.BannerUrl) && presence.BannerTexture == null)
+        if (!bannerDrawn && TextureLoader != null && !string.IsNullOrEmpty(presence.BannerUrl) &&
+            presence.BannerTexture == null && !presence.BannerLoadRequested && !presence.BannerLoadFailed)
         {
-            if (!presence.BannerLoadRequested)
+            presence.BannerLoadRequested = true;
+            TextureLoader(presence.BannerUrl, t =>
             {
-                presence.BannerLoadRequested = true;
-                TextureLoader(presence.BannerUrl, t =>
-                {
-                    presence.BannerTexture = t;
-                    presence.BannerLoadRequested = false;
-                });
-            }
+                presence.BannerTexture = t;
+                presence.BannerLoadRequested = false;
+                presence.BannerLoadFailed = t == null;
+            });
         }
 
         if (!bannerDrawn)
@@ -532,34 +700,16 @@ public class PresenceSidebar : IDisposable
         return (topColor, bottomColor);
     }
 
-    private static void DrawRoleBadge(ImDrawListPtr drawList, string text)
-    {
-        var style = ImGui.GetStyle();
-        var padding = new Vector2(MathF.Max(4f, style.FramePadding.X), MathF.Max(2f, style.FramePadding.Y * 0.75f));
-        var textSize = ImGui.CalcTextSize(text);
-        var totalSize = textSize + padding * 2f;
-        var cursor = ImGui.GetCursorScreenPos();
-        var rounding = MathF.Max(4f, style.FrameRounding);
-
-        var bgColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.4f, 0.4f, 0.4f, 0.35f));
-        var outlineColor = ImGui.ColorConvertFloat4ToU32(new Vector4(1f, 1f, 1f, 0.18f));
-        var textColor = ImGui.ColorConvertFloat4ToU32(new Vector4(0.95f, 0.95f, 0.95f, 1f));
-
-        drawList.AddRectFilled(cursor, cursor + totalSize, bgColor, rounding);
-        drawList.AddRect(cursor, cursor + totalSize, outlineColor, rounding);
-
-        ImGui.InvisibleButton("##badge", totalSize);
-        drawList.AddText(cursor + padding, textColor, text);
-    }
-
     private void RebuildFrom(IReadOnlyList<PresenceDto>? snapshot)
     {
         _items.Clear();
         if (snapshot == null)
         {
+            _cardById.Clear();
             return;
         }
 
+        var seen = new HashSet<string>(StringComparer.Ordinal);
         foreach (var presence in snapshot)
         {
             if (presence == null || string.IsNullOrWhiteSpace(presence.Id))
@@ -567,7 +717,37 @@ public class PresenceSidebar : IDisposable
                 continue;
             }
 
-            _items.Add(presence);
+            if (!_cardById.TryGetValue(presence.Id, out var card))
+            {
+                card = new PresenceCard(presence);
+                _cardById[presence.Id] = card;
+            }
+            else
+            {
+                card.UpdatePresence(presence);
+            }
+
+            _items.Add(card);
+            seen.Add(presence.Id);
+        }
+
+        if (_cardById.Count == seen.Count)
+        {
+            return;
+        }
+
+        var removed = new List<string>();
+        foreach (var kvp in _cardById)
+        {
+            if (!seen.Contains(kvp.Key))
+            {
+                removed.Add(kvp.Key);
+            }
+        }
+
+        foreach (var key in removed)
+        {
+            _cardById.Remove(key);
         }
     }
 
@@ -709,7 +889,7 @@ public class PresenceSidebar : IDisposable
 
     private void DrawRoleGroup(RoleGroup group)
     {
-        group.Members.Sort((a, b) => string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase));
+        group.Members.Sort((a, b) => string.Compare(a.Presence.Name, b.Presence.Name, StringComparison.OrdinalIgnoreCase));
         var label = string.IsNullOrEmpty(group.Name) ? group.Id : group.Name;
         ImGui.TextUnformatted($"{label} — {group.Members.Count}");
         foreach (var member in group.Members)
@@ -743,7 +923,7 @@ public class PresenceSidebar : IDisposable
     {
         public string Id { get; }
         public string Name { get; set; }
-        public List<PresenceDto> Members { get; } = new();
+        public List<PresenceCard> Members { get; } = new();
 
         public RoleGroup(string id, string? name)
         {
