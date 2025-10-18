@@ -189,6 +189,18 @@ class Membership(Base):
     accent_color: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
 
 
+class GuildMemberBan(Base):
+    __tablename__ = "guild_member_ban"
+    __table_args__ = (
+        UniqueConstraint("guild_id", "discord_user_id", name="uq_guild_member_ban_guild_user"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    guild_id: Mapped[int] = mapped_column(ForeignKey("guilds.id"))
+    discord_user_id: Mapped[int] = mapped_column(BIGINT(unsigned=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 class Role(Base):
     __tablename__ = "roles"
 

@@ -26,6 +26,8 @@ public class OfficerChatWindow : ChatWindow
 
     protected override bool MentionsEnabled => true;
 
+    public ManageMembersWindow? ManageMembersWindow { get; set; }
+
     public OfficerChatWindow(
         Config config,
         HttpClient httpClient,
@@ -162,6 +164,8 @@ public class OfficerChatWindow : ChatWindow
         {
             Subscribe();
         }
+
+        DrawAdminSection();
 
         ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), false);
         base.Draw();
@@ -487,14 +491,58 @@ public class OfficerChatWindow : ChatWindow
         }
     }
 
-    private void TryRefreshRoles()
+    private void DrawAdminSection()
+    {
+        ImGui.PushID("OfficerAdminSection");
+
+        ImGui.TextUnformatted("Admin Tools");
+        UiTheme.DrawSectionSeparator();
+
+        if (ImGui.Button("Resync Roles"))
+        {
+            TryRefreshRoles(force: true);
+        }
+
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+        {
+            ImGui.SetTooltip("Immediately refresh officer permissions for every linked DemiCat user. Use this after promotions or demotions in Discord to sync access without waiting for the automatic update.");
+        }
+
+        ImGui.SameLine();
+
+        var manageDisabled = ManageMembersWindow == null;
+        if (manageDisabled)
+        {
+            ImGui.BeginDisabled();
+        }
+
+        if (ImGui.Button("Manage Members"))
+        {
+            ManageMembersWindow?.Open();
+        }
+
+        if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
+        {
+            ImGui.SetTooltip("Open the membership manager to review linked DemiCat users, revoke their access, or ban accounts that violate the rules.");
+        }
+
+        if (manageDisabled)
+        {
+            ImGui.EndDisabled();
+        }
+
+        UiTheme.DrawSectionSeparator();
+        ImGui.PopID();
+    }
+
+    private void TryRefreshRoles(bool force = false)
     {
         if (IsDisposed)
         {
             return;
         }
 
-        if (DateTime.UtcNow - _lastRolesRefresh < TimeSpan.FromSeconds(30))
+        if (!force && DateTime.UtcNow - _lastRolesRefresh < TimeSpan.FromSeconds(30))
         {
             return;
         }
