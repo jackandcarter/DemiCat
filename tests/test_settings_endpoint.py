@@ -11,4 +11,3 @@ async def test_settings_endpoint():
     data = resp.json()
     assert data["syncedChat"] is True
     assert data["enableFcChat"] is True
-    assert data["fcSyncShell"] is False

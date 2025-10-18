@@ -20,7 +20,6 @@ using Dalamud.Plugin.Services;
 using DemiCatPlugin.Avatars;
 using DemiCatPlugin.Emoji;
 using StbImageSharp;
-using DemiCatPlugin.SyncShell;
 
 namespace DemiCatPlugin;
 
@@ -66,16 +65,6 @@ public class Plugin : IDalamudPlugin
     private readonly SemaphoreSlim _watcherRestartLock = new(1, 1);
     private readonly IFontHandle? _emojiFontHandle;
     private readonly CommandInfo _mewCommandInfo;
-    private readonly BlobStore _blobStore;
-    private readonly SyncShellClient _syncShellClient;
-    private readonly PenumbraIpc _penumbraIpc;
-    private readonly GlamourerIpc _glamourerIpc;
-    private readonly CustomizePlusIpc _customizePlusIpc;
-    private readonly SimpleHeelsIpc _simpleHeelsIpc;
-    private readonly PalettePlusIpc _palettePlusIpc;
-    private readonly HonorificIpc _honorificIpc;
-    private readonly SyncShellWatcher _syncShellWatcher;
-    private readonly SyncShellService _syncShellService;
 
     public Plugin()
     {
@@ -88,7 +77,6 @@ public class Plugin : IDalamudPlugin
 
         var oldVersion = _config.Version;
         _config.Migrate();
-        _config.PostLoadMigrations();
         var rolesRemoved = _config.Roles.RemoveAll(r => r == "chat") > 0;
         if (rolesRemoved || _config.Version != oldVersion)
             _services.PluginInterface.SavePluginConfig(_config);
@@ -112,37 +100,6 @@ public class Plugin : IDalamudPlugin
         _emojiFontHandle = InitializeEmojiFont();
         _emojiManager.EmojiFontHandle = _emojiFontHandle;
         _messageCache = new MessageCache();
-        _blobStore = new BlobStore(_services.PluginInterface);
-        _syncShellClient = new SyncShellClient(_httpClient, _config, _tokenManager);
-        _penumbraIpc = new PenumbraIpc(_services.PluginInterface, _services.Log);
-        _glamourerIpc = new GlamourerIpc(_services.PluginInterface, _services.ClientState, _services.Log);
-        _customizePlusIpc = new CustomizePlusIpc(_services.PluginInterface, _services.Log);
-        _simpleHeelsIpc = new SimpleHeelsIpc(_services.PluginInterface, _services.Log);
-        _palettePlusIpc = new PalettePlusIpc(_services.PluginInterface, _services.Log);
-        _honorificIpc = new HonorificIpc(_services.PluginInterface, _services.Log);
-        _syncShellWatcher = new SyncShellWatcher(_config, _tokenManager, _services.Log);
-        _syncShellService = new SyncShellService(
-            _config,
-            _tokenManager,
-            _syncShellClient,
-            _blobStore,
-            _penumbraIpc,
-            _glamourerIpc,
-            _customizePlusIpc,
-            _simpleHeelsIpc,
-            _palettePlusIpc,
-            _honorificIpc,
-            _services.Log,
-            _services.ClientState,
-            _services.Framework,
-            _services.ObjectTable,
-            _syncShellWatcher);
-        _services.GlamourerIpc = _glamourerIpc;
-        _services.CustomizePlusIpc = _customizePlusIpc;
-        _services.SimpleHeelsIpc = _simpleHeelsIpc;
-        _services.PalettePlusIpc = _palettePlusIpc;
-        _services.HonorificIpc = _honorificIpc;
-        _services.SyncShellService = _syncShellService;
         var baseChatBridge = new ChatBridge(
             _config,
             _httpClient,
@@ -211,7 +168,6 @@ public class Plugin : IDalamudPlugin
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
-        _services.PluginInterface.UiBuilder.Draw += DrawOverlay;
 
         _openMainUi = () => _mainWindow.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
@@ -227,11 +183,6 @@ public class Plugin : IDalamudPlugin
 
         _tokenManager.OnLinked += HandleTokenLinked;
         _tokenManager.OnUnlinked += HandleTokenUnlinked;
-
-        if (_config.EnableSyncShell && _tokenManager.State == LinkState.Linked)
-        {
-            _ = _syncShellService.Start();
-        }
 
         if (_tokenManager.IsReady())
         {
@@ -262,14 +213,6 @@ public class Plugin : IDalamudPlugin
         WebTextureCache.FetchOverride = null;
 
         var services = PluginServices.Instance ?? _services;
-        if (services != null)
-        {
-            services.SyncShellService = null;
-            services.GlamourerIpc = null;
-        }
-
-        _syncShellService.Dispose();
-        _blobStore.Dispose();
         var log = services?.Log;
         try
         {
@@ -298,7 +241,6 @@ public class Plugin : IDalamudPlugin
         {
             pluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
             pluginInterface.UiBuilder.Draw -= _settings.Draw;
-            pluginInterface.UiBuilder.Draw -= DrawOverlay;
 
             // Unsubscribe UI open handlers
             pluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
@@ -332,10 +274,7 @@ public class Plugin : IDalamudPlugin
         _avatarCache.Dispose();
         _emojiManager.Dispose();
         _httpClient.Dispose();
-        if (services != null)
-        {
-            services.ProgressOverlay = null;
-        }
+        // no additional shared services to reset
     }
 
     private void ScheduleWatcherShutdown()
@@ -382,16 +321,6 @@ public class Plugin : IDalamudPlugin
     private void OnMewCommand(string command, string arguments)
     {
         _mainWindow.IsOpen = true;
-    }
-
-    private void DrawOverlay()
-    {
-        var overlay = PluginServices.Instance?.ProgressOverlay;
-        if (overlay == null)
-            return;
-
-        overlay.IsVisible = _config.EnableSyncShell && _config.ShowSyncshellProgressOverlay;
-        overlay.Draw();
     }
 
     private object? FetchWebTexture(string url, Action<ISharedImmediateTexture?> onReady)

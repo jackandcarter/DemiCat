@@ -2,7 +2,6 @@ using Dalamud.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using System.Globalization;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -144,61 +143,6 @@ public class Config : IPluginConfiguration
     public bool Officer { get; set; } = true;
     [JsonPropertyName("isOfficerToken")]
     public bool IsOfficerToken { get; set; }
-    [JsonPropertyName("fcSyncShell")]
-    public bool FCSyncShell { get; set; } = false;
-    [JsonPropertyName("showSyncshellProgressOverlay")]
-    public bool ShowSyncshellProgressOverlay { get; set; } = true;
-
-    [JsonPropertyName("syncshellPeerSyncEnabled")]
-    public bool SyncshellPeerSyncEnabled { get; set; } = true;
-
-    [JsonPropertyName("syncshellCacheLimitMb")]
-    public int SyncshellCacheLimitMb { get; set; } = 4096;
-
-    [JsonPropertyName("enableSyncShell")]
-    public bool EnableSyncShell { get; set; } = false;
-
-    [JsonPropertyName("syncshellAutoMode")]
-    public bool SyncAutoMode { get; set; } = true;
-
-    [JsonPropertyName("syncshellManualAllowList")]
-    public HashSet<ulong> ManualAutoList { get; set; } = new();
-
-    [JsonPropertyName("syncshellOnlySyncVisible")]
-    public bool OnlySyncVisible { get; set; } = true;
-
-    [JsonPropertyName("syncshellBackgroundPrefetch")]
-    public bool BackgroundPrefetch { get; set; } = true;
-
-    [JsonPropertyName("syncshellMaxConcurrentPrefetch")]
-    public int MaxConcurrentPrefetch { get; set; } = 2;
-
-    [JsonPropertyName("syncshellRedrawDebounceMs")]
-    public int RedrawDebounceMs { get; set; } = 350;
-
-    [JsonPropertyName("syncshellApplyCooldownSeconds")]
-    public int ApplyCooldownSeconds { get; set; } = 8;
-
-    [JsonPropertyName("syncshellAutoSyncAllUsers")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool LegacySyncshellAutoSyncAllUsers { get; set; } = true;
-
-    [JsonPropertyName("syncshellManualSyncAllUsers")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool LegacySyncshellManualSyncAllUsers { get; set; }
-
-    [JsonPropertyName("syncshellAutoAllUsers")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool LegacySyncshellAutoAllUsers { get; set; }
-
-    [JsonPropertyName("syncshellManualAllUsers")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
-    public bool LegacySyncshellManualAllUsers { get; set; }
-
-    [JsonPropertyName("syncshellAllowedDiscordIds")]
-    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    public List<string>? LegacySyncshellAllowedDiscordIds { get; set; }
-
     [JsonPropertyName("penumbraPathOverride")]
     public string? PenumbraPathOverride { get; set; }
     [JsonPropertyName("fcEmbedBorder")]
@@ -263,38 +207,8 @@ public class Config : IPluginConfiguration
         [JsonPropertyName("lastResyncAt")]
         public DateTimeOffset? LastResyncAt { get; set; }
 
-        [JsonPropertyName("pairingExpiresAt")]
-        public DateTimeOffset? PairingExpiresAt { get; set; }
-
-        [JsonPropertyName("invites")]
-        public List<SyncshellInviteState> Invites { get; set; } = new();
-
-        [JsonPropertyName("membershipPanelRatios")]
-        public Dictionary<string, float> MembershipPanelRatios { get; set; } = new();
-
-        [JsonPropertyName("syncSettingsHeight")]
-        public float? SyncSettingsHeight { get; set; }
-
         [JsonExtensionData]
         public Dictionary<string, JsonElement>? ExtensionData { get; set; }
-    }
-
-    public class SyncshellInviteState
-    {
-        [JsonPropertyName("target")]
-        public string Target { get; set; } = string.Empty;
-
-        [JsonPropertyName("status")]
-        public string Status { get; set; } = "pending";
-
-        [JsonPropertyName("updatedAt")]
-        public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
-
-        [JsonPropertyName("requestId")]
-        public string? RequestId { get; set; }
-
-        [JsonPropertyName("direction")]
-        public string? Direction { get; set; }
     }
 
     public void Migrate()
@@ -601,76 +515,14 @@ public class Config : IPluginConfiguration
         }
         if (Version < 21)
         {
-            EnableSyncShell = FCSyncShell;
-            LegacySyncshellAutoAllUsers = LegacySyncshellAutoSyncAllUsers;
-            LegacySyncshellManualAllUsers = LegacySyncshellManualSyncAllUsers;
-            LegacySyncshellAllowedDiscordIds ??= new List<string>();
-
             Version = 21;
             ExtensionData = null;
         }
         if (Version < 22)
         {
-            ManualAutoList ??= new HashSet<ulong>();
-
-            if (LegacySyncshellAllowedDiscordIds is { Count: > 0 })
-            {
-                foreach (var id in LegacySyncshellAllowedDiscordIds)
-                {
-                    if (string.IsNullOrWhiteSpace(id))
-                    {
-                        continue;
-                    }
-
-                    if (ulong.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed))
-                    {
-                        ManualAutoList.Add(parsed);
-                    }
-                }
-
-                LegacySyncshellAllowedDiscordIds = null;
-            }
-
-            if (!LegacySyncshellAutoAllUsers && LegacySyncshellManualAllUsers)
-            {
-                SyncAutoMode = false;
-            }
-            else if (LegacySyncshellAutoAllUsers)
-            {
-                SyncAutoMode = true;
-            }
-
-            LegacySyncshellAutoAllUsers = false;
-            LegacySyncshellManualAllUsers = false;
-            LegacySyncshellAutoSyncAllUsers = false;
-            LegacySyncshellManualSyncAllUsers = false;
-
             Version = 22;
             ExtensionData = null;
         }
-    }
-
-    public void PostLoadMigrations()
-    {
-        if (LegacySyncshellAllowedDiscordIds == null)
-        {
-            return;
-        }
-
-        foreach (var entry in LegacySyncshellAllowedDiscordIds)
-        {
-            if (string.IsNullOrWhiteSpace(entry))
-            {
-                continue;
-            }
-
-            if (ulong.TryParse(entry.Trim(), out var id))
-            {
-                ManualAutoList.Add(id);
-            }
-        }
-
-        LegacySyncshellAllowedDiscordIds.Clear();
     }
 
     public static uint GetDefaultEmbedColor(string? channelKind)

@@ -17,7 +17,6 @@ DemiCat/
 - **Templates** – Save and reuse preset event layouts.
 - **NotePad** – Organize guild knowledge in OneNote-style sections and pages. Officers can create and reorder sections while members browse the latest autosaved content.
 - **Request Board** – Track signup requests and interest.
-- **SyncShell** – Work-in-progress replacement for the Mare Synchronos mod-sharing plugin. Syncs Penumbra mod lists to replicate player appearances and is disabled by default while under development (see `DemiCatPlugin/SyncshellWindow.cs`).
 - **FC Chat** – Mirror Discord conversations directly in game.
   - Use **Attach** to open a file picker and add attachments. Selected files appear below the input with remove buttons, and invalid files display an error tooltip.
   - Adjust embed styling above the preview: toggle a decorative border, pick a square/circle/triangle glyph, and choose a highlight color. Borders render using plain Unicode glyphs on Discord, so the color accent is limited to the in-game and DemiBot previews when the chosen shade cannot be reproduced remotely.

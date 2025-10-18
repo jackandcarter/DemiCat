@@ -15,20 +15,6 @@ public class ConfigDefaultsTests
         Assert.True(cfg.Requests);
         Assert.True(cfg.Officer);
         Assert.False(cfg.IsOfficerToken);
-        Assert.False(cfg.FCSyncShell);
-        Assert.False(cfg.EnableSyncShell);
-        Assert.True(cfg.ShowSyncshellProgressOverlay);
-        Assert.True(cfg.SyncshellPeerSyncEnabled);
-        Assert.Equal(4096, cfg.SyncshellCacheLimitMb);
-    }
-
-    [Fact]
-    public void Syncshell_Disabled_PreventsInstance()
-    {
-        SyncshellWindow.Instance?.Dispose();
-        var cfg = new Config { EnableSyncShell = false };
-        Assert.Throws<InvalidOperationException>(() => new SyncshellWindow(cfg));
-        Assert.Null(SyncshellWindow.Instance);
     }
 
     [Fact]

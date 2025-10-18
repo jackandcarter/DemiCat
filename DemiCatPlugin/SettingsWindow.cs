@@ -7,14 +7,12 @@ using System.Text.Json;
 using System.Numerics;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Globalization;
 using System.Linq;
 using Dalamud.Bindings.ImGui;
 using Dalamud.Interface.ImGuiFileDialog;
 using Dalamud.Interface.Utility;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using DemiCatPlugin.SyncShell;
 
 namespace DemiCatPlugin;
 
@@ -43,7 +41,6 @@ public class SettingsWindow : IDisposable
     private string _penumbraOverride = string.Empty;
     private string? _penumbraValidationMessage;
     private bool _penumbraValidationSuccess;
-    private string _allowedDiscordIdsBuffer = string.Empty;
 
     public bool IsOpen;
 
@@ -69,11 +66,6 @@ public class SettingsWindow : IDisposable
         _tokenManager.OnLinked += OnLinked;
         _tokenManager.OnUnlinked += OnUnlinked;
         _penumbraOverride = _config.PenumbraPathOverride ?? string.Empty;
-        _allowedDiscordIdsBuffer = string.Join(
-            "\n",
-            _config.ManualAutoList
-                .OrderBy(id => id)
-                .Select(id => id.ToString(CultureInfo.InvariantCulture)));
     }
 
     public void Draw()
@@ -104,12 +96,6 @@ public class SettingsWindow : IDisposable
                     if (ImGui.BeginTabItem("General"))
                     {
                         DrawGeneralTab();
-                        ImGui.EndTabItem();
-                    }
-
-                    if (ImGui.BeginTabItem("SyncShell Settings"))
-                    {
-                        DrawSyncshellTab();
                         ImGui.EndTabItem();
                     }
 
@@ -235,262 +221,6 @@ public class SettingsWindow : IDisposable
 
             ImGui.TextColored(color, _syncStatus);
         }
-    }
-
-    private void DrawSyncshellTab()
-    {
-        var service = PluginServices.Instance?.SyncShellService;
-        var linked = _tokenManager.State == LinkState.Linked;
-
-        DrawConnectionIndicator(linked);
-        ImGui.Spacing();
-
-        var enableSyncshell = _config.EnableSyncShell;
-        if (!linked)
-        {
-            ImGui.BeginDisabled();
-        }
-
-        if (ImGui.Checkbox("Enable SyncShell", ref enableSyncshell))
-        {
-            _config.EnableSyncShell = enableSyncshell;
-            _config.FCSyncShell = enableSyncshell;
-            SaveConfig();
-
-            if (service != null)
-            {
-                var syncService = service;
-                if (enableSyncshell)
-                {
-                    _ = Task.Run(async () => await syncService.Start().ConfigureAwait(false));
-                }
-                else
-                {
-                    _ = Task.Run(async () => await syncService.Stop().ConfigureAwait(false));
-                }
-            }
-        }
-
-        if (!linked)
-        {
-            ImGui.EndDisabled();
-            if (ImGui.IsItemHovered(ImGuiHoveredFlags.AllowWhenDisabled))
-            {
-                ImGui.SetTooltip("Link DemiCat to enable SyncShell.");
-            }
-        }
-
-        var status = service?.Status ?? (linked ? "SyncShell disabled" : "Not linked");
-        ImGui.TextUnformatted($"Status: {status}");
-        if (service != null)
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled($"Nearby users: {service.NearbyUserCount}");
-        }
-
-        var overlayVisible = _config.ShowSyncshellProgressOverlay;
-        if (ImGui.Checkbox("Show Sync Progress Overlay", ref overlayVisible))
-        {
-            _config.ShowSyncshellProgressOverlay = overlayVisible;
-            SaveConfig();
-        }
-
-        ImGui.Separator();
-
-        var autoMode = _config.SyncAutoMode;
-        if (ImGui.RadioButton("Auto mode (sync all linked members)", autoMode))
-        {
-            if (!_config.SyncAutoMode)
-            {
-                _config.SyncAutoMode = true;
-                SaveConfig();
-            }
-        }
-        ImGui.SameLine();
-        if (ImGui.RadioButton("Manual mode", !autoMode))
-        {
-            if (_config.SyncAutoMode)
-            {
-                _config.SyncAutoMode = false;
-                SaveConfig();
-            }
-        }
-
-        ImGui.TextUnformatted("Manual Sync Allow List (Discord IDs)");
-        var listHeight = ImGui.GetTextLineHeightWithSpacing() * 4f;
-        if (ImGui.InputTextMultiline("##SyncshellAllowedDiscordIds", ref _allowedDiscordIdsBuffer, 4096, new Vector2(-1, listHeight)))
-        {
-            var entries = _allowedDiscordIdsBuffer
-                .Split(new[] { '\n', ',', ';' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-            var parsed = new HashSet<ulong>();
-            foreach (var entry in entries)
-            {
-                if (ulong.TryParse(entry, NumberStyles.Integer, CultureInfo.InvariantCulture, out var id))
-                {
-                    parsed.Add(id);
-                }
-            }
-
-            _config.ManualAutoList = parsed;
-            _allowedDiscordIdsBuffer = string.Join(
-                "\n",
-                parsed.OrderBy(id => id).Select(id => id.ToString(CultureInfo.InvariantCulture)));
-            SaveConfig();
-        }
-        ImGui.TextDisabled("One Discord ID per line. Invalid entries are ignored.");
-
-        ImGui.Separator();
-
-        var cacheLimit = _config.SyncshellCacheLimitMb;
-        if (ImGui.SliderInt("Cache limit (MiB)", ref cacheLimit, 256, 16384))
-        {
-            cacheLimit = Math.Clamp(cacheLimit, 256, 16384);
-            if (cacheLimit != _config.SyncshellCacheLimitMb)
-            {
-                _config.SyncshellCacheLimitMb = cacheLimit;
-                SaveConfig();
-                if (service != null)
-                {
-                    var syncService = service;
-                    _ = Task.Run(async () => await syncService.EnforceCacheLimitAsync().ConfigureAwait(false));
-                }
-            }
-        }
-
-        ImGui.Spacing();
-
-        var running = service?.IsRunning ?? false;
-        if (!running)
-        {
-            ImGui.BeginDisabled();
-        }
-
-        if (ImGui.Button("Sync now"))
-        {
-            if (service != null)
-            {
-                var syncService = service;
-                _ = Task.Run(async () => await syncService.TriggerPublishAsync().ConfigureAwait(false));
-            }
-        }
-        ImGui.SameLine();
-        if (ImGui.Button("Resync All"))
-        {
-            if (service != null)
-            {
-                var syncService = service;
-                _ = Task.Run(async () => await syncService.ResyncAllAsync().ConfigureAwait(false));
-            }
-        }
-        ImGui.SameLine();
-        if (ImGui.Button("Clear Cache"))
-        {
-            service?.ClearCache();
-            if (service != null)
-            {
-                var syncService = service;
-                _ = Task.Run(async () => await syncService.EnforceCacheLimitAsync().ConfigureAwait(false));
-            }
-        }
-        ImGui.SameLine();
-        var paused = service?.IsPaused ?? false;
-        if (ImGui.Button(paused ? "Resume Sync" : "Pause Sync"))
-        {
-            if (service != null)
-            {
-                if (paused)
-                {
-                    service.Resume();
-                }
-                else
-                {
-                    service.Pause();
-                }
-            }
-        }
-
-        if (!running)
-        {
-            ImGui.EndDisabled();
-        }
-
-        ImGui.Separator();
-
-        var penumbraAvailable = service?.PenumbraAvailable ?? false;
-        var detection = service != null ? service.GetPenumbraDetectionDetails() : default;
-        var detectedPath = detection.Path;
-        var detectionSource = detection.Source;
-        var nextRetry = detection.NextRetry;
-        if (!string.IsNullOrEmpty(detectedPath))
-        {
-            ImGui.TextDisabled($"Detected Penumbra path: {detectedPath}");
-            if (!string.IsNullOrWhiteSpace(detectionSource))
-            {
-                ImGui.TextDisabled($"Detected from: {detectionSource}");
-            }
-        }
-        else if (penumbraAvailable)
-        {
-            ImGui.TextDisabled("Penumbra IPC reported no mod directory. Set a path manually if needed.");
-        }
-        else
-        {
-            ImGui.TextDisabled("Penumbra IPC not detected. Set a path manually if needed.");
-            if (nextRetry is { } retry)
-            {
-                ImGui.TextDisabled($"Next retry in: {Math.Max(0, retry.TotalSeconds):0.##}s");
-            }
-        }
-
-        if (ImGui.InputText("Penumbra path override", ref _penumbraOverride, 512))
-        {
-            _config.PenumbraPathOverride = string.IsNullOrWhiteSpace(_penumbraOverride) ? null : _penumbraOverride.Trim();
-            SaveConfig();
-        }
-
-        ImGui.SameLine();
-        if (ImGui.Button("Browse…"))
-        {
-            _fileDialog.OpenFolderDialog("Select Penumbra Mod Directory", (ok, path) =>
-            {
-                if (ok && !string.IsNullOrWhiteSpace(path))
-                {
-                    _penumbraOverride = path;
-                    _config.PenumbraPathOverride = path;
-                    SaveConfig();
-                    service?.RefreshAppearanceCaches();
-                }
-            });
-        }
-
-        if (ImGui.Button("Validate Path"))
-        {
-            string? error = null;
-            var pathToCheck = string.IsNullOrWhiteSpace(_penumbraOverride) ? detectedPath : _penumbraOverride;
-            if (string.IsNullOrWhiteSpace(pathToCheck))
-            {
-                _penumbraValidationSuccess = false;
-                _penumbraValidationMessage = "No path to validate. Set an override or ensure Penumbra is running.";
-            }
-            else if (service != null && service.TryValidatePenumbraPath(pathToCheck, out error))
-            {
-                _penumbraValidationSuccess = true;
-                _penumbraValidationMessage = "Penumbra path looks good.";
-            }
-            else
-            {
-                _penumbraValidationSuccess = false;
-                _penumbraValidationMessage = error ?? "Validation failed.";
-            }
-        }
-
-        if (!string.IsNullOrEmpty(_penumbraValidationMessage))
-        {
-            var color = _penumbraValidationSuccess ? new Vector4(0f, 0.8f, 0f, 1f) : new Vector4(0.9f, 0f, 0f, 1f);
-            ImGui.TextColored(color, _penumbraValidationMessage);
-        }
-
-        _fileDialog.Draw();
     }
 
     private void DrawAppearanceTab()
@@ -824,7 +554,6 @@ public class SettingsWindow : IDisposable
             (MainWindow.DockIds.Templates, "Templates"),
             (MainWindow.DockIds.NotePad, "NotePad"),
             (MainWindow.DockIds.Requests, "Requests"),
-            (MainWindow.DockIds.Syncshell, "SyncShell"),
             (MainWindow.DockIds.Chat, "FC Chat"),
             (MainWindow.DockIds.Officer, "Officer Chat"),
         };
@@ -916,13 +645,6 @@ public class SettingsWindow : IDisposable
 
             var body = await response.Content.ReadAsStringAsync();
             using var doc = JsonDocument.Parse(body);
-            if (doc.RootElement.TryGetProperty("consent_sync", out var consent))
-            {
-                var enabled = consent.GetBoolean();
-                _config.FCSyncShell = enabled;
-                _config.EnableSyncShell = enabled;
-            }
-
             if (doc.RootElement.TryGetProperty("settings", out var settings) && settings.ValueKind == JsonValueKind.Object)
             {
                 if (settings.TryGetProperty("autoApply", out var autoApply) && autoApply.ValueKind == JsonValueKind.Object)
@@ -966,8 +688,7 @@ public class SettingsWindow : IDisposable
                 {
                     categories = _categoryToggles,
                     autoApply = _config.AutoApply
-                },
-                consent_sync = _config.EnableSyncShell
+                }
             };
 
             var request = new HttpRequestMessage(HttpMethod.Put, url)
@@ -1157,15 +878,6 @@ public class SettingsWindow : IDisposable
         catch (Exception ex)
         {
             _log.Error(ex, "Failed to reset membership cache.");
-        }
-
-        try
-        {
-            SyncshellWindow.Instance?.ClearCaches();
-        }
-        catch (Exception ex)
-        {
-            _log.Error(ex, "Failed to clear Syncshell caches.");
         }
 
         try
@@ -1502,7 +1214,6 @@ public class SettingsWindow : IDisposable
     {
         _config.Categories.Clear();
         SaveConfig();
-        SyncshellWindow.Instance?.ClearCaches();
     }
 
     private async Task ForgetMe()
