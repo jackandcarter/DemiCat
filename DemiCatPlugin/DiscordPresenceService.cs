@@ -807,6 +807,7 @@ public class DiscordPresenceService : IDisposable
     }
 
     private static bool SameSet<T>(IReadOnlyList<T> left, IReadOnlyList<T> right, IEqualityComparer<T>? comparer = null)
+        where T : notnull
     {
         comparer ??= EqualityComparer<T>.Default;
 

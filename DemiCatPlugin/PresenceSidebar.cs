@@ -483,10 +483,7 @@ public class PresenceSidebar : IDisposable
             return;
         }
 
-        if (!ImGui.BeginTooltip())
-        {
-            return;
-        }
+        ImGui.BeginTooltip();
 
         try
         {
