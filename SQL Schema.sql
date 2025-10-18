@@ -714,6 +714,33 @@ INSERT INTO `memberships` VALUES
 UNLOCK TABLES;
 
 --
+-- Table structure for table `guild_member_ban`
+--
+
+DROP TABLE IF EXISTS `guild_member_ban`;
+/*!40101 SET @saved_cs_client     = @@character_set_client */;
+/*!40101 SET character_set_client = utf8mb4 */;
+CREATE TABLE `guild_member_ban` (
+  `id` int NOT NULL AUTO_INCREMENT,
+  `guild_id` int NOT NULL,
+  `discord_user_id` bigint unsigned NOT NULL,
+  `created_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_guild_member_ban_guild_user` (`guild_id`,`discord_user_id`),
+  CONSTRAINT `guild_member_ban_ibfk_1` FOREIGN KEY (`guild_id`) REFERENCES `guilds` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+/*!40101 SET character_set_client = @saved_cs_client */;
+
+--
+-- Dumping data for table `guild_member_ban`
+--
+
+LOCK TABLES `guild_member_ban` WRITE;
+/*!40000 ALTER TABLE `guild_member_ban` DISABLE KEYS */;
+/*!40000 ALTER TABLE `guild_member_ban` ENABLE KEYS */;
+UNLOCK TABLES;
+
+--
 -- Table structure for table `messages`
 --
 

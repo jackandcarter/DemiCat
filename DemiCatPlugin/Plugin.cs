@@ -42,6 +42,7 @@ public class Plugin : IDalamudPlugin
     private readonly OfficerChatWindow _officerChatWindow;
     private readonly DiscordPresenceService _presenceService;
     private readonly PresenceWindow _presenceWindow;
+    private readonly ManageMembersWindow _manageMembersWindow;
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
@@ -135,6 +136,8 @@ public class Plugin : IDalamudPlugin
         _avatarCache = new AvatarCache(TextureProvider, _httpClient);
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _messageCache, _avatarCache, _emojiManager, _sharedChatBridge);
         _officerChatWindow = new OfficerChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _messageCache, _avatarCache, _emojiManager, _sharedChatBridge);
+        _manageMembersWindow = new ManageMembersWindow(_config, _httpClient, _tokenManager);
+        _officerChatWindow.ManageMembersWindow = _manageMembersWindow;
 
         _notePadService = new NotePadService(_config, _httpClient, _tokenManager);
         _notePadWindow = new NotePadWindow(_config, _notePadService);
@@ -173,6 +176,7 @@ public class Plugin : IDalamudPlugin
 
         _services.PluginInterface.UiBuilder.Draw += _mainWindow.Draw;
         _services.PluginInterface.UiBuilder.Draw += _settings.Draw;
+        _services.PluginInterface.UiBuilder.Draw += _manageMembersWindow.Draw;
 
         _openMainUi = () => _mainWindow.IsOpen = true;
         _services.PluginInterface.UiBuilder.OpenMainUi += _openMainUi;
@@ -246,6 +250,7 @@ public class Plugin : IDalamudPlugin
         {
             pluginInterface.UiBuilder.Draw -= _mainWindow.Draw;
             pluginInterface.UiBuilder.Draw -= _settings.Draw;
+            pluginInterface.UiBuilder.Draw -= _manageMembersWindow.Draw;
 
             // Unsubscribe UI open handlers
             pluginInterface.UiBuilder.OpenMainUi -= _openMainUi;
@@ -739,6 +744,7 @@ public class Plugin : IDalamudPlugin
                 _mainWindow.SetNotePadReadOnly(true);
                 _mainWindow.NotifyLinkRequired();
                 _settings.IsOpen = true;
+                _manageMembersWindow.Reset();
 
                 var hadOfficerAccess = _config.IsOfficerToken;
                 _config.IsOfficerToken = false;
