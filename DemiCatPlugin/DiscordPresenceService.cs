@@ -533,15 +533,20 @@ public class DiscordPresenceService : IDisposable
 
         if (_indexById.TryGetValue(dto.Id, out var idx))
         {
-            MutatePresenceInPlace(_presences[idx], dto);
+            var presence = _presences[idx];
+            var oldId = presence.Id;
+            MutatePresenceInPlace(presence, dto);
+            UpdateIndexForIdChange(idx, oldId, presence.Id);
         }
         else
         {
             idx = _presences.FindIndex(p => string.Equals(p.Id, dto.Id, StringComparison.Ordinal));
             if (idx >= 0)
             {
-                MutatePresenceInPlace(_presences[idx], dto);
-                _indexById[dto.Id] = idx;
+                var presence = _presences[idx];
+                var oldId = presence.Id;
+                MutatePresenceInPlace(presence, dto);
+                UpdateIndexForIdChange(idx, oldId, presence.Id);
             }
             else
             {
@@ -648,7 +653,7 @@ public class DiscordPresenceService : IDisposable
 
         if (dto.RolesProvided)
         {
-            if (!existing.Roles.SequenceEqual(dto.Roles))
+            if (!SameSet(existing.Roles, dto.Roles, StringComparer.Ordinal))
             {
                 existing.Roles = dto.Roles;
                 changed = true;
@@ -681,6 +686,7 @@ public class DiscordPresenceService : IDisposable
                 return false;
             }
 
+            var orderedMatch = true;
             for (var i = 0; i < left.Count; i++)
             {
                 var a = left[i];
@@ -690,20 +696,150 @@ public class DiscordPresenceService : IDisposable
                     continue;
                 }
 
-                if (a == null || b == null)
-                {
-                    return false;
-                }
-
-                if (!string.Equals(a.Id, b.Id, StringComparison.Ordinal) ||
+                if (a == null || b == null ||
+                    !string.Equals(a.Id, b.Id, StringComparison.Ordinal) ||
                     !string.Equals(a.Name, b.Name, StringComparison.Ordinal))
                 {
-                    return false;
+                    orderedMatch = false;
+                    break;
                 }
             }
 
+            if (orderedMatch)
+            {
+                return true;
+            }
+
+            var nullCount = 0;
+            var map = new Dictionary<string, (string? Name, int Count)>(StringComparer.Ordinal);
+            foreach (var role in left)
+            {
+                if (role == null)
+                {
+                    nullCount++;
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(role.Id))
+                {
+                    return false;
+                }
+
+                if (map.TryGetValue(role.Id, out var entry))
+                {
+                    if (!string.Equals(entry.Name, role.Name, StringComparison.Ordinal))
+                    {
+                        return false;
+                    }
+
+                    map[role.Id] = (entry.Name, entry.Count + 1);
+                }
+                else
+                {
+                    map[role.Id] = (role.Name, 1);
+                }
+            }
+
+            var rightNullCount = 0;
+            foreach (var role in right)
+            {
+                if (role == null)
+                {
+                    rightNullCount++;
+                    continue;
+                }
+
+                if (string.IsNullOrEmpty(role.Id))
+                {
+                    return false;
+                }
+
+                if (!map.TryGetValue(role.Id, out var entry) ||
+                    !string.Equals(entry.Name, role.Name, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+
+                if (entry.Count == 1)
+                {
+                    map.Remove(role.Id);
+                }
+                else
+                {
+                    map[role.Id] = (entry.Name, entry.Count - 1);
+                }
+            }
+
+            return map.Count == 0 && nullCount == rightNullCount;
+        }
+    }
+
+    private void UpdateIndexForIdChange(int idx, string? oldId, string? newId)
+    {
+        if (!string.IsNullOrWhiteSpace(oldId) && !string.Equals(oldId, newId, StringComparison.Ordinal))
+        {
+            _indexById.Remove(oldId);
+        }
+
+        if (!string.IsNullOrWhiteSpace(newId))
+        {
+            _indexById[newId] = idx;
+        }
+    }
+
+    private static bool SameSet<T>(IReadOnlyList<T> left, IReadOnlyList<T> right, IEqualityComparer<T>? comparer = null)
+    {
+        comparer ??= EqualityComparer<T>.Default;
+
+        if (ReferenceEquals(left, right))
+        {
             return true;
         }
+
+        if (left.Count != right.Count)
+        {
+            return false;
+        }
+
+        var orderedMatch = true;
+        for (var i = 0; i < left.Count; i++)
+        {
+            if (!comparer.Equals(left[i], right[i]))
+            {
+                orderedMatch = false;
+                break;
+            }
+        }
+
+        if (orderedMatch)
+        {
+            return true;
+        }
+
+        var map = new Dictionary<T, int>(comparer);
+        foreach (var item in left)
+        {
+            map[item] = map.TryGetValue(item, out var count) ? count + 1 : 1;
+        }
+
+        foreach (var item in right)
+        {
+            if (!map.TryGetValue(item, out var count) || count == 0)
+            {
+                return false;
+            }
+
+            if (count == 1)
+            {
+                map.Remove(item);
+            }
+            else
+            {
+                map[item] = count - 1;
+            }
+        }
+
+        return map.Count == 0;
     }
 
     private void ApplyPresenceSnapshot(List<PresenceDto> list)
@@ -724,23 +860,38 @@ public class DiscordPresenceService : IDisposable
 
             if (_indexById.TryGetValue(dto.Id, out var idx))
             {
-                MutatePresenceInPlace(_presences[idx], dto);
-                seen.Add(dto.Id);
+                var presence = _presences[idx];
+                var oldId = presence.Id;
+                MutatePresenceInPlace(presence, dto);
+                UpdateIndexForIdChange(idx, oldId, presence.Id);
+                if (!string.IsNullOrWhiteSpace(presence.Id))
+                {
+                    seen.Add(presence.Id);
+                }
             }
             else
             {
                 idx = _presences.FindIndex(p => string.Equals(p.Id, dto.Id, StringComparison.Ordinal));
                 if (idx >= 0)
                 {
-                    MutatePresenceInPlace(_presences[idx], dto);
-                    seen.Add(dto.Id);
+                    var presence = _presences[idx];
+                    var oldId = presence.Id;
+                    MutatePresenceInPlace(presence, dto);
+                    UpdateIndexForIdChange(idx, oldId, presence.Id);
+                    if (!string.IsNullOrWhiteSpace(presence.Id))
+                    {
+                        seen.Add(presence.Id);
+                    }
                 }
                 else
                 {
                     dto.ResetTransientState();
                     dto.Touch();
                     _presences.Add(dto);
-                    seen.Add(dto.Id);
+                    if (!string.IsNullOrWhiteSpace(dto.Id))
+                    {
+                        seen.Add(dto.Id);
+                    }
                 }
             }
         }
