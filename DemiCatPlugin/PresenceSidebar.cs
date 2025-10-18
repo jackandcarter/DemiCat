@@ -41,6 +41,7 @@ public class PresenceSidebar : IDisposable
         "offline",
         "invisible",
     };
+    private static readonly TimeSpan TextureRetryWindow = TimeSpan.FromSeconds(45);
 
     private const string PresenceUnavailableMessage = "Presence unavailable";
     private static readonly TimeSpan RefreshCooldown = TimeSpan.FromSeconds(1);
@@ -332,6 +333,19 @@ public class PresenceSidebar : IDisposable
         ImGui.PushID(presence.Id);
         var drawList = ImGui.GetWindowDrawList();
 
+        var now = DateTime.UtcNow;
+        if (presence.AvatarLoadFailed && (!presence.AvatarFailedAt.HasValue || now - presence.AvatarFailedAt.Value >= TextureRetryWindow))
+        {
+            presence.AvatarLoadFailed = false;
+            presence.AvatarFailedAt = null;
+        }
+
+        if (presence.BannerLoadFailed && (!presence.BannerFailedAt.HasValue || now - presence.BannerFailedAt.Value >= TextureRetryWindow))
+        {
+            presence.BannerLoadFailed = false;
+            presence.BannerFailedAt = null;
+        }
+
         const float rowHeight = 44f;
         var backgroundMin = ImGui.GetCursorScreenPos();
         var availableWidth = MathF.Max(0f, ImGui.GetContentRegionAvail().X);
@@ -366,6 +380,7 @@ public class PresenceSidebar : IDisposable
                 presence.AvatarTexture = t;
                 presence.AvatarLoadRequested = false;
                 presence.AvatarLoadFailed = t == null;
+                presence.AvatarFailedAt = t == null ? DateTime.UtcNow : null;
             });
         }
 
@@ -388,6 +403,7 @@ public class PresenceSidebar : IDisposable
                 presence.AvatarTexture = null;
                 presence.AvatarLoadRequested = false;
                 presence.AvatarLoadFailed = false;
+                presence.AvatarFailedAt = null;
                 if (TextureLoader != null && !string.IsNullOrEmpty(presence.AvatarUrl))
                 {
                     presence.AvatarLoadRequested = true;
@@ -396,6 +412,7 @@ public class PresenceSidebar : IDisposable
                         presence.AvatarTexture = t;
                         presence.AvatarLoadRequested = false;
                         presence.AvatarLoadFailed = t == null;
+                        presence.AvatarFailedAt = t == null ? DateTime.UtcNow : null;
                     });
                 }
             }
@@ -635,6 +652,7 @@ public class PresenceSidebar : IDisposable
                     presence.BannerTexture = t;
                     presence.BannerLoadRequested = false;
                     presence.BannerLoadFailed = t == null;
+                    presence.BannerFailedAt = t == null ? DateTime.UtcNow : null;
                 });
             }
             return;
@@ -658,6 +676,7 @@ public class PresenceSidebar : IDisposable
                 presence.BannerTexture = null;
                 presence.BannerLoadRequested = false;
                 presence.BannerLoadFailed = false;
+                presence.BannerFailedAt = null;
             }
         }
 
@@ -670,6 +689,7 @@ public class PresenceSidebar : IDisposable
                 presence.BannerTexture = t;
                 presence.BannerLoadRequested = false;
                 presence.BannerLoadFailed = t == null;
+                presence.BannerFailedAt = t == null ? DateTime.UtcNow : null;
             });
         }
 

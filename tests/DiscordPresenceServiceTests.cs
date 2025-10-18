@@ -531,6 +531,124 @@ public class DiscordPresenceServiceTests
     }
 
     [Fact]
+    public void ApplyPresenceUpdate_RoleReorderDoesNotTouch()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var listField = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)listField.GetValue(service)!;
+
+        var existing = new PresenceDto
+        {
+            Id = "501",
+            Name = "RoleUser",
+            Status = "online",
+        };
+        existing.Roles = new List<string> { "a", "b" };
+        existing.Touch();
+        var initialRevision = existing.Revision;
+        list.Add(existing);
+
+        var update = new PresenceDto
+        {
+            Id = "501",
+            Name = "RoleUser",
+            Status = "online",
+            Roles = new List<string> { "b", "a" }
+        };
+
+        service.ApplyPresenceUpdate(update);
+
+        Assert.Equal(initialRevision, existing.Revision);
+        Assert.NotSame(update.Roles, existing.Roles);
+        Assert.Equal(new[] { "a", "b" }, existing.Roles);
+    }
+
+    [Fact]
+    public void ApplyPresenceUpdate_IdChangeUpdatesIndex()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var listField = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)listField.GetValue(service)!;
+        var indexField = typeof(DiscordPresenceService).GetField("_indexById", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var index = (Dictionary<string, int>)indexField.GetValue(service)!;
+
+        var existing = new PresenceDto
+        {
+            Id = "99",
+            Name = "Indexed",
+            Status = "online",
+        };
+        list.Add(existing);
+        index["99"] = 0;
+
+        var update = new PresenceDto
+        {
+            Id = "100",
+            Name = "Indexed",
+            Status = "online"
+        };
+
+        service.ApplyPresenceUpdate(update);
+
+        Assert.Equal("100", existing.Id);
+        Assert.True(index.TryGetValue("100", out var mappedIndex));
+        Assert.Equal(0, mappedIndex);
+        Assert.DoesNotContain(index.Keys, key => key == "99");
+    }
+
+    [Fact]
+    public void ApplyPresenceUpdate_AvatarUrlChangeResetsTransientState()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var listField = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)listField.GetValue(service)!;
+        var indexField = typeof(DiscordPresenceService).GetField("_indexById", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var index = (Dictionary<string, int>)indexField.GetValue(service)!;
+
+        var texture = Mock.Of<ISharedImmediateTexture>();
+        var existing = new PresenceDto
+        {
+            Id = "75",
+            Name = "AvatarUser",
+            Status = "online",
+            AvatarUrl = "https://example.com/old.png",
+            AvatarTexture = texture,
+            AvatarLoadRequested = true,
+            AvatarLoadFailed = true,
+            AvatarFailedAt = DateTime.UtcNow.AddMinutes(-5),
+        };
+        list.Add(existing);
+        index["75"] = 0;
+        var previousRevision = existing.Revision;
+
+        var update = new PresenceDto
+        {
+            Id = "75",
+            Name = "AvatarUser",
+            Status = "online",
+            AvatarUrl = "https://example.com/new.png"
+        };
+
+        service.ApplyPresenceUpdate(update);
+
+        Assert.Equal("https://example.com/new.png", existing.AvatarUrl);
+        Assert.Null(existing.AvatarTexture);
+        Assert.False(existing.AvatarLoadRequested);
+        Assert.False(existing.AvatarLoadFailed);
+        Assert.Null(existing.AvatarFailedAt);
+        Assert.True(existing.Revision > previousRevision);
+    }
+
+    [Fact]
     public void ApplyPresenceSnapshot_MutatesExistingEntriesAndRemovesMissing()
     {
         var config = new Config { ApiBaseUrl = "http://unit-test" };

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Text.Json.Serialization;
@@ -76,6 +77,7 @@ public class PresenceDto
     [JsonIgnore] public ISharedImmediateTexture? AvatarTexture { get; set; }
     [JsonIgnore] public bool AvatarLoadRequested { get; set; }
     [JsonIgnore] public bool AvatarLoadFailed { get; set; }
+    [JsonIgnore] public DateTime? AvatarFailedAt { get; set; }
 
     private string? _bannerUrl;
 
@@ -107,6 +109,7 @@ public class PresenceDto
     [JsonIgnore] public ISharedImmediateTexture? BannerTexture { get; set; }
     [JsonIgnore] public bool BannerLoadRequested { get; set; }
     [JsonIgnore] public bool BannerLoadFailed { get; set; }
+    [JsonIgnore] public DateTime? BannerFailedAt { get; set; }
 
     private uint? _accentColorValue;
 
@@ -210,6 +213,8 @@ public class PresenceDto
         BannerLoadRequested = false;
         AvatarLoadFailed = false;
         BannerLoadFailed = false;
+        AvatarFailedAt = null;
+        BannerFailedAt = null;
     }
 }
 
