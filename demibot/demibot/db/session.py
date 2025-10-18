@@ -5,7 +5,6 @@ from typing import AsyncIterator
 import asyncio
 import logging
 import os
-import re
 from pathlib import Path
 
 from alembic import command
@@ -30,12 +29,22 @@ _init_lock = asyncio.Lock()
 _DEBUG_SQL = os.getenv("DEMIBOT_DEBUG_SQLALCHEMY", "").lower() in {"1", "true", "yes"}
 
 
-def _sync_url(url: str) -> str:
+def _sync_url(url: str, *, hide_password: bool = True) -> str:
     """Convert an async SQLAlchemy URL to its sync counterpart.
 
     Alembic's migration runner uses synchronous SQLAlchemy engines.  This helper
     swaps out async drivers for their synchronous equivalents so the same DSN
     can be used for both async runtime access and migration execution.
+
+    Parameters
+    ----------
+    url:
+        The async SQLAlchemy URL.
+    hide_password:
+        When ``True`` (the default) the returned DSN masks embedded passwords
+        using ``***`` so it is safe to log or expose in tests. Set to ``False``
+        when the true credentials are required (for example when running
+        migrations).
     """
 
     sa_url = make_url(url)
@@ -48,7 +57,9 @@ def _sync_url(url: str) -> str:
         driver = driver.replace("+asyncmy", "+pymysql")
     elif driver.endswith("+aiomysql"):
         driver = driver.replace("+aiomysql", "+pymysql")
-    return str(sa_url.set(drivername=driver))
+
+    sync_url = sa_url.set(drivername=driver)
+    return sync_url.render_as_string(hide_password=hide_password)
 
 
 async def init_db(url: str) -> AsyncEngine:
@@ -67,9 +78,9 @@ async def init_db(url: str) -> AsyncEngine:
             _engine_url = None
 
         sa_url = make_url(url)
-        sync_url = _sync_url(url)
-        masked_async = re.sub(r":[^:@/]+@", ":***@", str(sa_url))
-        masked_sync = re.sub(r":[^:@/]+@", ":***@", sync_url)
+        sync_url = _sync_url(url, hide_password=False)
+        masked_async = sa_url.render_as_string(hide_password=True)
+        masked_sync = _sync_url(url)
         logging.debug("init_db async_url=%s sync_url=%s", masked_async, masked_sync)
 
         if sa_url.get_backend_name() == "sqlite":
