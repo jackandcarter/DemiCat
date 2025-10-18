@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from typing import Any
 from sqlalchemy import and_, select
 
 from ..deps import RequestContext, api_key_auth
@@ -35,7 +36,7 @@ router = APIRouter(prefix="/api")
 @router.get("/presences")
 async def list_presences(
     ctx: RequestContext = Depends(api_key_auth),
-) -> list[dict[str, str | list[str] | None]]:
+) -> list[dict[str, Any]]:
     db_presences: list[dict[str, object | None]] | None = None
     try:
         async with get_session() as db:

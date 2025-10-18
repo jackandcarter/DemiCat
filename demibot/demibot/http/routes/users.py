@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import and_, select
@@ -52,7 +53,7 @@ async def get_me(
 async def get_users(
     ctx: RequestContext = Depends(api_key_auth),
     db: AsyncSession = Depends(get_db),
-):
+) -> list[dict[str, Any]]:
     discord_guild_id = getattr(ctx.guild, "discord_guild_id", None)
     if discord_guild_id is None:
         discord_guild_id = ctx.guild.id

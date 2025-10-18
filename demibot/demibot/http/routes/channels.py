@@ -180,14 +180,15 @@ async def get_channels(
         return {"id": str(channel_id), "name": new_name}, changed
 
     # Allow fetching a single channel kind for plugin convenience
-    single_kinds = {
-        ChannelKind.EVENT.value: ChannelKind.EVENT,
-        ChannelKind.FC_CHAT.value: ChannelKind.FC_CHAT,
-        ChannelKind.OFFICER_CHAT.value: ChannelKind.OFFICER_CHAT,
-        ChannelKind.REQUESTS.value: ChannelKind.REQUESTS,
+    single_kind_targets = {
+        ChannelKind.EVENT,
+        ChannelKind.FC_CHAT,
+        ChannelKind.OFFICER_CHAT,
+        ChannelKind.REQUESTS,
     }
-    if kind in single_kinds:
-        channel_kind = single_kinds[kind]
+    requested_kind = _parse_channel_kind(kind)
+    if requested_kind in single_kind_targets:
+        channel_kind = requested_kind
         result = await db.execute(
             select(GuildChannel.channel_id, GuildChannel.name).where(
                 GuildChannel.guild_id == ctx.guild.id,
