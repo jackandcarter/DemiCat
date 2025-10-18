@@ -30,6 +30,7 @@ public class PresenceDto
 
     [JsonPropertyName("status_text")]
     [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LegacyStatusText
     {
         get => _statusText;
@@ -38,6 +39,7 @@ public class PresenceDto
 
     [JsonPropertyName("statusText")]
     [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? StatusTextCamel
     {
         get => _statusText;
@@ -55,6 +57,7 @@ public class PresenceDto
 
     [JsonPropertyName("avatar_url")]
     [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LegacyAvatarUrl
     {
         get => _avatarUrl;
@@ -63,6 +66,7 @@ public class PresenceDto
 
     [JsonPropertyName("avatarUrl")]
     [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? AvatarUrlCamel
     {
         get => _avatarUrl;
@@ -84,6 +88,7 @@ public class PresenceDto
 
     [JsonPropertyName("banner_url")]
     [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? LegacyBannerUrl
     {
         get => _bannerUrl;
@@ -92,6 +97,7 @@ public class PresenceDto
 
     [JsonPropertyName("bannerUrl")]
     [JsonInclude]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     public string? BannerUrlCamel
     {
         get => _bannerUrl;
