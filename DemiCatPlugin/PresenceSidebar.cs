@@ -64,6 +64,41 @@ public class PresenceSidebar : IDisposable
 
     public void Draw(ref float width)
     {
+        DrawContent(new Vector2(width, 0));
+
+        ImGui.SameLine();
+        ImGui.InvisibleButton("##presence_resize", new Vector2(6, -1));
+        if (ImGui.IsItemActive())
+        {
+            width += ImGui.GetIO().MouseDelta.X;
+        }
+
+        if (ImGui.IsItemHovered())
+        {
+            ImGui.SetMouseCursor(ResizeEwCursor);
+        }
+
+        width = Math.Clamp(width, 140f, 600f);
+    }
+
+    public void DrawStandalone()
+    {
+        var size = ImGui.GetContentRegionAvail();
+        if (size.X < 0f)
+        {
+            size.X = 0f;
+        }
+
+        if (size.Y < 0f)
+        {
+            size.Y = 0f;
+        }
+
+        DrawContent(size);
+    }
+
+    private void DrawContent(Vector2 size)
+    {
         var shouldReturn = false;
 
         void ShowStatus(string? message)
@@ -92,7 +127,8 @@ public class PresenceSidebar : IDisposable
 
         var hasSnapshot = _items.Count > 0;
 
-        ImGui.BeginChild("##presence", new Vector2(width, 0), true);
+        var clampedSize = new Vector2(MathF.Max(0f, size.X), MathF.Max(0f, size.Y));
+        ImGui.BeginChild("##presence", clampedSize, true);
 
         try
         {
@@ -264,20 +300,6 @@ public class PresenceSidebar : IDisposable
         finally
         {
             ImGui.EndChild();
-
-            ImGui.SameLine();
-            ImGui.InvisibleButton("##presence_resize", new Vector2(6, -1));
-            if (ImGui.IsItemActive())
-            {
-                width += ImGui.GetIO().MouseDelta.X;
-            }
-
-            if (ImGui.IsItemHovered())
-            {
-                ImGui.SetMouseCursor(ResizeEwCursor);
-            }
-
-            width = Math.Clamp(width, 140f, 600f);
         }
 
         if (shouldReturn)

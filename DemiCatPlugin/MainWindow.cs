@@ -24,6 +24,7 @@ public class MainWindow : IDisposable
     private readonly TemplatesWindow _templates;
     private readonly RequestBoardWindow _requestBoard;
     private readonly NotePadWindow _notePad;
+    private readonly PresenceWindow _presence;
     private readonly EmojiManager _emojiManager;
     private readonly HttpClient _httpClient;
     private const float FadeAlphaTolerance = 0.001f;
@@ -53,6 +54,7 @@ public class MainWindow : IDisposable
         DockIds.Templates,
         DockIds.NotePad,
         DockIds.Requests,
+        DockIds.Presence,
         DockIds.Chat,
         DockIds.Officer
     };
@@ -91,7 +93,8 @@ public class MainWindow : IDisposable
         ChannelService channelService,
         ChannelSelectionService channelSelection,
         EmojiManager emojiManager,
-        NotePadWindow notePad)
+        NotePadWindow notePad,
+        PresenceWindow presence)
     {
         _config = config;
         _ui = ui;
@@ -104,6 +107,7 @@ public class MainWindow : IDisposable
         _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _requestBoard = new RequestBoardWindow(config, httpClient);
         _notePad = notePad;
+        _presence = presence;
         _dockIconDirectory = PluginServices.Instance?.PluginInterface.AssemblyLocation.DirectoryName is { } dir
             ? Path.Combine(dir, "Dock")
             : null;
@@ -232,6 +236,15 @@ public class MainWindow : IDisposable
             () => ToggleWindow(DockIds.Requests)));
 
         AddDockItem(new DockItem(
+            DockIds.Presence,
+            "Roster",
+            "SyncShell.png",
+            () => _config.SyncedChat && IsLinked(),
+            () => _config.SyncedChat && IsLinked(),
+            () => GetWindowOpen(DockIds.Presence),
+            () => ToggleWindow(DockIds.Presence)));
+
+        AddDockItem(new DockItem(
             DockIds.Chat,
             _chat is FcChatWindow ? "FC Chat" : "Chat",
             "FCChat.png",
@@ -321,6 +334,11 @@ public class MainWindow : IDisposable
         if (!linked || !_config.Requests)
         {
             ForceWindowClosed(DockIds.Requests);
+        }
+
+        if (!linked || !_config.SyncedChat)
+        {
+            ForceWindowClosed(DockIds.Presence);
         }
 
         if (!linked || _chat == null || !_config.EnableFcChat || !_config.SyncedChat)
@@ -782,6 +800,7 @@ public class MainWindow : IDisposable
         public const string Templates = "templates";
         public const string NotePad = "notepad";
         public const string Requests = "requests";
+        public const string Presence = "presence";
         public const string Chat = "chat";
         public const string Officer = "officer";
         public const string Settings = "settings";
@@ -865,6 +884,20 @@ public class MainWindow : IDisposable
                 DockIds.Requests,
                 "Request Board",
                 () => _requestBoard.Draw(),
+                styleAlpha,
+                primaryColor,
+                childBaseColor,
+                tabBaseColor,
+                tabActiveBaseColor,
+                tabHoveredBaseColor);
+        }
+
+        if (GetWindowOpen(DockIds.Presence))
+        {
+            interacted |= DrawContentWindow(
+                DockIds.Presence,
+                "Roster",
+                () => _presence.Draw(),
                 styleAlpha,
                 primaryColor,
                 childBaseColor,

@@ -22,8 +22,6 @@ public class OfficerChatWindow : ChatWindow
     private const string NoOfficerAccessMessage = "No officer access for this key.";
     private DateTime _lastRolesRefresh = DateTime.MinValue;
     private bool _subscribed;
-    private readonly PresenceSidebar? _presenceSidebar;
-    private float _presenceWidth = 200f;
     private CancellationTokenSource? _refreshRolesCts;
 
     protected override bool MentionsEnabled => true;
@@ -52,15 +50,6 @@ public class OfficerChatWindow : ChatWindow
             emojiManager,
             chatBridge)
     {
-        if (presence != null)
-        {
-            _presenceSidebar = new PresenceSidebar(presence, config, httpClient)
-            {
-                TextureLoader = LoadTexture,
-                TextureTouch = TextureTouchAction
-            };
-        }
-
         _bridge.StatusChanged += OnBridgeStatusChangedForOfficer;
     }
 
@@ -174,23 +163,12 @@ public class OfficerChatWindow : ChatWindow
             Subscribe();
         }
 
-        var showPresence = _presenceSidebar != null && _tokenManager.IsReady();
-        if (showPresence)
-        {
-            _presenceSidebar!.Draw(ref _presenceWidth);
-            ImGui.SameLine();
-            ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), false);
-        }
-
+        ImGui.BeginChild("##officerChat", ImGui.GetContentRegionAvail(), false);
         base.Draw();
 
         // Reserved padded area beneath the standard chat input for upcoming officer tools.
         ImGui.Dummy(new Vector2(0, ImGui.GetFrameHeightWithSpacing()));
-
-        if (showPresence)
-        {
-            ImGui.EndChild();
-        }
+        ImGui.EndChild();
     }
 
     protected override string MessagesPath => "/api/officer-messages";

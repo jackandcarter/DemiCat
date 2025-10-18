@@ -41,6 +41,7 @@ public class Plugin : IDalamudPlugin
     private readonly ChatWindow _chatWindow;
     private readonly OfficerChatWindow _officerChatWindow;
     private readonly DiscordPresenceService _presenceService;
+    private readonly PresenceWindow _presenceWindow;
     private readonly MainWindow _mainWindow;
     private readonly ChannelWatcher _channelWatcher;
     private readonly RequestWatcher _requestWatcher;
@@ -128,6 +129,8 @@ public class Plugin : IDalamudPlugin
         _presenceService = new DiscordPresenceService(_config, _httpClient);
         _presenceService.SetPresenceReady(false);
 
+        _presenceWindow = new PresenceWindow(_presenceService, _config, _httpClient);
+
         _channelService = new ChannelService(_config, _httpClient, _tokenManager);
         _avatarCache = new AvatarCache(TextureProvider, _httpClient);
         _chatWindow = new FcChatWindow(_config, _httpClient, _presenceService, _tokenManager, _channelService, _channelSelection, _messageCache, _avatarCache, _emojiManager, _sharedChatBridge);
@@ -146,7 +149,8 @@ public class Plugin : IDalamudPlugin
             _channelService,
             _channelSelection,
             _emojiManager,
-            _notePadWindow
+            _notePadWindow,
+            _presenceWindow
         );
 
         _channelWatcher = new ChannelWatcher(_config, _ui, _mainWindow.EventCreateWindow, _mainWindow.TemplatesWindow, _chatWindow, _officerChatWindow, _tokenManager, _httpClient);
@@ -160,6 +164,7 @@ public class Plugin : IDalamudPlugin
         _settings.ChannelWatcher = _channelWatcher;
         _settings.RequestWatcher = _requestWatcher;
         _settings.NotePadService = _notePadService;
+        _settings.PresenceService = _presenceService;
 
         _mainWindow.HasOfficerAccess = OfficerPermissions.HasAccess(_config);
         _mainWindow.SetNotePadReadOnly(!_tokenManager.IsReady());
@@ -264,6 +269,7 @@ public class Plugin : IDalamudPlugin
         _requestWatcher.Dispose();
         _notePadWindow.Dispose();
         _notePadService.Dispose();
+        _presenceWindow.Dispose();
         _presenceService?.Dispose();
         _chatWindow.Dispose();
         _officerChatWindow.Dispose();

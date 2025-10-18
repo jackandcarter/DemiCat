@@ -47,6 +47,7 @@ public class SettingsWindow : IDisposable
     public ChannelWatcher? ChannelWatcher { get; set; }
     public RequestWatcher? RequestWatcher { get; set; }
     public NotePadService? NotePadService { get; set; }
+    public DiscordPresenceService? PresenceService { get; set; }
 
     public SettingsWindow(Config config, TokenManager tokenManager, HttpClient httpClient, Func<Task<bool>> refreshRoles, Func<Task> startNetworking, IPluginLog log, IDalamudPluginInterface pluginInterface)
     {
@@ -550,6 +551,7 @@ public class SettingsWindow : IDisposable
             (MainWindow.DockIds.Templates, "Templates"),
             (MainWindow.DockIds.NotePad, "NotePad"),
             (MainWindow.DockIds.Requests, "Requests"),
+            (MainWindow.DockIds.Presence, "Roster"),
             (MainWindow.DockIds.Chat, "FC Chat"),
             (MainWindow.DockIds.Officer, "Officer Chat"),
         };
@@ -838,12 +840,8 @@ public class SettingsWindow : IDisposable
         }, "Failed to stop NotePad service.");
         SafeInvoke(() =>
         {
-            var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
-            if (presence != null)
-            {
-                presence.SetPresenceReady(false);
-                presence.Stop();
-            }
+            PresenceService?.SetPresenceReady(false);
+            PresenceService?.Stop(clearPresences: true);
         }, "Failed to stop presence service.");
     }
 
@@ -946,7 +944,7 @@ public class SettingsWindow : IDisposable
     private async Task HardReloadIdentityAndStartInternalAsync()
     {
         var framework = PluginServices.Instance?.Framework;
-        var presence = ChatWindow?.Presence ?? OfficerChatWindow?.Presence;
+        var presence = _config.SyncedChat ? PresenceService : null;
         var presenceRestarted = false;
 
         void UpdateStatus(string status)
@@ -1159,9 +1157,12 @@ public class SettingsWindow : IDisposable
 
             try
             {
-                presence?.Reset();
-                presence?.Reload();
-                presenceRestarted = presence != null;
+                if (presence != null)
+                {
+                    presence.Reset();
+                    presence.Reload();
+                    presenceRestarted = true;
+                }
             }
             catch (Exception ex)
             {
