@@ -5,7 +5,6 @@ using Dalamud.Game.Gui.Toast;
 using Dalamud.IoC;
 using Dalamud.Plugin;
 using Dalamud.Plugin.Services;
-using DemiCatPlugin.SyncShell;
 
 namespace DemiCatPlugin;
 
@@ -45,20 +44,6 @@ internal class PluginServices
 
     [PluginService]
     internal ICommandManager CommandManager { get; private set; } = null!;
-
-    internal ProgressOverlay? ProgressOverlay { get; set; }
-
-    internal ISyncShellService? SyncShellService { get; set; }
-
-    internal GlamourerIpc? GlamourerIpc { get; set; }
-
-    internal CustomizePlusIpc? CustomizePlusIpc { get; set; }
-
-    internal SimpleHeelsIpc? SimpleHeelsIpc { get; set; }
-
-    internal PalettePlusIpc? PalettePlusIpc { get; set; }
-
-    internal HonorificIpc? HonorificIpc { get; set; }
 
     public PluginServices()
     {

@@ -25,8 +25,6 @@ public class MainWindow : IDisposable
     private readonly RequestBoardWindow _requestBoard;
     private readonly NotePadWindow _notePad;
     private readonly EmojiManager _emojiManager;
-    private SyncshellWindow? _syncshell;
-    private bool _syncshellEnabled;
     private readonly HttpClient _httpClient;
     private const float FadeAlphaTolerance = 0.001f;
     private const float MinimumFadeDuration = 0.001f;
@@ -55,7 +53,6 @@ public class MainWindow : IDisposable
         DockIds.Templates,
         DockIds.NotePad,
         DockIds.Requests,
-        DockIds.Syncshell,
         DockIds.Chat,
         DockIds.Officer
     };
@@ -107,42 +104,17 @@ public class MainWindow : IDisposable
         _templates = new TemplatesWindow(config, httpClient, channelService, channelSelection, emojiManager);
         _requestBoard = new RequestBoardWindow(config, httpClient);
         _notePad = notePad;
-        _syncshellEnabled = false;
-        _syncshell = null;
         _dockIconDirectory = PluginServices.Instance?.PluginInterface.AssemblyLocation.DirectoryName is { } dir
             ? Path.Combine(dir, "Dock")
             : null;
 
         InitializeDockItems();
         EnsureDockOrder();
-        UpdateSyncshell();
         Instance = this;
-    }
-
-    internal void UpdateSyncshell()
-    {
-        var shouldEnable = _config.EnableSyncShell && IsLinked();
-        if (_syncshellEnabled == shouldEnable)
-            return;
-
-        _syncshellEnabled = shouldEnable;
-        if (_syncshellEnabled)
-        {
-            _syncshell = new SyncshellWindow(_config);
-            PluginServices.Instance?.Framework.RunOnTick(() => { });
-        }
-        else
-        {
-            _syncshell?.Dispose();
-            _syncshell = null;
-            ForceWindowClosed(DockIds.Syncshell);
-        }
     }
 
     public void Draw()
     {
-        UpdateSyncshell();
-
         var linked = IsLinked();
 
         if (!linked)
@@ -260,15 +232,6 @@ public class MainWindow : IDisposable
             () => ToggleWindow(DockIds.Requests)));
 
         AddDockItem(new DockItem(
-            DockIds.Syncshell,
-            "Syncshell",
-            "SyncShell.png",
-            () => _config.EnableSyncShell && _syncshell != null && IsLinked(),
-            () => _config.EnableSyncShell && _syncshell != null && IsLinked(),
-            () => GetWindowOpen(DockIds.Syncshell),
-            () => ToggleWindow(DockIds.Syncshell)));
-
-        AddDockItem(new DockItem(
             DockIds.Chat,
             _chat is FcChatWindow ? "FC Chat" : "Chat",
             "FCChat.png",
@@ -358,11 +321,6 @@ public class MainWindow : IDisposable
         if (!linked || !_config.Requests)
         {
             ForceWindowClosed(DockIds.Requests);
-        }
-
-        if (!linked || !_config.EnableSyncShell || _syncshell == null)
-        {
-            ForceWindowClosed(DockIds.Syncshell);
         }
 
         if (!linked || _chat == null || !_config.EnableFcChat || !_config.SyncedChat)
@@ -824,7 +782,6 @@ public class MainWindow : IDisposable
         public const string Templates = "templates";
         public const string NotePad = "notepad";
         public const string Requests = "requests";
-        public const string Syncshell = "syncshell";
         public const string Chat = "chat";
         public const string Officer = "officer";
         public const string Settings = "settings";
@@ -908,20 +865,6 @@ public class MainWindow : IDisposable
                 DockIds.Requests,
                 "Request Board",
                 () => _requestBoard.Draw(),
-                styleAlpha,
-                primaryColor,
-                childBaseColor,
-                tabBaseColor,
-                tabActiveBaseColor,
-                tabHoveredBaseColor);
-        }
-
-        if (_syncshell != null && GetWindowOpen(DockIds.Syncshell))
-        {
-            interacted |= DrawContentWindow(
-                DockIds.Syncshell,
-                "Syncshell",
-                () => _syncshell.Draw(),
                 styleAlpha,
                 primaryColor,
                 childBaseColor,

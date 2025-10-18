@@ -18,7 +18,6 @@ router = APIRouter(prefix="/api")
 
 class SettingsPayload(BaseModel):
     settings: dict[str, Any] | None = None
-    consent_sync: bool
 
 
 @router.get("/users/me/settings")
@@ -32,7 +31,7 @@ async def get_my_settings(
     if not row:
         raise HTTPException(status_code=404)
     data = json.loads(row.settings) if row.settings else {}
-    return {"settings": data, "consent_sync": row.consent_sync}
+    return {"settings": data}
 
 
 @router.put("/users/me/settings")
@@ -47,9 +46,8 @@ async def put_my_settings(
     if not row:
         raise HTTPException(status_code=404)
     row.settings = json.dumps(payload.settings or {})
-    row.consent_sync = payload.consent_sync
     await db.commit()
-    return {"settings": payload.settings or {}, "consent_sync": row.consent_sync}
+    return {"settings": payload.settings or {}}
 
 
 @router.post("/users/me/forget")
