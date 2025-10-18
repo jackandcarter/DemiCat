@@ -407,7 +407,6 @@ INSERT INTO `guild_channels` VALUES
 (1,1406428761171300516,'chat','📦crafting-list📦',NULL),
 (1,1406428798559453284,'chat','🎭shenanigans🎭',NULL),
 (1,1406645986985644143,'chat','demibot-test',NULL),
-(1,1411094717969600626,'chat','syncshell',NULL),
 (1,1411127020146000004,'chat','test2',NULL),
 (3,1218700195169304688,'chat','Development Channels',NULL),
 (3,1218700195169304689,'chat','Voice Channels',NULL),
@@ -431,7 +430,6 @@ INSERT INTO `guild_channels` VALUES
 (3,1330891011731488778,'chat','bozja-eureka-events',NULL),
 (3,1330891039791255603,'chat','pvp-events',NULL),
 (3,1330891793146974218,'chat','miscellaneous-events',NULL),
-(3,1411094720884641814,'chat','syncshell',NULL),
 (4,1337786583696408616,'chat','General',NULL),
 (4,1337786583696408617,'chat','Voice Channels',NULL),
 (4,1337786583696408618,'fc_chat','💬general-discussion',NULL),
@@ -508,7 +506,6 @@ INSERT INTO `guild_channels` VALUES
 (4,1408924101187211316,'chat','🧩mare-service-debug🧩',NULL),
 (4,1409911507348619264,'chat','DemiCat',NULL),
 (4,1409911863386575002,'chat','📜demicat-v1-2-2-1-release-notes📜',NULL),
-(4,1411094725305303194,'chat','syncshell',NULL),
 (4,1411324235472830598,'chat','concepts',NULL),
 (4,1412094196332101844,'chat','📺screenshots',NULL),
 (4,1414766174969008199,'chat','🧠brain-storms⛈️',NULL),
@@ -1115,85 +1112,6 @@ CREATE TABLE `signup_presets` (
 LOCK TABLES `signup_presets` WRITE;
 /*!40000 ALTER TABLE `signup_presets` DISABLE KEYS */;
 /*!40000 ALTER TABLE `signup_presets` ENABLE KEYS */;
-UNLOCK TABLES;
-
---
--- Table structure for table `syncshell_manifests`
---
-
-DROP TABLE IF EXISTS `syncshell_manifests`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `syncshell_manifests` (
-  `user_id` bigint unsigned NOT NULL,
-  `manifest_json` text NOT NULL,
-  `created_at` datetime NOT NULL,
-  `updated_at` datetime NOT NULL,
-  PRIMARY KEY (`user_id`),
-  CONSTRAINT `syncshell_manifests_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `syncshell_manifests`
---
-
-LOCK TABLES `syncshell_manifests` WRITE;
-/*!40000 ALTER TABLE `syncshell_manifests` DISABLE KEYS */;
-/*!40000 ALTER TABLE `syncshell_manifests` ENABLE KEYS */;
-UNLOCK TABLES;
-
---
--- Table structure for table `syncshell_pairings`
---
-
-DROP TABLE IF EXISTS `syncshell_pairings`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `syncshell_pairings` (
-  `user_id` bigint unsigned NOT NULL,
-  `token` varchar(64) NOT NULL,
-  `created_at` datetime NOT NULL,
-  `expires_at` datetime NOT NULL,
-  PRIMARY KEY (`user_id`),
-  UNIQUE KEY `ix_syncshell_pairings_token` (`token`),
-  KEY `ix_syncshell_pairings_expires_at` (`expires_at`),
-  CONSTRAINT `syncshell_pairings_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `syncshell_pairings`
---
-
-LOCK TABLES `syncshell_pairings` WRITE;
-/*!40000 ALTER TABLE `syncshell_pairings` DISABLE KEYS */;
-/*!40000 ALTER TABLE `syncshell_pairings` ENABLE KEYS */;
-UNLOCK TABLES;
-
---
--- Table structure for table `syncshell_rate_limits`
---
-
-DROP TABLE IF EXISTS `syncshell_rate_limits`;
-/*!40101 SET @saved_cs_client     = @@character_set_client */;
-/*!40101 SET character_set_client = utf8mb4 */;
-CREATE TABLE `syncshell_rate_limits` (
-  `user_id` bigint unsigned NOT NULL,
-  `requests` int NOT NULL DEFAULT '0',
-  `window_start` datetime NOT NULL,
-  PRIMARY KEY (`user_id`),
-  CONSTRAINT `syncshell_rate_limits_ibfk_1` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
-/*!40101 SET character_set_client = @saved_cs_client */;
-
---
--- Dumping data for table `syncshell_rate_limits`
---
-
-LOCK TABLES `syncshell_rate_limits` WRITE;
-/*!40000 ALTER TABLE `syncshell_rate_limits` DISABLE KEYS */;
-/*!40000 ALTER TABLE `syncshell_rate_limits` ENABLE KEYS */;
 UNLOCK TABLES;
 
 --
