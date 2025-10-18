@@ -636,9 +636,9 @@ public class DiscordPresenceService : IDisposable
             changed = true;
         }
 
-        if (!string.IsNullOrWhiteSpace(dto.StatusText))
+        if (dto.StatusTextProvided)
         {
-            var sanitized = string.IsNullOrWhiteSpace(dto.StatusText) ? null : dto.StatusText;
+            var sanitized = dto.StatusText;
             if (!string.Equals(existing.StatusText, sanitized, StringComparison.Ordinal))
             {
                 existing.StatusText = sanitized;
@@ -646,21 +646,63 @@ public class DiscordPresenceService : IDisposable
             }
         }
 
-        if (dto.Roles.Count > 0 && !ReferenceEquals(existing.Roles, dto.Roles))
+        if (dto.RolesProvided)
         {
-            existing.Roles = dto.Roles;
-            changed = true;
+            if (!existing.Roles.SequenceEqual(dto.Roles))
+            {
+                existing.Roles = dto.Roles;
+                changed = true;
+            }
         }
 
-        if (dto.RoleDetails.Count > 0 && !ReferenceEquals(existing.RoleDetails, dto.RoleDetails))
+        if (dto.RoleDetailsProvided)
         {
-            existing.RoleDetails = dto.RoleDetails;
-            changed = true;
+            if (!RoleDetailsEqual(existing.RoleDetails, dto.RoleDetails))
+            {
+                existing.RoleDetails = dto.RoleDetails;
+                changed = true;
+            }
         }
 
         if (changed)
         {
             existing.Touch();
+        }
+
+        static bool RoleDetailsEqual(List<PresenceRoleDto> left, List<PresenceRoleDto> right)
+        {
+            if (ReferenceEquals(left, right))
+            {
+                return true;
+            }
+
+            if (left.Count != right.Count)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < left.Count; i++)
+            {
+                var a = left[i];
+                var b = right[i];
+                if (a == null && b == null)
+                {
+                    continue;
+                }
+
+                if (a == null || b == null)
+                {
+                    return false;
+                }
+
+                if (!string.Equals(a.Id, b.Id, StringComparison.Ordinal) ||
+                    !string.Equals(a.Name, b.Name, StringComparison.Ordinal))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 

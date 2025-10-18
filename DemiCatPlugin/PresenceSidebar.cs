@@ -212,7 +212,7 @@ public class PresenceSidebar : IDisposable
 
                             foreach (var card in cards)
                             {
-                                card.EnsureMetadata(roleById);
+                                card.EnsureMetadata(roleById, roleVersion);
                             }
 
                             var online = cards
@@ -510,7 +510,7 @@ public class PresenceSidebar : IDisposable
     private sealed class PresenceCard
     {
         private long _cachedRevision = long.MinValue;
-        private int _cachedRoleVersion = -1;
+        private long _cachedRoleVersion = long.MinValue;
         private readonly List<string> _roleNames = new();
 
         public PresenceCard(PresenceDto presence)
@@ -535,13 +535,12 @@ public class PresenceSidebar : IDisposable
         public void InvalidateMetadata()
         {
             _cachedRevision = long.MinValue;
-            _cachedRoleVersion = -1;
+            _cachedRoleVersion = long.MinValue;
         }
 
-        public void EnsureMetadata(IReadOnlyDictionary<string, RoleDto> roleById)
+        public void EnsureMetadata(IReadOnlyDictionary<string, RoleDto>? roleById, long roleVersion)
         {
             var revision = Presence.Revision;
-            var roleVersion = roleById?.Count ?? 0;
             if (_cachedRevision == revision && _cachedRoleVersion == roleVersion)
             {
                 return;
