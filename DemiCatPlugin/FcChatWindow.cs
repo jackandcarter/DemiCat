@@ -11,9 +11,6 @@ namespace DemiCatPlugin;
 
 public class FcChatWindow : ChatWindow
 {
-    private readonly PresenceSidebar? _presenceSidebar;
-    private float _presenceWidth = 200f;
-
     protected override bool MentionsEnabled => true;
 
     public FcChatWindow(
@@ -40,14 +37,6 @@ public class FcChatWindow : ChatWindow
             emojiManager,
             chatBridge)
     {
-        if (presence != null)
-        {
-            _presenceSidebar = new PresenceSidebar(presence, config, httpClient)
-            {
-                TextureLoader = LoadTexture,
-                TextureTouch = TextureTouchAction
-            };
-        }
     }
 
     public override void StartNetworking()
@@ -71,12 +60,6 @@ public class FcChatWindow : ChatWindow
         {
             base.Draw();
             return;
-        }
-
-        if (_presenceSidebar != null)
-        {
-            _presenceSidebar.Draw(ref _presenceWidth);
-            ImGui.SameLine();
         }
 
         ImGui.BeginChild("##fcChat", ImGui.GetContentRegionAvail(), false);

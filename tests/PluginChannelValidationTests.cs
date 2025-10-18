@@ -67,6 +67,8 @@ public class PluginChannelValidationTests
         var requestWatcher = new RequestWatcher(config, httpClient, tokenManager);
         var chatWindow = new ChatWindow(config, httpClient, null, tokenManager, channelService);
         var officerChatWindow = new OfficerChatWindow(config, httpClient, null, tokenManager, channelService);
+        var presenceService = new DiscordPresenceService(config, httpClient);
+        var presenceWindow = new PresenceWindow(presenceService, config, httpClient);
         var notePadService = new NotePadService(config, httpClient, tokenManager);
         var notePadWindow = new NotePadWindow(config, notePadService);
         var settingsWindow = new SettingsWindow(
@@ -89,7 +91,8 @@ public class PluginChannelValidationTests
             channelService,
             channelSelection,
             emojiManager,
-            notePadWindow
+            notePadWindow,
+            presenceWindow
         );
         var channelWatcher = new ChannelWatcher(
             config,
@@ -107,6 +110,7 @@ public class PluginChannelValidationTests
         settingsWindow.OfficerChatWindow = officerChatWindow;
         settingsWindow.ChannelWatcher = channelWatcher;
         settingsWindow.RequestWatcher = requestWatcher;
+        settingsWindow.PresenceService = presenceService;
 
         SetPrivateField(plugin, "_services", services);
         SetPrivateField(plugin, "_config", config);
@@ -118,6 +122,7 @@ public class PluginChannelValidationTests
         SetPrivateField(plugin, "_ui", ui);
         SetPrivateField(plugin, "_settings", settingsWindow);
         SetPrivateField(plugin, "_chatWindow", chatWindow);
+        SetPrivateField(plugin, "_presenceWindow", presenceWindow);
         SetPrivateField(plugin, "_officerChatWindow", officerChatWindow);
         SetPrivateField(plugin, "_mainWindow", mainWindow);
         SetPrivateField(plugin, "_channelWatcher", channelWatcher);
