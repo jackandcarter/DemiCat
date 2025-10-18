@@ -11,6 +11,7 @@ the future.
 """
 
 from importlib import import_module
+import os
 import pkgutil
 
 from fastapi import FastAPI
@@ -81,11 +82,36 @@ def create_app() -> FastAPI:
     # Dynamically include routers from all modules in the routes package
     from . import routes as routes_pkg
 
+    # Routes to skip entirely (removed features, experimental, etc.)
+    excluded = {
+        module_name.strip()
+        for module_name in os.getenv("DISABLED_ROUTES", "syncshell").split(",")
+        if module_name.strip()
+    }
+    loaded: list[str] = []
+    skipped: list[str] = []
+
     for _, module_name, _ in pkgutil.iter_modules(routes_pkg.__path__):
-        module = import_module(f"{routes_pkg.__name__}.{module_name}")
+        if module_name in excluded:
+            skipped.append(module_name)
+            continue
+        try:
+            module = import_module(f"{routes_pkg.__name__}.{module_name}")
+        except Exception as exc:  # pragma: no cover - defensive startup logging
+            # Log full traceback so we do not hide real bugs in route modules.
+            logger.exception(
+                "routes.import_failed module=%s error=%s", module_name, exc
+            )
+            continue
+
         router = getattr(module, "router", None)
         if router is not None:
             app.include_router(router)
+            loaded.append(module_name)
+
+    logger.info("routes.loaded %s", ",".join(loaded) or "-")
+    if skipped:
+        logger.info("routes.skipped %s", ",".join(skipped))
 
     return app
 
