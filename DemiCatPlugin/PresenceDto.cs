@@ -12,12 +12,20 @@ public class PresenceDto
     [JsonPropertyName("status")] public string Status { get; set; } = string.Empty;
 
     private string? _statusText;
+    private bool _statusTextProvided;
+
+    [JsonIgnore]
+    public bool StatusTextProvided => _statusTextProvided;
 
     [JsonIgnore]
     public string? StatusText
     {
         get => _statusText;
-        set => _statusText = string.IsNullOrWhiteSpace(value) ? null : value;
+        set
+        {
+            _statusTextProvided = true;
+            _statusText = string.IsNullOrWhiteSpace(value) ? null : value;
+        }
     }
 
     [JsonPropertyName("status_text")]
@@ -128,15 +136,38 @@ public class PresenceDto
     [JsonIgnore]
     public long Revision { get; private set; }
 
-    [JsonPropertyName("roles")] public List<string> Roles { get; set; } = new();
+    private List<string> _roles = new();
+    private bool _rolesProvided;
+
+    [JsonIgnore]
+    public bool RolesProvided => _rolesProvided;
+
+    [JsonPropertyName("roles")]
+    public List<string> Roles
+    {
+        get => _roles;
+        set
+        {
+            _rolesProvided = true;
+            _roles = value ?? new List<string>();
+        }
+    }
 
     private List<PresenceRoleDto> _roleDetails = new();
+    private bool _roleDetailsProvided;
+
+    [JsonIgnore]
+    public bool RoleDetailsProvided => _roleDetailsProvided;
 
     [JsonIgnore]
     public List<PresenceRoleDto> RoleDetails
     {
         get => _roleDetails;
-        set => _roleDetails = value ?? new List<PresenceRoleDto>();
+        set
+        {
+            _roleDetailsProvided = true;
+            _roleDetails = value ?? new List<PresenceRoleDto>();
+        }
     }
 
     [JsonPropertyName("role_details")]

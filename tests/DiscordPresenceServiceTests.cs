@@ -428,6 +428,73 @@ public class DiscordPresenceServiceTests
     }
 
     [Fact]
+    public void ApplyPresenceUpdate_ClearsRolesWhenEmptyListProvided()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var field = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)field.GetValue(service)!;
+
+        var existing = new PresenceDto
+        {
+            Id = "200",
+            Name = "WithRoles",
+            Status = "online"
+        };
+        existing.Roles.Add("a");
+        existing.RoleDetails.Add(new PresenceRoleDto { Id = "a", Name = "Role" });
+        list.Add(existing);
+
+        var update = new PresenceDto
+        {
+            Id = "200",
+            Name = "WithRoles",
+            Status = "online",
+            Roles = new List<string>(),
+            RoleDetails = new List<PresenceRoleDto>()
+        };
+
+        service.ApplyPresenceUpdate(update);
+
+        Assert.Empty(existing.Roles);
+        Assert.Empty(existing.RoleDetails);
+    }
+
+    [Fact]
+    public void ApplyPresenceUpdate_ClearsStatusTextWhenEmptyStringProvided()
+    {
+        var config = new Config { ApiBaseUrl = "http://unit-test" };
+        using var httpClient = new HttpClient(new StubPresenceHandler());
+        var service = new DiscordPresenceService(config, httpClient);
+
+        var field = typeof(DiscordPresenceService).GetField("_presences", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        var list = (List<PresenceDto>)field.GetValue(service)!;
+
+        var existing = new PresenceDto
+        {
+            Id = "201",
+            Name = "Status",
+            Status = "online",
+            StatusText = "Hello"
+        };
+        list.Add(existing);
+
+        var update = new PresenceDto
+        {
+            Id = "201",
+            Name = "Status",
+            Status = "online",
+            StatusText = string.Empty
+        };
+
+        service.ApplyPresenceUpdate(update);
+
+        Assert.Null(existing.StatusText);
+    }
+
+    [Fact]
     public void ApplyPresenceUpdate_NewBannerClearsOldTexture()
     {
         var config = new Config { ApiBaseUrl = "http://unit-test" };
