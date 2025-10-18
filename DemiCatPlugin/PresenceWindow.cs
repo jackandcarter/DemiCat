@@ -15,7 +15,16 @@ public sealed class PresenceWindow : IDisposable
     {
         _sidebar = new PresenceSidebar(service, config, httpClient)
         {
-            TextureLoader = WebTextureCache.Get,
+            TextureLoader = static (url, onReady) =>
+            {
+                if (string.IsNullOrEmpty(url))
+                {
+                    onReady(null);
+                    return;
+                }
+
+                WebTextureCache.Get(url, onReady);
+            },
             TextureTouch = TouchTexture
         };
     }
