@@ -327,6 +327,7 @@ public class RequestBoardWindow
         "claimed" => RequestStatus.Claimed,
         "in_progress" => RequestStatus.InProgress,
         "awaiting_confirm" => RequestStatus.AwaitingConfirm,
+        "awaiting_confirmation" => RequestStatus.AwaitingConfirm,
         "completed" => RequestStatus.Completed,
         "cancelled" => RequestStatus.Cancelled,
         "approved" => RequestStatus.Approved,
