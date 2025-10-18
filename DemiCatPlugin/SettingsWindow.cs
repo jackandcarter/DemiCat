@@ -38,9 +38,6 @@ public class SettingsWindow : IDisposable
     private bool _settingsLoaded;
     private bool _isLinked;
     private static readonly int[] FadeDurations = { 5, 10, 15, 20, 30 };
-    private string _penumbraOverride = string.Empty;
-    private string? _penumbraValidationMessage;
-    private bool _penumbraValidationSuccess;
 
     public bool IsOpen;
 
@@ -65,7 +62,6 @@ public class SettingsWindow : IDisposable
         _isLinked = _tokenManager.State == LinkState.Linked;
         _tokenManager.OnLinked += OnLinked;
         _tokenManager.OnUnlinked += OnUnlinked;
-        _penumbraOverride = _config.PenumbraPathOverride ?? string.Empty;
     }
 
     public void Draw()
@@ -908,7 +904,6 @@ public class SettingsWindow : IDisposable
         _config.RequestsDeltaToken = null;
         _config.Categories.Clear();
         _config.AutoApply.Clear();
-        _config.PenumbraChoices.Clear();
         _config.NotePadLastSectionId = null;
         _config.NotePadLastPageId = null;
 
