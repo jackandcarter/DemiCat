@@ -39,8 +39,6 @@ public class SettingsWindow : IDisposable
     private bool _isLinked;
     private static readonly int[] FadeDurations = { 5, 10, 15, 20, 30 };
     private string _penumbraOverride = string.Empty;
-    private string? _penumbraValidationMessage;
-    private bool _penumbraValidationSuccess;
 
     public bool IsOpen;
 
