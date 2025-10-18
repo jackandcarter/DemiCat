@@ -795,7 +795,14 @@ public class DiscordPresenceService : IDisposable
 
         if (!string.IsNullOrWhiteSpace(newId))
         {
-            _indexById[newId] = idx;
+            if (_indexById.TryGetValue(newId, out var otherIdx) && otherIdx != idx)
+            {
+                Reindex();
+            }
+            else
+            {
+                _indexById[newId] = idx;
+            }
         }
     }
 
