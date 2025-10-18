@@ -238,7 +238,7 @@ public class MainWindow : IDisposable
         AddDockItem(new DockItem(
             DockIds.Presence,
             "Roster",
-            "SyncShell.png",
+            "Roster.png",
             () => _config.SyncedChat && IsLinked(),
             () => _config.SyncedChat && IsLinked(),
             () => GetWindowOpen(DockIds.Presence),
