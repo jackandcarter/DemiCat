@@ -1,12 +1,12 @@
 # DemiCat Monorepo
-Please see the v1.3.0.0 branch for the latest info and stable build release.
+Please see the v1.5.2.1 branch for the latest info and stable build release.
 
 ## Developer Prerequisites
 
-- [.NET SDK 9+](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
-- [Python 3.11+](https://www.python.org/)
-- A database (SQLite by default, MySQL optional)
-- A Discord bot token and Apollo-managed channels
+- [.NET SDK 10+](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
+- [Python 3.12+](https://www.python.org/)
+- A database (SQLite by default, MariaDB for best results)
+- A Discord bot token and discord server with channels
 - FFXIV with the [Dalamud](https://github.com/goatcorp/Dalamud) plugin framework
 
 Optional tools for automated setup:
@@ -18,11 +18,13 @@ Settings for the bot are stored in `~/.config/demibot/config.json`. Create or
 update this file by running the service with the reconfigure flag:
 
 ```bash
-python -m demibot.main --reconfigure
+python3 -m demibot.main --reconfigure
 ```
 
 
-The build output `DemiCatPlugin.dll` can be found under `bin/Debug/net9.0/`. Copy it into your Dalamud plugins folder and enable it.
+The build output `DemiCatPlugin.dll` can be found under `bin/Debug`. Copy it into your Dalamud plugins folder and enable it for manual use if developing ONLY.
+
+OTHERWISE:
 
 Alternatively, add this repository to Dalamud so it can install and update the plugin automatically:
 
