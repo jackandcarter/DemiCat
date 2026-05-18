@@ -3,7 +3,7 @@ Please see the v1.5.2.1 branch for the latest info and stable build release.
 
 ## Developer Prerequisites
 
-- [.NET SDK 10+](https://dotnet.microsoft.com/en-us/download/dotnet/9.0)
+- [.NET SDK 10+](https://dotnet.microsoft.com/en-us/download/dotnet/10.0)
 - [Python 3.12+](https://www.python.org/)
 - A database (SQLite by default, MariaDB for best results)
 - A Discord bot token and discord server with channels
