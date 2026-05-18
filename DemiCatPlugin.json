@@ -1,0 +1,20 @@
+{
+  "Author": "Demi Dev Studio",
+  "Name": "DemiCat",
+  "InternalName": "DemiCatPlugin",
+  "AssemblyName": "DemiCatPlugin",
+  "AssemblyVersion": "1.5.2.1",
+  "Description": "DemiCat Dalamud plugin. =Mew=",
+  "ApplicableVersion": "any",
+  "RepoUrl": "https://github.com/jackandcarter/DemiCat",
+  "DalamudApiLevel": 15,
+  "TestingDalamudApiLevel": 15,
+  "LoadRequiredState": 0,
+  "LoadSync": false,
+  "CanUnloadAsync": false,
+  "LoadPriority": 0,
+  "IconUrl": "https://the-demiurge.com/icon.png",
+  "Punchline": "Your Friendly Mechanical Catto!",
+  "AcceptsFeedback": true,
+  "Changelog": ""
+}
