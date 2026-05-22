@@ -3,14 +3,14 @@
     "Author": "Demi Dev Unit",
     "Name": "DemiCat",
     "InternalName": "DemiCatPlugin",
-    "AssemblyVersion": "1.5.2.2",
+    "AssemblyVersion": "1.5.2.3",
     "Description": "DemiCat Dalamud plugin. =Mew=",
     "ApplicableVersion": "any",
     "RepoUrl": "https://github.com/jackandcarter/DemiCat",
     "DalamudApiLevel": 15,
-    "DownloadLinkInstall": "https://github.com/jackandcarter/DemiCat/releases/download/v1.5.2.2/latest.zip",
-    "DownloadLinkUpdate": "https://github.com/jackandcarter/DemiCat/releases/download/v1.5.2.2/latest.zip",
-    "DownloadLinkTesting": "https://github.com/jackandcarter/DemiCat/releases/download/v1.5.2.2/latest.zip",
+    "DownloadLinkInstall": "https://github.com/jackandcarter/DemiCat/releases/download/v1.5.2.3/latest.zip",
+    "DownloadLinkUpdate": "https://github.com/jackandcarter/DemiCat/releases/download/v1.5.2.3/latest.zip",
+    "DownloadLinkTesting": "https://github.com/jackandcarter/DemiCat/releases/download/v1.5.2.3/latest.zip",
     "LoadRequiredState": 0,
     "LoadSync": false,
     "CanUnloadAsync": false,
@@ -21,6 +21,6 @@
     "IsHide": false,
     "IsTestingExclusive": false,
     "Changelog": "",
-    "LastUpdate": "1779081452"
+    "LastUpdate": "1779486133"
   }
 ]
